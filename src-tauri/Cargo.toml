@@ -91,6 +91,9 @@ arboard = "3"
 # Same version Tauri's Linux webview uses; drives GtkSettings and the XDG Settings portal.
 gtk = "0.18.1"
 arboard = { version = "3", features = ["wayland-data-control"] }
+# The keyring's Secret Service backend, named only to recognise its session decryption error
+# (`credentials::is_secret_session_decrypt_failure`). The version is the one keyring resolves.
+dbus-secret-service = { version = "4.1.0", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_SystemServices"] }

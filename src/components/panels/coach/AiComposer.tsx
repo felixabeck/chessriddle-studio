@@ -1,8 +1,9 @@
-import { Group, Text, Textarea, useMantineTheme } from "@mantine/core";
+import { Group, Textarea, useMantineTheme } from "@mantine/core";
 import { ArrowUp, Square } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconAction } from "@/components/common/IconAction";
+import { AiSelectionHint } from "./AiSelectionHint";
 import classes from "./CoachPanel.module.css";
 
 const MAX_QUESTION_CHARS = 4000;
@@ -24,6 +25,7 @@ export function AiComposer({
   placeholder,
   ariaLabel,
   missingChoice,
+  onRetryModels,
   controls,
 }: {
   draft: string;
@@ -36,6 +38,8 @@ export function AiComposer({
   placeholder: string;
   ariaLabel: string;
   missingChoice: string | null;
+  /** Set while the model list failed: the hint then offers to read it again. */
+  onRetryModels?: () => void;
   controls: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -95,11 +99,7 @@ export function AiComposer({
           )}
         </Group>
       </div>
-      {missingChoice && (
-        <Text size="xs" c="dimmed" mt={4}>
-          {missingChoice}
-        </Text>
-      )}
+      {missingChoice && <AiSelectionHint text={missingChoice} onRetry={onRetryModels} mt={4} />}
     </form>
   );
 }

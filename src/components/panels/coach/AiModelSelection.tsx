@@ -31,6 +31,8 @@ export type AiModelSelectionState = {
   connections: ConnectionSummary[];
   connection: string | null;
   modelsState: CoachModelsState;
+  /** Set only while the chosen connection's model list failed: reads that list again. */
+  retryModels: (() => void) | undefined;
   models: ModelInfo[] | null;
   chosen: EffectiveCoachSelection;
   selection: CoachSelection;
@@ -58,6 +60,10 @@ export function useAiModelSelection(): AiModelSelectionState {
       ? modelsState.models
       : null;
   const chosen = effectiveCoachSelection(selection, connections, models);
+  const modelsFailed =
+    Boolean(chosen.connection) &&
+    modelsState.status === "failed" &&
+    modelsState.connection === connection;
 
   // The model list belongs to the chosen connection; it is read when that changes.
   useEffect(() => {
@@ -70,6 +76,7 @@ export function useAiModelSelection(): AiModelSelectionState {
     connections,
     connection,
     modelsState,
+    retryModels: modelsFailed ? () => void loadModels(connection) : undefined,
     models,
     chosen,
     selection,

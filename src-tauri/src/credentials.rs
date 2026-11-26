@@ -429,11 +429,9 @@ impl CredentialStore for OsCredentialStore {
     }
 
     fn get(&self, key: &str) -> Result<Option<String>, Error> {
-        match Entry::new(&self.service, key).and_then(|entry| entry.get_password()) {
-            Ok(secret) => Ok(Some(secret)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(source) => Err(Error::CredentialFailure(source.to_string())),
-        }
+        read_with_session_retry(|| {
+            Entry::new(&self.service, key).and_then(|entry| entry.get_password())
+        })
     }
 
     fn delete(&self, key: &str) -> Result<(), Error> {
@@ -442,6 +440,42 @@ impl CredentialStore for OsCredentialStore {
             Err(source) => Err(Error::CredentialFailure(source.to_string())),
         }
     }
+}
+
+/// Runs one keyring read, and runs it once more when the Secret Service session could not decrypt
+/// the answer. The second read builds a new entry and with it a new session; if it fails too, that
+/// failure is returned. Every other failure is returned at once.
+fn read_with_session_retry(
+    mut read: impl FnMut() -> keyring::Result<String>,
+) -> Result<Option<String>, Error> {
+    let mut outcome = read();
+    if outcome
+        .as_ref()
+        .is_err_and(is_secret_session_decrypt_failure)
+    {
+        log::warn!("credentials: a keyring read could not be decrypted; reading it again");
+        outcome = read();
+    }
+    match outcome {
+        Ok(secret) => Ok(Some(secret)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(source) => Err(Error::CredentialFailure(source.to_string())),
+    }
+}
+
+/// Whether a keyring failure is a crypto failure of the Secret Service session, such as the
+/// intermittent `Crypto error: Unpad Error` logged on 2026-11-25/26 against KWallet, after which a
+/// later read of the same entry succeeded.
+fn is_secret_session_decrypt_failure(error: &keyring::Error) -> bool {
+    #[cfg(target_os = "linux")]
+    if let keyring::Error::PlatformFailure(source) = error {
+        return matches!(
+            source.downcast_ref::<dbus_secret_service::Error>(),
+            Some(dbus_secret_service::Error::Crypto(_))
+        );
+    }
+    let _ = error;
+    false
 }
 
 /// Stands in until the real store is injected with the running bundle identifier.  It refuses every
@@ -2281,6 +2315,79 @@ mod tests {
             OsCredentialStore::new("com.chessriddle.studio.dev").service,
             "com.chessriddle.studio.dev.lichess"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    fn session_decrypt_failure() -> keyring::Error {
+        keyring::Error::PlatformFailure(Box::new(dbus_secret_service::Error::Crypto(
+            "Unpad Error".into(),
+        )))
+    }
+
+    /// A read that answers with the given outcomes in turn and counts its calls.
+    fn scripted_read(
+        outcomes: Vec<keyring::Result<String>>,
+    ) -> (
+        impl FnMut() -> keyring::Result<String>,
+        Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = calls.clone();
+        let mut outcomes = outcomes.into_iter();
+        let read = move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            outcomes
+                .next()
+                .expect("the read was called more often than scripted")
+        };
+        (read, calls)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_read_the_session_could_not_decrypt_is_read_again() {
+        let (read, calls) =
+            scripted_read(vec![Err(session_decrypt_failure()), Ok("secret".into())]);
+        assert_eq!(
+            read_with_session_retry(read).unwrap().as_deref(),
+            Some("secret")
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_second_decrypt_failure_is_reported_without_a_third_read() {
+        let (read, calls) = scripted_read(vec![
+            Err(session_decrypt_failure()),
+            Err(session_decrypt_failure()),
+        ]);
+        let error = read_with_session_retry(read).unwrap_err();
+        assert!(
+            matches!(error, Error::CredentialFailure(ref text) if text.contains("Unpad Error"))
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn other_keyring_failures_and_absent_entries_are_read_once() {
+        let (read, calls) =
+            scripted_read(vec![Err(keyring::Error::NoStorageAccess("locked".into()))]);
+        assert!(read_with_session_retry(read).is_err());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        #[cfg(target_os = "linux")]
+        {
+            let (read, calls) = scripted_read(vec![Err(keyring::Error::PlatformFailure(
+                Box::new(dbus_secret_service::Error::Unavailable),
+            ))]);
+            assert!(read_with_session_retry(read).is_err());
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+
+        let (read, calls) = scripted_read(vec![Err(keyring::Error::NoEntry)]);
+        assert_eq!(read_with_session_retry(read).unwrap(), None);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[test]

@@ -57,6 +57,7 @@ const mocks = vi.hoisted(() => ({
     model: null as ModelInfo | null,
     effort: null as string | null,
     hint: null as string | null,
+    retryModels: undefined as (() => void) | undefined,
   },
   dropRegistrationError: null as Error | null,
   dropListeners: new Set<(event: { payload: { drop: string } }) => void>(),
@@ -116,6 +117,7 @@ vi.mock("@/components/panels/coach/AiModelSelection", () => ({
       models: mocks.modelSelection.model ? [mocks.modelSelection.model] : [],
     },
     models: mocks.modelSelection.model ? [mocks.modelSelection.model] : [],
+    retryModels: mocks.modelSelection.retryModels,
     chosen: {
       connection: mocks.modelSelection.connection,
       model: mocks.modelSelection.model,
@@ -260,6 +262,7 @@ beforeEach(() => {
     model: MODEL,
     effort: null,
     hint: null,
+    retryModels: undefined,
   };
   mocks.buildScoresheetTree.mockImplementation(async () => {
     const tree = defaultTree();
@@ -755,6 +758,7 @@ test("missing model or connection shows selection hint and disables Read game", 
     model: null,
     effort: null,
     hint: "Coach.Hint.ChooseModel",
+    retryModels: undefined,
   };
   await renderPane({ hasConnection: true });
   await addOnePhoto();
@@ -768,6 +772,7 @@ test("missing model or connection shows selection hint and disables Read game", 
     model: null,
     effort: null,
     hint: "Coach.Hint.ChooseConnection",
+    retryModels: undefined,
   };
   await renderPane({ hasConnection: true });
   await addOnePhoto();
@@ -775,6 +780,27 @@ test("missing model or connection shows selection hint and disables Read game", 
     "Coach.Hint.ChooseConnection",
   );
   expect(buttonByText("Scoresheet.Read.Button").disabled).toBe(true);
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Common.Retry")).toBe(
+    false,
+  );
+});
+
+test("a failed model list offers Retry beside the hint, which reads the list again", async () => {
+  const retryModels = vi.fn();
+  mocks.modelSelection = {
+    connection: CONNECTION,
+    model: null,
+    effort: null,
+    hint: "Coach.Error.Storage",
+    retryModels,
+  };
+  await renderPane({ hasConnection: true });
+  await addOnePhoto();
+  expect(host.querySelector("[data-scoresheet-selection-hint]")?.textContent).toBe(
+    "Coach.Error.Storage",
+  );
+  await act(async () => buttonByText("Common.Retry").click());
+  expect(retryModels).toHaveBeenCalledTimes(1);
 });
 
 test("Escape on the first-use notice closes only the notice and keeps the enclosing dialog and photos", async () => {

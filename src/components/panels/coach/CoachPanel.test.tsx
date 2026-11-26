@@ -420,6 +420,32 @@ test("a failed model list is named under the composer and at the model selector"
   expect(field("Coach.Model").disabled).toBe(true);
 });
 
+test("a failed model list offers Retry under the composer, which reads the list again", async () => {
+  const { CoachCommandError } = await import("@/platform/coach");
+  mocks.coachModels.mockRejectedValueOnce(new CoachCommandError("storage"));
+  await render();
+  const form = host.querySelector<HTMLElement>("form")!;
+  expect(form.textContent).toContain("Coach.Error.Storage");
+  const reads = mocks.coachModels.mock.calls.length;
+  await act(async () => button("Common.Retry").click());
+  expect(mocks.coachModels.mock.calls.length).toBe(reads + 1);
+  expect(mocks.coachModels).toHaveBeenLastCalledWith("conn-1");
+  // The second read succeeded: the failure and its Retry are gone.
+  expect(form.textContent).not.toContain("Coach.Error.Storage");
+  expect([...form.querySelectorAll("button")].some((b) => b.textContent === "Common.Retry")).toBe(
+    false,
+  );
+});
+
+test("a hint that only asks for a choice offers no Retry", async () => {
+  await render({ selected: false });
+  const form = host.querySelector<HTMLElement>("form")!;
+  expect(form.textContent).toContain("Coach.Hint.");
+  expect([...form.querySelectorAll("button")].some((b) => b.textContent === "Common.Retry")).toBe(
+    false,
+  );
+});
+
 test("while the model list loads, no hint asks for a model yet", async () => {
   mocks.coachModels.mockReturnValue(new Promise(() => {}));
   await render({ selected: false });

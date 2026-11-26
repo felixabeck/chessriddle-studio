@@ -131,6 +131,7 @@ function CoachPanel() {
             placeholder={t("Coach.Ask")}
             ariaLabel={t("Coach.Ask")}
             missingChoice={missingChoice}
+            onRetryModels={modelSelection.retryModels}
             controls={
               <AiModelControls
                 state={modelSelection}

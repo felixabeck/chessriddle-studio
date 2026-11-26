@@ -789,6 +789,7 @@ dependencies = [
  "csv",
  "ctor",
  "dashmap 6.0.1",
+ "dbus-secret-service",
  "derivative",
  "diesel",
  "errno",

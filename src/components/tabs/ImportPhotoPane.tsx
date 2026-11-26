@@ -12,6 +12,7 @@ import {
   useAiModelSelection,
 } from "@/components/panels/coach/AiModelSelection";
 import { AiNoticeModal } from "@/components/panels/coach/AiNoticeModal";
+import { AiSelectionHint } from "@/components/panels/coach/AiSelectionHint";
 import { useScoresheetErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
 import { coachErrorCode } from "@/platform/coach";
 import { normalizeError, warnSafely } from "@/platform/errors";
@@ -457,9 +458,11 @@ function ImportPhotoPane({
       </div>
 
       {selectionHint && (
-        <Text size="xs" c="dimmed" data-scoresheet-selection-hint>
-          {selectionHint}
-        </Text>
+        <AiSelectionHint
+          text={selectionHint}
+          onRetry={modelSelection.retryModels}
+          data-scoresheet-selection-hint
+        />
       )}
 
       {reading ? (

@@ -254,6 +254,21 @@ test("streamed text renders, finished links use registry labels, and clicking li
   });
 });
 
+test("a model list the keyring could not read offers Retry under the composer, and Retry recovers it", async () => {
+  const { CoachCommandError } = await import("@/platform/coach");
+  mocks.coachModels.mockRejectedValueOnce(new CoachCommandError("storage"));
+  await renderPanel();
+  const form = host.querySelector<HTMLElement>("form")!;
+  expect(form.textContent).toContain("Coach.Error.Storage");
+  expect(button("Coach.Send").disabled).toBe(true);
+  const reads = mocks.coachModels.mock.calls.length;
+  await act(async () => button("Common.Retry", form).click());
+  await act(async () => {});
+  expect(mocks.coachModels.mock.calls.length).toBe(reads + 1);
+  expect(form.textContent).not.toContain("Coach.Error.Storage");
+  expect(button("Common.Retry", form)).toBeUndefined();
+});
+
 test("panel load failure shows retry in place, keeps shell mounted, and retry loads the panel", async () => {
   const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
   let attempts = 0;
