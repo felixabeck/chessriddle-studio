@@ -10,6 +10,15 @@ import { TabCommandsProvider, useTabCommands, type TabCommands } from "./TabComm
 const fixtures = vi.hoisted(() => ({
   abortGame: vi.fn(),
   closeWorkspaceTab: vi.fn(),
+  replaceWorkspaceTab: vi.fn(),
+  copyTabEngineSettings: vi.fn(),
+  replaceReceipt: true,
+  modalProps: null as null | {
+    pendingClose: { tabId: string; intent: string } | null;
+    onDiscard: () => void;
+    onSaved: () => void;
+    onCancel: () => void;
+  },
   closeTreeStore: vi.fn(),
   createTreeStore: vi.fn<(...args: any[]) => any>(() => ({
     subscribe: fixtures.subscribe,
@@ -58,6 +67,7 @@ type TabFixture = {
   type: "new" | "play" | "analysis" | "puzzles";
   value: string;
   treeKey?: string;
+  explorer?: Tab["explorer"];
 };
 
 vi.mock("@/state/atoms", async () => {
@@ -86,6 +96,23 @@ vi.mock("@/state/atoms", async () => {
       fixtures.closeWorkspaceTab(tabId);
       return true;
     }),
+    replaceWorkspaceTabAtom: atom(
+      null,
+      (get, set, tabId: string, successor: TabFixture, onCommitted?: () => void) => {
+        if (!fixtures.replaceReceipt) return false;
+        set(
+          tabsAtom,
+          get(tabsAtom).map((tab) => (tab.value === tabId ? successor : tab)),
+        );
+        if (get(activeTabAtom) === tabId) set(activeTabAtom, successor.value);
+        fixtures.replaceWorkspaceTab(tabId, successor);
+        onCommitted?.();
+        return true;
+      },
+    ),
+    copyTabEngineSettingsAtom: atom(null, (_get, _set, pair: { from: string; to: string }) =>
+      fixtures.copyTabEngineSettings(pair),
+    ),
     closingTabsAtom: atom<Set<string>>(new Set<string>()),
     gameIdFamily: atomFamily(() => atom<string | null>(null)),
     gameSessionFamily: atomFamily(() => atom<bigint | null>(null)),
@@ -100,6 +127,7 @@ vi.mock("@/state/keybinds", async () => {
     firedByNativeMenu: () => false,
     keyMapAtom: atom({
       NEW_TAB: { keys: "mod+t" },
+      NEW_ANALYSIS: { keys: "mod+n" },
       CLOSE_TAB: { keys: "mod+w" },
       CYCLE_TABS: { keys: "mod+tab" },
       REVERSE_CYCLE_TABS: { keys: "mod+shift+tab" },
@@ -184,7 +212,10 @@ vi.mock("../common/AppModal", () => ({
     opened ? <div role="dialog">{children}</div> : null,
 }));
 vi.mock("./ConfirmChangesModal", () => ({
-  default: () => null,
+  default: (props: NonNullable<typeof fixtures.modalProps>) => {
+    fixtures.modalProps = props;
+    return null;
+  },
 }));
 
 import { useRouterState } from "@tanstack/react-router";
@@ -248,6 +279,8 @@ beforeEach(() => {
   }
   fixtures.dirty = false;
   fixtures.closeReceipt = true;
+  fixtures.replaceReceipt = true;
+  fixtures.modalProps = null;
   fixtures.createTab.mockResolvedValue("created");
   fixtures.hotkeyBindings = null;
   fixtures.pathname = "/";
@@ -673,3 +706,152 @@ test("showPageTab restores last href, returns a Promise, falls back on rejection
   });
   expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings" });
 });
+
+function seedAnalysisTabs() {
+  fixtures.tabs = [
+    {
+      value: "current",
+      name: "Sicilian",
+      type: "analysis",
+      gameOrigin: { kind: "temp_file", file: { path: "/x.pgn" } as never, gameNumber: 0 },
+      explorer: { firstSource: "lch_master" },
+    },
+    { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
+  ];
+  store.set(tabsAtom, fixtures.tabs);
+}
+
+test("New analysis replaces the shown analysis board in place with an empty, unlinked one", async () => {
+  seedAnalysisTabs();
+  await renderOwner();
+
+  await act(async () => latest!.newAnalysis());
+
+  await vi.waitFor(() => expect(fixtures.replaceWorkspaceTab).toHaveBeenCalledOnce());
+  const [replaced, successor] = fixtures.replaceWorkspaceTab.mock.calls[0] as [string, TabFixture];
+  expect(replaced).toBe("current");
+  expect(successor).toEqual({
+    name: "Home.Card.AnalysisBoard.Title",
+    value: expect.any(String),
+    type: "analysis",
+    gameOrigin: { kind: "none" },
+    explorer: { firstSource: "lch_master" },
+  });
+  expect(successor.value).not.toBe("current");
+  expect(fixtures.killEngines).toHaveBeenCalledWith("current");
+  expect(fixtures.copyTabEngineSettings).toHaveBeenCalledWith({
+    from: "current",
+    to: successor.value,
+  });
+  expect(fixtures.closeTreeStore).toHaveBeenCalledWith("current");
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual([successor.value, "next"]);
+  expect(store.get(activeTabAtom)).toBe(successor.value);
+  expect(fixtures.createTab).not.toHaveBeenCalled();
+});
+
+test("New analysis asks first when unsaved work would be lost, then discards on request", async () => {
+  seedAnalysisTabs();
+  fixtures.dirty = true;
+  await renderOwner();
+
+  await act(async () => latest!.newAnalysis());
+
+  expect(fixtures.modalProps?.pendingClose).toEqual(
+    expect.objectContaining({ tabId: "current", intent: "newAnalysis" }),
+  );
+  expect(fixtures.killEngines).not.toHaveBeenCalled();
+  expect(fixtures.replaceWorkspaceTab).not.toHaveBeenCalled();
+
+  await act(async () => fixtures.modalProps!.onDiscard());
+
+  await vi.waitFor(() => expect(fixtures.replaceWorkspaceTab).toHaveBeenCalledOnce());
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+});
+
+test("New analysis continues with the replacement after Save in its confirmation", async () => {
+  seedAnalysisTabs();
+  fixtures.dirty = true;
+  await renderOwner();
+
+  await act(async () => latest!.newAnalysis());
+  await act(async () => fixtures.modalProps!.onSaved());
+
+  await vi.waitFor(() => expect(fixtures.replaceWorkspaceTab).toHaveBeenCalledOnce());
+  expect(fixtures.replaceWorkspaceTab.mock.calls[0]?.[0]).toBe("current");
+  expect(fixtures.closeWorkspaceTab).not.toHaveBeenCalled();
+});
+
+test("the NEW_ANALYSIS shortcut replaces the shown analysis board", async () => {
+  seedAnalysisTabs();
+  await renderOwner();
+
+  const event = new KeyboardEvent("keydown", {
+    key: "n",
+    code: "KeyN",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => {
+    document.body.dispatchEvent(event);
+  });
+
+  // The webview's own Ctrl+N must not run as well.
+  expect(event.defaultPrevented).toBe(true);
+  await vi.waitFor(() => expect(fixtures.replaceWorkspaceTab).toHaveBeenCalledOnce());
+  expect(fixtures.createTab).not.toHaveBeenCalled();
+});
+
+test("a dirty close still closes after its confirmation", async () => {
+  seedAnalysisTabs();
+  fixtures.dirty = true;
+  await renderOwner();
+
+  await act(async () => {
+    await latest!.closeTab("current");
+  });
+  expect(fixtures.modalProps?.pendingClose).toEqual(
+    expect.objectContaining({ tabId: "current", intent: "close" }),
+  );
+
+  await act(async () => fixtures.modalProps!.onSaved());
+
+  await vi.waitFor(() => expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("current"));
+  expect(fixtures.replaceWorkspaceTab).not.toHaveBeenCalled();
+});
+
+test("a refused replacement keeps the old board and restores its report owner", async () => {
+  seedAnalysisTabs();
+  fixtures.replaceReceipt = false;
+  await renderOwner();
+
+  await act(async () => latest!.newAnalysis());
+
+  await vi.waitFor(() => expect(fixtures.restoreReportOwner).toHaveBeenCalledOnce());
+  expect(fixtures.closeTreeStore).not.toHaveBeenCalled();
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual(["current", "next"]);
+});
+
+test.each([
+  ["a tab that is not an analysis board", "/", false],
+  ["an analysis board behind another page", "/library", true],
+] as const)(
+  "New analysis from %s opens a new analysis board tab",
+  async (_label, path, analysis) => {
+    if (analysis) seedAnalysisTabs();
+    fixtures.pathname = path;
+    await renderOwner();
+
+    await act(async () => latest!.newAnalysis());
+
+    expect(fixtures.createTab).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tab: { name: "Home.Card.AnalysisBoard.Title", type: "analysis" },
+      }),
+    );
+    await vi.waitFor(() => expect(fixtures.navigate).toHaveBeenCalledWith({ to: "/" }));
+    expect(fixtures.replaceWorkspaceTab).not.toHaveBeenCalled();
+    expect(fixtures.killEngines).not.toHaveBeenCalled();
+  },
+);

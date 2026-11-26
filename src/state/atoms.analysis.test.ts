@@ -17,6 +17,7 @@ import { AnalysisLineMemory, ENGINE_LINE_MEMORY_CAPACITY } from "@/utils/analysi
 import {
     activeTabAtom,
     allEnabledFamily,
+    copyTabEngineSettingsAtom,
     enableAllFamily,
     createBestMovesAtom,
     threatFamily,
@@ -501,4 +502,19 @@ test("best-move arrows keep only tablebase-winning dtz lines after normalizing l
     ).toEqual([["e2e4"]]);
 
     disposeTabAtoms(tab);
+});
+
+test("copying engine settings gives the new tab every engine's analysis settings of the old one", async () => {
+    const store = createStore();
+    await store.set(enginesAtom, [engine]);
+    const own = { enabled: true, synced: false, settings: [], go: { t: "Depth" as const, c: 12 } };
+    store.set(tabEngineSettingsFamily({ tab: "copy-from", engineId: engine.id }), own);
+
+    store.set(copyTabEngineSettingsAtom, { from: "copy-from", to: "copy-to" });
+
+    expect(store.get(tabEngineSettingsFamily({ tab: "copy-to", engineId: engine.id }))).toEqual(
+        own,
+    );
+    disposeTabAtoms("copy-from");
+    disposeTabAtoms("copy-to");
 });

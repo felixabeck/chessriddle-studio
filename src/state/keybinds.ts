@@ -51,6 +51,11 @@ const definitions = {
         name: "New tab",
         keys: `${meta}+t`,
     },
+    NEW_ANALYSIS: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.NEW_ANALYSIS"),
+        name: "New analysis",
+        keys: `${meta}+n`,
+    },
     CLOSE_TAB: {
         labelKey: i18nKey("Settings.Keybinds.Actions.CLOSE_TAB"),
         name: "Close tab",
@@ -329,6 +334,7 @@ export const KEYBIND_ACTION_IDS = Object.keys(definitions) as KeybindActionId[];
 
 const NATIVE_MENU_ACTIONS: ReadonlySet<KeybindActionId> = new Set([
     "NEW_TAB",
+    "NEW_ANALYSIS",
     "OPEN_FILE",
     "SAVE_FILE",
     "TOGGLE_FOCUS_MODE",

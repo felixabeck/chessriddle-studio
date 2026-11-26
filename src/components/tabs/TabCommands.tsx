@@ -20,10 +20,12 @@ import {
   activeTabAtom,
   closeWorkspaceTabAtom,
   closingTabsAtom,
+  copyTabEngineSettingsAtom,
   gameIdFamily,
   gameSessionFamily,
   gameStateFamily,
   pendingGameStartFamily,
+  replaceWorkspaceTabAtom,
   tabsAtom,
 } from "@/state/atoms";
 import { firedByNativeMenu, keyMapAtom } from "@/state/keybinds";
@@ -52,6 +54,7 @@ import {
   asksBeforeDiscardingChanges,
   commitNewTab,
   createTab,
+  genID,
   getTabTreeKey,
   runTabCreation,
   type Tab,
@@ -70,6 +73,11 @@ export type TabCommands = {
   selectTab: (tabId: string) => void;
   showTab: (tabId: string) => void;
   closeTab: (tabId: string | null, discard?: boolean) => Promise<void>;
+  /**
+   * Replaces the shown analysis board with an empty one in the same place, asking first when
+   * unsaved work would be lost; anywhere else it opens a new analysis board tab.
+   */
+  newAnalysis: () => void;
   duplicateTab: (tabId: string) => void;
   renameTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
@@ -78,6 +86,10 @@ export type TabCommands = {
   showPageTab: (page: PageTab) => Promise<void>;
   closePageTab: (page: PageTab) => void;
 };
+
+/** What ends a tab's owner: closing it, or replacing it with an empty analysis board. */
+export type RetireIntent = "close" | "newAnalysis";
+type PendingRetire = { tabId: string; store: TreeStore; intent: RetireIntent };
 
 const TabCommandsContext = createContext<TabCommands | null>(null);
 
@@ -109,9 +121,9 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useAtom(tabsAtom);
   const [activeTab, setActiveTab] = useAtom(activeTabAtom);
   const closeWorkspaceTab = useSetAtom(closeWorkspaceTabAtom);
-  const [pendingClose, setPendingClose] = useState<{ tabId: string; store: TreeStore } | null>(
-    null,
-  );
+  const replaceWorkspaceTab = useSetAtom(replaceWorkspaceTabAtom);
+  const copyTabEngineSettings = useSetAtom(copyTabEngineSettingsAtom);
+  const [pendingClose, setPendingClose] = useState<PendingRetire | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -190,15 +202,24 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     [navigate, pathname, setPageTabs],
   );
 
-  const newTab = useCallback(() => {
-    void runTabCreation({
-      create: () => createTab({ tab: { name: t("Tab.NewTab"), type: "new" }, setTabs }),
-      onSuccess: async () => {
-        await navigate({ to: "/" });
-      },
-      onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
-    });
-  }, [navigate, setTabs, t]);
+  // Opens a tab after the others and shows the boards page.
+  const openFreshTab = useCallback(
+    (tab: { name: string; type: "new" | "analysis" }) => {
+      void runTabCreation({
+        create: () => createTab({ tab, setTabs }),
+        onSuccess: async () => {
+          await navigate({ to: "/" });
+        },
+        onError: (error) => notifyUnlessCancelled(t("Common.Error"), error),
+      });
+    },
+    [navigate, setTabs, t],
+  );
+
+  const newTab = useCallback(
+    () => openFreshTab({ name: t("Tab.NewTab"), type: "new" }),
+    [openFreshTab, t],
+  );
 
   // Closing the last board tab leaves none open. The board view has nothing to show then, so the
   // Library stands in for it, where the navigation row's Library link leads (the open database
@@ -217,28 +238,49 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     });
   }, [navigate, noBoardTabs, pathname, workspaceStore]);
 
-  const closeTab = useCallback(
-    async (value: string | null, discard = false) => {
+  // A fresh identity, so no result still on its way to the old board can land on the new one. The
+  // tab keeps its place and its database-panel sources; its engines keep their analysis settings.
+  const replaceWithNewAnalysis = useCallback(
+    (replaced: Tab) => {
+      const current = workspaceStore.get(tabsAtom);
+      const successor: Tab = {
+        name: t("Home.Card.AnalysisBoard.Title"),
+        value: genID(current.flatMap((tab) => [tab.value, getTabTreeKey(tab)])),
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+        ...(replaced.explorer ? { explorer: replaced.explorer } : {}),
+      };
+      return replaceWorkspaceTab(replaced.value, successor, () =>
+        copyTabEngineSettings({ from: replaced.value, to: successor.value }),
+      );
+    },
+    [copyTabEngineSettings, replaceWorkspaceTab, t, workspaceStore],
+  );
+
+  // Closing a tab and replacing it with a new analysis board end its owner the same way: engines
+  // killed, a running game aborted, the report owner invalidated, then the workspace commit.
+  const retireTab = useCallback(
+    async (value: string | null, discard: boolean, intent: RetireIntent) => {
       if (value !== null) {
-        const closedTab = tabs.find((tab) => tab.value === value);
-        if (!closedTab) return;
+        const retiredTab = tabs.find((tab) => tab.value === value);
+        if (!retiredTab) return;
         const jotaiStore = getDefaultStore();
         if (jotaiStore.get(closingTabsAtom).has(value)) return;
-        const store = getOrCreateTreeStore(value, undefined, getTabTreeKey(closedTab));
+        const store = getOrCreateTreeStore(value, undefined, getTabTreeKey(retiredTab));
         if (
-          (closedTab.type === "play" ||
-            closedTab.type === "analysis" ||
-            closedTab.type === "puzzles") &&
+          (retiredTab.type === "play" ||
+            retiredTab.type === "analysis" ||
+            retiredTab.type === "puzzles") &&
           ["not-read", "unreadable", "unavailable"].includes(
-            tabStorage.getStatus(getTabTreeKey(closedTab)).kind,
+            tabStorage.getStatus(getTabTreeKey(retiredTab)).kind,
           )
         ) {
           showTab(value);
           return;
         }
         // An origin-less analysis tree is the user's unsaved work (the modal's Save routes origin "none" to append-to-picked-file); play and puzzle trees mark themselves dirty on every move and keep closing directly.
-        if (asksBeforeDiscardingChanges(closedTab) && store.getState().dirty && !discard) {
-          setPendingClose({ tabId: value, store });
+        if (asksBeforeDiscardingChanges(retiredTab) && store.getState().dirty && !discard) {
+          setPendingClose({ tabId: value, store, intent });
           return;
         }
         jotaiStore.set(closingTabsAtom, (previous: Set<string>) => new Set(previous).add(value));
@@ -266,12 +308,15 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
               }
             },
           );
-          let closed = false;
+          let retired = false;
           startTransition(() => {
-            closed = closeWorkspaceTab(value);
-            if (closed) closeTreeStore(value);
+            retired =
+              intent === "newAnalysis"
+                ? replaceWithNewAnalysis(retiredTab)
+                : closeWorkspaceTab(value);
+            if (retired) closeTreeStore(value);
           });
-          if (!closed) {
+          if (!retired) {
             restoreReportOwner(value, reportInvalidation);
             return;
           }
@@ -288,8 +333,22 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [closeWorkspaceTab, showTab, t, tabs],
+    [closeWorkspaceTab, replaceWithNewAnalysis, showTab, t, tabs],
   );
+
+  const closeTab = useCallback(
+    (value: string | null, discard = false) => retireTab(value, discard, "close"),
+    [retireTab],
+  );
+
+  const newAnalysis = useCallback(() => {
+    const shown = tabs.find((tab) => tab.value === activeTab);
+    if (shown?.type === "analysis" && isBoardsPath(pathname)) {
+      void retireTab(shown.value, false, "newAnalysis");
+      return;
+    }
+    openFreshTab({ name: t("Home.Card.AnalysisBoard.Title"), type: "analysis" });
+  }, [activeTab, openFreshTab, pathname, retireTab, t, tabs]);
 
   const selectTab = useCallback(
     (tabId: string) => {
@@ -434,6 +493,11 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
     ...backgroundHotkeyOptions,
     enabled: !firedByNativeMenu("NEW_TAB"),
   });
+  useDocumentHotkeys(keyMap.NEW_ANALYSIS.keys, () => newAnalysis(), {
+    ...backgroundHotkeyOptions,
+    enabled: !firedByNativeMenu("NEW_ANALYSIS"),
+    preventDefault: true,
+  });
   useHotkeys(
     withKeyboardOwnership([
       [keyMap.CLOSE_TAB.keys, closeActiveOrPage],
@@ -467,6 +531,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       selectTab,
       showTab,
       closeTab,
+      newAnalysis,
       duplicateTab,
       renameTab,
       reorderTabs,
@@ -480,6 +545,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
       closePageTab,
       closeTab,
       duplicateTab,
+      newAnalysis,
       newTab,
       showPageTab,
       pageTabs,
@@ -522,14 +588,12 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
           setPendingClose(null);
         }}
         onDiscard={() => {
-          const tabId = pendingClose?.tabId;
           setPendingClose(null);
-          if (tabId) void closeTab(tabId, true);
+          if (pendingClose) void retireTab(pendingClose.tabId, true, pendingClose.intent);
         }}
         onSaved={() => {
-          const tabId = pendingClose?.tabId;
           setPendingClose(null);
-          if (tabId) void closeTab(tabId, true);
+          if (pendingClose) void retireTab(pendingClose.tabId, true, pendingClose.intent);
         }}
       />
     </TabCommandsContext.Provider>

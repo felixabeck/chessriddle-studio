@@ -22,6 +22,7 @@ export const KEYBIND_GROUPS = [
         emoji: emojiOf("tabsFiles"),
         actions: [
             "NEW_TAB",
+            "NEW_ANALYSIS",
             "CLOSE_TAB",
             "CYCLE_TABS",
             "REVERSE_CYCLE_TABS",

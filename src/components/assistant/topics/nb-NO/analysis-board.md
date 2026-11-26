@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, varianter, kommentarer og piler
 summary: Legg inn trekk, rediger stillinger, håndter varianter, skriv kommentarer, legg til annotasjoner og tegn piler på brettet.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Åpne et analysebrett fra [[page:new-tab]] ved å klikke {{label:Home.Card.AnalysisBoard.Title}}, eller ved å åpne et lagret parti eller repertoar fra [[page:library]].
@@ -13,7 +13,7 @@ Topplinjen over brettet gir tilgang til bretthandlinger:
 - {{label:Board.Action.PlayFromHere}}: start et parti fra den gjeldende stillingen.
 - Snu brettet (`F`): bytt mellom hvit og svart nederst på brettet.
 - Lagre: vises når et parti har ulagrede endringer og automatisk lagring er slått av, utilgjengelig (som et utkast) eller mislyktes.
-- {{label:Board.Action.More}}: åpner menyen for {{label:Board.Database.Save}} (lagre partiet i en biblioteksfil eller database), {{label:Board.Action.TakeSnapshot}} (lagre et bilde av det gjeldende brettet) og {{label:Board.Action.EditPosition}} (sett opp en egendefinert stilling ved å plassere brikker eller redigere FEN).
+- {{label:Board.Action.More}}: åpner menyen for {{label:Board.Action.NewAnalysis}} (erstatt brettet med et tomt i samme fane; har partiet ulagrede endringer, blir du spurt først), {{label:Board.Database.Save}} (lagre partiet i en biblioteksfil eller database), {{label:Board.Action.TakeSnapshot}} (lagre et bilde av det gjeldende brettet) og {{label:Board.Action.EditPosition}} (sett opp en egendefinert stilling ved å plassere brikker eller redigere FEN).
 - Angre, gjøre om og fjerning av tegnede piler eller feltmarkeringer (når [[setting:erase-drawables]] er av) bruker sine hurtigtaster i [[settings-category:keybinds]].
 
 Å spille et annet trekk fra en tidligere stilling oppretter en variant. Høyreklikk på et hvilket som helst trekk i notasjonen for å velge {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} eller {{label:Notation.MarkGameEndHere}}. Bruk øyeknappen i notasjonens overskrift for {{label:Notation.HideMoves}}, og menyen {{label:Notation.ViewOptions}} for å slå av/på {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} og {{label:Notation.ShowVariations}}.

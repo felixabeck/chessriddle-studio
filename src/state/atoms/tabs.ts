@@ -192,6 +192,30 @@ export const closeWorkspaceTabAtom = atom(null, (get, set, tabId: string) => {
     return true;
 });
 
+/**
+ * Puts `successor` in `tabId`'s place (same position, active if it was), then reclaims the
+ * replaced tab's local state as a close does. `onCommitted` runs after the commit and before that
+ * reclaim, while the replaced tab's runtime atoms still hold their values.
+ */
+export const replaceWorkspaceTabAtom = atom(
+    null,
+    (get, set, tabId: string, successor: Tab, onCommitted?: () => void) => {
+        const workspace = get(workspaceAtom);
+        const index = workspace.tabs.findIndex((tab) => tab.value === tabId);
+        if (index === -1) return false;
+        if (workspace.tabs.some((tab) => tab.value === successor.value)) return false;
+        const tabs = workspace.tabs.map((tab, position) => (position === index ? successor : tab));
+        const activeTab = workspace.activeTab === tabId ? successor.value : workspace.activeTab;
+        if (!set(commitWorkspaceAtom, { ...workspace, tabs, activeTab })) return false;
+        try {
+            onCommitted?.();
+        } finally {
+            reclaimTabLocalState(tabId, getTabTreeKey(workspace.tabs[index]));
+        }
+        return true;
+    },
+);
+
 export function updateTabById(
     setTabs: (
         update: Tab[] | ((tabs: Tab[]) => Tab[]),

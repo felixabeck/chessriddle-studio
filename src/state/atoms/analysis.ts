@@ -144,6 +144,17 @@ export const tabEngineSettingsFamily = tabEngineAtomFamily("engineId", ({ engine
     return effective;
 });
 
+/** Gives tab `to` the analysis settings tab `from` holds for every configured engine. */
+export const copyTabEngineSettingsAtom = atom(
+    null,
+    (get, set, { from, to }: { from: string; to: string }) => {
+        for (const engine of get(enginesAtom) ?? []) {
+            const source = tabEngineSettingsFamily({ tab: from, engineId: engine.id });
+            set(tabEngineSettingsFamily({ tab: to, engineId: engine.id }), get(source));
+        }
+    },
+);
+
 export const allEnabledFamily = tabAtomFamily((tab: string) =>
     atom((get) => {
         const engines = get(enginesAtom);

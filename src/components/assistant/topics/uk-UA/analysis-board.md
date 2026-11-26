@@ -2,7 +2,7 @@
 id: analysis-board
 title: Дошка аналізу, варіанти, коментарі та стрілки
 summary: Введення ходів, редагування позицій, керування варіантами, написання коментарів, додавання анотацій і малювання стрілок на дошці.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Відкрийте дошку аналізу зі сторінки [[page:new-tab]], натиснувши {{label:Home.Card.AnalysisBoard.Title}}, або відкривши збережену партію чи репертуар із [[page:library]].
@@ -13,7 +13,7 @@ source: 5901c9f30c3c3295
 - {{label:Board.Action.PlayFromHere}}: почати партію з поточної позиції.
 - Перевернути дошку (`F`): поміняти білих і чорних місцями внизу дошки.
 - Зберегти: з’являється, коли в партії є незбережені зміни й автозбереження вимкнено, недоступне (наприклад, для чернетки) або завершилося помилкою.
-- {{label:Board.Action.More}}: відкриває меню з пунктами {{label:Board.Database.Save}} (зберегти партію у файл бібліотеки або базу даних), {{label:Board.Action.TakeSnapshot}} (зберегти зображення поточної дошки) і {{label:Board.Action.EditPosition}} (налаштувати довільну позицію, розставивши фігури або відредагувавши FEN).
+- {{label:Board.Action.More}}: відкриває меню з пунктами {{label:Board.Action.NewAnalysis}} (замінити дошку порожньою в тій самій вкладці; якщо в партії є незбережені зміни, спершу з’явиться запитання), {{label:Board.Database.Save}} (зберегти партію у файл бібліотеки або базу даних), {{label:Board.Action.TakeSnapshot}} (зберегти зображення поточної дошки) і {{label:Board.Action.EditPosition}} (налаштувати довільну позицію, розставивши фігури або відредагувавши FEN).
 - Скасування, повтор та очищення намальованих стрілок і підсвічування клітинок (якщо вимкнено [[setting:erase-drawables]]) виконуються за допомогою сполучень клавіш у [[settings-category:keybinds]].
 
 Якщо зробити інший хід із попередньої позиції, створюється варіант. Клацніть правою кнопкою миші по будь-якому ходу в нотації, щоб вибрати {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Використовуйте кнопку-око в заголовку нотації для {{label:Notation.HideMoves}}, а меню {{label:Notation.ViewOptions}} — для перемикання {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} і {{label:Notation.ShowVariations}}.

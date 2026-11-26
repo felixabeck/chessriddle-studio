@@ -2,7 +2,7 @@
 id: analysis-board
 title: Доска анализа, варианты, комментарии и стрелки
 summary: Ввод ходов, редактирование позиций, работа с вариантами, написание комментариев, добавление аннотаций и рисование стрелок на доске.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Откройте доску анализа со страницы [[page:new-tab]], нажав {{label:Home.Card.AnalysisBoard.Title}}, или открыв сохранённую партию либо репертуар из [[page:library]].
@@ -13,7 +13,7 @@ source: 5901c9f30c3c3295
 - {{label:Board.Action.PlayFromHere}}: начать партию с текущей позиции.
 - Перевернуть доску (`F`): поменять белых и чёрных местами в нижней части доски.
 - Сохранить: появляется, когда в партии есть несохранённые изменения и автосохранение выключено, недоступно (например, для черновика) или завершилось ошибкой.
-- {{label:Board.Action.More}}: открывает меню с пунктами {{label:Board.Database.Save}} (сохранить партию в файл библиотеки или в базу данных), {{label:Board.Action.TakeSnapshot}} (сохранить изображение текущей доски) и {{label:Board.Action.EditPosition}} (задать произвольную позицию, расставив фигуры или отредактировав FEN).
+- {{label:Board.Action.More}}: открывает меню с пунктами {{label:Board.Action.NewAnalysis}} (заменить доску пустой в той же вкладке; если в партии есть несохранённые изменения, сначала появится вопрос), {{label:Board.Database.Save}} (сохранить партию в файл библиотеки или в базу данных), {{label:Board.Action.TakeSnapshot}} (сохранить изображение текущей доски) и {{label:Board.Action.EditPosition}} (задать произвольную позицию, расставив фигуры или отредактировав FEN).
 - Отмена, повтор и очистка нарисованных стрелок и выделения полей (если выключен параметр [[setting:erase-drawables]]) работают через сочетания клавиш в [[settings-category:keybinds]].
 
 Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Используйте кнопку-глаз в заголовке нотации для {{label:Notation.HideMoves}}, а меню {{label:Notation.ViewOptions}} — для переключения {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} и {{label:Notation.ShowVariations}}.

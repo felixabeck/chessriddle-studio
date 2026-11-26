@@ -121,6 +121,8 @@ vi.mock("@/state/atoms", async () => {
       fixtures.closeWorkspaceTab(tabId);
       return true;
     }),
+    replaceWorkspaceTabAtom: atom(null, () => false),
+    copyTabEngineSettingsAtom: atom(null, () => undefined),
     closingTabsAtom: atom<Set<string>>(new Set<string>()),
     gameIdFamily: atomFamily(() => atom<string | null>(null)),
     gameSessionFamily: atomFamily(() => atom<bigint | null>(null)),
@@ -135,6 +137,7 @@ vi.mock("@/state/keybinds", async () => {
     firedByNativeMenu: () => false,
     keyMapAtom: atom({
       NEW_TAB: { keys: "mod+t" },
+      NEW_ANALYSIS: { keys: "mod+n" },
       CLOSE_TAB: { keys: "mod+w" },
       CYCLE_TABS: { keys: "mod+tab" },
       REVERSE_CYCLE_TABS: { keys: "mod+shift+tab" },

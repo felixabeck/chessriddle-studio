@@ -1,6 +1,7 @@
 import { act } from "react";
 import { useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Provider, createStore, useAtomValue } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { activeTabAtom, currentTabAtom, tabsAtom } from "@/state/atoms";
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   lexPgn: vi.fn(),
   navigate: vi.fn(),
   modalProps: null as Record<string, unknown> | null,
+  modalPropsLog: [] as any[],
 }));
 
 vi.mock("@/platform/tauri", async (importOriginal) => {
@@ -66,6 +68,7 @@ vi.mock("../common/AppModal", () => ({
   default: (props: any) => {
     const { opened, children, pending, onClose } = props;
     mocks.modalProps = props;
+    mocks.modalPropsLog.push(props);
     return opened ? (
       <div role="dialog">
         <button
@@ -122,6 +125,7 @@ let treeStore: TreeStore;
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  mocks.modalPropsLog.length = 0;
   mocks.lexPgn.mockReset().mockResolvedValue([{ type: "Outcome", value: "*" }]);
   host = document.createElement("div");
   document.body.append(host);
@@ -250,6 +254,104 @@ test("the dialog shows a close button and its title, and closing it cancels the 
   expect(onCancel).toHaveBeenCalledOnce();
   expect(onDiscard).not.toHaveBeenCalled();
   expect(onSaved).not.toHaveBeenCalled();
+});
+
+test.each([
+  [undefined, "Tab.UnsavedChangesConfirm", "Tab.CloseWithoutSaving", "Tab.SaveAndClose"],
+  ["close", "Tab.UnsavedChangesConfirm", "Tab.CloseWithoutSaving", "Tab.SaveAndClose"],
+  [
+    "newAnalysis",
+    "Tab.UnsavedChangesConfirmNewAnalysis",
+    "Tab.StartNewWithoutSaving",
+    "Tab.SaveAndStartNew",
+  ],
+] as const)(
+  "a pending %s speaks of what follows the choice",
+  async (intent, question, discardLabel, saveLabel) => {
+    const onDiscard = vi.fn();
+    await act(async () =>
+      root.render(
+        <Owner>
+          <ConfirmChangesModal
+            pendingClose={{ tabId: backgroundTab.value, store: treeStore, intent }}
+            tab={backgroundTab}
+            onCancel={vi.fn()}
+            onDiscard={onDiscard}
+            onSaved={vi.fn()}
+          />
+        </Owner>,
+      ),
+    );
+
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain(question);
+    const buttons = [...dialog.querySelectorAll("button")].map((button) => button.textContent);
+    expect(buttons).toEqual(expect.arrayContaining([discardLabel, saveLabel]));
+    await act(async () =>
+      [...dialog.querySelectorAll("button")]
+        .find((button) => button.textContent === discardLabel)!
+        .click(),
+    );
+    expect(onDiscard).toHaveBeenCalledOnce();
+  },
+);
+
+test("a cleared newAnalysis request keeps its wording while the dialog fades out", async () => {
+  const render = (pendingClose: React.ComponentProps<typeof ConfirmChangesModal>["pendingClose"]) =>
+    act(async () =>
+      root.render(
+        <Owner>
+          <ConfirmChangesModal
+            pendingClose={pendingClose}
+            tab={backgroundTab}
+            onCancel={vi.fn()}
+            onDiscard={vi.fn()}
+            onSaved={vi.fn()}
+          />
+        </Owner>,
+      ),
+    );
+  await render({ tabId: backgroundTab.value, store: treeStore, intent: "newAnalysis" });
+  mocks.modalPropsLog.length = 0;
+  await render(null);
+
+  // The provider's own (never opened) confirmation modal renders too and always shows the close
+  // wording, so only this modal can contribute the newAnalysis wording.
+  const closing = mocks.modalPropsLog
+    .filter((props) => props.opened === false && props.title === "Tab.UnsavedChanges")
+    .map((props) => renderToStaticMarkup(<>{props.children}</>));
+  expect(closing).toContainEqual(expect.stringContaining("Tab.UnsavedChangesConfirmNewAnalysis"));
+  expect(closing).toContainEqual(expect.stringContaining("Tab.StartNewWithoutSaving"));
+});
+
+test("a close request after a newAnalysis one switches the same dialog back to the close wording", async () => {
+  const render = (intent: "close" | "newAnalysis" | null) =>
+    act(async () =>
+      root.render(
+        <Owner>
+          <ConfirmChangesModal
+            pendingClose={intent ? { tabId: backgroundTab.value, store: treeStore, intent } : null}
+            tab={backgroundTab}
+            onCancel={vi.fn()}
+            onDiscard={vi.fn()}
+            onSaved={vi.fn()}
+          />
+        </Owner>,
+      ),
+    );
+  await render("newAnalysis");
+  await render(null);
+  await render("close");
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Tab.CloseWithoutSaving");
+  expect(dialog.textContent).not.toContain("Tab.StartNewWithoutSaving");
+
+  mocks.modalPropsLog.length = 0;
+  await render(null);
+  const closing = mocks.modalPropsLog
+    .filter((props) => props.opened === false && props.title === "Tab.UnsavedChanges")
+    .map((props) => renderToStaticMarkup(<>{props.children}</>));
+  expect(closing.some((markup) => markup.includes("Tab.StartNewWithoutSaving"))).toBe(false);
 });
 
 test("first-save pending close retains a no-throw subscriber edit and saves it later with game CAS", async () => {

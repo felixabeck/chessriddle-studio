@@ -17,7 +17,7 @@ import { getFileFreshness, saveFileConflictVersion, useFileFreshness } from "@/s
 import { TreeStateContext } from "../common/TreeStateContext";
 import AppModal from "../common/AppModal";
 import { GameNameFields } from "../boards/GameNameModal";
-import { useTabCommands } from "./TabCommands";
+import { useTabCommands, type RetireIntent } from "./TabCommands";
 import {
   applyGameNames,
   initialGameNames,
@@ -37,7 +37,8 @@ function ConfirmChangesModal({
   closeTab,
   preserveChanges = false,
 }: {
-  pendingClose?: { tabId: string; store: TreeStore } | null;
+  /** `intent` "newAnalysis": the tab is replaced by an empty analysis board instead of closing. */
+  pendingClose?: { tabId: string; store: TreeStore; intent?: RetireIntent } | null;
   tab?: Tab;
   updateTab?: UpdateTab;
   onCancel?: () => void;
@@ -61,6 +62,10 @@ function ConfirmChangesModal({
   const targetTab = tab ?? currentTab;
   const targetStore = pendingClose?.store ?? contextStore;
   const modalOpen = pendingClose !== undefined ? pendingClose !== null : (opened ?? false);
+  // The dialog keeps its wording while it fades out after pendingClose has been cleared.
+  const [shownIntent, setShownIntent] = useState<RetireIntent | undefined>(undefined);
+  if (pendingClose && pendingClose.intent !== shownIntent) setShownIntent(pendingClose.intent);
+  const startsNewAnalysis = (pendingClose ? pendingClose.intent : shownIntent) === "newAnalysis";
   const freshness = useFileFreshness(targetTab?.value ?? "");
   // A new game is named before its first save here too, with the fields of the Save dialog.
   const naming = !!targetTab && isDraftGameOrigin(targetTab.gameOrigin) && !!targetStore;
@@ -186,7 +191,11 @@ function ConfirmChangesModal({
     >
       <Stack>
         <div>
-          <Text>{t("Tab.UnsavedChangesConfirm")}</Text>
+          <Text>
+            {startsNewAnalysis
+              ? t("Tab.UnsavedChangesConfirmNewAnalysis")
+              : t("Tab.UnsavedChangesConfirm")}
+          </Text>
           {saveMessage && <Text c="danger">{saveMessage}</Text>}
         </div>
         {naming && names && (
@@ -199,10 +208,18 @@ function ConfirmChangesModal({
 
         <Group justify="right">
           <Button variant="default" onClick={discard} disabled={savePending}>
-            {preserveChanges ? t("Common.Cancel") : t("Tab.CloseWithoutSaving")}
+            {preserveChanges
+              ? t("Common.Cancel")
+              : startsNewAnalysis
+                ? t("Tab.StartNewWithoutSaving")
+                : t("Tab.CloseWithoutSaving")}
           </Button>
           <Button onClick={() => void save()} disabled={savePending}>
-            {preserveChanges ? t("Tab.SaveAndAddGame") : t("Tab.SaveAndClose")}
+            {preserveChanges
+              ? t("Tab.SaveAndAddGame")
+              : startsNewAnalysis
+                ? t("Tab.SaveAndStartNew")
+                : t("Tab.SaveAndClose")}
           </Button>
         </Group>
       </Stack>

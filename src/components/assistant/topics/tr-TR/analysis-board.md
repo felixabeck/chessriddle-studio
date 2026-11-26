@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analiz tahtası, varyasyonlar, yorumlar ve oklar
 summary: Hamle girme, konum düzenleme, varyasyonları yönetme, yorum yazma, açıklama ekleme ve tahta üzerinde oklar çizme.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 [[page:new-tab]] üzerinden {{label:Home.Card.AnalysisBoard.Title}} öğesine tıklayarak veya [[page:library]] sayfasından kayıtlı bir oyun ya da repertuvar açarak bir analiz tahtası açın.
@@ -13,7 +13,7 @@ Tahtanın üzerindeki üst çubuk tahta eylemlerini sunar:
 - {{label:Board.Action.PlayFromHere}}: geçerli konumdan bir oyun başlatın.
 - Tahtayı çevir (`F`): tahtanın altındaki Beyaz ve Siyah yönünü değiştirin.
 - Kaydet: oyunda kaydedilmemiş değişiklikler varsa ve otomatik kaydetme kapalıysa, kullanılamıyorsa (ör. taslak) veya başarısız olduysa görünür.
-- {{label:Board.Action.More}}: {{label:Board.Database.Save}} (oyunu bir kütüphane dosyasına veya veritabanına kaydedin), {{label:Board.Action.TakeSnapshot}} (geçerli tahtanın görüntüsünü kaydedin) ve {{label:Board.Action.EditPosition}} (taşları yerleştirerek veya FEN’i düzenleyerek özel bir konum kurun) menüsünü açar.
+- {{label:Board.Action.More}}: {{label:Board.Action.NewAnalysis}} (tahtayı aynı sekmede boş bir tahtayla değiştirin; oyunda kaydedilmemiş değişiklikler varsa önce sorulur), {{label:Board.Database.Save}} (oyunu bir kütüphane dosyasına veya veritabanına kaydedin), {{label:Board.Action.TakeSnapshot}} (geçerli tahtanın görüntüsünü kaydedin) ve {{label:Board.Action.EditPosition}} (taşları yerleştirerek veya FEN’i düzenleyerek özel bir konum kurun) menüsünü açar.
 - Geri alma, yineleme ve çizilen okları ya da kare vurgularını temizleme ([[setting:erase-drawables]] kapalıyken) [[settings-category:keybinds]] içindeki klavye kısayollarını kullanır.
 
 Önceki bir konumdan farklı bir hamle oynamak yeni bir varyasyon oluşturur. Notasyondaki herhangi bir hamleye sağ tıklayarak {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} veya {{label:Notation.MarkGameEndHere}} seçeneklerini kullanın. {{label:Notation.HideMoves}} için notasyon başlığındaki göz düğmesini; {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} ve {{label:Notation.ShowVariations}} görünümlerini açıp kapatmak için {{label:Notation.ViewOptions}} menüsünü kullanın.

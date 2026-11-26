@@ -1961,3 +1961,105 @@ test("a fresh tab's practice stats start from the same value a reset publishes",
     practiceSessionStatsFamily.remove("fresh-practice-tab");
     practiceSessionStatsFamily.remove("other-practice-tab");
 });
+
+test("replacing a tab keeps its place and focus and reclaims the old tab only after onCommitted", () => {
+    sessionStorage.clear();
+    const store = createStore();
+    const replaced: Tab = {
+        name: "Old analysis",
+        value: crypto.randomUUID(),
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+    };
+    const other: Tab = { ...replaced, name: "Other", value: crypto.randomUUID() };
+    tabStorage.seed(replaced.value, defaultTree());
+    expect(store.set(tabsAtom, [replaced, other], replaced.value)).toBe(true);
+    const settings = tabEngineSettingsFamily({ tab: replaced.value, engineId: "replace-engine" });
+    store.set(settings, (current) => ({ ...current, enabled: true }));
+    const successor: Tab = {
+        name: "Analysis Board",
+        value: crypto.randomUUID(),
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+    };
+    let enabledDuringCommit: boolean | undefined;
+
+    expect(
+        store.set(atoms.replaceWorkspaceTabAtom, replaced.value, successor, () => {
+            enabledDuringCommit = store.get(settings).enabled;
+        }),
+    ).toBe(true);
+
+    expect(enabledDuringCommit).toBe(true);
+    expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual([successor.value, other.value]);
+    expect(store.get(activeTabAtom)).toBe(successor.value);
+    expect(sessionStorage.getItem(replaced.value)).toBeNull();
+    expect(tabEngineSettingsFamily({ tab: replaced.value, engineId: "replace-engine" })).not.toBe(
+        settings,
+    );
+    disposeTabAtoms(replaced.value);
+});
+
+test("replacing a tab refuses a missing owner and a successor id already in the workspace", () => {
+    sessionStorage.clear();
+    const store = createStore();
+    const first: Tab = {
+        name: "First",
+        value: crypto.randomUUID(),
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+    };
+    const second: Tab = { ...first, name: "Second", value: crypto.randomUUID() };
+    expect(store.set(tabsAtom, [first, second], second.value)).toBe(true);
+    const onCommitted = vi.fn();
+
+    expect(
+        store.set(
+            atoms.replaceWorkspaceTabAtom,
+            crypto.randomUUID(),
+            { ...first, value: crypto.randomUUID() },
+            onCommitted,
+        ),
+    ).toBe(false);
+    expect(store.set(atoms.replaceWorkspaceTabAtom, first.value, second, onCommitted)).toBe(false);
+
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(store.get(tabsAtom)).toEqual([first, second]);
+    expect(store.get(activeTabAtom)).toBe(second.value);
+});
+
+test("a refused workspace write keeps the replaced tab, skips onCommitted and reclaims nothing", () => {
+    sessionStorage.clear();
+    const store = createStore();
+    const replaced: Tab = {
+        name: "Old analysis",
+        value: crypto.randomUUID(),
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+    };
+    tabStorage.seed(replaced.value, defaultTree());
+    expect(store.set(tabsAtom, [replaced], replaced.value)).toBe(true);
+    const settings = tabEngineSettingsFamily({ tab: replaced.value, engineId: "refused-engine" });
+    const treeBytes = sessionStorage.getItem(replaced.value);
+    expect(treeBytes).not.toBeNull();
+    const onCommitted = vi.fn();
+    refuseWorkspaceWrites();
+
+    expect(
+        store.set(
+            atoms.replaceWorkspaceTabAtom,
+            replaced.value,
+            { ...replaced, name: "Analysis Board", value: crypto.randomUUID() },
+            onCommitted,
+        ),
+    ).toBe(false);
+
+    expect(onCommitted).not.toHaveBeenCalled();
+    expect(store.get(tabsAtom)).toEqual([replaced]);
+    expect(sessionStorage.getItem(replaced.value)).toBe(treeBytes);
+    expect(tabEngineSettingsFamily({ tab: replaced.value, engineId: "refused-engine" })).toBe(
+        settings,
+    );
+    vi.restoreAllMocks();
+    disposeTabAtoms(replaced.value);
+});

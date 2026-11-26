@@ -356,6 +356,11 @@ export default defineConfig({
             testMatch: /repertoire-pgn-import\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
+        {
+            name: "new-analysis",
+            testMatch: /new-analysis\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

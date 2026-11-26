@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, Varianten, Kommentare und Pfeile
 summary: Züge eingeben, Stellungen bearbeiten, Varianten verwalten, Kommentare schreiben, Annotationen setzen und Pfeile auf dem Brett zeichnen.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Öffne ein Analysebrett über [[page:new-tab]] mit einem Klick auf {{label:Home.Card.AnalysisBoard.Title}} oder indem du eine gespeicherte Partie oder ein Repertoire aus [[page:library]] öffnest.
@@ -13,7 +13,7 @@ Die obere Leiste über dem Brett bietet folgende Brett-Aktionen:
 - {{label:Board.Action.PlayFromHere}}: Eine Partie ab der aktuellen Stellung starten.
 - Brett drehen (`F`): Weiß und Schwarz am unteren Brettrand tauschen.
 - Speichern: Erscheint, wenn eine Partie ungespeicherte Änderungen hat und automatisches Speichern ausgeschaltet, nicht verfügbar (etwa bei einem Entwurf) oder fehlgeschlagen ist.
-- {{label:Board.Action.More}}: Öffnet das Menü für {{label:Board.Database.Save}} (die Partie in einer Bibliotheksdatei oder Datenbank speichern), {{label:Board.Action.TakeSnapshot}} (ein Bild der aktuellen Stellung sichern) und {{label:Board.Action.EditPosition}} (eine eigene Stellung durch Setzen von Figuren oder Bearbeiten der FEN aufbauen).
+- {{label:Board.Action.More}}: Öffnet das Menü für {{label:Board.Action.NewAnalysis}} (das Brett im selben Tab durch ein leeres ersetzen; bei ungespeicherten Änderungen fragt Studio vorher nach), {{label:Board.Database.Save}} (die Partie in einer Bibliotheksdatei oder Datenbank speichern), {{label:Board.Action.TakeSnapshot}} (ein Bild der aktuellen Stellung sichern) und {{label:Board.Action.EditPosition}} (eine eigene Stellung durch Setzen von Figuren oder Bearbeiten der FEN aufbauen).
 - Rückgängig, Wiederholen sowie das Entfernen gezeichneter Pfeile oder Feldmarkierungen (wenn [[setting:erase-drawables]] deaktiviert ist) nutzen ihre Tastenkürzel unter [[settings-category:keybinds]].
 
 Wenn du in einer früheren Stellung einen anderen Zug spielst, entsteht eine Variante. Klicke mit der rechten Maustaste auf einen Zug in der Notation für {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} oder {{label:Notation.MarkGameEndHere}}. Nutze das Augensymbol in der Notationskopfzeile für {{label:Notation.HideMoves}} und das Menü {{label:Notation.ViewOptions}}, um {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} und {{label:Notation.ShowVariations}} umzuschalten.

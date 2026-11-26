@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盤、變例、註解與箭頭
 summary: 輸入著法、編輯局面、管理變例、撰寫註解、新增評註符號，以及在棋盤上繪製箭頭。
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 從 [[page:new-tab]] 點擊 {{label:Home.Card.AnalysisBoard.Title}}，或從 [[page:library]] 開啟已儲存的對局或開局庫，即可開啟分析棋盤。
@@ -13,7 +13,7 @@ source: 5901c9f30c3c3295
 - {{label:Board.Action.PlayFromHere}}：從目前局面開始對弈。
 - 翻轉棋盤（`F`）：互換棋盤下方的白方與黑方。
 - 儲存：當對局有未儲存的變更，且自動儲存已關閉、無法使用（例如草稿）或上次寫入失敗時顯示。
-- {{label:Board.Action.More}}：開啟選單以執行 {{label:Board.Database.Save}}（將對局儲存至資料庫檔案或資料庫中）、{{label:Board.Action.TakeSnapshot}}（儲存目前棋盤的圖片）以及 {{label:Board.Action.EditPosition}}（透過擺放棋子或編輯 FEN 設定自訂局面）。
+- {{label:Board.Action.More}}：開啟選單以執行 {{label:Board.Action.NewAnalysis}}（在同一分頁中將棋盤替換為空棋盤；如有未儲存的變更，會先詢問你）、{{label:Board.Database.Save}}（將對局儲存至資料庫檔案或資料庫中）、{{label:Board.Action.TakeSnapshot}}（儲存目前棋盤的圖片）以及 {{label:Board.Action.EditPosition}}（透過擺放棋子或編輯 FEN 設定自訂局面）。
 - 復原、重做以及清除繪製的箭頭或高亮（當 [[setting:erase-drawables]] 關閉時）使用 [[settings-category:keybinds]] 中的鍵盤快捷鍵。
 
 在較早的局面走出不同的著法會建立變例。在記譜中的任何著法上按右鍵，即可選取 {{label:Menu.PromoteVariation}}、{{label:Menu.PromoteToMainLine}}、{{label:Menu.CopyVariationPGN}}、{{label:Menu.DeleteMove}}、{{label:Menu.DeleteVariation}}、{{label:Menu.DeleteMovesAfter}}、{{label:Board.Action.PlayFromHere}}、{{label:Notation.AddDiagram}} 或 {{label:Notation.MarkGameEndHere}}。使用記譜標題列中的眼睛按鈕可切換 {{label:Notation.HideMoves}}，使用 {{label:Notation.ViewOptions}} 選單可切換 {{label:Notation.TableView}}、{{label:Notation.ShowComments}}、{{label:Notation.ShowDiagrams}} 與 {{label:Notation.ShowVariations}}。

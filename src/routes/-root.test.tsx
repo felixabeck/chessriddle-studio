@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   lastCallbacks: null as AppMenuCallbacks | null,
   lastInAppMenuItems: null as MenuAction[] | null,
   pathname: "/",
+  lastNewAnalysisShortcut: null as string | null,
   lastFeedbackProps: null as {
     opened: boolean;
     initialType?: FeedbackType;
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   outlet: (() => null) as () => ReactNode,
   createTab: vi.fn(),
+  newAnalysis: vi.fn(),
   pickPgnFile: vi.fn(),
   requestBoardCommand: vi.fn(),
   showCurrentBoardTabs: vi.fn(),
@@ -59,6 +61,7 @@ vi.mock("@/state/keybinds", async (importOriginal) => {
     nativeMenuAccelerator: (keys: string) => keys,
     keyMapAtom: atom({
       NEW_TAB: { keys: "Ctrl+T" },
+      NEW_ANALYSIS: { keys: "Ctrl+N" },
       OPEN_FILE: { keys: "Ctrl+O" },
       SAVE_FILE: { keys: "Ctrl+S" },
       TOGGLE_FOCUS_MODE: { keys: "ctrl+shift+f" },
@@ -131,6 +134,7 @@ vi.mock("@/components/tabs/TabCommands", () => ({
   ),
   useTabCommands: () => ({
     newTab: mocks.createTab,
+    newAnalysis: mocks.newAnalysis,
     tabs: [],
     activeTab: null,
     selectTab: () => undefined,
@@ -193,6 +197,7 @@ vi.mock("./-appMenu", async (importOriginal) => {
     ...actual,
     buildInAppMenuItems: (args: Parameters<typeof actual.buildInAppMenuItems>[0]) => {
       mocks.lastCallbacks = args.callbacks;
+      mocks.lastNewAnalysisShortcut = args.newAnalysisShortcut;
       const items = actual.buildInAppMenuItems(args);
       mocks.lastInAppMenuItems = items;
       return items;
@@ -661,6 +666,24 @@ test("the root asks for a native menu only on macOS", async () => {
     await act(async () => root.unmount());
     host.remove();
   }
+});
+
+test("the File-menu New Analysis Board entry runs the tab command with the configured shortcut", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root: Root = createRoot(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  mocks.newAnalysis.mockClear();
+  await act(async () => {
+    root.render(<RootLayout />);
+  });
+  expect(mocks.lastNewAnalysisShortcut).toBe("Ctrl+N");
+  await act(async () => {
+    mocks.lastCallbacks?.newAnalysis();
+  });
+  expect(mocks.newAnalysis).toHaveBeenCalledOnce();
+  await act(async () => root.unmount());
+  host.remove();
 });
 
 test("RootShell menu openers route Settings, Accounts, Engines, and Guide through showPageTab", async () => {

@@ -69,7 +69,7 @@ test("native menu accelerators name the Command key cmd", () => {
 
 test("only the shortcuts the native macOS menu carries are left to it", () => {
   expect(
-    ["NEW_TAB", "OPEN_FILE", "SAVE_FILE", "TOGGLE_FOCUS_MODE"].every((id) =>
+    ["NEW_TAB", "NEW_ANALYSIS", "OPEN_FILE", "SAVE_FILE", "TOGGLE_FOCUS_MODE"].every((id) =>
       firedByNativeMenu(id as never),
     ),
   ).toBe(true);

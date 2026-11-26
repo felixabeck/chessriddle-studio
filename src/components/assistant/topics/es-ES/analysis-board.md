@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablero de análisis, variantes, comentarios y flechas
 summary: Introduce jugadas, edita posiciones, gestiona variantes, escribe comentarios, añade anotaciones y dibuja flechas en el tablero.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Abre un tablero de análisis desde [[page:new-tab]] haciendo clic en {{label:Home.Card.AnalysisBoard.Title}} o abriendo una partida o repertorio guardado desde [[page:library]].
@@ -13,7 +13,7 @@ La barra superior sobre el tablero ofrece acciones de tablero:
 - {{label:Board.Action.PlayFromHere}}: inicia una partida desde la posición actual.
 - Girar tablero (`F`): intercambia Blancas y Negras en la parte inferior del tablero.
 - Guardar: aparece cuando la partida tiene cambios sin guardar y el guardado automático está desactivado, no disponible (como en un borrador) o falló.
-- {{label:Board.Action.More}}: abre el menú con {{label:Board.Database.Save}} (guarda la partida en un archivo de la biblioteca o en una base de datos), {{label:Board.Action.TakeSnapshot}} (guarda una imagen del tablero actual) y {{label:Board.Action.EditPosition}} (configura una posición personalizada colocando piezas o editando el FEN).
+- {{label:Board.Action.More}}: abre el menú con {{label:Board.Action.NewAnalysis}} (sustituye el tablero por uno vacío en la misma pestaña; si la partida tiene cambios sin guardar, se te pregunta antes), {{label:Board.Database.Save}} (guarda la partida en un archivo de la biblioteca o en una base de datos), {{label:Board.Action.TakeSnapshot}} (guarda una imagen del tablero actual) y {{label:Board.Action.EditPosition}} (configura una posición personalizada colocando piezas o editando el FEN).
 - Deshacer, rehacer y borrar flechas o casillas resaltadas (cuando [[setting:erase-drawables]] está desactivado) usan sus atajos de teclado en [[settings-category:keybinds]].
 
 Jugar una jugada distinta desde una posición anterior crea una variante. Haz clic derecho sobre cualquier jugada en la notación para usar {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa el botón del ojo en el encabezado de la notación para {{label:Notation.HideMoves}}, y el menú {{label:Notation.ViewOptions}} para alternar {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} y {{label:Notation.ShowVariations}}.

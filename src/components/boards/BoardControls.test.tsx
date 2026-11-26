@@ -35,6 +35,11 @@ const mocks = vi.hoisted(() => ({
   persistError: vi.fn(),
   saveBoardSnapshot: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
+  newAnalysis: vi.fn(),
+}));
+
+vi.mock("@/components/tabs/TabCommands", () => ({
+  useTabCommands: () => ({ newAnalysis: mocks.newAnalysis }),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -56,6 +61,7 @@ vi.mock("lucide-react", async (importOriginal) => ({
   ArrowUpDown: () => null,
   Target: () => null,
   ScanSearch: () => null,
+  SquarePlus: () => null,
 }));
 
 vi.mock("@/components/common/IconAction", () => ({
@@ -136,6 +142,7 @@ describe("BoardControls", () => {
     mocks.persistError.mockReset();
     mocks.saveBoardSnapshot.mockReset();
     mocks.notifyUnlessCancelled.mockReset();
+    mocks.newAnalysis.mockReset();
     vi.mocked(domtoimage.toBlob).mockReset();
 
     jotaiStore = createJotaiStore();
@@ -226,10 +233,21 @@ describe("BoardControls", () => {
 
     await openMoreMenu();
     expect(menuItems().map((el) => el.textContent)).toEqual([
+      expect.stringContaining("Board.Action.NewAnalysis"),
       expect.stringContaining("Board.Database.Save"),
       expect.stringContaining("Board.Action.TakeSnapshot"),
       expect.stringContaining("Board.Action.EditPosition"),
     ]);
+  });
+
+  test("New analysis in the More menu shows its shortcut and starts a new analysis", async () => {
+    await openMoreMenu();
+    const item = menuItem("Board.Action.NewAnalysis")!;
+    expect(item.textContent?.toLowerCase()).toContain("ctrl+n");
+
+    await act(async () => item.click());
+
+    expect(mocks.newAnalysis).toHaveBeenCalledOnce();
   });
 
   test("game screen shows Take back (when allowed), Analyze game, Flip board, and More menu", async () => {
@@ -250,6 +268,7 @@ describe("BoardControls", () => {
     expect(moreButton()).not.toBeNull();
 
     await openMoreMenu();
+    expect(menuItem("Board.Action.NewAnalysis")).toBeNull();
     expect(menuItem("Board.Database.Save")).toBeNull();
     expect(menuItem("Board.Action.TakeSnapshot")).not.toBeNull();
     expect(menuItem("Board.Action.EditPosition")).toBeNull();

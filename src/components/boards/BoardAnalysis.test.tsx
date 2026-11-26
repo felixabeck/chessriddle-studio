@@ -469,6 +469,10 @@ vi.mock("./GameNameModal", () => ({
   },
 }));
 vi.mock("./EditingCard", () => ({ default: () => null }));
+vi.mock("@/components/tabs/TabCommands", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/tabs/TabCommands")>()),
+  useTabCommands: () => ({ newAnalysis: () => undefined }),
+}));
 vi.mock("@/state/filePositionIndex", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/filePositionIndex")>()),
   requestFilePositionIndex: (...args: unknown[]) => mocks.requestFilePositionIndex(...args),

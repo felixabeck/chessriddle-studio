@@ -2,7 +2,7 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
@@ -13,7 +13,7 @@ La barre supérieure au-dessus de l’échiquier propose les actions sur l’éc
 - {{label:Board.Action.PlayFromHere}} : démarrer une partie à partir de la position actuelle.
 - Retourner l’échiquier (`F`) : inverser les Blancs et les Noirs en bas de l’échiquier.
 - Enregistrer : s’affiche lorsque la partie comporte des modifications non enregistrées et que l’enregistrement automatique est désactivé, indisponible (comme pour un brouillon) ou a échoué.
-- {{label:Board.Action.More}} : ouvre le menu pour {{label:Board.Database.Save}} (enregistrer la partie dans un fichier de la bibliothèque ou une base de données), {{label:Board.Action.TakeSnapshot}} (enregistrer une image de l’échiquier actuel) et {{label:Board.Action.EditPosition}} (configurer une position personnalisée en plaçant des pièces ou en modifiant le FEN).
+- {{label:Board.Action.More}} : ouvre le menu pour {{label:Board.Action.NewAnalysis}} (remplacer l’échiquier par un échiquier vide dans le même onglet ; si la partie contient des modifications non enregistrées, une confirmation vous est demandée), {{label:Board.Database.Save}} (enregistrer la partie dans un fichier de la bibliothèque ou une base de données), {{label:Board.Action.TakeSnapshot}} (enregistrer une image de l’échiquier actuel) et {{label:Board.Action.EditPosition}} (configurer une position personnalisée en plaçant des pièces ou en modifiant le FEN).
 - Annuler, rétablir et effacer les flèches ou les cases mises en surbrillance (lorsque [[setting:erase-drawables]] est désactivé) utilisent leurs raccourcis clavier dans [[settings-category:keybinds]].
 
 Jouer un autre coup à partir d’une position précédente crée une variante. Faites un clic droit sur n’importe quel coup dans la notation pour accéder à {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilisez le bouton œil dans l’en-tête de la notation pour {{label:Notation.HideMoves}}, et le menu {{label:Notation.ViewOptions}} pour activer ou désactiver {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} et {{label:Notation.ShowVariations}}.

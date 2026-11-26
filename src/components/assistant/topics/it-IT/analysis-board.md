@@ -2,7 +2,7 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
@@ -13,7 +13,7 @@ La barra superiore sopra la scacchiera offre le azioni sulla scacchiera:
 - {{label:Board.Action.PlayFromHere}}: inizia una partita dalla posizione corrente.
 - Ruota scacchiera (`F`): scambia Bianco e Nero nella parte inferiore della scacchiera.
 - Salva: appare quando la partita ha modifiche non salvate e il salvataggio automatico è disattivato, non disponibile (come in una bozza) o non è riuscito.
-- {{label:Board.Action.More}}: apre il menu per {{label:Board.Database.Save}} (salva la partita in un file della libreria o in un database), {{label:Board.Action.TakeSnapshot}} (salva un’immagine della scacchiera corrente) e {{label:Board.Action.EditPosition}} (imposta una posizione personalizzata posizionando i pezzi o modificando la FEN).
+- {{label:Board.Action.More}}: apre il menu per {{label:Board.Action.NewAnalysis}} (sostituisce la scacchiera con una vuota nella stessa scheda; se la partita ha modifiche non salvate, ti viene chiesto prima), {{label:Board.Database.Save}} (salva la partita in un file della libreria o in un database), {{label:Board.Action.TakeSnapshot}} (salva un’immagine della scacchiera corrente) e {{label:Board.Action.EditPosition}} (imposta una posizione personalizzata posizionando i pezzi o modificando la FEN).
 - Annullare, ripetere e cancellare frecce o caselle evidenziate (quando [[setting:erase-drawables]] è disattivato) usano le rispettive scorciatoie da tastiera in [[settings-category:keybinds]].
 
 Giocare una mossa diversa da una posizione precedente crea una variante. Fai clic con il tasto destro su qualsiasi mossa nella notazione per {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa il pulsante occhio nell’intestazione della notazione per {{label:Notation.HideMoves}}, e il menu {{label:Notation.ViewOptions}} per attivare o disattivare {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} e {{label:Notation.ShowVariations}}.

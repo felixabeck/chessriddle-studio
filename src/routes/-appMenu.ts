@@ -27,6 +27,7 @@ export type AppMenuCallbacks = {
     openGuide: () => void | Promise<void>;
     openAssistant?: () => void;
     createNewTab: () => void | Promise<void>;
+    newAnalysis: () => void;
     openNewFile: () => void | Promise<void>;
     saveGame: () => void | Promise<void>;
     saveGameTo: () => void | Promise<void>;
@@ -123,7 +124,8 @@ export function renderResizeHandles(
     return windowPlatform === "linux" && showWindowControls;
 }
 
-export function buildAppMenuTree(args: {
+/** What both menu builders take: the native macOS tree and the in-app menu. */
+export type AppMenuArgs = {
     t: MenuTranslator;
     isMacOS: boolean;
     showAssistant?: boolean;
@@ -131,20 +133,63 @@ export function buildAppMenuTree(args: {
     /** Offer "Show the tabs" in View: the active analysis tab's tab strip is hidden. */
     showBoardTabsItem?: boolean;
     newTabShortcut: string;
+    newAnalysisShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
     focusMode: FocusModeMenuState;
     callbacks: AppMenuCallbacks;
-}): MenuGroup[] {
+};
+
+/** The File entries before Exit, shared by the macOS File menu and the in-app menu. */
+function fileMenuOptions({
+    t,
+    newTabShortcut,
+    newAnalysisShortcut,
+    openFileShortcut,
+    saveShortcut,
+    callbacks,
+}: AppMenuArgs): MenuAction[] {
+    return [
+        {
+            label: t("Menu.File.NewTab"),
+            id: "new_tab",
+            shortcut: newTabShortcut,
+            action: callbacks.createNewTab,
+        },
+        {
+            label: t("Menu.File.NewAnalysisBoard"),
+            id: "new_analysis",
+            shortcut: newAnalysisShortcut,
+            action: callbacks.newAnalysis,
+        },
+        {
+            label: t("Menu.File.OpenFile"),
+            id: "open_file",
+            shortcut: openFileShortcut,
+            action: callbacks.openNewFile,
+        },
+        { kind: "separator" },
+        {
+            label: t("Common.Save"),
+            id: "save",
+            shortcut: saveShortcut,
+            action: callbacks.saveGame,
+        },
+        {
+            label: t("Board.Database.Save"),
+            id: "save_to",
+            action: callbacks.saveGameTo,
+        },
+    ];
+}
+
+export function buildAppMenuTree(args: AppMenuArgs): MenuGroup[] {
     const {
         t,
         isMacOS,
         showAssistant = false,
         showBoardLayouts = false,
         showBoardTabsItem = false,
-        newTabShortcut,
-        openFileShortcut,
-        saveShortcut,
         focusMode,
         callbacks,
     } = args;
@@ -207,30 +252,7 @@ export function buildAppMenuTree(args: {
         {
             label: t("Menu.File"),
             options: [
-                {
-                    label: t("Menu.File.NewTab"),
-                    id: "new_tab",
-                    shortcut: newTabShortcut,
-                    action: callbacks.createNewTab,
-                },
-                {
-                    label: t("Menu.File.OpenFile"),
-                    id: "open_file",
-                    shortcut: openFileShortcut,
-                    action: callbacks.openNewFile,
-                },
-                { kind: "separator" },
-                {
-                    label: t("Common.Save"),
-                    id: "save",
-                    shortcut: saveShortcut,
-                    action: callbacks.saveGame,
-                },
-                {
-                    label: t("Board.Database.Save"),
-                    id: "save_to",
-                    action: callbacks.saveGameTo,
-                },
+                ...fileMenuOptions(args),
                 ...(!isMacOS
                     ? [
                           { kind: "separator" as const },
@@ -283,56 +305,18 @@ export function buildAppMenuTree(args: {
     ];
 }
 
-export function buildInAppMenuItems(args: {
-    t: MenuTranslator;
-    isMacOS: boolean;
-    showAssistant?: boolean;
-    showBoardLayouts?: boolean;
-    /** Offer "Show the tabs" in View: the active analysis tab's tab strip is hidden. */
-    showBoardTabsItem?: boolean;
-    newTabShortcut: string;
-    openFileShortcut: string;
-    saveShortcut: string;
-    focusMode: FocusModeMenuState;
-    callbacks: AppMenuCallbacks;
-}): MenuAction[] {
+export function buildInAppMenuItems(args: AppMenuArgs): MenuAction[] {
     const {
         t,
         isMacOS,
         showAssistant = false,
         showBoardLayouts = false,
         showBoardTabsItem = false,
-        newTabShortcut,
-        openFileShortcut,
-        saveShortcut,
         focusMode,
         callbacks,
     } = args;
     return [
-        {
-            label: t("Menu.File.NewTab"),
-            id: "new_tab",
-            shortcut: newTabShortcut,
-            action: callbacks.createNewTab,
-        },
-        {
-            label: t("Menu.File.OpenFile"),
-            id: "open_file",
-            shortcut: openFileShortcut,
-            action: callbacks.openNewFile,
-        },
-        { kind: "separator" },
-        {
-            label: t("Common.Save"),
-            id: "save",
-            shortcut: saveShortcut,
-            action: callbacks.saveGame,
-        },
-        {
-            label: t("Board.Database.Save"),
-            id: "save_to",
-            action: callbacks.saveGameTo,
-        },
+        ...fileMenuOptions(args),
         { kind: "separator" },
         {
             label: t("SideBar.Accounts"),
@@ -429,6 +413,7 @@ export type AppMenuCommandBindings = {
     openGuide: () => Promise<unknown>;
     openAssistant?: () => void;
     createNewTab: () => Promise<unknown> | void;
+    newAnalysis: () => void;
     openNewFile: () => Promise<unknown>;
     saveGame: () => Promise<unknown>;
     saveGameTo: () => Promise<unknown>;
@@ -450,6 +435,7 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         openGuide: () => bindings.runMenu(bindings.openGuide),
         ...(bindings.openAssistant ? { openAssistant: bindings.openAssistant } : {}),
         createNewTab: () => bindings.runMenu(async () => bindings.createNewTab()),
+        newAnalysis: bindings.newAnalysis,
         openNewFile: () => bindings.runMenu(bindings.openNewFile),
         saveGame: () => bindings.runMenu(bindings.saveGame),
         saveGameTo: () => bindings.runMenu(bindings.saveGameTo),

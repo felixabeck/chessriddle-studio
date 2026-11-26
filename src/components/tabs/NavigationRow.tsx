@@ -21,6 +21,7 @@ import {
   PanelTopClose,
   Plus,
   Save,
+  SquarePlus,
   X,
 } from "lucide-react";
 import {
@@ -119,6 +120,7 @@ function IconX() {
 
 const IN_APP_MENU_ICONS: Record<string, typeof SettingsIcon> = {
   new_tab: Plus,
+  new_analysis: SquarePlus,
   open_file: FolderOpen,
   save: Save,
   save_to: Database,

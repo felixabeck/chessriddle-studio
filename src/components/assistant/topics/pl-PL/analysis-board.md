@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
@@ -13,7 +13,7 @@ Górny pasek nad szachownicą udostępnia akcje szachownicy:
 - {{label:Board.Action.PlayFromHere}}: rozpocznij partię od bieżącej pozycji.
 - Odwróć szachownicę (`F`): zamień Białe i Czarne na dole szachownicy.
 - Zapisz: pojawia się, gdy partia ma niezapisane zmiany, a automatyczny zapis jest wyłączony, niedostępny (np. w wersji roboczej) lub nie powiódł się.
-- {{label:Board.Action.More}}: otwiera menu z opcjami {{label:Board.Database.Save}} (zapisz partię w pliku biblioteki lub w bazie danych), {{label:Board.Action.TakeSnapshot}} (zapisz obraz bieżącej szachownicy) i {{label:Board.Action.EditPosition}} (ustaw własną pozycję przez rozstawienie bierek lub edycję FEN).
+- {{label:Board.Action.More}}: otwiera menu z opcjami {{label:Board.Action.NewAnalysis}} (zastąp szachownicę pustą w tej samej karcie; jeśli partia ma niezapisane zmiany, najpierw pojawi się pytanie), {{label:Board.Database.Save}} (zapisz partię w pliku biblioteki lub w bazie danych), {{label:Board.Action.TakeSnapshot}} (zapisz obraz bieżącej szachownicy) i {{label:Board.Action.EditPosition}} (ustaw własną pozycję przez rozstawienie bierek lub edycję FEN).
 - Cofanie, ponawianie oraz czyszczenie narysowanych strzałek i podświetleń (gdy [[setting:erase-drawables]] jest wyłączone) działają przez skróty klawiszowe w [[settings-category:keybinds]].
 
 Zagranie innego ruchu z wcześniejszej pozycji tworzy wariant. Kliknij prawym przyciskiem myszy dowolny ruch w notacji, aby wybrać {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} lub {{label:Notation.MarkGameEndHere}}. Użyj przycisku oka w nagłówku notacji dla {{label:Notation.HideMoves}}, a menu {{label:Notation.ViewOptions}}, aby przełączać {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} i {{label:Notation.ShowVariations}}.

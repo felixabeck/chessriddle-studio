@@ -84,6 +84,8 @@ vi.mock("@/state/atoms", async () => {
       fixtures.closeWorkspaceTab(tabId);
       return true;
     }),
+    replaceWorkspaceTabAtom: atom(null, () => false),
+    copyTabEngineSettingsAtom: atom(null, () => undefined),
     closingTabsAtom: atom<Set<string>>(new Set<string>()),
     fontSizeAtom: atom(100),
     gameIdFamily: atomFamily(() => atom<string | null>(null)),
@@ -99,6 +101,7 @@ vi.mock("@/state/keybinds", async () => {
     firedByNativeMenu: () => false,
     keyMapAtom: atom({
       NEW_TAB: { keys: "mod+t" },
+      NEW_ANALYSIS: { keys: "mod+n" },
       CLOSE_TAB: { keys: "mod+w" },
       CYCLE_TABS: { keys: "mod+tab" },
       REVERSE_CYCLE_TABS: { keys: "mod+shift+tab" },
@@ -953,6 +956,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     showBoardLayouts: true,
     showBoardTabsItem: true,
     newTabShortcut: "Ctrl+T",
+    newAnalysisShortcut: "Ctrl+N",
     openFileShortcut: "Ctrl+O",
     saveShortcut: "Ctrl+S",
     focusMode: { on: false, shortcut: "Ctrl+Shift+F" },
@@ -962,6 +966,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
       openGuide: () => undefined,
       openAssistant: () => undefined,
       createNewTab: () => undefined,
+      newAnalysis: () => undefined,
       openNewFile: () => undefined,
       saveGame: () => undefined,
       saveGameTo: () => undefined,
@@ -998,6 +1003,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
   );
   const expectedIcons: Record<string, string> = {
     new_tab: "lucide-plus",
+    new_analysis: "lucide-square-plus",
     open_file: "lucide-folder-open",
     save: "lucide-save",
     save_to: "lucide-database",

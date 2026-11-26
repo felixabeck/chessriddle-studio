@@ -2,7 +2,7 @@
 id: analysis-board
 title: Дошка аналізу, варыяцыі, каментарыі і стрэлкі
 summary: Увод хадоў, рэдагаванне пазіцый, кіраванне варыяцыямі, напісанне каментарыяў, даданне анатацый і маляванне стрэлак на дошцы.
-source: 5901c9f30c3c3295
+source: f49e0c9098ffc5cf
 ---
 
 Адкрыйце дошку аналізу са старонкі [[page:new-tab]], націснуўшы {{label:Home.Card.AnalysisBoard.Title}}, або адкрыўшы захаваную партыю ці рэпертуар з [[page:library]].
@@ -13,7 +13,7 @@ source: 5901c9f30c3c3295
 - {{label:Board.Action.PlayFromHere}}: пачаць гульню з бягучай пазіцыі.
 - Пераварот дошкі (`F`): памяняць белых і чорных у ніжняй частцы дошкі.
 - Захаванне: з’яўляецца, калі ў партыі ёсць незахаваныя змены і аўтазахаванне выключана, недаступнае (напрыклад, у чарнавіку) або завяршылася памылкай.
-- {{label:Board.Action.More}}: адкрывае меню з пунктамі {{label:Board.Database.Save}} (захаваць партыю ў файл бібліятэкі або базу даных), {{label:Board.Action.TakeSnapshot}} (захаваць выяву бягучай дошкі) і {{label:Board.Action.EditPosition}} (наладзіць адвольную пазіцыю, расставіўшы фігуры або адрэдагаваўшы FEN).
+- {{label:Board.Action.More}}: адкрывае меню з пунктамі {{label:Board.Action.NewAnalysis}} (замяніць дошку пустой у той жа ўкладцы; калі ў партыі ёсць незахаваныя змены, спачатку з’явіцца пытанне), {{label:Board.Database.Save}} (захаваць партыю ў файл бібліятэкі або базу даных), {{label:Board.Action.TakeSnapshot}} (захаваць выяву бягучай дошкі) і {{label:Board.Action.EditPosition}} (наладзіць адвольную пазіцыю, расставіўшы фігуры або адрэдагаваўшы FEN).
 - Адмена, паўтор і ачыстка намаляваных стрэлак ці падсветкі (калі выключаны параметр [[setting:erase-drawables]]) выконваюцца праз спалучэнні клавіш у [[settings-category:keybinds]].
 
 Калі зрабіць іншы ход з папярэдняй пазіцыі, ствараецца варыяцыя. Пстрыкніце правай кнопкай мышы па любым ходзе ў натацыі, каб выбраць {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Выкарыстоўвайце кнопку-вока ў загалоўку натацыі для {{label:Notation.HideMoves}}, а меню {{label:Notation.ViewOptions}} — для пераключэння {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} і {{label:Notation.ShowVariations}}.

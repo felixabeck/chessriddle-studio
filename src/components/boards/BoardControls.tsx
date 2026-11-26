@@ -15,6 +15,7 @@ import {
   ArrowUpDown,
   Target,
   ScanSearch,
+  SquarePlus,
 } from "lucide-react";
 import { tauri } from "@/platform/tauri";
 import domtoimage from "dom-to-image";
@@ -30,6 +31,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import { boardLayoutListAtom } from "@/state/layoutStorage";
 import { formatKeymap } from "@/utils/formatKeymap";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
+import { useTabCommands } from "@/components/tabs/TabCommands";
 import { usePlayFromHere } from "./usePlayFromHere";
 
 interface BoardControlsProps {
@@ -83,6 +85,8 @@ function BoardControls({
   const layoutList = useAtomValue(boardLayoutListAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
   const playFromHere = usePlayFromHere();
+  const { newAnalysis } = useTabCommands();
+  const isAnalysis = currentTab?.type === "analysis";
   const snapshotInFlightRef = useRef(false);
 
   const orientation = headers.orientation || "white";
@@ -94,7 +98,7 @@ function BoardControls({
     });
 
   function playFromHereOrAnalyze() {
-    if (currentTab?.type === "analysis") {
+    if (isAnalysis) {
       playFromHere(root, headers.orientation, position);
       return;
     }
@@ -163,16 +167,12 @@ function BoardControls({
         </IconAction>
       )}
       <IconAction
-        label={t(
-          currentTab?.type === "analysis"
-            ? "Board.Action.PlayFromHere"
-            : "Board.Action.AnalyzeGame",
-        )}
+        label={t(isAnalysis ? "Board.Action.PlayFromHere" : "Board.Action.AnalyzeGame")}
         size="sm"
         variant="subtle"
         onClick={playFromHereOrAnalyze}
       >
-        {currentTab?.type === "analysis" ? <Target size="1rem" /> : <ScanSearch size="1rem" />}
+        {isAnalysis ? <Target size="1rem" /> : <ScanSearch size="1rem" />}
       </IconAction>
       <IconAction
         label={t("Board.Action.FlipBoard", {
@@ -201,6 +201,22 @@ function BoardControls({
           </IconAction>
         </Menu.Target>
         <Menu.Dropdown>
+          {isAnalysis && (
+            <>
+              <Menu.Item
+                leftSection={<SquarePlus size="0.875rem" />}
+                rightSection={
+                  <Text size="xs" c="dimmed">
+                    {formatKeymap(keyMap.NEW_ANALYSIS.keys)}
+                  </Text>
+                }
+                onClick={newAnalysis}
+              >
+                {t("Board.Action.NewAnalysis")}
+              </Menu.Item>
+              <Menu.Divider />
+            </>
+          )}
           {saveTo && (
             <Menu.Item
               leftSection={<Database size="0.875rem" />}

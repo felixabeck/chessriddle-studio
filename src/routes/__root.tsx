@@ -148,7 +148,7 @@ function RootShell() {
     if (coachEnabled) void refreshAssistantAvailability();
   }, [coachEnabled, refreshAssistantAvailability]);
   const jotaiStore = useJotaiStore();
-  const { newTab, showPageTab } = useTabCommands();
+  const { newTab, newAnalysis, showPageTab } = useTabCommands();
   useIncomingGameLinks();
 
   const [, setTabs] = useAtom(tabsAtom);
@@ -339,6 +339,7 @@ function RootShell() {
         openGuide,
         openAssistant,
         createNewTab: newTab,
+        newAnalysis,
         openNewFile,
         saveGame: () => requestSave("save"),
         saveGameTo: () => requestSave("saveTo"),
@@ -358,6 +359,7 @@ function RootShell() {
       }),
     [
       jotaiStore,
+      newAnalysis,
       newTab,
       openAccounts,
       openAssistant,
@@ -413,6 +415,7 @@ function RootShell() {
             showBoardLayouts,
             showBoardTabsItem,
             newTabShortcut: keyMap.NEW_TAB.keys,
+            newAnalysisShortcut: keyMap.NEW_ANALYSIS.keys,
             openFileShortcut: keyMap.OPEN_FILE.keys,
             saveShortcut: keyMap.SAVE_FILE.keys,
             focusMode: focusModeMenu,
@@ -423,6 +426,7 @@ function RootShell() {
       assistantAvailable,
       focusModeMenu,
       isMacOS,
+      keyMap.NEW_ANALYSIS.keys,
       keyMap.NEW_TAB.keys,
       keyMap.OPEN_FILE.keys,
       keyMap.SAVE_FILE.keys,
@@ -441,6 +445,7 @@ function RootShell() {
         showBoardLayouts,
         showBoardTabsItem,
         newTabShortcut: keyMap.NEW_TAB.keys,
+        newAnalysisShortcut: keyMap.NEW_ANALYSIS.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
         saveShortcut: keyMap.SAVE_FILE.keys,
         focusMode: focusModeMenu,
@@ -450,6 +455,7 @@ function RootShell() {
       assistantAvailable,
       focusModeMenu,
       isMacOS,
+      keyMap.NEW_ANALYSIS.keys,
       keyMap.NEW_TAB.keys,
       keyMap.OPEN_FILE.keys,
       keyMap.SAVE_FILE.keys,

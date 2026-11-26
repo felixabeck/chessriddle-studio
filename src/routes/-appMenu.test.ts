@@ -56,6 +56,7 @@ function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks 
         sendFeedback: () => undefined,
         openGuide: () => undefined,
         createNewTab: () => undefined,
+        newAnalysis: () => undefined,
         openNewFile: () => undefined,
         saveGame: () => undefined,
         saveGameTo: () => undefined,
@@ -91,6 +92,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         t,
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -98,6 +100,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
     });
     expect(linux.map((option) => ("kind" in option ? "|" : option.id))).toEqual([
         "new_tab",
+        "new_analysis",
         "open_file",
         "|",
         "save",
@@ -118,6 +121,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
     ]);
     expect(idsOfItems(linux)).toEqual([
         "new_tab",
+        "new_analysis",
         "open_file",
         "save",
         "save_to",
@@ -139,6 +143,9 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
     expect(item(linux, "open_file").shortcut).toBe("Ctrl+O");
     expect(item(linux, "toggle_fullscreen").shortcut).toBe("F11");
     expect(item(linux, "new_tab").action).toBe(actions.createNewTab);
+    expect(item(linux, "new_analysis").label).toBe("Menu.File.NewAnalysisBoard");
+    expect(item(linux, "new_analysis").shortcut).toBe("Ctrl+N");
+    expect(item(linux, "new_analysis").action).toBe(actions.newAnalysis);
     expect(item(linux, "accounts").action).toBe(actions.openAccounts);
     expect(item(linux, "engines").action).toBe(actions.openEngines);
     expect(item(linux, "settings").action).toBe(actions.openSettings);
@@ -151,6 +158,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         t,
         isMacOS: true,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -158,6 +166,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
     });
     expect(idsOfItems(mac)).toEqual([
         "new_tab",
+        "new_analysis",
         "open_file",
         "save",
         "save_to",
@@ -180,6 +189,7 @@ test("the focus-mode entry names what choosing it does and carries the configure
             t,
             isMacOS: false,
             newTabShortcut: "Ctrl+T",
+            newAnalysisShortcut: "Ctrl+N",
             openFileShortcut: "Ctrl+O",
             saveShortcut: "ctrl+s",
             focusMode: { on, shortcut: "alt+h" },
@@ -193,6 +203,7 @@ test("the focus-mode entry names what choosing it does and carries the configure
         t,
         isMacOS: true,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: true, shortcut: "meta+shift+f" },
@@ -208,6 +219,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         t,
         isMacOS: true,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -220,7 +232,13 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         "Menu.View",
         "Menu.Help",
     ]);
-    expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to"]);
+    expect(idsOf(groups, "Menu.File")).toEqual([
+        "new_tab",
+        "new_analysis",
+        "open_file",
+        "save",
+        "save_to",
+    ]);
     expect(option(groups, "Menu.File", "save").shortcut).toBe("meta+s");
     expect(idsOf(groups, "Menu.View")).toEqual(["toggle_fullscreen", "toggle_focus_mode"]);
     expect(option(groups, "Menu.View", "toggle_focus_mode").action).toBe(actions.toggleFocusMode);
@@ -228,6 +246,8 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
     expect(option(groups, "Menu.File", "new_tab").action).toBe(actions.createNewTab);
+    expect(option(groups, "Menu.File", "new_analysis").shortcut).toBe("Cmd+N");
+    expect(option(groups, "Menu.File", "new_analysis").action).toBe(actions.newAnalysis);
     expect(option(groups, "Menu.File", "open_file").action).toBe(actions.openNewFile);
     expect(option(groups, "Menu.View", "toggle_fullscreen").action).toBe(actions.toggleFullscreen);
     expect(option(groups, "Menu.Help", "send_feedback").action).toBe(actions.sendFeedback);
@@ -271,6 +291,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         isMacOS: true,
         showAssistant: false,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -286,6 +307,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         isMacOS: true,
         showAssistant: true,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -301,6 +323,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         isMacOS: false,
         showAssistant: false,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -315,6 +338,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         isMacOS: false,
         showAssistant: true,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -346,6 +370,7 @@ test("View menu and in-app menu include Save layout as… and Layouts… only wh
         isMacOS: true,
         showBoardLayouts: false,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "meta+shift+f" },
@@ -358,6 +383,7 @@ test("View menu and in-app menu include Save layout as… and Layouts… only wh
         isMacOS: true,
         showBoardLayouts: true,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "meta+shift+f" },
@@ -381,6 +407,7 @@ test("View menu and in-app menu include Save layout as… and Layouts… only wh
         isMacOS: false,
         showBoardLayouts: false,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -394,6 +421,7 @@ test("View menu and in-app menu include Save layout as… and Layouts… only wh
         isMacOS: false,
         showBoardLayouts: true,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -412,6 +440,7 @@ test("changing t changes labels", () => {
         t: (key) => `${key}.fr`,
         isMacOS: false,
         newTabShortcut: "Ctrl+T",
+        newAnalysisShortcut: "Ctrl+N",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
         focusMode: { on: false, shortcut: "ctrl+shift+f" },
@@ -501,6 +530,9 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
             seen.push("guide");
         },
         createNewTab: () => opened.promise,
+        newAnalysis: () => {
+            seen.push("new-analysis");
+        },
         openNewFile: async () => {
             throw new Error("open failed");
         },
@@ -555,6 +587,7 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
     callbacks.about();
     callbacks.sendFeedback();
     callbacks.toggleFocusMode();
+    callbacks.newAnalysis();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
         "accounts",
@@ -563,6 +596,7 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         "about",
         "send-feedback",
         "focus-mode",
+        "new-analysis",
     ]);
 });
 
@@ -940,6 +974,7 @@ test("View menu and in-app menu offer Show the tabs only on the board with its t
     const base = {
         t,
         newTabShortcut: "Cmd+T",
+        newAnalysisShortcut: "Cmd+N",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
         focusMode: { on: false, shortcut: "meta+shift+f" },
