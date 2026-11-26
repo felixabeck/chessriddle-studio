@@ -2079,8 +2079,10 @@ fn make_migration_app_state(authority: SharedPathAuthority) -> crate::AppState {
 #[tokio::test]
 async fn legacy_default_migration_moves_content_keeps_ids_and_removes_legacy_dir() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&app_data).unwrap();
     let (home_fn, app_fn) = make_lookups(&home, &app_data);
@@ -2279,8 +2281,10 @@ async fn legacy_default_migration_moves_content_keeps_ids_and_removes_legacy_dir
 #[tokio::test]
 async fn legacy_default_migration_empty_legacy_switches_and_removes_dir() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&app_data).unwrap();
     let (home_fn, app_fn) = make_lookups(&home, &app_data);
@@ -2337,9 +2341,11 @@ async fn legacy_default_migration_empty_legacy_switches_and_removes_dir() {
 #[test]
 fn legacy_default_migration_leaves_custom_root_untouched() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
-    let custom_dir = tmp.path().join("my-custom-dbs");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
+    let custom_dir = base.join("my-custom-dbs");
     let legacy_db_dir = app_data.join("db");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_db_dir).unwrap();
@@ -2370,7 +2376,9 @@ fn legacy_default_migration_leaves_custom_root_untouched() {
 #[tokio::test]
 async fn legacy_default_migration_skips_when_resolver_falls_back_to_legacy() {
     let tmp = TempDir::new().unwrap();
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     fs::create_dir_all(&legacy_db_dir).unwrap();
     create_initialized_sqlite_db(&legacy_db_dir.join("keep.db3"));
@@ -2457,8 +2465,10 @@ async fn legacy_default_migration_skips_when_resolver_falls_back_to_legacy() {
 #[tokio::test]
 async fn legacy_default_migration_failure_keeps_legacy_active_releases_gate_and_retries() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     let visible_db_dir = home.join("ChessRiddle Studio/Databases");
     fs::create_dir_all(&legacy_db_dir).unwrap();
@@ -2552,8 +2562,10 @@ async fn legacy_default_migration_gate_waits_for_commands_and_engine_admissions(
     use tauri::Manager;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     let legacy_puzzle_dir = app_data.join("puzzles");
     let legacy_engine_dir = app_data.join("engines");
@@ -2942,8 +2954,10 @@ async fn legacy_default_migration_shutdown_cancels_waiters_and_remaining_kinds()
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     let legacy_puzzle_dir = app_data.join("puzzles");
     fs::create_dir_all(&home).unwrap();
@@ -3050,8 +3064,10 @@ async fn legacy_default_migration_shutdown_cancels_waiters_and_remaining_kinds()
 #[tokio::test]
 async fn legacy_default_migration_quit_mid_transfer_recovers_next_start_via_journal() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_db_dir).unwrap();
@@ -3061,7 +3077,7 @@ async fn legacy_default_migration_quit_mid_transfer_recovers_next_start_via_jour
     let (home_fn, app_fn) = make_lookups(&home, &app_data);
     let lookups = DefaultDirLookups::new(&home_fn, &app_fn);
     let default_dirs = make_test_default_dir_source(&home, &app_data);
-    let registry_path = tmp.path().join("registry.json");
+    let registry_path = base.join("registry.json");
 
     let authority =
         SharedPathAuthority::installed(PathAuthority::open(registry_path.clone(), vec![]).unwrap());
@@ -3145,8 +3161,10 @@ async fn legacy_default_migration_quit_mid_transfer_recovers_next_start_via_jour
 #[test]
 fn legacy_default_migration_skips_kind_with_unresolved_journal() {
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     let legacy_puzzle_dir = app_data.join("puzzles");
     fs::create_dir_all(&home).unwrap();
@@ -3155,7 +3173,7 @@ fn legacy_default_migration_skips_kind_with_unresolved_journal() {
     let (home_fn, app_fn) = make_lookups(&home, &app_data);
     let lookups = DefaultDirLookups::new(&home_fn, &app_fn);
 
-    let mut auth = PathAuthority::open(tmp.path().join("registry.json"), vec![]).unwrap();
+    let mut auth = PathAuthority::open(base.join("registry.json"), vec![]).unwrap();
     let db_root = auth
         .get_or_create_database_root(
             &legacy_db_dir,
@@ -3273,8 +3291,10 @@ async fn real_engine_migration_lets_parked_admission_wait_through_quiesce_and_su
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_engine_dir = app_data.join("engines");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_engine_dir).unwrap();
@@ -3407,8 +3427,10 @@ async fn start_interactive_search_waits_for_migrating_resource_option() {
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_engine_dir = app_data.join("engines");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_engine_dir).unwrap();
@@ -3543,8 +3565,10 @@ async fn file_exists_waits_on_engine_migration_and_refuses_during_quiesce() {
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_engine_dir = app_data.join("engines");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_engine_dir).unwrap();
@@ -3623,7 +3647,7 @@ async fn file_exists_waits_on_engine_migration_and_refuses_during_quiesce() {
     let _quiesce_guard = authority
         .with_mut(|auth| auth.quiesce_engine_root(new_root_id))
         .unwrap();
-    let relocated_dir = tmp.path().join("relocated-sf-exists");
+    let relocated_dir = base.join("relocated-sf-exists");
     fs::rename(migrated_root.join("sf-exists"), &relocated_dir).unwrap();
     let during_rename_window = crate::fs::file_exists(
         engine_handle.id.clone(),
@@ -3642,6 +3666,8 @@ async fn parked_reserved_read_does_not_expire_past_ttl_and_purge_cancels_expired
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
     let authority = open_test_authority(&tmp);
     let mut state = make_migration_app_state(authority);
     state.operations = crate::infra::operations::OperationRegistry::with_reservation_ttl(
@@ -3670,7 +3696,7 @@ async fn parked_reserved_read_does_not_expire_past_ttl_and_purge_cancels_expired
                 id: "db-ttl".into(),
             },
             source_identity: (51, 52),
-            source_path: tmp.path().join("source"),
+            source_path: base.join("source"),
             engine_descendants: HashSet::new(),
         }]);
     let (_, gate) = gates.pop().unwrap();
@@ -3734,8 +3760,10 @@ async fn engine_admission_arriving_after_quiesce_during_migration_waits_and_succ
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_engine_dir = app_data.join("engines");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_engine_dir).unwrap();
@@ -3840,8 +3868,10 @@ async fn startup_migration_preserves_unrelated_active_read_while_interactive_mov
     use tauri::Manager;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&legacy_db_dir).unwrap();
@@ -3957,7 +3987,7 @@ async fn startup_migration_preserves_unrelated_active_read_while_interactive_mov
 
     // 3. In contrast, an interactive Settings Move (`FolderMoveMode::Interactive`) MUST still
     // cancel active reads before quiescing.
-    let custom_target = tmp.path().join("interactive-target-dbs");
+    let custom_target = base.join("interactive-target-dbs");
     fs::create_dir_all(&custom_target).unwrap();
     let (grant, _, _) = authority
         .with_mut(|auth| {
@@ -4009,8 +4039,10 @@ async fn startup_migration_ignores_unrelated_downloads_and_migrates_second_kind_
     use std::time::Duration;
 
     let tmp = TempDir::new().unwrap();
-    let home = tmp.path().join("home");
-    let app_data = tmp.path().join("app");
+    // Canonical base: a Windows TEMP may be an 8.3 spelling, while production paths are canonical.
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let home = base.join("home");
+    let app_data = base.join("app");
     let legacy_db_dir = app_data.join("db");
     let legacy_puzzle_dir = app_data.join("puzzles");
     fs::create_dir_all(&home).unwrap();
@@ -4120,7 +4152,7 @@ async fn startup_migration_ignores_unrelated_downloads_and_migrates_second_kind_
 
     // 3. In contrast, an interactive Settings Move (`FolderMoveMode::Interactive`) MUST still
     // refuse with `FolderSwitchFailure::RootBusy` while a download is active.
-    let custom_target = tmp.path().join("interactive-busy-dbs");
+    let custom_target = base.join("interactive-busy-dbs");
     fs::create_dir_all(&custom_target).unwrap();
     let (grant, _, _) = authority
         .with_mut(|auth| {

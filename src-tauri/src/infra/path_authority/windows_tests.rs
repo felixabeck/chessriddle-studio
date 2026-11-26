@@ -709,12 +709,18 @@ fn default_get_or_create_reuses_by_live_identity_for_verbatim_and_8_3_spellings(
 async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety() {
     use tokio_util::sync::CancellationToken;
 
-    // 1. Production RtlUpcaseUnicodeChar collision folding (ASCII + Greek final sigma ς vs Σ).
+    // 1. Production RtlUpcaseUnicodeChar collision folding. Greek σ folds to Σ; the final
+    // sigma ς is left unchanged by RtlUpcaseUnicodeChar (observed in rust-windows-test,
+    // Test run 45780981166), so the collision check treats ς and Σ as distinct names.
     assert_eq!(
         folder_switch::fold_leaf_name_for_collision(OsStr::new("Game.db3")),
         folder_switch::fold_leaf_name_for_collision(OsStr::new("game.db3"))
     );
     assert_eq!(
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03C3}.db3")),
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03A3}.db3"))
+    );
+    assert_ne!(
         folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03C2}.db3")),
         folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03A3}.db3"))
     );
