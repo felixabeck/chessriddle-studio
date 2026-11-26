@@ -29547,7 +29547,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### Opening a file that a restored tab already shows remounts the board about 300 ms later and resets the side panel to Info
 
-* **ID:** f-20261125-23 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261125-23 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes
 * **Where:** the open-file path from the Library/Files page into an analysis tab while workspace restore has already restored a tab of the same file (`src/utils/tabs.ts`, `src/components/tabs/**`, the board panel tabs in `src/components/boards/**`); exact component not yet identified.
@@ -29557,6 +29557,8 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** identify the remount trigger and make opening an already-open file keep a stable board (or activate the existing tab), so the panel selection survives; then remove the settle wait the verify harness needs for this race.
 * **Proof:** a renderer test that opens a file already present in a restored tab, selects Practice, and still has Practice selected after the open completes; `pnpm verify:app` "large-deck extension" passes without a settle wait.
 * **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-25-folder-settings.md, 2026-11-25
+* **Handled (2026-11-26, Claude Code (Opus 5.5), drain build urgent-tab-admission, adopted plan `tasks/plans/2026-11-26-urgent-tab-admission.md`):** the remount was none of the three suspected mechanisms. Tab admission (`stageAndCommitTab`) ran in `startTransition` while the `navigate({ to: "/" })` after a creation renders urgently, so the board's first render showed the previously active tab (after a restart, the restored tab of the same file); a Practice click landed on it, then the transition committed the new tab with its panel on Info. `853e936c6` admits urgently on every path; `src/utils/openFile.admission.test.tsx` opens a file whose restored tab is active, navigates, selects Practice on the first board render and asserts it survives on the new tab (fails with the transition restored, measured). `49cb82f31` removes `selectPracticeTab`'s settle wait; `pnpm verify:app` on a release build passed "all checks passed", including the large-deck extension session. Decision `d-20261126-26`. Rejected: activating the existing tab of the same file (changes what users get, not needed), per-caller commit witnesses, a BoardsPage placeholder. The sibling race in tab switching off the board route (`TabCommands` `handleSetActiveTab`) was filed separately as a build-tier finding (inbox entry 20261126-224216-800534-1795729336460675245-5).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"dc5a8fafee3d5b8b098f7bdf51b1ed2c8874a9c0fb4109ab23475347f4d01dd3","header_sha256":"5a09181e7599feef413de97344352a2db8b154dd33cabfd1d51d2230f0e27fb8","header_status":"handled","input_sha256":"ebff586dfa4469b9a643c40c5db3449e6e5d7c220223c85823bb846dd08ec558","kind":"mutation-receipt","operation":"aa47db64437df51364c3595f1446eefe60240bbd5265417439db69c85def9967","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-23"],"target":"f-20261125-23","v":1} -->
 
 ---
 
