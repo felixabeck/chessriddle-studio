@@ -29740,7 +29740,7 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### The stacked notation wheel-reachability e2e test timed out on CI on a docs-only commit
 
-* **ID:** f-20261126-14 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261126-14 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** fb0c13b3-338d-462e-a589-2efeb51ee57c
 * **Impact class:** tooling
 * **CI run:** 45884396140
@@ -29751,3 +29751,6 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Failure scenario:** job e2e of Test run 45884396140 fails only this test; `pnpm ci:remote:check` then refuses every later code push.
 * **Open question:** what in the wheel-reachability loop scales with runner speed (fixed waits, per-step polling, wheel steps until reachable), and should it wait on a state rather than step counts, or does its budget need a measured increase? Read the trace artefact of run 45884396140 before choosing.
 * **Found by:** Claude Code drain session fb0c13b3-338d-462e-a589-2efeb51ee57c, 2026-11-26, at `pnpm ci:remote:check` before pushing external links.
+
+2026-11-26, the stacked notation wheel-reachability test waits on scroll state instead of step counts: larger wheel steps, an `expect.poll` on hit-testability, scroll progress or a grown virtualized `scrollHeight`, and one evaluation for the three overflow ancestors. Measured under CDP CPU throttling rate 6 in the container: 33.1 s before (82% in the fixed-step loop), 10.9 s after; unthrottled 2.8 s. What it proves is unchanged (late move starts unmounted, becomes reachable by real wheel events, is hit at its centre, selects e4). Proof: `pnpm test:e2e:container --project=notation-hierarchy-scaled --project=notation-hierarchy` 10 passed, no snapshot moved; tests and correctness lenses approved. CI confirmation comes with the next Test run.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7bac2c4dca6e1f5ccfb9dfc8be75b6f0d3341869e9f7df414b60b490932a375e","header_sha256":"a505daae24415899c5262b6a9831e494dfd70b653af0498fa077baf108bc8dbb","header_status":"handled","input_sha256":"754bb4de61531126c199f2feffaf042cf132b7670bf046da35e1748dbd9b568f","kind":"mutation-receipt","operation":"342b05e995fe5b49a6b795efd8fece307e172a7616658cf14d164a9bd51539a2","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-14"],"target":"f-20261126-14","v":1} -->
