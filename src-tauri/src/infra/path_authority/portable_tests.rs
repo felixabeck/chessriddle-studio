@@ -1493,10 +1493,9 @@ pub(super) fn get_or_create_app_owned_test_root(
         | AppOwnedDefaultRoot::Practice
         | AppOwnedDefaultRoot::UnsavedGames
         | AppOwnedDefaultRoot::WorkspaceSession
-        | AppOwnedDefaultRoot::LibrarySync => {
-            panic!(
-                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-            )
+        | AppOwnedDefaultRoot::LibrarySync
+        | AppOwnedDefaultRoot::ScoresheetPhotos => {
+            panic!("only database, engine and puzzle roots have a persistent root entry")
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {
@@ -1526,10 +1525,9 @@ pub(super) fn set_active_app_owned_test_root(
         | AppOwnedDefaultRoot::Practice
         | AppOwnedDefaultRoot::UnsavedGames
         | AppOwnedDefaultRoot::WorkspaceSession
-        | AppOwnedDefaultRoot::LibrarySync => {
-            panic!(
-                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-            )
+        | AppOwnedDefaultRoot::LibrarySync
+        | AppOwnedDefaultRoot::ScoresheetPhotos => {
+            panic!("only database, engine and puzzle roots have a persistent root entry")
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {
@@ -1558,10 +1556,9 @@ pub(super) fn active_app_owned_test_root(
         | AppOwnedDefaultRoot::Practice
         | AppOwnedDefaultRoot::UnsavedGames
         | AppOwnedDefaultRoot::WorkspaceSession
-        | AppOwnedDefaultRoot::LibrarySync => {
-            panic!(
-                "engine images, credentials, practice and unsaved games do not have a persistent root entry"
-            )
+        | AppOwnedDefaultRoot::LibrarySync
+        | AppOwnedDefaultRoot::ScoresheetPhotos => {
+            panic!("only database, engine and puzzle roots have a persistent root entry")
         }
         #[cfg(target_os = "macos")]
         AppOwnedDefaultRoot::EngineLaunch => {

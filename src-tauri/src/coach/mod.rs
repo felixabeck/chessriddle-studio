@@ -26,6 +26,7 @@ pub(crate) mod responses;
 pub(crate) mod scoresheet;
 pub(crate) mod scoresheet_pdf;
 pub(crate) mod scoresheet_photo;
+pub(crate) mod scoresheet_photo_store;
 pub(crate) mod sse;
 pub(crate) mod stats;
 #[cfg(test)]

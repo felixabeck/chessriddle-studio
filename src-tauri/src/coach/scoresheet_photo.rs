@@ -183,6 +183,15 @@ pub(super) fn encode_rgb_jpeg_bounded(
     Ok(jpeg)
 }
 
+/// Encodes raw JPEG bytes as a `data:image/jpeg;base64,...` data URL.
+pub(crate) fn encode_jpeg_data_url(jpeg: &[u8]) -> String {
+    let mut data_url =
+        String::with_capacity(JPEG_DATA_URL_PREFIX.len() + 4 * jpeg.len().div_ceil(3));
+    data_url.push_str(JPEG_DATA_URL_PREFIX);
+    base64::engine::general_purpose::STANDARD.encode_string(jpeg, &mut data_url);
+    data_url
+}
+
 fn encode_processed_image(
     mut image: DynamicImage,
     max_output_bytes: usize,
@@ -196,11 +205,9 @@ fn encode_processed_image(
     }
     let rgb = flatten_to_rgb8(image);
     let jpeg = encode_rgb_jpeg_bounded(&rgb, max_output_bytes)?;
-    let mut data_url =
-        String::with_capacity(JPEG_DATA_URL_PREFIX.len() + 4 * jpeg.len().div_ceil(3));
-    data_url.push_str(JPEG_DATA_URL_PREFIX);
-    base64::engine::general_purpose::STANDARD.encode_string(&jpeg, &mut data_url);
-    Ok(ScoresheetPhoto { data_url })
+    Ok(ScoresheetPhoto {
+        data_url: encode_jpeg_data_url(&jpeg),
+    })
 }
 
 /// Decodes JPEG/PNG/WebP bytes (by magic bytes, never extension), applies EXIF orientation,

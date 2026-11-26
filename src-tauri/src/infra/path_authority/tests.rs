@@ -6397,7 +6397,8 @@ fn ensure_app_owned_default_dir_applies_only_declared_private_mode() {
             | AppOwnedDefaultRoot::Collections
             | AppOwnedDefaultRoot::UnsavedGames
             | AppOwnedDefaultRoot::WorkspaceSession
-            | AppOwnedDefaultRoot::LibrarySync => 0o700,
+            | AppOwnedDefaultRoot::LibrarySync
+            | AppOwnedDefaultRoot::ScoresheetPhotos => 0o700,
             #[cfg(target_os = "macos")]
             AppOwnedDefaultRoot::EngineLaunch => 0o700,
             _ => 0o755,

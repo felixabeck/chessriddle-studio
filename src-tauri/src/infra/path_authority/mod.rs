@@ -2370,6 +2370,7 @@ pub(crate) enum AppOwnedDefaultRoot {
     UnsavedGames,
     WorkspaceSession,
     LibrarySync,
+    ScoresheetPhotos,
     #[cfg(target_os = "macos")]
     EngineLaunch,
 }
@@ -2387,6 +2388,7 @@ impl AppOwnedDefaultRoot {
         Self::UnsavedGames,
         Self::WorkspaceSession,
         Self::LibrarySync,
+        Self::ScoresheetPhotos,
         #[cfg(target_os = "macos")]
         Self::EngineLaunch,
     ];
@@ -2403,6 +2405,7 @@ impl AppOwnedDefaultRoot {
             Self::UnsavedGames => "unsaved-games",
             Self::WorkspaceSession => "workspace-session",
             Self::LibrarySync => "library-sync",
+            Self::ScoresheetPhotos => "scoresheet-photos",
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => "engine-launch",
         }
@@ -2416,6 +2419,7 @@ impl AppOwnedDefaultRoot {
             Self::UnsavedGames => Some(0o700),
             Self::WorkspaceSession => Some(0o700),
             Self::LibrarySync => Some(0o700),
+            Self::ScoresheetPhotos => Some(0o700),
             #[cfg(target_os = "macos")]
             Self::EngineLaunch => Some(0o700),
             Self::Databases
@@ -6292,6 +6296,7 @@ const APP_OWNED_DEFAULT_ROOT_LEAVES: &[(AppOwnedDefaultRoot, &str)] = &[
     (AppOwnedDefaultRoot::UnsavedGames, "unsaved-games"),
     (AppOwnedDefaultRoot::WorkspaceSession, "workspace-session"),
     (AppOwnedDefaultRoot::LibrarySync, "library-sync"),
+    (AppOwnedDefaultRoot::ScoresheetPhotos, "scoresheet-photos"),
     #[cfg(target_os = "macos")]
     (AppOwnedDefaultRoot::EngineLaunch, "engine-launch"),
 ];
