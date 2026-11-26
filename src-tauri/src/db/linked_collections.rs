@@ -6,8 +6,8 @@ use crate::file_workspace::{
 use crate::infra::{
     fs::{
         atomic_create_at_identified, atomic_replace_at, create_regular_at, entry_identity_at,
-        open_regular_at, read_bounded_bytes, read_directory_entries_at, remove_entry_at,
-        require_durable, single_leaf, DirectoryEntryKind, RegularFileAccess,
+        is_atomic_temp_name, open_regular_at, read_bounded_bytes, read_directory_entries_at,
+        remove_entry_at, require_durable, single_leaf, DirectoryEntryKind, RegularFileAccess,
     },
     path_authority::{
         self as authority, AppDataDir, AppOwnedDefaultRoot, AuthorizedDir, SharedPathAuthority,
@@ -865,9 +865,7 @@ impl CollectionService {
             let Some(name) = entry.name.to_str() else {
                 continue;
             };
-            let owned_temporary = name
-                .strip_prefix(".atomic-")
-                .is_some_and(|id| Uuid::parse_str(id).is_ok());
+            let owned_temporary = is_atomic_temp_name(&entry.name);
             let owned_generation = name.get(..36).is_some_and(|id| Uuid::parse_str(id).is_ok())
                 && [
                     ".db3",

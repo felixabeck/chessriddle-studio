@@ -13,8 +13,6 @@ use crate::{
     error::{Error, WORKSPACE_FILE_NAME_TAKEN},
     infra::inode_ownership::OwnedFile,
 };
-#[cfg(unix)]
-use std::time::Duration;
 // `temp.flush()` in replace_at_driver is platform-neutral, so this trait must be in scope on
 // every target, not only unix.
 use std::io::Write;
@@ -25,7 +23,7 @@ use std::{
     fs::File,
     io::Read,
     path::Path,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -57,6 +55,23 @@ pub(crate) enum AdvisoryLockPlatform {
     MacOs,
     #[cfg(any(test, windows))]
     Windows,
+}
+
+impl AdvisoryLockPlatform {
+    pub(crate) fn current() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            Self::Linux
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Self::MacOs
+        }
+        #[cfg(windows)]
+        {
+            Self::Windows
+        }
+    }
 }
 
 pub(crate) fn advisory_lock_is_unsupported(
@@ -2158,7 +2173,7 @@ mod unix {
         if let Some(name) = TEST_TEMP_NAMES.with(|names| names.borrow_mut().pop()) {
             return name;
         }
-        format!(".atomic-{}", uuid::Uuid::new_v4()).into()
+        format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into()
     }
     #[cfg(test)]
     std::thread_local! {
@@ -2220,7 +2235,7 @@ mod unix {
             dir: &File,
             _original: Option<&Self::Target>,
         ) -> Result<(OsString, OwnedFile), Error> {
-            let created = (0..16)
+            let (candidate, file) = (0..16)
                 .find_map(|_| {
                     let candidate = temp_name();
                     match crate::infra::inode_ownership::create_at(dir, &candidate, OFlags::WRONLY)
@@ -2237,7 +2252,26 @@ mod unix {
                             .into(),
                     )
                 })?;
-            Ok(created)
+            // Hold a non-blocking exclusive advisory lock on the writer's descriptor so a
+            // concurrent crash-orphan sweep recognises live writers across processes. Any lock
+            // failure proceeds unlocked because the sweep never removes a temp it cannot lock.
+            #[cfg(test)]
+            let lock_result = if WRITER_TEMP_LOCK_FAILURE_INJECTED.with(std::cell::Cell::get) {
+                Err(AdvisoryLockError::Io(std::io::Error::from_raw_os_error(
+                    libc::EOPNOTSUPP,
+                )))
+            } else {
+                lock_advisory_file(&file, AdvisoryLockMode::NonBlocking)
+            };
+            #[cfg(not(test))]
+            let lock_result = lock_advisory_file(&file, AdvisoryLockMode::NonBlocking);
+            if let Err(error) = lock_result {
+                log::debug!(
+                    "atomic temp advisory lock skipped on unix writer: {}",
+                    error.into_io_error()
+                );
+            }
+            Ok((candidate, file))
         }
 
         fn before_write(
@@ -3431,7 +3465,7 @@ mod win {
         if let Some(name) = TEST_TEMP_NAMES.with(|names| names.borrow_mut().pop()) {
             return name;
         }
-        format!(".atomic-{}", uuid::Uuid::new_v4()).into()
+        format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into()
     }
 
     #[cfg(test)]
@@ -6414,6 +6448,151 @@ pub(crate) fn remove_optional_regular_at(parent: &File, name: &OsStr) -> Result<
 #[cfg(windows)]
 pub(crate) fn remove_optional_regular_at(parent: &File, name: &OsStr) -> Result<(), Error> {
     win::remove_optional_regular_at(parent, name)
+}
+
+/// Shared filename prefix minted by `temp_name()` and recognised by crash-orphan sweeps.
+pub(crate) const ATOMIC_TEMP_PREFIX: &str = ".atomic-";
+
+/// Matches an atomic-publish temporary leaf name: `.atomic-` followed by a parseable UUID.
+pub(crate) fn is_atomic_temp_name(name: &OsStr) -> bool {
+    name.to_str()
+        .and_then(|name| name.strip_prefix(ATOMIC_TEMP_PREFIX))
+        .is_some_and(|suffix| uuid::Uuid::parse_str(suffix).is_ok())
+}
+
+/// Outcome of attempting to remove one listed crash-orphaned `.atomic-<UUID>` temporary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AtomicTempSweepOutcome {
+    Removed,
+    Kept,
+    /// Constructed only on unix, where the helper takes an advisory lock before unlinking;
+    /// kept cross-platform so callers share one exhaustive match without `#[cfg]` arms.
+    #[cfg_attr(windows, allow(dead_code))]
+    LockUnsupported,
+    Failed(crate::error::ErrorCategory),
+}
+
+#[cfg(all(test, unix))]
+std::thread_local! {
+    static ATOMIC_TEMP_LOCK_UNSUPPORTED_INJECTED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+    static WRITER_TEMP_LOCK_FAILURE_INJECTED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+#[cfg(all(test, unix))]
+pub(crate) struct AtomicTempLockUnsupportedGuard(bool);
+
+#[cfg(all(test, unix))]
+impl Drop for AtomicTempLockUnsupportedGuard {
+    fn drop(&mut self) {
+        ATOMIC_TEMP_LOCK_UNSUPPORTED_INJECTED.with(|slot| slot.set(self.0));
+    }
+}
+
+#[cfg(all(test, unix))]
+pub(crate) fn scoped_test_atomic_temp_lock_unsupported() -> AtomicTempLockUnsupportedGuard {
+    let previous = ATOMIC_TEMP_LOCK_UNSUPPORTED_INJECTED.with(|slot| slot.replace(true));
+    AtomicTempLockUnsupportedGuard(previous)
+}
+
+#[cfg(all(test, unix))]
+pub(crate) struct WriterTempLockFailureGuard(bool);
+
+#[cfg(all(test, unix))]
+impl Drop for WriterTempLockFailureGuard {
+    fn drop(&mut self) {
+        WRITER_TEMP_LOCK_FAILURE_INJECTED.with(|slot| slot.set(self.0));
+    }
+}
+
+#[cfg(all(test, unix))]
+pub(crate) fn scoped_test_writer_temp_lock_failure() -> WriterTempLockFailureGuard {
+    let previous = WRITER_TEMP_LOCK_FAILURE_INJECTED.with(|slot| slot.replace(true));
+    WriterTempLockFailureGuard(previous)
+}
+
+/// Removes one listed `.atomic-<UUID>` regular file if it is at least `min_age` old and no live
+/// writer holds it. Never panics and never propagates errors to commands; callers decide how to
+/// log `LockUnsupported` (once per sweep) and `Failed(category)` (per entry).
+pub(crate) fn remove_atomic_temp_orphan_at(
+    dir: &File,
+    entry: &DirectoryEntry,
+    now: SystemTime,
+    min_age: Duration,
+) -> AtomicTempSweepOutcome {
+    if entry.kind != DirectoryEntryKind::RegularFile || !is_atomic_temp_name(&entry.name) {
+        return AtomicTempSweepOutcome::Kept;
+    }
+    let Ok(now_since_epoch) = now.duration_since(SystemTime::UNIX_EPOCH) else {
+        return AtomicTempSweepOutcome::Kept;
+    };
+    let Ok(now_secs) = i64::try_from(now_since_epoch.as_secs()) else {
+        return AtomicTempSweepOutcome::Kept;
+    };
+    let age_secs = i128::from(now_secs) - i128::from(entry.modified_seconds);
+    if age_secs < 0 {
+        return AtomicTempSweepOutcome::Kept;
+    }
+    let min_age_secs =
+        i128::from(min_age.as_secs()) + i128::from(u8::from(min_age.subsec_nanos() > 0));
+    if age_secs < min_age_secs {
+        return AtomicTempSweepOutcome::Kept;
+    }
+
+    #[cfg(unix)]
+    let locked_file = {
+        let file = match open_regular_at(dir, &entry.name, RegularFileAccess::ReadOnly) {
+            Ok(file) if file.identity() == entry.identity => file,
+            Ok(_) => return AtomicTempSweepOutcome::Kept,
+            Err(error) if error.is_missing_entry() => return AtomicTempSweepOutcome::Kept,
+            Err(Error::Conflict(_) | Error::InvalidInput(_)) => {
+                return AtomicTempSweepOutcome::Kept;
+            }
+            Err(Error::Io(ref io_error))
+                if io_error.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) =>
+            {
+                return AtomicTempSweepOutcome::Kept;
+            }
+            Err(error) => return AtomicTempSweepOutcome::Failed(error.category()),
+        };
+
+        #[cfg(test)]
+        let lock_result = if ATOMIC_TEMP_LOCK_UNSUPPORTED_INJECTED.with(std::cell::Cell::get) {
+            Err(AdvisoryLockError::Io(std::io::Error::from_raw_os_error(
+                libc::EOPNOTSUPP,
+            )))
+        } else {
+            lock_advisory_file(&file, AdvisoryLockMode::NonBlocking)
+        };
+        #[cfg(not(test))]
+        let lock_result = lock_advisory_file(&file, AdvisoryLockMode::NonBlocking);
+
+        match lock_result {
+            Ok(()) => file,
+            Err(AdvisoryLockError::HeldElsewhere(_)) => return AtomicTempSweepOutcome::Kept,
+            Err(AdvisoryLockError::Io(error))
+                if error.raw_os_error().is_some_and(|code| {
+                    advisory_lock_is_unsupported(code, AdvisoryLockPlatform::current())
+                }) =>
+            {
+                return AtomicTempSweepOutcome::LockUnsupported;
+            }
+            Err(AdvisoryLockError::Io(error)) => {
+                return AtomicTempSweepOutcome::Failed(Error::from(error).category());
+            }
+        }
+    };
+
+    let outcome = match remove_entry_at(dir, &entry.name, entry.identity, false) {
+        Ok(()) => AtomicTempSweepOutcome::Removed,
+        Err(error) if error.is_missing_entry() => AtomicTempSweepOutcome::Kept,
+        Err(Error::Conflict(_)) => AtomicTempSweepOutcome::Kept,
+        Err(error) => AtomicTempSweepOutcome::Failed(error.category()),
+    };
+    #[cfg(unix)]
+    drop(locked_file);
+    outcome
 }
 
 pub fn atomic_replace_at_with_precommit<F, P>(
@@ -13026,5 +13205,304 @@ mod tests {
         drop(staging);
         assert_eq!(owned_staging_drop_removals(), before + 1);
         assert!(!leaf.exists());
+    }
+
+    fn system_time_from_unix_secs(secs: i64) -> SystemTime {
+        if secs >= 0 {
+            SystemTime::UNIX_EPOCH + Duration::from_secs(secs as u64)
+        } else {
+            SystemTime::UNIX_EPOCH - Duration::from_secs(secs.unsigned_abs())
+        }
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_removes_aged_regular_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::write(dir.path().join(&name), b"partial index").expect("write orphan");
+        let entry = enumerated_entry(&parent, &name);
+        let now = system_time_from_unix_secs(entry.modified_seconds + 60);
+
+        let outcome = remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::from_secs(60));
+
+        assert_eq!(outcome, AtomicTempSweepOutcome::Removed);
+        assert!(!dir.path().join(&name).exists());
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_young_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::write(dir.path().join(&name), b"young temp").expect("write temp");
+        let entry = enumerated_entry(&parent, &name);
+        let now = system_time_from_unix_secs(entry.modified_seconds + 59);
+
+        let outcome = remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::from_secs(60));
+
+        assert_eq!(outcome, AtomicTempSweepOutcome::Kept);
+        assert!(dir.path().join(&name).is_file());
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_future_mtime_and_unrepresentable_now() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::write(dir.path().join(&name), b"future temp").expect("write temp");
+        let entry = enumerated_entry(&parent, &name);
+
+        let future_now = system_time_from_unix_secs(entry.modified_seconds - 5);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &entry, future_now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(dir.path().join(&name).is_file());
+
+        let pre_epoch_now = SystemTime::UNIX_EPOCH - Duration::from_secs(1);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &entry, pre_epoch_now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(dir.path().join(&name).is_file());
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_non_candidates_and_non_regular_entries() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let dir_name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::create_dir(dir.path().join(&dir_name)).expect("create dir");
+        let bad_uuid = OsString::from(format!("{ATOMIC_TEMP_PREFIX}not-a-uuid"));
+        std::fs::write(dir.path().join(&bad_uuid), b"not uuid").expect("write bad uuid");
+        let bare_uuid: OsString = uuid::Uuid::new_v4().to_string().into();
+        std::fs::write(dir.path().join(&bare_uuid), b"bare uuid").expect("write bare uuid");
+
+        for leaf in [&dir_name, &bad_uuid, &bare_uuid] {
+            let entry = enumerated_entry(&parent, leaf);
+            let now = system_time_from_unix_secs(entry.modified_seconds + 120);
+            assert_eq!(
+                remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::ZERO),
+                AtomicTempSweepOutcome::Kept
+            );
+        }
+        assert!(dir.path().join(&dir_name).is_dir());
+        assert!(dir.path().join(&bad_uuid).is_file());
+        assert!(dir.path().join(&bare_uuid).is_file());
+
+        #[cfg(unix)]
+        {
+            let target = dir.path().join("symlink-target");
+            std::fs::write(&target, b"keep target").expect("write target");
+            let link_name: OsString =
+                format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+            std::os::unix::fs::symlink(&target, dir.path().join(&link_name)).expect("symlink");
+            let entry = enumerated_entry(&parent, &link_name);
+            let now = system_time_from_unix_secs(entry.modified_seconds + 120);
+            assert_eq!(
+                remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::ZERO),
+                AtomicTempSweepOutcome::Kept
+            );
+            assert!(std::fs::symlink_metadata(dir.path().join(&link_name)).is_ok());
+            assert_eq!(std::fs::read(&target).expect("read target"), b"keep target");
+        }
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_replaced_entry_on_identity_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        let path = dir.path().join(&name);
+        std::fs::write(&path, b"original").expect("write original");
+        let listed = enumerated_entry(&parent, &name);
+
+        std::fs::rename(&path, dir.path().join("original-aside")).expect("rename aside");
+        std::fs::write(&path, b"replacement").expect("write replacement");
+        let replaced = enumerated_entry(&parent, &name);
+        assert_ne!(listed.identity, replaced.identity);
+
+        let now = system_time_from_unix_secs(listed.modified_seconds + 120);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &listed, now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read replacement"),
+            b"replacement"
+        );
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_live_atomic_replace_writer_temp() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let target = OsStr::new("published.ecsi");
+        let mut saw_live_temp = false;
+
+        let outcome = atomic_replace_at(&parent, target, |temp| {
+            let temps = read_directory_entries_at(
+                &parent,
+                &CancellationToken::new(),
+                None,
+                &mut is_atomic_temp_name,
+            )?;
+            assert_eq!(temps.len(), 1, "expected one live atomic temporary");
+            let temp_entry = &temps[0];
+            let now = system_time_from_unix_secs(temp_entry.modified_seconds + 120);
+            assert_eq!(
+                remove_atomic_temp_orphan_at(&parent, temp_entry, now, Duration::ZERO),
+                AtomicTempSweepOutcome::Kept
+            );
+            assert!(
+                dir.path().join(&temp_entry.name).is_file(),
+                "live writer temporary must remain on disk"
+            );
+            saw_live_temp = true;
+            temp.write_all(b"published payload").map_err(Error::from)
+        })
+        .expect("atomic_replace_at must succeed");
+
+        assert!(matches!(outcome, AtomicFileOutcome::DurableCommit));
+
+        assert!(saw_live_temp);
+        assert_eq!(
+            std::fs::read(dir.path().join(target)).expect("read published"),
+            b"published payload"
+        );
+        let remaining = read_directory_entries_at(
+            &parent,
+            &CancellationToken::new(),
+            None,
+            &mut is_atomic_temp_name,
+        )
+        .expect("list remaining");
+        assert!(
+            remaining.is_empty(),
+            "no atomic temp should remain: {remaining:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_separately_locked_temp_on_unix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::write(dir.path().join(&name), b"locked temp").expect("write temp");
+        let entry = enumerated_entry(&parent, &name);
+        let now = system_time_from_unix_secs(entry.modified_seconds + 120);
+
+        let holder =
+            open_regular_at(&parent, &name, RegularFileAccess::ReadOnly).expect("open holder");
+        lock_advisory_file(&holder, AdvisoryLockMode::NonBlocking).expect("lock holder");
+
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::from_secs(60)),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(dir.path().join(&name).is_file());
+
+        drop(holder);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::from_secs(60)),
+            AtomicTempSweepOutcome::Removed
+        );
+        assert!(!dir.path().join(&name).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_atomic_temp_orphan_reports_unsupported_lock_on_unix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        std::fs::write(dir.path().join(&name), b"orphan").expect("write orphan");
+        let entry = enumerated_entry(&parent, &name);
+        let now = system_time_from_unix_secs(entry.modified_seconds + 120);
+
+        let _guard = scoped_test_atomic_temp_lock_unsupported();
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &entry, now, Duration::from_secs(60)),
+            AtomicTempSweepOutcome::LockUnsupported
+        );
+        assert!(dir.path().join(&name).is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_replace_at_succeeds_when_unix_temp_lock_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let target = OsStr::new("published.ecsi");
+        let _guard = scoped_test_writer_temp_lock_failure();
+
+        let outcome = atomic_replace_at(&parent, target, |temp| {
+            temp.write_all(b"unlocked publish").map_err(Error::from)
+        })
+        .expect("atomic_replace_at must succeed when writer lock fails");
+
+        assert!(matches!(outcome, AtomicFileOutcome::DurableCommit));
+        assert_eq!(
+            std::fs::read(dir.path().join(target)).expect("read published"),
+            b"unlocked publish"
+        );
+    }
+
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_missing_entry_after_listing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+        let name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        let path = dir.path().join(&name);
+        std::fs::write(&path, b"vanishing orphan").expect("write orphan");
+        let listed = enumerated_entry(&parent, &name);
+        std::fs::remove_file(&path).expect("unlink before sweep");
+
+        let now = system_time_from_unix_secs(listed.modified_seconds + 120);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &listed, now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_atomic_temp_orphan_keeps_entry_replaced_by_symlink_or_directory_on_unix() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let parent = test_parent(dir.path());
+
+        let symlink_name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        let symlink_path = dir.path().join(&symlink_name);
+        std::fs::write(&symlink_path, b"original").expect("write original");
+        let listed_for_symlink = enumerated_entry(&parent, &symlink_name);
+        std::fs::remove_file(&symlink_path).expect("remove original");
+        let target = dir.path().join("symlink-target");
+        std::fs::write(&target, b"keep target").expect("write target");
+        std::os::unix::fs::symlink(&target, &symlink_path).expect("replace with symlink");
+
+        let now = system_time_from_unix_secs(listed_for_symlink.modified_seconds + 120);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &listed_for_symlink, now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(std::fs::symlink_metadata(&symlink_path).is_ok());
+        assert_eq!(std::fs::read(&target).expect("read target"), b"keep target");
+
+        let dir_name: OsString = format!("{ATOMIC_TEMP_PREFIX}{}", uuid::Uuid::new_v4()).into();
+        let dir_path = dir.path().join(&dir_name);
+        std::fs::write(&dir_path, b"original").expect("write original");
+        let listed_for_dir = enumerated_entry(&parent, &dir_name);
+        std::fs::remove_file(&dir_path).expect("remove original");
+        std::fs::create_dir(&dir_path).expect("replace with dir");
+
+        let now = system_time_from_unix_secs(listed_for_dir.modified_seconds + 120);
+        assert_eq!(
+            remove_atomic_temp_orphan_at(&parent, &listed_for_dir, now, Duration::ZERO),
+            AtomicTempSweepOutcome::Kept
+        );
+        assert!(dir_path.is_dir());
     }
 }

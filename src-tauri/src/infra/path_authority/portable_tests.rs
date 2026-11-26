@@ -929,6 +929,128 @@ fn engine_image_cleanup_sweep_continues_after_two_removal_errors() {
     );
 }
 
+#[test]
+fn engine_image_cleanup_sweep_preserves_live_atomic_writer_temp() {
+    use std::io::Write;
+
+    let mut f = EngineImageCleanupFixture::new();
+    f.authority
+        .set_engine_image_sweep_root(Some(AppDataDir::for_test(&f.app_data)));
+    let target = OsStr::new("live-target");
+    let mut live_temp_name = None;
+
+    let outcome =
+        crate::infra::fs::atomic_replace_at(f.image_dir.directory.as_file(), target, |temp| {
+            let temps = read_directory_entries_at(
+                f.image_dir.directory.as_file(),
+                &CancellationToken::new(),
+                Some(MAX_ENGINE_IMAGE_SWEEP_ENTRIES),
+                &mut crate::infra::fs::is_atomic_temp_name,
+            )?;
+            assert_eq!(temps.len(), 1, "expected one live atomic temporary");
+            let temp_name = temps[0].name.clone();
+            temp.write_all(b"live engine image")?;
+
+            f.authority.cleanup_engine_images(&f.image_dir, false)?;
+
+            assert!(
+                f.image_dir.path().join(&temp_name).is_file(),
+                "live writer's atomic temporary must survive engine-image sweep"
+            );
+            assert!(
+                !f.image_dir.path().join(&f.leaf).exists(),
+                "unreferenced bare-UUID orphan must still be swept"
+            );
+            live_temp_name = Some(temp_name);
+            Ok(())
+        })
+        .unwrap();
+
+    assert!(matches!(
+        outcome,
+        crate::infra::fs::AtomicFileOutcome::DurableCommit
+    ));
+
+    let live_temp_name = live_temp_name.expect("write_fn must run");
+    assert_eq!(
+        fs::read(f.image_dir.path().join(target)).unwrap(),
+        b"live engine image"
+    );
+    assert!(!f.image_dir.path().join(live_temp_name).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn engine_image_cleanup_sweep_unsupported_atomic_lock_still_removes_bare_uuid() {
+    let mut f = EngineImageCleanupFixture::new();
+    let temp1 = f.sweep_temp();
+    let temp2 = f.sweep_temp();
+    let mut bare_uuids = vec![f.leaf.clone()];
+    let mut saw_bare_after_atomic = false;
+    for _ in 0..64 {
+        let listed = read_directory_entries_at(
+            f.image_dir.directory.as_file(),
+            &CancellationToken::new(),
+            Some(MAX_ENGINE_IMAGE_SWEEP_ENTRIES),
+            &mut |_| true,
+        )
+        .unwrap();
+        saw_bare_after_atomic = listed
+            .iter()
+            .position(|entry| crate::infra::fs::is_atomic_temp_name(&entry.name))
+            .is_some_and(|first_atomic| {
+                listed[first_atomic + 1..].iter().any(|entry| {
+                    entry
+                        .name
+                        .to_str()
+                        .is_some_and(|name| Uuid::parse_str(name).is_ok())
+                })
+            });
+        if saw_bare_after_atomic {
+            break;
+        }
+        bare_uuids.push(f.sweep_leaf(Uuid::new_v4().to_string()));
+    }
+    assert!(
+        saw_bare_after_atomic,
+        "at least one bare-UUID orphan must be listed after an atomic temporary"
+    );
+
+    f.authority
+        .set_engine_image_sweep_root(Some(AppDataDir::for_test(&f.app_data)));
+    let _guard = crate::infra::fs::scoped_test_atomic_temp_lock_unsupported();
+    let capture = crate::error::LogCaptureScope::start();
+
+    f.authority
+        .cleanup_engine_images(&f.image_dir, false)
+        .unwrap();
+
+    assert!(f.image_dir.path().join(&temp1).is_file());
+    assert!(f.image_dir.path().join(&temp2).is_file());
+    for bare in bare_uuids {
+        assert!(
+            !f.image_dir.path().join(&bare).exists(),
+            "bare-UUID orphan {bare:?} must still be removed after unsupported atomic lock"
+        );
+    }
+    let warnings: Vec<_> = capture
+        .records()
+        .into_iter()
+        .filter(|record| record.level == log::Level::Warn)
+        .collect();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "expected one warn for unsupported locks: {warnings:?}"
+    );
+    assert!(
+        warnings[0]
+            .message
+            .contains("advisory locks are unsupported"),
+        "{warnings:?}"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn engine_image_cleanup_sweep_windows_sharing_failure_is_nonfatal() {

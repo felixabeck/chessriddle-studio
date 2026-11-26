@@ -9456,4 +9456,29 @@ mod native_tests {
             body
         );
     }
+
+    #[test]
+    fn maintain_removes_atomic_uuid_temp_and_keeps_non_uuid_atomic_file() {
+        let fixture = Fixture::new();
+        let root = fixture.service.root.path();
+        let orphan_temp = root.join(format!(
+            "{}{}",
+            crate::infra::fs::ATOMIC_TEMP_PREFIX,
+            Uuid::new_v4()
+        ));
+        let non_uuid_atomic = root.join(format!(
+            "{}not-a-uuid",
+            crate::infra::fs::ATOMIC_TEMP_PREFIX
+        ));
+        std::fs::write(&orphan_temp, b"crash orphan").unwrap();
+        std::fs::write(&non_uuid_atomic, b"keep non-uuid").unwrap();
+
+        fixture.service.maintain(&CancellationToken::new()).unwrap();
+
+        assert!(!orphan_temp.exists(), "atomic UUID temp must be removed");
+        assert!(
+            non_uuid_atomic.is_file(),
+            "non-UUID .atomic-* file must be kept"
+        );
+    }
 }

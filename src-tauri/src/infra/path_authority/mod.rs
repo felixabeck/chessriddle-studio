@@ -2574,12 +2574,7 @@ fn admit_instance_with_lock(
     mut lock: impl FnMut(&OwnedFile) -> Result<(), crate::infra::fs::AdvisoryLockError>,
 ) -> Result<InstanceAdmission, Error> {
     use crate::infra::fs::{advisory_lock_is_unsupported, AdvisoryLockError, AdvisoryLockPlatform};
-    #[cfg(target_os = "linux")]
-    let platform = AdvisoryLockPlatform::Linux;
-    #[cfg(target_os = "macos")]
-    let platform = AdvisoryLockPlatform::MacOs;
-    #[cfg(windows)]
-    let platform = AdvisoryLockPlatform::Windows;
+    let platform = AdvisoryLockPlatform::current();
     let mut acquire = || -> Result<InstanceAdmission, Error> {
         let mut identities = Vec::new();
         let mut files = Vec::new();

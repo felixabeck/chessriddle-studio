@@ -1,8 +1,12 @@
 use super::*;
-use crate::infra::fs::{atomic_replace, read_bounded_bytes, AtomicFileOutcome};
+use crate::infra::fs::{
+    atomic_replace, is_atomic_temp_name, read_bounded_bytes, remove_atomic_temp_orphan_at,
+    AtomicFileOutcome, AtomicTempSweepOutcome,
+};
 #[cfg(target_os = "macos")]
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime};
 use tokio::sync::Notify;
 
 /// Counts complete blocking image issuances so shutdown cannot clean up before they settle.
@@ -936,29 +940,77 @@ impl PathAuthority {
                 return;
             }
         };
+        let now = SystemTime::now();
+        let mut atomic_locks_unsupported = false;
         for entry in entries {
-            Self::sweep_engine_image_candidate(&image_dir, &protected, &entry);
+            Self::sweep_engine_image_candidate_with_state(
+                &image_dir,
+                &protected,
+                &entry,
+                now,
+                &mut atomic_locks_unsupported,
+            );
         }
     }
 
+    #[cfg(test)]
     pub(super) fn sweep_engine_image_candidate(
         image_dir: &AuthorizedDir,
         protected: &BTreeSet<OsString>,
         entry: &DirectoryEntry,
+    ) {
+        let mut atomic_locks_unsupported = false;
+        Self::sweep_engine_image_candidate_with_state(
+            image_dir,
+            protected,
+            entry,
+            SystemTime::now(),
+            &mut atomic_locks_unsupported,
+        );
+    }
+
+    fn sweep_engine_image_candidate_with_state(
+        image_dir: &AuthorizedDir,
+        protected: &BTreeSet<OsString>,
+        entry: &DirectoryEntry,
+        now: SystemTime,
+        atomic_locks_unsupported: &mut bool,
     ) {
         if entry.kind != DirectoryEntryKind::RegularFile
             || protected.contains(&entry.name.to_ascii_lowercase())
         {
             return;
         }
+        if is_atomic_temp_name(&entry.name) {
+            if *atomic_locks_unsupported {
+                return;
+            }
+            match remove_atomic_temp_orphan_at(
+                image_dir.directory.as_file(),
+                entry,
+                now,
+                Duration::ZERO,
+            ) {
+                AtomicTempSweepOutcome::Removed | AtomicTempSweepOutcome::Kept => {}
+                AtomicTempSweepOutcome::LockUnsupported => {
+                    *atomic_locks_unsupported = true;
+                    log::warn!(
+                        "engine image orphan sweep skipped remaining atomic temporaries: advisory locks are unsupported"
+                    );
+                }
+                AtomicTempSweepOutcome::Failed(category) => {
+                    log::warn!(
+                        "engine image orphan sweep removal failed for {}: {category}",
+                        entry.name.to_string_lossy()
+                    );
+                }
+            }
+            return;
+        }
         let Some(name) = entry.name.to_str() else {
             return;
         };
-        if Uuid::parse_str(name).is_err()
-            && !name
-                .strip_prefix(".atomic-")
-                .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
-        {
+        if Uuid::parse_str(name).is_err() {
             return;
         }
         let identity = match image_dir.open_leaf_identified(&entry.name) {
