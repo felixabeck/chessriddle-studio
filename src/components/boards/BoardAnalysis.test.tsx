@@ -37,6 +37,7 @@ import {
 } from "@/state/atoms";
 import { displayEngine, displayLines } from "@/tests/engineDisplay";
 import { focusedDialogButton, press } from "@/tests/keyboard";
+import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { analysisSearch } from "@/utils/analysisSearch";
 import { AnalysisLineMemory } from "@/utils/analysisLineMemory";
@@ -4224,6 +4225,7 @@ describe("BoardAnalysis preparation landing", () => {
   let treeStore: TreeStore;
 
   beforeEach(() => {
+    installMatchMediaStub();
     mocks.showNotification.mockReset();
     sessionStorage.clear();
     localStorage.clear();
@@ -4315,10 +4317,6 @@ describe("BoardAnalysis preparation landing", () => {
 
   test("shows the Photo tab only while scoresheetReview is active and falls back from photo to annotate otherwise", async () => {
     mocks.realTabs = true;
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
-    );
     try {
       jotaiStore.set(tabFamily(tabId), "photo");
       await act(async () => {
@@ -4368,10 +4366,6 @@ describe("BoardAnalysis preparation landing", () => {
 
   test("isolates a failed Photo panel lazy load to an in-place alert and recovers when Retry reloads the chunk", async () => {
     mocks.realTabs = true;
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
-    );
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const loadSpy = vi
       .spyOn(scoresheetPhotoPanelLoader, "load")
@@ -4533,14 +4527,23 @@ describe("BoardAnalysis preparation landing", () => {
       );
     });
 
+    // Await the lazy modal module and flush effects inside act: the dialog's open effect resets the name field.
+    const waitForLayoutModal = async (title: string) => {
+      await act(async () => {
+        await import("./BoardLayoutModal");
+        await Promise.resolve();
+      });
+      expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(title);
+    };
+    const expectDialogClosed = () => {
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    };
+
     // requestBoardCommand "saveLayoutAs" opens the dialog in save mode with the repertoire kind.
     await act(async () => {
       expect(requestBoardCommand(jotaiStore, "saveLayoutAs")).toBe(true);
     });
-    await vi.waitFor(() => {
-      const dialog = container.querySelector('[role="dialog"]');
-      expect(dialog?.getAttribute("aria-label")).toBe("Board.Layout.SaveTitle");
-    });
+    await waitForLayoutModal("Board.Layout.SaveTitle");
 
     const input = container.querySelector<HTMLInputElement>('[role="dialog"] input')!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -4553,9 +4556,7 @@ describe("BoardAnalysis preparation landing", () => {
     ].find((btn) => btn.textContent?.trim() === "Common.Save")!;
     await act(async () => saveBtn.click());
 
-    await vi.waitFor(() => {
-      expect(container.querySelector('[role="dialog"]')).toBeNull();
-    });
+    expectDialogClosed();
     // Saved layout captured the repertoire kind's tabsHidden=true, not game's tabsHidden=false.
     const saved = jotaiStore.get(boardLayoutsAtom).saved.find((s) => s.name === "Rep Snapshot");
     expect(saved?.tabsHidden).toBe(true);
@@ -4564,13 +4565,10 @@ describe("BoardAnalysis preparation landing", () => {
     await act(async () => {
       expect(requestBoardCommand(jotaiStore, "manageLayouts")).toBe(true);
     });
-    await vi.waitFor(() => {
-      const dialog = container.querySelector('[role="dialog"]');
-      expect(dialog?.getAttribute("aria-label")).toBe("Board.Layout.ManageTitle");
-    });
+    await waitForLayoutModal("Board.Layout.ManageTitle");
     const closeBtn = container.querySelector<HTMLButtonElement>('[aria-label="close-modal"]')!;
     await act(async () => closeBtn.click());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expectDialogClosed();
 
     // BoardControls receives onApplyLayout, onSaveLayoutAs, and onManageLayouts.
     expect(mocks.boardControls?.onApplyLayout).toBeTypeOf("function");
@@ -4586,22 +4584,15 @@ describe("BoardAnalysis preparation landing", () => {
     await act(async () => {
       mocks.boardControls!.onSaveLayoutAs!();
     });
-    await vi.waitFor(() => {
-      expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
-        "Board.Layout.SaveTitle",
-      );
-    });
+    await waitForLayoutModal("Board.Layout.SaveTitle");
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="close-modal"]')!.click();
     });
+    expectDialogClosed();
 
     await act(async () => {
       mocks.boardControls!.onManageLayouts!();
     });
-    await vi.waitFor(() => {
-      expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
-        "Board.Layout.ManageTitle",
-      );
-    });
+    await waitForLayoutModal("Board.Layout.ManageTitle");
   });
 });

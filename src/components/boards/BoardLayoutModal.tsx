@@ -176,7 +176,7 @@ export default function BoardLayoutModal({ opened, mode, kind, onClose }: BoardL
             {pendingReplace ? (
               <Paper withBorder variant="inset" p="sm">
                 <Stack gap="xs">
-                  <Text size="sm">
+                  <Text size="sm" className="wrap-anywhere">
                     {t("Board.Layout.ReplacePrompt", { name: pendingReplace.name })}
                   </Text>
                   <Group justify="flex-end" gap="xs">
@@ -225,17 +225,18 @@ export default function BoardLayoutModal({ opened, mode, kind, onClose }: BoardL
                     py="xs"
                   >
                     <Group justify="space-between" wrap="nowrap" gap="xs">
-                      <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={500} truncate>
+                      <Group gap="xs" miw={0} style={{ flex: 1 }}>
+                        <Text size="sm" fw={500} miw={0} className="wrap-anywhere">
                           {label}
                         </Text>
-                        <Badge size="xs" variant="light">
+                        <Badge size="xs" variant="light" style={{ flexShrink: 0 }}>
                           {t("Board.Layout.PresetBadge")}
                         </Badge>
                       </Group>
                       <Button
                         size="xs"
                         variant="default"
+                        style={{ flexShrink: 0 }}
                         onClick={() => handleApply(entry.preset.id)}
                       >
                         {t("Board.Layout.Apply")}
@@ -287,7 +288,9 @@ export default function BoardLayoutModal({ opened, mode, kind, onClose }: BoardL
                 return (
                   <Paper key={saved.id} withBorder variant="inset" px="sm" py="xs">
                     <Stack gap="xs">
-                      <Text size="sm">{t("Board.Layout.DeletePrompt", { name: saved.name })}</Text>
+                      <Text size="sm" className="wrap-anywhere">
+                        {t("Board.Layout.DeletePrompt", { name: saved.name })}
+                      </Text>
                       <Group justify="flex-end" gap="xs">
                         <Button
                           type="button"
@@ -324,10 +327,10 @@ export default function BoardLayoutModal({ opened, mode, kind, onClose }: BoardL
                   py="xs"
                 >
                   <Group justify="space-between" wrap="nowrap" gap="xs">
-                    <Text size="sm" fw={500} truncate>
+                    <Text size="sm" fw={500} miw={0} style={{ flex: 1 }} className="wrap-anywhere">
                       {saved.name}
                     </Text>
-                    <Group gap={4} wrap="nowrap">
+                    <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
                       <Button size="xs" variant="default" onClick={() => handleApply(saved.id)}>
                         {t("Board.Layout.Apply")}
                       </Button>
