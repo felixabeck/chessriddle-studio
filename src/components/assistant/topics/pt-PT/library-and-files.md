@@ -2,7 +2,7 @@
 id: library-and-files
 title: Ficheiros e Biblioteca
 summary: Configure uma pasta de trabalho, crie e organize ficheiros PGN, abra e guarde partidas e faça a gestão do lixo.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne os ficheiros PGN da sua área de trabalho (partidas, repertórios, torneios, problemas e outros ficheiros) e as suas bases de dados de partidas.
@@ -15,9 +15,9 @@ Em [[page:library]]:
 - Selecione um ficheiro para pré-visualizar as respetivas partidas (a pré-visualização pode ocultar os lances com o botão do olho, [[setting:hide-preview-moves]]), abri-lo no tabuleiro de análise ou usar {{label:Files.Rename}}, {{label:Files.Move}} e {{label:Files.Trash}}.
 
 Enquanto edita um ficheiro no tabuleiro de análise:
-- Guarde as alterações com o botão guardar na barra do tabuleiro, {{label:Menu.File}} -> {{label:Common.Save}}, ou o atalho {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Guarde as alterações com o botão guardar na barra superior do tabuleiro (apresentado quando a gravação automática está desativada, indisponível ou falhou), {{label:Menu.File}} -> {{label:Common.Save}}, ou o atalho {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Ative [[setting:auto-save]] ({{label:Settings.AutoSave}}) para gravar automaticamente as alterações nos ficheiros abertos.
-- Utilize {{label:Menu.File}} -> {{label:Board.Database.Save}} (ou o botão {{label:Board.Database.Save}} na barra de ferramentas) para guardar a partida atual noutro ficheiro da biblioteca ou base de dados.
+- Utilize {{label:Menu.File}} -> {{label:Board.Database.Save}} (ou {{label:Board.Action.More}} -> {{label:Board.Database.Save}} na barra superior do tabuleiro) para guardar a partida atual noutro ficheiro da biblioteca ou base de dados.
 
 Mover um ficheiro para {{label:Files.Trash}} não o elimina permanentemente de imediato. Pode clicar logo em {{label:Common.Undo}} no aviso, ou deslocar-se até à secção {{label:Files.Trash}} em [[page:library]] para {{label:Files.Restore}} um ficheiro, usar {{label:Files.DeletePermanently}} ou {{label:Files.EmptyTrash}}.
 

@@ -2,22 +2,21 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
 
 Jouez des coups en faisant glisser les pièces ou en cliquant dessus (configurable dans [[setting:move-method]]). Vous pouvez aussi activer [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}) pour saisir les coups en notation SAN. Utilisez les commandes de déplacement sous la notation, les touches fléchées ou la molette de la souris (si [[setting:scroll-moves]] est activé) pour parcourir les coups.
 
-La barre d’outils à côté de la notation propose des actions sur l’échiquier :
-- {{label:Board.Action.TakeSnapshot}} : enregistrer une image de l’échiquier actuel.
-- {{label:Board.Action.EditPosition}} : configurer une position personnalisée en plaçant des pièces ou en modifiant le FEN.
+La barre supérieure au-dessus de l’échiquier propose les actions sur l’échiquier :
 - {{label:Board.Action.PlayFromHere}} : démarrer une partie à partir de la position actuelle.
-- {{label:Board.Action.ClearDrawings}} : effacer les flèches et les cases mises en surbrillance (affiché lorsque [[setting:erase-drawables]] est désactivé).
-- {{label:Board.Database.Save}} : enregistrer la partie dans un fichier de la bibliothèque ou une base de données.
-- Boutons pour annuler, rétablir, enregistrer et retourner l’échiquier.
+- Retourner l’échiquier (`F`) : inverser les Blancs et les Noirs en bas de l’échiquier.
+- Enregistrer : s’affiche lorsque la partie comporte des modifications non enregistrées et que l’enregistrement automatique est désactivé, indisponible (comme pour un brouillon) ou a échoué.
+- {{label:Board.Action.More}} : ouvre le menu pour {{label:Board.Database.Save}} (enregistrer la partie dans un fichier de la bibliothèque ou une base de données), {{label:Board.Action.TakeSnapshot}} (enregistrer une image de l’échiquier actuel) et {{label:Board.Action.EditPosition}} (configurer une position personnalisée en plaçant des pièces ou en modifiant le FEN).
+- Annuler, rétablir et effacer les flèches ou les cases mises en surbrillance (lorsque [[setting:erase-drawables]] est désactivé) utilisent leurs raccourcis clavier dans [[settings-category:keybinds]].
 
-Jouer un autre coup à partir d’une position précédente crée une variante. Faites un clic droit sur n’importe quel coup dans la notation pour accéder à {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilisez les boutons de l’en-tête de la notation pour activer ou désactiver {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} et {{label:Notation.HideVariations}}.
+Jouer un autre coup à partir d’une position précédente crée une variante. Faites un clic droit sur n’importe quel coup dans la notation pour accéder à {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilisez le bouton œil dans l’en-tête de la notation pour {{label:Notation.HideMoves}}, et le menu {{label:Notation.ViewOptions}} pour activer ou désactiver {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} et {{label:Notation.ShowVariations}}.
 
 Pour annoter des coups et rédiger des commentaires, ouvrez l’onglet {{label:Board.Tabs.Annotate}}. Cliquez sur un symbole de qualité de coup (ou appuyez sur les touches 1 à 6) pour basculer `!!`, `!`, `!?`, `?!`, `?` ou `??`, ou cliquez sur {{label:Annotate.ShowMore}} pour afficher les symboles d’évaluation et de position. Sous les symboles, utilisez l’éditeur de texte enrichi pour rédiger des commentaires mis en forme et insérer des diagrammes d’échiquier dans le texte.
 

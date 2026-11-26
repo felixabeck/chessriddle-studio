@@ -2,7 +2,7 @@
 id: library-and-files
 title: Filer og biblioteket
 summary: Sett opp en arbeidsmappe, opprett og organiser PGN-filer, åpne og lagre partier og administrer papirkurven.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) samler PGN-filene i arbeidsområdet ditt (partier, repertoarer, turneringer, oppgaver og andre filer) sammen med partidatabasene dine.
@@ -15,9 +15,9 @@ På [[page:library]]:
 - Velg en fil for å forhåndsvise partiene i den (forhåndsvisningen kan skjule trekkene med øyeknappen, [[setting:hide-preview-moves]]), åpne den på analysebrettet eller bruke {{label:Files.Rename}}, {{label:Files.Move}} og {{label:Files.Trash}}.
 
 Mens du redigerer en fil på analysebrettet:
-- Lagre endringer med lagreknappen i brettets verktøylinje, {{label:Menu.File}} -> {{label:Common.Save}}, eller hurtigtasten {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Lagre endringer med lagreknappen i brettets topplinje (vises når automatisk lagring er slått av, utilgjengelig eller mislyktes), {{label:Menu.File}} -> {{label:Common.Save}}, eller hurtigtasten {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Slå på [[setting:auto-save]] ({{label:Settings.AutoSave}}) for å lagre endringer i åpnede filer automatisk.
-- Bruk {{label:Menu.File}} -> {{label:Board.Database.Save}} (eller verktøylinjeknappen {{label:Board.Database.Save}}) for å lagre det gjeldende partiet i en annen biblioteksfil eller database.
+- Bruk {{label:Menu.File}} -> {{label:Board.Database.Save}} (eller {{label:Board.Action.More}} -> {{label:Board.Database.Save}} i brettets topplinje) for å lagre det gjeldende partiet i en annen biblioteksfil eller database.
 
 Å flytte en fil til {{label:Files.Trash}} sletter den ikke permanent med én gang. Du kan klikke {{label:Common.Undo}} direkte i varselet, eller bla ned til delen {{label:Files.Trash}} i [[page:library]] for å bruke {{label:Files.Restore}}, {{label:Files.DeletePermanently}} eller {{label:Files.EmptyTrash}}.
 

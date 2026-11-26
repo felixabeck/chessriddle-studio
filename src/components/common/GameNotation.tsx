@@ -1,8 +1,8 @@
 import { useTabAtom } from "@/state/tabScope";
 import {
   Box,
-  Divider,
   Group,
+  Menu,
   Overlay,
   Paper,
   ScrollArea,
@@ -14,23 +14,30 @@ import {
   Button,
 } from "@mantine/core";
 import {
-  ArrowRight,
+  Check,
   Split,
   MessageSquare,
-  MessageSquareOff,
   Eye,
   EyeOff,
   Grid2x2,
-  Grid2x2X,
+  SlidersHorizontal,
   TableProperties,
-  List,
   Minus,
   Plus,
 } from "lucide-react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useAtom, useAtomValue } from "jotai";
 import type { TFunction } from "i18next";
-import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { MiniBoard } from "@/components/common/MiniBoard";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
@@ -38,6 +45,8 @@ import { useStore } from "zustand";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import Comment from "@/components/common/Comment";
 import IconAction from "@/components/common/IconAction";
+import { NotationIcon } from "@/components/common/iconCatalog";
+import PanelHeader from "@/components/boards/PanelHeader";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   invisibleFamily,
@@ -151,19 +160,26 @@ type PreparationHeaderState = {
   onShowAllLinesChange: (showAllLines: boolean) => void;
 };
 
+type NotationArrangeProps = {
+  onDragStart: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSuppressClick: (event: ReactMouseEvent) => void;
+  onStartPlacing: () => void;
+};
+
 function GameNotation({
   topBar,
-  controls,
-  headerGrip,
+  arrange,
+  headerActions,
   moveActions,
   markOpenVariations,
   hidden,
   onReveal,
 }: {
   topBar?: boolean;
-  controls?: React.ReactNode;
-  /** Optional arranging controls (the grip, and Show the tabs while they are hidden) at the end of the notation header row. */
-  headerGrip?: React.ReactNode;
+  /** Arranging callbacks for the notation header's grip and drag handle; omit when arranging is unavailable. */
+  arrange?: NotationArrangeProps;
+  /** Optional controls rendered at the right end of the notation header after the View menu. */
+  headerActions?: React.ReactNode;
   moveActions?: NotationMoveActions;
   /**
    * Frame side lines that are one move long. Set where the tree is a file being built (the
@@ -425,116 +441,113 @@ function GameNotation({
         flexShrink: topBar ? 0 : undefined,
       }}
     >
-      <Group h="100%" wrap="nowrap" align="stretch" gap={0} className={styles.contentRow}>
-        {controls && (
-          <Box className={styles.toolbar}>
-            <ScrollArea type="never" flex={1} mih={0} py="md" px="xs">
-              {controls}
-            </ScrollArea>
-          </Box>
+      <Stack h="100%" gap={0} style={{ flex: 1, minWidth: 0 }}>
+        {topBar && (
+          <NotationHeader
+            preparation={preparationHeader}
+            arrange={arrange}
+            headerActions={headerActions}
+          />
         )}
-        <Stack h="100%" gap={0} style={{ flex: 1, minWidth: 0 }}>
-          {topBar && <NotationHeader preparation={preparationHeader} grip={headerGrip} />}
-          <ScrollArea
-            flex={topBar ? "1 1 0px" : 1}
-            mih={topBar ? NOTATION_MIN_HEIGHT_REM : undefined}
-            offsetScrollbars
-            scrollbars="y"
-            viewportRef={viewport}
-          >
-            <Stack gap="xs">
-              <Box>
-                {invisible && (
-                  <Overlay
-                    backgroundOpacity={0.6}
-                    color="var(--cf-inset)"
-                    zIndex={2}
-                    center={onReveal != null}
-                  >
-                    {onReveal ? (
-                      <Button onClick={onReveal}>{t("Notation.ShowMoves")}</Button>
-                    ) : undefined}
-                  </Overlay>
-                )}
-                {/* The overlay only blocks the pointer. `inert` also takes the hidden moves out of
+        <ScrollArea
+          flex={topBar ? "1 1 0px" : 1}
+          mih={topBar ? NOTATION_MIN_HEIGHT_REM : undefined}
+          offsetScrollbars
+          scrollbars="y"
+          viewportRef={viewport}
+        >
+          <Stack gap="xs">
+            <Box>
+              {invisible && (
+                <Overlay
+                  backgroundOpacity={0.6}
+                  color="var(--cf-inset)"
+                  zIndex={2}
+                  center={onReveal != null}
+                >
+                  {onReveal ? (
+                    <Button onClick={onReveal}>{t("Notation.ShowMoves")}</Button>
+                  ) : undefined}
+                </Overlay>
+              )}
+              {/* The overlay only blocks the pointer. `inert` also takes the hidden moves out of
                     the tab order and the accessibility tree, so neither Tab + Enter nor a screen
                     reader reaches the drill's answer (f-20261119-15). The rows blur themselves rather
                     than relying on an overlay backdrop-filter, which WebKit does not apply to these
                     transformed rows, so the moves stayed readable (f-20261125-10). */}
-                <Box
-                  data-notation-rows
-                  inert={invisible}
-                  style={{
-                    height: rowVirtualizer.getTotalSize(),
-                    width: "100%",
-                    position: "relative",
-                    filter: invisible ? HIDDEN_NOTATION_FILTER : undefined,
-                  }}
-                >
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => (
-                    <NotationVirtualRow
-                      key={virtualRow.index}
-                      row={model.rows[virtualRow.index]}
-                      result={headers.result}
-                      termination={termination}
-                      index={model.index}
-                      root={root}
-                      currentNode={currentNode}
-                      startNode={startNode}
-                      showComments={showComments}
-                      hasScoresheetReview={hasScoresheetReview}
-                      tableView={tableView}
-                      orientation={headers.orientation ?? "white"}
-                      onToggleVariation={(parent) => {
-                        const path = pathForNotationNode(model.index, parent);
-                        if (path === undefined) return;
-                        const key = variationCollapseKey(root, path);
-                        setCollapsedVariations((previous) => {
-                          const next = new Set(previous);
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
-                          return next;
-                        });
-                      }}
-                      onRevealVariation={(parent) => {
-                        const path = pathForNotationNode(model.index, parent);
-                        if (path === undefined) return;
-                        const key = variationCollapseKey(root, path);
-                        setRevealedVariations((previous) => {
-                          if (previous.has(key)) return previous;
-                          const next = new Set(previous);
-                          next.add(key);
-                          return next;
-                        });
-                      }}
-                      measureRef={rowVirtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                      dataIndex={virtualRow.index}
-                    />
-                  ))}
-                </Box>
+              <Box
+                data-notation-rows
+                inert={invisible}
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  width: "100%",
+                  position: "relative",
+                  filter: invisible ? HIDDEN_NOTATION_FILTER : undefined,
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+                  <NotationVirtualRow
+                    key={virtualRow.index}
+                    row={model.rows[virtualRow.index]}
+                    result={headers.result}
+                    termination={termination}
+                    index={model.index}
+                    root={root}
+                    currentNode={currentNode}
+                    startNode={startNode}
+                    showComments={showComments}
+                    hasScoresheetReview={hasScoresheetReview}
+                    tableView={tableView}
+                    orientation={headers.orientation ?? "white"}
+                    onToggleVariation={(parent) => {
+                      const path = pathForNotationNode(model.index, parent);
+                      if (path === undefined) return;
+                      const key = variationCollapseKey(root, path);
+                      setCollapsedVariations((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      });
+                    }}
+                    onRevealVariation={(parent) => {
+                      const path = pathForNotationNode(model.index, parent);
+                      if (path === undefined) return;
+                      const key = variationCollapseKey(root, path);
+                      setRevealedVariations((previous) => {
+                        if (previous.has(key)) return previous;
+                        const next = new Set(previous);
+                        next.add(key);
+                        return next;
+                      });
+                    }}
+                    measureRef={rowVirtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    dataIndex={virtualRow.index}
+                  />
+                ))}
               </Box>
-              <Box pb="md">
-                {!gameEnd && headers.result !== "*" && (
-                  <Text ta="center">
-                    {headers.result}
-                    <br />
-                    <Text span fs="italic">
-                      {getResultText(headers.result, t)}
-                    </Text>
+            </Box>
+            <Box pb="md">
+              {!gameEnd && headers.result !== "*" && (
+                <Text ta="center">
+                  {headers.result}
+                  <br />
+                  <Text span fs="italic">
+                    {getResultText(headers.result, t)}
                   </Text>
-                )}
-              </Box>
-            </Stack>
-          </ScrollArea>
-        </Stack>
-      </Group>
+                </Text>
+              )}
+            </Box>
+          </Stack>
+        </ScrollArea>
+      </Stack>
     </Paper>
   );
   return (
@@ -546,10 +559,12 @@ function GameNotation({
 
 function NotationHeader({
   preparation,
-  grip,
+  arrange,
+  headerActions,
 }: {
   preparation: PreparationHeaderState | null;
-  grip?: React.ReactNode;
+  arrange?: NotationArrangeProps;
+  headerActions?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const [invisible, setInvisible] = useAtom(useTabAtom(invisibleFamily));
@@ -557,61 +572,95 @@ function NotationHeader({
   const [showVariations, setShowVariations] = useAtom(useTabAtom(showVariationsFamily));
   const [showDiagrams, setShowDiagrams] = useAtom(useTabAtom(showDiagramsFamily));
   const [tableView, setTableView] = useAtom(tableViewAtom);
+
   return (
-    <Stack gap="xs" pt="xs">
-      <Group
-        justify="space-between"
-        px="sm"
-        wrap={grip ? "wrap" : undefined}
-        gap={grip ? "xs" : undefined}
-      >
+    <Stack gap={0}>
+      <PanelHeader
+        area="bottomRight"
+        title={t("Board.Area.Notation")}
+        icon={<NotationIcon size="1rem" />}
+        arrangeable={Boolean(arrange)}
+        onDragStart={arrange?.onDragStart}
+        onSuppressClick={arrange?.onSuppressClick}
+        onStartPlacing={arrange?.onStartPlacing}
+        actions={
+          <>
+            <IconAction
+              label={invisible ? t("Notation.ShowMoves") : t("Notation.HideMoves")}
+              size="sm"
+              variant="subtle"
+              data-no-drag="true"
+              onClick={() => setInvisible((value) => !value)}
+              pressed={!invisible}
+            >
+              {invisible ? <EyeOff size="0.875rem" /> : <Eye size="0.875rem" />}
+            </IconAction>
+            <Menu position="bottom-end" shadow="md" closeOnItemClick={false} withinPortal>
+              <Menu.Target>
+                <IconAction
+                  label={t("Notation.ViewOptions")}
+                  size="sm"
+                  variant="subtle"
+                  data-no-drag="true"
+                >
+                  <SlidersHorizontal size="0.875rem" />
+                </IconAction>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={tableView}
+                  leftSection={<TableProperties size="0.875rem" />}
+                  rightSection={tableView ? <Check size="0.875rem" /> : null}
+                  onClick={() => setTableView((value) => !value)}
+                >
+                  {t("Notation.TableView")}
+                </Menu.Item>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={showComments}
+                  leftSection={<MessageSquare size="0.875rem" />}
+                  rightSection={showComments ? <Check size="0.875rem" /> : null}
+                  onClick={() => setShowComments((value) => !value)}
+                >
+                  {t("Notation.ShowComments")}
+                </Menu.Item>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={showDiagrams}
+                  leftSection={<Grid2x2 size="0.875rem" />}
+                  rightSection={showDiagrams ? <Check size="0.875rem" /> : null}
+                  onClick={() => setShowDiagrams((value) => !value)}
+                >
+                  {t("Notation.ShowDiagrams")}
+                </Menu.Item>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={showVariations}
+                  leftSection={<Split size="0.875rem" />}
+                  rightSection={showVariations ? <Check size="0.875rem" /> : null}
+                  onClick={() => setShowVariations((value) => !value)}
+                >
+                  {t("Notation.ShowVariations")}
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            {headerActions}
+          </>
+        }
+      />
+      <div className={styles.openingRow}>
         <OpeningName />
-        <Group gap="sm" wrap={grip ? "wrap" : undefined}>
-          <IconAction
-            label={invisible ? t("Notation.ShowMoves") : t("Notation.HideMoves")}
-            onClick={() => setInvisible((value) => !value)}
-            pressed={!invisible}
-          >
-            {invisible ? <EyeOff size="1rem" /> : <Eye size="1rem" />}
-          </IconAction>
-          <IconAction
-            label={tableView ? t("Notation.NormalView") : t("Notation.TableView")}
-            onClick={() => setTableView((value) => !value)}
-            pressed={tableView}
-          >
-            {tableView ? <List size="1rem" /> : <TableProperties size="1rem" />}
-          </IconAction>
-          <IconAction
-            label={showComments ? t("Notation.HideComments") : t("Notation.ShowComments")}
-            onClick={() => setShowComments((value) => !value)}
-            pressed={showComments}
-          >
-            {showComments ? <MessageSquare size="1rem" /> : <MessageSquareOff size="1rem" />}
-          </IconAction>
-          <IconAction
-            label={showDiagrams ? t("Notation.HideDiagrams") : t("Notation.ShowDiagrams")}
-            onClick={() => setShowDiagrams((value) => !value)}
-            pressed={showDiagrams}
-          >
-            {showDiagrams ? <Grid2x2 size="1rem" /> : <Grid2x2X size="1rem" />}
-          </IconAction>
-          <IconAction
-            label={showVariations ? t("Notation.HideVariations") : t("Notation.ShowVariations")}
-            onClick={() => setShowVariations((value) => !value)}
-            pressed={showVariations}
-          >
-            {showVariations ? <Split size="1rem" /> : <ArrowRight size="1rem" />}
-          </IconAction>
-          {grip}
-        </Group>
-      </Group>
+      </div>
       {preparation && (
         <Group
           justify="space-between"
           align="center"
           gap="xs"
           px="sm"
+          py="xs"
           wrap="wrap"
+          className={styles.preparationRow}
           data-notation-preparation-header
         >
           <Text size="xs" c="dimmed" className="wrap-anywhere">
@@ -644,7 +693,6 @@ function NotationHeader({
           />
         </Group>
       )}
-      <Divider />
     </Stack>
   );
 }

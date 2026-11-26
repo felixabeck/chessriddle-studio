@@ -55,6 +55,21 @@ const definitions = {
         name: "Save File",
         keys: `${meta}+s`,
     },
+    SAVE_TO_DATABASE: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.SAVE_TO_DATABASE"),
+        name: "Save to database",
+        keys: `${meta}+shift+d`,
+    },
+    EDIT_POSITION: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.EDIT_POSITION"),
+        name: "Edit position",
+        keys: "e",
+    },
+    TAKE_SNAPSHOT: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.TAKE_SNAPSHOT"),
+        name: "Take snapshot",
+        keys: `${meta}+shift+s`,
+    },
     COPY_PGN: {
         labelKey: i18nKey("Settings.Keybinds.Actions.COPY_PGN"),
         name: "Copy PGN",

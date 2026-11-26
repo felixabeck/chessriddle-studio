@@ -1094,6 +1094,19 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
           cgRef={cgRef}
           enablePremoves={isPlayerVsEngine && gameState === "playing"}
           onKeyboardPremove={queueKeyboardPremove}
+          actions={
+            <BoardControls
+              boardRef={boardRef}
+              editingMode={gameState === "settingUp" && editingMode}
+              toggleEditingMode={toggleEditingMode}
+              dirty={false}
+              canTakeBack={hasHuman}
+              onTakeBack={onTakeBack}
+              takeBackPending={pendingCommand === "takeback"}
+              disableVariations
+              allowEditing={gameState === "settingUp"}
+            />
+          }
         />
       </Portal>
       <Portal target="#topRight" style={{ height: "100%", overflow: "hidden" }}>
@@ -1324,22 +1337,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
         ) : (
           <MoveDeletionContext.Provider value={liveMoveDeletion}>
             <NotationColumn>
-              <GameNotation
-                topBar
-                controls={
-                  <BoardControls
-                    boardRef={boardRef}
-                    editingMode={gameState === "settingUp" && editingMode}
-                    toggleEditingMode={toggleEditingMode}
-                    dirty={false}
-                    canTakeBack={hasHuman}
-                    onTakeBack={onTakeBack}
-                    takeBackPending={pendingCommand === "takeback"}
-                    disableVariations
-                    allowEditing={gameState === "settingUp"}
-                  />
-                }
-              />
+              <GameNotation topBar />
               <MoveControls />
             </NotationColumn>
           </MoveDeletionContext.Provider>

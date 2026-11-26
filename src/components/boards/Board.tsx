@@ -17,7 +17,16 @@ import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import { atom, useAtom, useAtomValue } from "jotai";
-import { memo, type MouseEvent, useCallback, useContext, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
@@ -123,6 +132,8 @@ interface ChessboardProps {
   cgRef?: React.Ref<ChessgroundRef>;
   enablePremoves?: boolean;
   onKeyboardPremove?: (from: SquareName, to: SquareName) => boolean;
+  /** Action controls rendered at the right end of the top board bar. */
+  actions?: ReactNode;
 }
 
 function Board({
@@ -141,6 +152,7 @@ function Board({
   cgRef,
   enablePremoves = false,
   onKeyboardPremove,
+  actions,
 }: ChessboardProps) {
   const { t } = useTranslation();
 
@@ -248,6 +260,10 @@ function Board({
 
   const keyMap = useAtomValue(keyMapAtom);
   useHotkeys(keyMap.SWAP_ORIENTATION.keys, () => toggleOrientation(), backgroundHotkeyOptions);
+  useHotkeys(keyMap.CLEAR_SHAPES.keys, () => clearShapes(), {
+    ...backgroundHotkeyOptions,
+    preventDefault: true,
+  });
   const [evalOpen, setEvalOpen] = useAtom(useTabAtom(evalOpenFamily));
   const evalColumnWidth = evalOpen ? EVAL_WIDTH : `max(${EVAL_WIDTH}, ${SHOW_EVAL_BUTTON_SIZE})`;
 
@@ -571,6 +587,7 @@ function Board({
             onNameClick={repertoire ? (viewOnly ? undefined : onRenameLine) : topPlayer.onNameClick}
             height={BAR_HEIGHT}
             placement="above"
+            actions={actions}
           >
             {repertoire && errorText}
             {repertoire && moveInputField}

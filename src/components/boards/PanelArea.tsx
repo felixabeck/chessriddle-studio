@@ -1,5 +1,5 @@
-import { Group, Paper, Text } from "@mantine/core";
-import { GripVertical, X } from "lucide-react";
+import { Paper } from "@mantine/core";
+import { X } from "lucide-react";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import type { PanelAreaId } from "@/state/boardArrangement";
 import IconAction from "../common/IconAction";
 import classes from "./PanelArea.module.css";
+import PanelHeader from "./PanelHeader";
 
 interface PanelAreaProps {
   panel: PanelAreaId;
@@ -39,43 +40,26 @@ export default function PanelArea({
 
   return (
     <Paper withBorder className={classes.area} data-panel-area={panel}>
-      <Group
-        className={classes.header}
-        justify="space-between"
-        gap="xs"
-        wrap="nowrap"
-        data-panel-header={panel}
-        onPointerDown={onDragStart}
-        onClickCapture={onSuppressClick}
-      >
-        <Group className={classes.titleGroup} gap="xs" wrap="nowrap">
+      <PanelHeader
+        area={panel}
+        title={title}
+        icon={icon}
+        arrangeable
+        onDragStart={onDragStart}
+        onSuppressClick={onSuppressClick}
+        onStartPlacing={onStartPlacing}
+        actions={
           <IconAction
-            label={t("Board.Arrange.MoveArea", { area: title })}
+            label={t("Board.Area.ReturnToTabs")}
             size="sm"
             variant="subtle"
-            className={classes.grip}
-            data-arrange-grip={panel}
-            onClick={onStartPlacing}
+            data-no-drag="true"
+            onClick={onReturn}
           >
-            <GripVertical size="0.875rem" />
+            <X size="0.875rem" />
           </IconAction>
-          <span className={classes.icon} aria-hidden>
-            {icon}
-          </span>
-          <Text fw={600} fz="sm" truncate className={classes.title}>
-            {title}
-          </Text>
-        </Group>
-        <IconAction
-          label={t("Board.Area.ReturnToTabs")}
-          size="sm"
-          variant="subtle"
-          data-no-drag="true"
-          onClick={onReturn}
-        >
-          <X size="0.875rem" />
-        </IconAction>
-      </Group>
+        }
+      />
       <div className={classes.body}>{children}</div>
     </Paper>
   );

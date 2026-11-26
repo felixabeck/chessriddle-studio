@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dosyalar ve Kütüphane
 summary: Çalışma alanı klasörü belirleme, PGN dosyaları oluşturup düzenleme, oyun açıp kaydetme ve çöp kutusunu yönetme.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) sayfası çalışma alanı PGN dosyalarınızı (oyunlar, repertuvarlar, turnuvalar, bulmacalar ve diğer dosyalar) ve oyun veritabanlarınızı bir araya getirir.
@@ -15,9 +15,9 @@ Dosya oluşturmadan önce bir çalışma alanı klasörü seçin. Henüz bir kla
 - Oyunlarını önizlemek (önizleme, göz düğmesiyle hamleleri gizleyebilir, [[setting:hide-preview-moves]]), analiz tahtasında açmak veya {{label:Files.Rename}}, {{label:Files.Move}} ve {{label:Files.Trash}} işlemlerini uygulamak için bir dosya seçin.
 
 Bir dosyayı analiz tahtasında düzenlerken:
-- Değişiklikleri tahta araç çubuğundaki kaydet düğmesiyle, {{label:Menu.File}} -> {{label:Common.Save}} yoluyla veya {{label:Settings.Keybinds.Actions.SAVE_FILE}} kısayoluyla kaydedin.
+- Değişiklikleri tahtanın üst çubuğundaki kaydet düğmesiyle (otomatik kaydetme kapalıyken, kullanılamıyorken veya başarısız olduğunda gösterilir), {{label:Menu.File}} -> {{label:Common.Save}} yoluyla veya {{label:Settings.Keybinds.Actions.SAVE_FILE}} kısayoluyla kaydedin.
 - Açık dosyalardaki düzenlemelerin otomatik olarak kaydedilmesi için [[setting:auto-save]] ({{label:Settings.AutoSave}}) ayarını açın.
-- Geçerli oyunu başka bir kütüphane dosyasına veya veritabanına kaydetmek için {{label:Menu.File}} -> {{label:Board.Database.Save}} (veya araç çubuğundaki {{label:Board.Database.Save}} düğmesini) kullanın.
+- Geçerli oyunu başka bir kütüphane dosyasına veya veritabanına kaydetmek için {{label:Menu.File}} -> {{label:Board.Database.Save}} (veya tahtanın üst çubuğundaki {{label:Board.Action.More}} -> {{label:Board.Database.Save}}) yolunu kullanın.
 
 Bir dosyayı {{label:Files.Trash}} bölümüne taşımak onu hemen kalıcı olarak silmez. Bildirimdeki {{label:Common.Undo}} düğmesine hemen tıklayabilir veya bir dosyayı {{label:Files.Restore}}, {{label:Files.DeletePermanently}} ya da {{label:Files.EmptyTrash}} işlemleriyle yönetmek için [[page:library]] içindeki {{label:Files.Trash}} bölümüne kaydırabilirsiniz.
 

@@ -2,22 +2,21 @@
 id: analysis-board
 title: Дошка аналізу, варыяцыі, каментарыі і стрэлкі
 summary: Увод хадоў, рэдагаванне пазіцый, кіраванне варыяцыямі, напісанне каментарыяў, даданне анатацый і маляванне стрэлак на дошцы.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Адкрыйце дошку аналізу са старонкі [[page:new-tab]], націснуўшы {{label:Home.Card.AnalysisBoard.Title}}, або адкрыўшы захаваную партыю ці рэпертуар з [[page:library]].
 
 Рабіце хады перацягваннем або націсканнем на фігуры (наладжваецца ў [[setting:move-method]]). Вы таксама можаце ўключыць [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}), каб уводзіць хады ў натацыі SAN. Выкарыстоўвайце элементы кіравання пад натацыяй, клавішы са стрэлкамі або кола мышы (калі ўключаны параметр [[setting:scroll-moves]]) для пераходу па хадах.
 
-Панэль інструментаў побач з натацыяй змяшчае дзеянні для дошкі:
-- {{label:Board.Action.TakeSnapshot}}: захаваць выяву бягучай дошкі.
-- {{label:Board.Action.EditPosition}}: наладзіць адвольную пазіцыю, расставіўшы фігуры або адрэдагаваўшы FEN.
+Верхняя панэль над дошкай змяшчае дзеянні для дошкі:
 - {{label:Board.Action.PlayFromHere}}: пачаць гульню з бягучай пазіцыі.
-- {{label:Board.Action.ClearDrawings}}: прыбраць стрэлкі і падсветку клетак (паказваецца, калі выключаны параметр [[setting:erase-drawables]]).
-- {{label:Board.Database.Save}}: захаваць партыю ў файл бібліятэкі або базу даных.
-- Кнопкі адмены, паўтору, захавання і перавароту дошкі.
+- Пераварот дошкі (`F`): памяняць белых і чорных у ніжняй частцы дошкі.
+- Захаванне: з’яўляецца, калі ў партыі ёсць незахаваныя змены і аўтазахаванне выключана, недаступнае (напрыклад, у чарнавіку) або завяршылася памылкай.
+- {{label:Board.Action.More}}: адкрывае меню з пунктамі {{label:Board.Database.Save}} (захаваць партыю ў файл бібліятэкі або базу даных), {{label:Board.Action.TakeSnapshot}} (захаваць выяву бягучай дошкі) і {{label:Board.Action.EditPosition}} (наладзіць адвольную пазіцыю, расставіўшы фігуры або адрэдагаваўшы FEN).
+- Адмена, паўтор і ачыстка намаляваных стрэлак ці падсветкі (калі выключаны параметр [[setting:erase-drawables]]) выконваюцца праз спалучэнні клавіш у [[settings-category:keybinds]].
 
-Калі зрабіць іншы ход з папярэдняй пазіцыі, ствараецца варыяцыя. Пстрыкніце правай кнопкай мышы па любым ходзе ў натацыі, каб выбраць {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Кнопкі ў загалоўку натацыі дазваляюць пераключаць {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} і {{label:Notation.HideVariations}}.
+Калі зрабіць іншы ход з папярэдняй пазіцыі, ствараецца варыяцыя. Пстрыкніце правай кнопкай мышы па любым ходзе ў натацыі, каб выбраць {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Выкарыстоўвайце кнопку-вока ў загалоўку натацыі для {{label:Notation.HideMoves}}, а меню {{label:Notation.ViewOptions}} — для пераключэння {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} і {{label:Notation.ShowVariations}}.
 
 Каб анатаваць хады і пісаць каментарыі, адкрыйце ўкладку {{label:Board.Tabs.Annotate}}. Націсніце сімвал якасці ходу (або клавішы ад 1 да 6), каб пераключыць `!!`, `!`, `!?`, `?!`, `?` ці `??`, або націсніце {{label:Annotate.ShowMore}} для ацэначных і пазіцыйных сімвалаў. Пад сімваламі ў тэкставым рэдактары можна пісаць фарматаваныя каментарыі і пераключаць убудаваныя дыяграмы дошкі.
 

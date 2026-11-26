@@ -14,9 +14,9 @@ On [[page:library]]:
 - Select a file to preview its games (the preview can hide its moves with the eye button, [[setting:hide-preview-moves]]), open it on the analysis board, or use {{label:Files.Rename}}, {{label:Files.Move}}, and {{label:Files.Trash}}.
 
 While editing a file on the analysis board:
-- Save changes with the save button in the board toolbar, {{label:Menu.File}} -> {{label:Common.Save}}, or the {{label:Settings.Keybinds.Actions.SAVE_FILE}} shortcut.
+- Save changes with the save button in the board's top bar (shown when auto-save is off, unavailable, or failed), {{label:Menu.File}} -> {{label:Common.Save}}, or the {{label:Settings.Keybinds.Actions.SAVE_FILE}} shortcut.
 - Turn on [[setting:auto-save]] ({{label:Settings.AutoSave}}) to save edits to opened files automatically.
-- Use {{label:Menu.File}} -> {{label:Board.Database.Save}} (or the {{label:Board.Database.Save}} toolbar button) to save the current game into another library file or database.
+- Use {{label:Menu.File}} -> {{label:Board.Database.Save}} (or {{label:Board.Action.More}} -> {{label:Board.Database.Save}} in the board's top bar) to save the current game into another library file or database.
 
 Moving a file to {{label:Files.Trash}} does not delete it permanently right away. You can immediately click {{label:Common.Undo}} in the notice, or scroll to the {{label:Files.Trash}} section in [[page:library]] to {{label:Files.Restore}} a file, {{label:Files.DeletePermanently}}, or {{label:Files.EmptyTrash}}.
 

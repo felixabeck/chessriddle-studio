@@ -97,6 +97,7 @@ const mocks = vi.hoisted(() => ({
   requestFilePositionIndex: vi.fn(),
   releaseFilePositionIndex: vi.fn(),
   realTabs: false,
+  realBoardControls: false,
   compactTabs: false,
   gameNameModal: undefined as
     | React.ComponentProps<typeof import("./GameNameModal").default>
@@ -312,19 +313,33 @@ vi.mock("../panels/info/InfoPanel", () => ({
 
 vi.mock("../common/GameNotation", () => ({
   default: ({
-    controls,
-    headerGrip,
+    arrange,
+    headerActions,
     markOpenVariations,
   }: {
-    controls?: ReactNode;
-    headerGrip?: ReactNode;
+    arrange?: {
+      onDragStart: React.PointerEventHandler<HTMLElement>;
+      onSuppressClick: React.MouseEventHandler;
+      onStartPlacing: () => void;
+    };
+    headerActions?: ReactNode;
     markOpenVariations?: boolean;
   }) => {
     mocks.notationChapterSwitch = useFileChapterSwitch();
     return (
       <span data-game-notation data-mark-open-variations={markOpenVariations ? "true" : "false"}>
-        {headerGrip}
-        {controls}
+        {arrange && (
+          <button
+            type="button"
+            data-arrange-grip="bottomRight"
+            onPointerDown={arrange.onDragStart}
+            onClickCapture={arrange.onSuppressClick}
+            onClick={arrange.onStartPlacing}
+          >
+            grip
+          </button>
+        )}
+        {headerActions}
       </span>
     );
   },
@@ -377,14 +392,19 @@ vi.mock("../panels/database/DatabasePanel", () => ({
   default: () => <span data-testid="database-panel" />,
 }));
 vi.mock("../panels/practice/PracticePanel", () => ({ default: () => null }));
-const board = vi.hoisted(() => vi.fn((_props: React.ComponentProps<typeof Board>) => null));
+const board = vi.hoisted(() =>
+  vi.fn((props: React.ComponentProps<typeof Board>) => <>{props.actions}</>),
+);
 vi.mock("./Board", () => ({ default: board }));
-vi.mock("./BoardControls", () => ({
-  default: (props: { saveFile?: () => void }) => {
-    mocks.boardControls = props;
-    return null;
-  },
-}));
+vi.mock("./BoardControls", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./BoardControls")>();
+  return {
+    default: (props: React.ComponentProps<typeof actual.default>) => {
+      mocks.boardControls = props;
+      return mocks.realBoardControls ? <actual.default {...props} /> : null;
+    },
+  };
+});
 vi.mock("./GameNameModal", () => ({
   default: (props: React.ComponentProps<typeof import("./GameNameModal").default>) => {
     mocks.gameNameModal = props;
@@ -496,6 +516,7 @@ describe("BoardAnalysis", () => {
       finished: Promise.resolve("built" as const),
     }));
     mocks.realTabs = false;
+    mocks.realBoardControls = false;
     mocks.compactTabs = false;
     sessionStorage.clear();
     localStorage.clear();
@@ -1460,22 +1481,6 @@ describe("BoardAnalysis", () => {
     expect(treeStore.getState().currentNode().comment).toBe("");
     await press(keyMap.REDO.keys);
     expect(treeStore.getState().currentNode().comment).toBe("note");
-  });
-
-  test("Clear Shapes from a focused blocking dialog preserves shapes and the native default", async () => {
-    const shapes = [{ orig: "a1", dest: "a3", brush: "green" }] as const;
-    await act(async () => {
-      treeStore.getState().setShapes([...shapes]);
-      treeStore.setState({ dirty: false });
-    });
-    const before = treeStore.getState();
-
-    const event = await modalShortcut(jotaiStore.get(keyMapAtom).CLEAR_SHAPES.keys, "l", true);
-
-    expect(treeStore.getState().root).toBe(before.root);
-    expect(treeStore.getState().currentNode().shapes).toEqual(shapes);
-    expect(treeStore.getState().dirty).toBe(false);
-    expect(event.defaultPrevented).toBe(false);
   });
 
   test("annotation shortcuts preserve all six glyphs and block every active practice phase", async () => {
@@ -2481,6 +2486,172 @@ describe("BoardAnalysis", () => {
     });
     await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(3));
     await vi.waitFor(() => expect(mocks.showNotification).toHaveBeenCalledTimes(2));
+  });
+
+  test("dirty draft with autosave on shows Save, and autosave failure lifecycle survives remount and clears on success", async () => {
+    mocks.realBoardControls = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    const renderRealBoard = async () => {
+      await act(async () => {
+        root.render(
+          <MantineProvider env="test">
+            <JotaiProvider store={jotaiStore}>
+              <TreeStateContext.Provider value={treeStore}>
+                <WorkspaceTabScope tabId={tabId}>
+                  <BoardAnalysis />
+                </WorkspaceTabScope>
+              </TreeStateContext.Provider>
+            </JotaiProvider>
+          </MantineProvider>,
+        );
+      });
+    };
+    const saveButton = () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Board.Action.SavePGN"]');
+
+    try {
+      // 1. Dirty draft with autosave on still shows the real Save button.
+      await act(async () => {
+        jotaiStore.set(autoSaveAtom, true);
+        jotaiStore.set(
+          tabsAtom,
+          [
+            {
+              ...tab,
+              gameOrigin: {
+                kind: "fileDraft",
+                file: {
+                  type: "file",
+                  handle: fileHandle,
+                  name: "draft.pgn",
+                  numGames: 0,
+                  metadata: { type: "game", tags: [] },
+                  lastModified: 1,
+                },
+              },
+            },
+          ],
+          tabId,
+        );
+      });
+      await renderRealBoard();
+      expect(saveButton()).not.toBeNull();
+      await act(async () => root.render(null));
+
+      // 2. Persistent file tab with autosave on hides Save while clean/succeeding, and shows Save when autosave fails.
+      const failure = { tag: "backend-error", category: "io", message: "Autosave failed" };
+      mocks.writeGame
+        .mockRejectedValueOnce(failure)
+        .mockResolvedValueOnce({ stamp: "b".repeat(64), revision: "r1" });
+
+      const persistentTree = defaultTree();
+      persistentTree.sourceStamp = "a".repeat(64);
+      persistentTree.root.comment = "First edit";
+      persistentTree.dirty = true;
+      treeStore = createTreeStore(undefined, persistentTree);
+      await act(async () => {
+        jotaiStore.set(tabsAtom, [tab], tabId);
+      });
+      await renderRealBoard();
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(saveButton()).not.toBeNull());
+
+      // 3. Unmounting and remounting BoardAnalysis with the same store preserves the Save button.
+      await act(async () => root.render(null));
+      await renderRealBoard();
+      expect(saveButton()).not.toBeNull();
+
+      // 4. A later edit triggers a successful autosave write, which clears the failure; a subsequent
+      //    dirty edit keeps Save hidden while its autosave write is in flight.
+      await act(async () => {
+        treeStore.getState().setComment("Saved edit");
+      });
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
+      expect(saveButton()).toBeNull();
+
+      const nextWrite = Promise.withResolvers<{ stamp: string; revision: string }>();
+      mocks.writeGame.mockReturnValueOnce(nextWrite.promise);
+      await act(async () => {
+        treeStore.getState().setComment("New dirty edit");
+      });
+      expect(treeStore.getState().dirty).toBe(true);
+      await vi.waitFor(() => expect(mocks.writeGame).toHaveBeenCalledTimes(3));
+      expect(saveButton()).toBeNull();
+      await act(async () => {
+        nextWrite.resolve({ stamp: "c".repeat(64), revision: "r2" });
+      });
+    } finally {
+      mocks.realBoardControls = false;
+    }
+  });
+
+  test("Save button visibility on BoardAnalysis honors hasPersistentOrigin && autoSave", async () => {
+    mocks.realBoardControls = true;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    const renderRealBoard = async () => {
+      await act(async () => {
+        root.render(
+          <MantineProvider env="test">
+            <JotaiProvider store={jotaiStore}>
+              <TreeStateContext.Provider value={treeStore}>
+                <WorkspaceTabScope tabId={tabId}>
+                  <BoardAnalysis />
+                </WorkspaceTabScope>
+              </TreeStateContext.Provider>
+            </JotaiProvider>
+          </MantineProvider>,
+        );
+      });
+    };
+    const saveButton = () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Board.Action.SavePGN"]');
+
+    try {
+      // (a) Dirty persistent file tab with autoSaveAtom = false shows Save.
+      await act(async () => {
+        jotaiStore.set(autoSaveAtom, false);
+        jotaiStore.set(tabsAtom, [tab], tabId);
+      });
+      await renderRealBoard();
+      expect(treeStore.getState().dirty).toBe(true);
+      expect(saveButton()).not.toBeNull();
+      await act(async () => root.render(null));
+
+      // (b) Dirty tab with gameOrigin.kind === "none" and autoSaveAtom = true shows Save.
+      await act(async () => {
+        jotaiStore.set(autoSaveAtom, true);
+        jotaiStore.set(tabsAtom, [{ ...tab, gameOrigin: { kind: "none" } }], tabId);
+      });
+      await renderRealBoard();
+      expect(treeStore.getState().dirty).toBe(true);
+      expect(saveButton()).not.toBeNull();
+      await act(async () => root.render(null));
+
+      // (c) Dirty persistent file tab with autoSaveAtom = true and no failure hides Save.
+      const pendingWrite = Promise.withResolvers<{ stamp: string; revision: string }>();
+      mocks.writeGame.mockReturnValueOnce(pendingWrite.promise);
+      await act(async () => {
+        jotaiStore.set(autoSaveAtom, true);
+        jotaiStore.set(tabsAtom, [tab], tabId);
+      });
+      await renderRealBoard();
+      expect(treeStore.getState().dirty).toBe(true);
+      expect(saveButton()).toBeNull();
+      await act(async () => {
+        pendingWrite.resolve({ stamp: "b".repeat(64), revision: "r1" });
+      });
+      await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
+      expect(saveButton()).toBeNull();
+    } finally {
+      mocks.realBoardControls = false;
+    }
   });
 
   test.each(["failure", "success"] as const)(

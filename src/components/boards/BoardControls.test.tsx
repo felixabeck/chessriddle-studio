@@ -1,6 +1,7 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
+import { MantineProvider } from "@mantine/core";
 import domtoimage from "dom-to-image";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Provider as JotaiProvider, createStore as createJotaiStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -20,7 +21,12 @@ import {
   type TreeStore,
 } from "@/state/store/tree";
 import type { Tab } from "@/state/workspaceTypes";
+import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { focusedDialogButton, press } from "@/tests/keyboard";
 import BoardControls from "./BoardControls";
+
+installResizeObserverStub();
 
 const mocks = vi.hoisted(() => ({
   persistError: vi.fn(),
@@ -32,19 +38,16 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock("@mantine/core", () => ({
-  Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock("lucide-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("lucide-react")>()),
   Undo2: () => null,
-  Redo2: () => null,
   Camera: () => null,
+  Check: () => null,
   Save: () => null,
+  Database: () => null,
+  Ellipsis: () => null,
   Pencil: () => null,
   PencilOff: () => null,
-  Eraser: () => null,
   ArrowUpDown: () => null,
   Target: () => null,
   ScanSearch: () => null,
@@ -56,18 +59,20 @@ vi.mock("@/components/common/IconAction", () => ({
     onClick,
     pending,
     disabled,
+    ...props
   }: {
     label: string;
     onClick?: () => void;
     pending?: boolean;
     disabled?: boolean;
-  }) => (
+  } & Record<string, unknown>) => (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
       data-pending={pending ? "true" : "false"}
+      {...props}
     >
       {label}
     </button>
@@ -104,7 +109,7 @@ vi.mock("dom-to-image", () => ({
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe("BoardControls tab type durability", () => {
+describe("BoardControls", () => {
   const tabId = "22222222-2222-4222-8222-222222222222";
   const tab: Tab = {
     name: "Analysis",
@@ -120,6 +125,7 @@ describe("BoardControls tab type durability", () => {
   let boardRef: React.RefObject<HTMLDivElement | null>;
 
   beforeEach(async () => {
+    installMatchMediaStub();
     sessionStorage.clear();
     localStorage.clear();
     mocks.persistError.mockReset();
@@ -137,22 +143,7 @@ describe("BoardControls tab type durability", () => {
     document.body.append(container);
     boardRef = { current: container };
     root = createRoot(container);
-    await act(async () => {
-      root.render(
-        <JotaiProvider store={jotaiStore}>
-          <TreeStateContext.Provider value={treeStore}>
-            <WorkspaceTabScope tabId={tabId}>
-              <BoardControls
-                boardRef={boardRef}
-                editingMode={false}
-                toggleEditingMode={vi.fn()}
-                dirty={false}
-              />
-            </WorkspaceTabScope>
-          </TreeStateContext.Provider>
-        </JotaiProvider>,
-      );
-    });
+    await renderControls({});
   });
 
   afterEach(async () => {
@@ -162,6 +153,7 @@ describe("BoardControls tab type durability", () => {
     closeTreeStore(tabId);
     for (const open of openTabs) closeTreeStore(open.value);
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   function refuseWorkspaceWrites() {
@@ -174,33 +166,186 @@ describe("BoardControls tab type durability", () => {
       });
   }
 
-  async function renderControls(props: {
-    canTakeBack?: boolean;
-    onTakeBack?: () => void;
-    takeBackPending?: boolean;
-    allowUndo?: boolean;
-  }) {
+  async function renderControls(props: Partial<React.ComponentProps<typeof BoardControls>>) {
     await act(async () => {
       root.render(
-        <JotaiProvider store={jotaiStore}>
-          <TreeStateContext.Provider value={treeStore}>
-            <WorkspaceTabScope tabId={tabId}>
-              <BoardControls
-                boardRef={boardRef}
-                editingMode={false}
-                toggleEditingMode={vi.fn()}
-                dirty={false}
-                {...props}
-              />
-            </WorkspaceTabScope>
-          </TreeStateContext.Provider>
-        </JotaiProvider>,
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <TreeStateContext.Provider value={treeStore}>
+              <WorkspaceTabScope tabId={tabId}>
+                <BoardControls
+                  boardRef={boardRef}
+                  editingMode={false}
+                  toggleEditingMode={vi.fn()}
+                  dirty={false}
+                  {...props}
+                />
+              </WorkspaceTabScope>
+            </TreeStateContext.Provider>
+          </JotaiProvider>
+        </MantineProvider>,
       );
     });
   }
 
-  const takeBackButton = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeBack"]');
+  const actionButton = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
+  const takeBackButton = () => actionButton("Board.Action.TakeBack");
+  const moreButton = () => actionButton("Board.Action.More");
+  const menuItems = () => [
+    ...document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
+  ];
+  const menuItem = (label: string) =>
+    menuItems().find((item) => item.textContent?.includes(label)) ?? null;
+
+  async function openMoreMenu() {
+    await act(async () => moreButton()!.click());
+    await vi.waitFor(() => expect(menuItems().length).toBeGreaterThan(0));
+  }
+
+  async function triggerSnapshotFromMenu() {
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Action.TakeSnapshot")!.click());
+  }
+
+  test("analysis screen shows Play from here, Flip board, and More menu without Undo/Redo/Clear drawings", async () => {
+    await renderControls({ saveFile: vi.fn(), saveTo: vi.fn() });
+
+    expect(actionButton("Board.Action.PlayFromHere")).not.toBeNull();
+    expect(actionButton("Board.Action.FlipBoard")).not.toBeNull();
+    expect(moreButton()).not.toBeNull();
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+    expect(actionButton("Board.Action.Undo")).toBeNull();
+    expect(actionButton("Board.Action.Redo")).toBeNull();
+    expect(actionButton("Board.Action.ClearDrawings")).toBeNull();
+
+    await openMoreMenu();
+    expect(menuItems().map((el) => el.textContent)).toEqual([
+      expect.stringContaining("Board.Database.Save"),
+      expect.stringContaining("Board.Action.TakeSnapshot"),
+      expect.stringContaining("Board.Action.EditPosition"),
+    ]);
+  });
+
+  test("game screen shows Take back (when allowed), Analyze game, Flip board, and More menu", async () => {
+    await act(async () => {
+      jotaiStore.set(tabsAtom, [{ ...tab, type: "play" }], tabId);
+    });
+    await renderControls({
+      canTakeBack: true,
+      onTakeBack: vi.fn(),
+      disableVariations: true,
+      allowEditing: false,
+    });
+
+    expect(takeBackButton()).not.toBeNull();
+    expect(actionButton("Board.Action.AnalyzeGame")).not.toBeNull();
+    expect(actionButton("Board.Action.FlipBoard")).not.toBeNull();
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+    expect(moreButton()).not.toBeNull();
+
+    await openMoreMenu();
+    expect(menuItem("Board.Database.Save")).toBeNull();
+    expect(menuItem("Board.Action.TakeSnapshot")).not.toBeNull();
+    expect(menuItem("Board.Action.EditPosition")).toBeNull();
+  });
+
+  test("game screen More menu offers Edit position only while setting up, and shows its on state", async () => {
+    await act(async () => {
+      jotaiStore.set(tabsAtom, [{ ...tab, type: "play" }], tabId);
+    });
+    await renderControls({
+      disableVariations: true,
+      allowEditing: true,
+      editingMode: true,
+    });
+
+    await openMoreMenu();
+    const editItem = menuItem("Board.Action.EditPosition");
+    expect(editItem).not.toBeNull();
+    expect(editItem!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  test("Save button visibility follows dirty, autoSaveActive, and autoSaveFailed", async () => {
+    const saveFile = vi.fn();
+
+    // Clean tree with autoSaveActive off: hidden.
+    await renderControls({ dirty: false, saveFile, autoSaveActive: false });
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+
+    // Dirty tree with autoSaveActive off: visible.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: false });
+    expect(actionButton("Board.Action.SavePGN")).not.toBeNull();
+
+    // Dirty tree with autoSaveActive on and no failure: hidden.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: true, autoSaveFailed: false });
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+
+    // Dirty tree with autoSaveActive on and autoSaveFailed: visible.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: true, autoSaveFailed: true });
+    expect(actionButton("Board.Action.SavePGN")).not.toBeNull();
+
+    // Missing saveFile handler: hidden even when dirty and failing.
+    await renderControls({ dirty: true, saveFile: undefined, autoSaveFailed: true });
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+  });
+
+  test("toolbar and menu clicks flip orientation with root.fen, save, save to database, toggle edit position, and take snapshot", async () => {
+    const saveFile = vi.fn();
+    const saveTo = vi.fn();
+    const toggleEditingMode = vi.fn();
+    const snapshotTarget = document.createElement("div");
+    snapshotTarget.className = "cg-wrap";
+    container.append(snapshotTarget);
+    vi.mocked(domtoimage.toBlob).mockResolvedValueOnce({
+      arrayBuffer: async () => new Uint8Array([9, 8]).buffer,
+    } as Blob);
+    mocks.saveBoardSnapshot.mockResolvedValueOnce(null);
+
+    await act(async () => {
+      treeStore.getState().setHeaders({
+        ...treeStore.getState().headers,
+        orientation: "white",
+      });
+    });
+    const setHeadersSpy = vi.spyOn(treeStore.getState(), "setHeaders");
+
+    await renderControls({
+      dirty: true,
+      saveFile,
+      saveTo,
+      toggleEditingMode,
+    });
+
+    await act(async () => actionButton("Board.Action.FlipBoard")!.click());
+    expect(setHeadersSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orientation: "black",
+        fen: treeStore.getState().root.fen,
+      }),
+    );
+
+    await act(async () => actionButton("Board.Action.SavePGN")!.click());
+    expect(saveFile).toHaveBeenCalledOnce();
+
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Database.Save")!.click());
+    expect(saveTo).toHaveBeenCalledOnce();
+
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Action.EditPosition")!.click());
+    expect(toggleEditingMode).toHaveBeenCalledOnce();
+
+    await triggerSnapshotFromMenu();
+    expect(domtoimage.toBlob).toHaveBeenCalledWith(snapshotTarget);
+    expect(mocks.saveBoardSnapshot).toHaveBeenCalledWith([9, 8]);
+  });
+
+  test("actions container and menu trigger carry data-no-drag", () => {
+    const trigger = moreButton()!;
+    expect(trigger.getAttribute("data-no-drag")).toBe("true");
+    expect(trigger.closest('[data-no-drag="true"]')).not.toBeNull();
+  });
 
   test("a game that can take back renders the control and runs the takeback on click", async () => {
     const onTakeBack = vi.fn();
@@ -211,40 +356,6 @@ describe("BoardControls tab type durability", () => {
     await act(async () => takeBackButton()!.click());
 
     expect(onTakeBack).toHaveBeenCalledOnce();
-  });
-
-  const historyButton = (action: "Undo" | "Redo") =>
-    container.querySelector<HTMLButtonElement>(`[aria-label="Board.Action.${action}"]`);
-
-  test("undo and redo are shown only with allowUndo", async () => {
-    expect(historyButton("Undo")).toBeNull();
-    expect(historyButton("Redo")).toBeNull();
-    await renderControls({ allowUndo: true });
-    expect(historyButton("Undo")).not.toBeNull();
-    expect(historyButton("Redo")).not.toBeNull();
-  });
-
-  test("undo and redo are enabled only with a step to take outside a drill, and clicking takes it", async () => {
-    await renderControls({ allowUndo: true });
-    expect(historyButton("Undo")!.disabled).toBe(true);
-    expect(historyButton("Redo")!.disabled).toBe(true);
-
-    await act(async () => treeStore.getState().setComment("note"));
-    expect(historyButton("Undo")!.disabled).toBe(false);
-    expect(historyButton("Redo")!.disabled).toBe(true);
-
-    await act(async () => historyButton("Undo")!.click());
-    expect(treeStore.getState().currentNode().comment).toBe("");
-    expect(historyButton("Undo")!.disabled).toBe(true);
-    expect(historyButton("Redo")!.disabled).toBe(false);
-
-    await act(async () => historyButton("Redo")!.click());
-    expect(treeStore.getState().currentNode().comment).toBe("note");
-
-    await act(async () => historyButton("Undo")!.click());
-    await act(async () => treeStore.getState().setPracticePath([]));
-    expect(historyButton("Undo")!.disabled).toBe(true);
-    expect(historyButton("Redo")!.disabled).toBe(true);
   });
 
   test("a pending takeback reaches the control", async () => {
@@ -272,11 +383,7 @@ describe("BoardControls tab type durability", () => {
     container.append(snapshotTarget);
 
     try {
-      await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
-          .click();
-      });
+      await triggerSnapshotFromMenu();
 
       expect(domtoimage.toBlob).toHaveBeenCalledOnce();
       expect(vi.mocked(domtoimage.toBlob).mock.calls[0][0]).toBe(snapshotTarget);
@@ -285,17 +392,55 @@ describe("BoardControls tab type durability", () => {
     }
   });
 
+  test("ignores a second snapshot trigger while an export is in flight, and allows one after it settles", async () => {
+    const snapshotTarget = document.createElement("div");
+    snapshotTarget.className = "cg-wrap";
+    container.append(snapshotTarget);
+    const blobDeferred = Promise.withResolvers<Blob>();
+    vi.mocked(domtoimage.toBlob).mockReturnValueOnce(blobDeferred.promise);
+
+    // First trigger via shortcut starts export.
+    press("s", { ctrlKey: true, shiftKey: true });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+
+    // Second trigger while in flight is ignored.
+    press("s", { ctrlKey: true, shiftKey: true });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+
+    // Resolve export and save dialog.
+    const saveDeferred = Promise.withResolvers<null>();
+    mocks.saveBoardSnapshot.mockReturnValueOnce(saveDeferred.promise);
+    await act(async () => {
+      blobDeferred.resolve({
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      } as Blob);
+    });
+    // Still in flight while saveBoardSnapshot is pending.
+    press("s", { ctrlKey: true, shiftKey: true });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      saveDeferred.resolve(null);
+    });
+
+    // After completion, a new trigger runs normally.
+    vi.mocked(domtoimage.toBlob).mockResolvedValueOnce({
+      arrayBuffer: async () => new Uint8Array([4, 5]).buffer,
+    } as Blob);
+    mocks.saveBoardSnapshot.mockResolvedValueOnce(null);
+    await act(async () => {
+      press("s", { ctrlKey: true, shiftKey: true });
+    });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(2);
+  });
+
   test("does not snapshot when the owning board ref is null", async () => {
     const unrelatedBoard = document.createElement("div");
     unrelatedBoard.className = "cg-wrap";
     container.append(unrelatedBoard);
     boardRef.current = null;
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
-        .click();
-    });
+    await triggerSnapshotFromMenu();
 
     expect(domtoimage.toBlob).not.toHaveBeenCalled();
     expect(mocks.saveBoardSnapshot).not.toHaveBeenCalled();
@@ -311,11 +456,7 @@ describe("BoardControls tab type durability", () => {
     } as Blob);
     mocks.saveBoardSnapshot.mockRejectedValue(failure);
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
-        .click();
-    });
+    await triggerSnapshotFromMenu();
 
     expect(domtoimage.toBlob).toHaveBeenCalledWith(snapshotTarget);
     expect(mocks.saveBoardSnapshot).toHaveBeenCalledWith([1, 2, 3]);
@@ -329,11 +470,7 @@ describe("BoardControls tab type durability", () => {
     container.append(snapshotTarget);
     vi.mocked(domtoimage.toBlob).mockRejectedValue(failure);
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
-        .click();
-    });
+    await triggerSnapshotFromMenu();
 
     expect(domtoimage.toBlob).toHaveBeenCalledWith(snapshotTarget);
     expect(mocks.saveBoardSnapshot).not.toHaveBeenCalled();
@@ -348,11 +485,7 @@ describe("BoardControls tab type durability", () => {
     const arrayBuffer = vi.fn().mockRejectedValue(failure);
     vi.mocked(domtoimage.toBlob).mockResolvedValue({ arrayBuffer } as unknown as Blob);
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.TakeSnapshot"]')!
-        .click();
-    });
+    await triggerSnapshotFromMenu();
 
     expect(domtoimage.toBlob).toHaveBeenCalledWith(snapshotTarget);
     expect(arrayBuffer).toHaveBeenCalled();
@@ -360,14 +493,85 @@ describe("BoardControls tab type durability", () => {
     expect(mocks.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", failure);
   });
 
+  test("new shortcuts invoke their actions, respect game-screen setup gating, and stay silent in inputs and dialogs", async () => {
+    const toggleEditingMode = vi.fn();
+    const saveTo = vi.fn();
+    const snapshotTarget = document.createElement("div");
+    snapshotTarget.className = "cg-wrap";
+    container.append(snapshotTarget);
+    vi.mocked(domtoimage.toBlob).mockResolvedValue({
+      arrayBuffer: async () => new Uint8Array([1]).buffer,
+    } as Blob);
+    mocks.saveBoardSnapshot.mockResolvedValue(null);
+
+    await renderControls({ toggleEditingMode, saveTo });
+
+    press("e");
+    expect(toggleEditingMode).toHaveBeenCalledTimes(1);
+
+    press("d", { ctrlKey: true, shiftKey: true });
+    expect(saveTo).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      press("s", { ctrlKey: true, shiftKey: true });
+    });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+
+    // Focused input ignores all three shortcuts.
+    const input = document.createElement("input");
+    container.append(input);
+    act(() => input.focus());
+    press("e", { target: input });
+    press("d", { ctrlKey: true, shiftKey: true, target: input });
+    press("s", { ctrlKey: true, shiftKey: true, target: input });
+    expect(toggleEditingMode).toHaveBeenCalledTimes(1);
+    expect(saveTo).toHaveBeenCalledTimes(1);
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+
+    // Focused blocking dialog ignores all three shortcuts.
+    const { dialog, button } = focusedDialogButton(container);
+    press("e", { target: button });
+    press("d", { ctrlKey: true, shiftKey: true, target: button });
+    press("s", { ctrlKey: true, shiftKey: true, target: button });
+    expect(toggleEditingMode).toHaveBeenCalledTimes(1);
+    expect(saveTo).toHaveBeenCalledTimes(1);
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(1);
+    dialog.remove();
+    input.remove();
+
+    // On the game screen outside setup, Edit position and Save to database do nothing; Snapshot still works.
+    await renderControls({
+      toggleEditingMode,
+      saveTo: undefined,
+      disableVariations: true,
+      allowEditing: false,
+    });
+    press("e");
+    press("d", { ctrlKey: true, shiftKey: true });
+    expect(toggleEditingMode).toHaveBeenCalledTimes(1);
+    expect(saveTo).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      press("s", { ctrlKey: true, shiftKey: true });
+    });
+    expect(domtoimage.toBlob).toHaveBeenCalledTimes(2);
+
+    // On the game screen during setup, Edit position works again.
+    await renderControls({
+      toggleEditingMode,
+      saveTo: undefined,
+      disableVariations: true,
+      allowEditing: true,
+    });
+    press("e");
+    expect(toggleEditingMode).toHaveBeenCalledTimes(2);
+  });
+
   test("opens a play tab only after the new-tab workspace write is durable", async () => {
     const durableWorkspace = sessionStorage.getItem("workspace");
     const storageFailure = refuseWorkspaceWrites();
 
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
-        .click();
+      actionButton("Board.Action.PlayFromHere")!.click();
     });
 
     expect(jotaiStore.get(tabsAtom)).toEqual([tab]);
@@ -377,9 +581,7 @@ describe("BoardControls tab type durability", () => {
 
     storageFailure.mockRestore();
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
-        .click();
+      actionButton("Board.Action.PlayFromHere")!.click();
     });
 
     const tabs = jotaiStore.get(tabsAtom);
@@ -410,9 +612,7 @@ describe("BoardControls tab type durability", () => {
     const analysisRoot = treeStore.getState().root;
 
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
-        .click();
+      actionButton("Board.Action.PlayFromHere")!.click();
     });
 
     const tabs = jotaiStore.get(tabsAtom);
@@ -451,9 +651,7 @@ describe("BoardControls tab type durability", () => {
       });
 
       await act(async () => {
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
-          .click();
+        actionButton("Board.Action.PlayFromHere")!.click();
       });
 
       const playTab = jotaiStore.get(tabsAtom).find((open) => open.type === "play");
@@ -470,9 +668,7 @@ describe("BoardControls tab type durability", () => {
     expect(treeStore.getState().position).toEqual([]);
 
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.PlayFromHere"]')!
-        .click();
+      actionButton("Board.Action.PlayFromHere")!.click();
     });
 
     const playTab = jotaiStore.get(tabsAtom).find((open) => open.type === "play");
@@ -486,9 +682,7 @@ describe("BoardControls tab type durability", () => {
     });
 
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Board.Action.AnalyzeGame"]')!
-        .click();
+      actionButton("Board.Action.AnalyzeGame")!.click();
     });
 
     expect(jotaiStore.get(tabsAtom)).toEqual([{ ...tab, type: "analysis" }]);

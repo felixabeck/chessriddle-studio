@@ -8,15 +8,14 @@ Open an analysis board from [[page:new-tab]] by clicking {{label:Home.Card.Analy
 
 Make moves by dragging or clicking pieces (configured in [[setting:move-method]]). You can also enable [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}) to type moves in SAN notation. Use the move controls below the notation, the arrow keys, or the mouse wheel (if [[setting:scroll-moves]] is enabled) to step through moves.
 
-The toolbar beside the notation provides board actions:
-- {{label:Board.Action.TakeSnapshot}}: save an image of the current board.
-- {{label:Board.Action.EditPosition}}: set up a custom position by placing pieces or editing the FEN.
+The top bar above the board provides board actions:
 - {{label:Board.Action.PlayFromHere}}: start a game from the current position.
-- {{label:Board.Action.ClearDrawings}}: remove arrows and square highlights (shown when [[setting:erase-drawables]] is off).
-- {{label:Board.Database.Save}}: save the game to a library file or database.
-- Undo, redo, save, and flip board controls.
+- Flip board (`F`): swap White and Black at the bottom of the board.
+- Save: appears when a game has unsaved changes and auto-save is off, unavailable (such as a draft), or failed.
+- {{label:Board.Action.More}}: open the menu for {{label:Board.Database.Save}} (save the game to a library file or database), {{label:Board.Action.TakeSnapshot}} (save an image of the current board), and {{label:Board.Action.EditPosition}} (set up a custom position by placing pieces or editing the FEN).
+- Undo, redo, and clearing drawn arrows or highlights (when [[setting:erase-drawables]] is off) use their keyboard shortcuts in [[settings-category:keybinds]].
 
-Playing a different move from an earlier position creates a variation. Right-click any move in the notation to {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}}, or {{label:Notation.MarkGameEndHere}}. Use the notation header buttons to toggle {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, and {{label:Notation.HideVariations}}.
+Playing a different move from an earlier position creates a variation. Right-click any move in the notation to {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}}, or {{label:Notation.MarkGameEndHere}}. Use the eye button in the notation header for {{label:Notation.HideMoves}}, and the {{label:Notation.ViewOptions}} menu to toggle {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}}, and {{label:Notation.ShowVariations}}.
 
 To annotate moves and write comments, open the {{label:Board.Tabs.Annotate}} tab. Click a move-quality symbol (or press keys 1 through 6) to toggle `!!`, `!`, `!?`, `?!`, `?`, or `??`, or click {{label:Annotate.ShowMore}} for evaluation and positional symbols. Below the symbols, use the rich-text editor to write formatted comments and toggle inline board diagrams.
 

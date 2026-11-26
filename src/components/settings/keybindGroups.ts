@@ -27,6 +27,7 @@ export const KEYBIND_GROUPS = [
             "REVERSE_CYCLE_TABS",
             "OPEN_FILE",
             "SAVE_FILE",
+            "SAVE_TO_DATABASE",
             "COPY_PGN",
             "PREVIOUS_GAME",
             "NEXT_GAME",
@@ -61,6 +62,8 @@ export const KEYBIND_GROUPS = [
             "DELETE_MOVES_AFTER",
             "CLEAR_SHAPES",
             "SWAP_ORIENTATION",
+            "EDIT_POSITION",
+            "TAKE_SNAPSHOT",
         ],
     },
     {

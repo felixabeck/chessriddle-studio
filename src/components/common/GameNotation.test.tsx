@@ -52,11 +52,46 @@ const virtualizerMock = vi.hoisted(() => ({
   scrollCalls: [] as { index: number; options: unknown }[],
   measured: [] as Element[],
 }));
-const notationSettings = vi.hoisted(() => ({
-  showComments: false,
-  tableView: false,
-  invisible: false,
-}));
+const notationSettings = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  const apply = (
+    key: "showComments" | "showVariations" | "showDiagrams" | "tableView",
+    updater: boolean | ((prev: boolean) => boolean),
+  ) => {
+    state[key] = typeof updater === "function" ? updater(state[key]) : updater;
+    notify();
+  };
+  const state = {
+    showComments: false,
+    showVariations: true,
+    showDiagrams: true,
+    tableView: false,
+    invisible: false,
+    realMenu: false,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    setShowComments: vi.fn((updater: boolean | ((prev: boolean) => boolean)) =>
+      apply("showComments", updater),
+    ),
+    setShowVariations: vi.fn((updater: boolean | ((prev: boolean) => boolean)) =>
+      apply("showVariations", updater),
+    ),
+    setShowDiagrams: vi.fn((updater: boolean | ((prev: boolean) => boolean)) =>
+      apply("showDiagrams", updater),
+    ),
+    setTableView: vi.fn((updater: boolean | ((prev: boolean) => boolean)) =>
+      apply("tableView", updater),
+    ),
+  };
+  return state;
+});
 
 vi.mock("@/state/atoms", () => ({
   invisibleFamily: () => atoms.invisible,
@@ -74,7 +109,26 @@ vi.mock("jotai", async () => {
   return {
     useAtom: (atom: symbol) => {
       const prepView = useSyncExternalStore(prepState.subscribe, () => prepState.view);
-      if (atom === atoms.table) return [notationSettings.tableView, vi.fn()];
+      const tableView = useSyncExternalStore(
+        notationSettings.subscribe,
+        () => notationSettings.tableView,
+      );
+      const showComments = useSyncExternalStore(
+        notationSettings.subscribe,
+        () => notationSettings.showComments,
+      );
+      const showVariations = useSyncExternalStore(
+        notationSettings.subscribe,
+        () => notationSettings.showVariations,
+      );
+      const showDiagrams = useSyncExternalStore(
+        notationSettings.subscribe,
+        () => notationSettings.showDiagrams,
+      );
+      if (atom === atoms.table) return [tableView, notationSettings.setTableView];
+      if (atom === atoms.comments) return [showComments, notationSettings.setShowComments];
+      if (atom === atoms.variations) return [showVariations, notationSettings.setShowVariations];
+      if (atom === atoms.diagrams) return [showDiagrams, notationSettings.setShowDiagrams];
       if (atom === atoms.invisible) return [notationSettings.invisible, vi.fn()];
       if (atom === atoms.preparationView) return [prepView, prepState.setView];
       return [false, vi.fn()];
@@ -94,19 +148,21 @@ vi.mock("jotai", async () => {
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("lucide-react", () => {
+vi.mock("lucide-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lucide-react")>();
   const Icon = () => null;
   return {
-    ArrowRight: Icon,
+    ...actual,
+    Check: Icon,
     Split: Icon,
     MessageSquare: Icon,
-    MessageSquareOff: Icon,
     Eye: Icon,
     EyeOff: Icon,
     Grid2x2: Icon,
-    Grid2x2X: Icon,
+    GripVertical: Icon,
+    ListOrdered: Icon,
+    SlidersHorizontal: Icon,
     TableProperties: Icon,
-    List: Icon,
     Minus: Icon,
     Plus: Icon,
   };
@@ -153,16 +209,46 @@ vi.mock("./CompleteMoveCell", async () => ({
     );
   },
 }));
-vi.mock("@mantine/core", () => {
+vi.mock("@mantine/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mantine/core")>();
   const element = ({ children, ...props }: any) => <div {...props}>{children}</div>;
   const table = ({ children, ...props }: any) => <table {...props}>{children}</table>;
   table.Tbody = element;
   table.Tr = ({ children, ...props }: any) => <tr {...props}>{children}</tr>;
   table.Td = ({ children, ...props }: any) => <td {...props}>{children}</td>;
+  const Menu = Object.assign(
+    (props: any) =>
+      notationSettings.realMenu ? <actual.Menu {...props} /> : <div>{props.children}</div>,
+    {
+      Target: (props: any) =>
+        notationSettings.realMenu ? <actual.Menu.Target {...props} /> : <>{props.children}</>,
+      Dropdown: (props: any) =>
+        notationSettings.realMenu ? (
+          <actual.Menu.Dropdown {...props} />
+        ) : (
+          <div role="menu">{props.children}</div>
+        ),
+      Item: (props: any) =>
+        notationSettings.realMenu ? (
+          <actual.Menu.Item {...props} />
+        ) : (
+          <button
+            type="button"
+            role={props.role ?? "menuitem"}
+            aria-checked={props["aria-checked"]}
+            onClick={props.onClick}
+          >
+            {props.children}
+          </button>
+        ),
+    },
+  );
   return {
+    MantineProvider: actual.MantineProvider,
     Box: element,
     Divider: element,
     Group: element,
+    Menu,
     Overlay: element,
     Button: ({ children, ...props }: any) => (
       <button type="button" {...props}>
@@ -228,7 +314,11 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
 }));
 
 import React from "react";
+import { MantineProvider } from "@mantine/core";
 import { elementScroll, Virtualizer } from "@tanstack/react-virtual";
+import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
+import panelStyles from "@/components/boards/PanelArea.module.css";
 import GameNotation, { scrollNotationToIndex } from "./GameNotation";
 import styles from "./GameNotation.module.css";
 
@@ -247,8 +337,15 @@ beforeEach(() => {
   virtualizerMock.scrollCalls.length = 0;
   virtualizerMock.measured.length = 0;
   notationSettings.showComments = false;
+  notationSettings.showVariations = true;
+  notationSettings.showDiagrams = true;
   notationSettings.tableView = false;
   notationSettings.invisible = false;
+  notationSettings.realMenu = false;
+  notationSettings.setShowComments.mockClear();
+  notationSettings.setShowVariations.mockClear();
+  notationSettings.setShowDiagrams.mockClear();
+  notationSettings.setTableView.mockClear();
   prepState.preparation = null;
   prepState.view = null;
   prepState.setView.mockClear();
@@ -1789,6 +1886,136 @@ describe("scoresheet unsure marks in notation", () => {
       expect(host.querySelector('[data-node="e5"]')?.getAttribute("data-unsure")).toBe("false");
     } finally {
       notationSettings.tableView = false;
+    }
+  });
+});
+
+describe("notation header frame and View menu", () => {
+  test("renders shared header title without close button, shows grip only when arrangeable, and enforces drag exclusions", async () => {
+    const onDragStart = vi.fn();
+    const onSuppressClick = vi.fn();
+    const onStartPlacing = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-header-test">
+            <GameNotation topBar />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+    const header = () => host.querySelector<HTMLElement>('[data-panel-header="bottomRight"]')!;
+    expect(header()).not.toBeNull();
+    expect(header().textContent).toContain("Board.Area.Notation");
+    expect(host.querySelector('button[aria-label="Board.Area.ReturnToTabs"]')).toBeNull();
+    expect(host.querySelector('[data-arrange-grip="bottomRight"]')).toBeNull();
+    expect(header().className).not.toContain(panelStyles.headerDraggable);
+
+    await act(async () => {
+      root.render(
+        <TreeStateContext.Provider value={store}>
+          <WorkspaceTabScope tabId="notation-header-test">
+            <GameNotation
+              topBar
+              arrange={{ onDragStart, onSuppressClick, onStartPlacing }}
+              headerActions={
+                <button type="button" aria-label="Board.Arrange.ShowTabs" data-no-drag="true">
+                  show
+                </button>
+              }
+            />
+          </WorkspaceTabScope>
+        </TreeStateContext.Provider>,
+      );
+    });
+
+    expect(host.querySelector('[data-arrange-grip="bottomRight"]')).not.toBeNull();
+    expect(header().className).toContain(panelStyles.headerDraggable);
+
+    for (const selector of [
+      'button[aria-label="Notation.HideMoves"]',
+      'button[aria-label="Notation.ViewOptions"]',
+      'button[aria-label="Board.Arrange.ShowTabs"]',
+    ]) {
+      const control = host.querySelector<HTMLButtonElement>(selector)!;
+      expect(control).not.toBeNull();
+      await act(async () => {
+        control.dispatchEvent(
+          new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+        );
+      });
+      expect(onDragStart).not.toHaveBeenCalled();
+    }
+
+    await act(async () => {
+      header().dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+    expect(onDragStart).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-arrange-grip="bottomRight"]')!.click();
+    });
+    expect(onStartPlacing).toHaveBeenCalledOnce();
+    expect(onSuppressClick).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      header().click();
+    });
+    expect(onSuppressClick).toHaveBeenCalledTimes(2);
+  });
+
+  test("View menu stays open across toggling multiple options", async () => {
+    installMatchMediaStub();
+    installResizeObserverStub();
+    notationSettings.realMenu = true;
+    try {
+      await act(async () => {
+        root.render(
+          <MantineProvider env="test">
+            <TreeStateContext.Provider value={store}>
+              <WorkspaceTabScope tabId="notation-view-menu-test">
+                <GameNotation topBar />
+              </WorkspaceTabScope>
+            </TreeStateContext.Provider>
+          </MantineProvider>,
+        );
+      });
+
+      const viewTrigger = host.querySelector<HTMLButtonElement>(
+        'button[aria-label="Notation.ViewOptions"]',
+      )!;
+      await act(async () => viewTrigger.click());
+
+      const findItem = (label: string) =>
+        [
+          ...document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
+        ].find((el) => el.textContent?.includes(label));
+
+      await vi.waitFor(() => expect(findItem("Notation.ShowComments")).toBeDefined());
+      expect(findItem("Notation.TableView")!.getAttribute("aria-checked")).toBe("false");
+      expect(findItem("Notation.ShowComments")!.getAttribute("aria-checked")).toBe("false");
+      expect(findItem("Notation.ShowVariations")!.getAttribute("aria-checked")).toBe("true");
+
+      await act(async () => findItem("Notation.ShowComments")!.click());
+      expect(notationSettings.setShowComments).toHaveBeenCalledOnce();
+      expect(findItem("Notation.ShowComments")!.getAttribute("aria-checked")).toBe("true");
+      // Menu remains open after first toggle so variations and table view can be toggled in the same pass.
+      expect(findItem("Notation.ShowVariations")).toBeDefined();
+
+      await act(async () => findItem("Notation.ShowVariations")!.click());
+      expect(notationSettings.setShowVariations).toHaveBeenCalledOnce();
+      expect(findItem("Notation.ShowVariations")!.getAttribute("aria-checked")).toBe("false");
+      expect(findItem("Notation.TableView")).toBeDefined();
+
+      await act(async () => findItem("Notation.TableView")!.click());
+      expect(notationSettings.setTableView).toHaveBeenCalledOnce();
+      expect(findItem("Notation.TableView")!.getAttribute("aria-checked")).toBe("true");
+    } finally {
+      notationSettings.realMenu = false;
     }
   });
 });

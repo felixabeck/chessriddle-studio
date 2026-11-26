@@ -2,22 +2,21 @@
 id: analysis-board
 title: 分析棋盤、變例、註解與箭頭
 summary: 輸入著法、編輯局面、管理變例、撰寫註解、新增評註符號，以及在棋盤上繪製箭頭。
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 從 [[page:new-tab]] 點擊 {{label:Home.Card.AnalysisBoard.Title}}，或從 [[page:library]] 開啟已儲存的對局或開局庫，即可開啟分析棋盤。
 
 透過拖曳或點擊棋子走棋（在 [[setting:move-method]] 中設定）。您也可以啟用 [[setting:text-input]] ({{label:Settings.Inputs.TextInput}})，以 SAN 記譜法輸入著法。使用記譜下方的步進控制項、方向鍵或滑鼠滾輪（若啟用 [[setting:scroll-moves]]）來瀏覽著法。
 
-記譜旁的工具列提供棋盤操作：
-- {{label:Board.Action.TakeSnapshot}}：儲存目前棋盤的圖片。
-- {{label:Board.Action.EditPosition}}：透過擺放棋子或編輯 FEN 設定自訂局面。
+棋盤上方的頂部列提供棋盤操作：
 - {{label:Board.Action.PlayFromHere}}：從目前局面開始對弈。
-- {{label:Board.Action.ClearDrawings}}：清除箭頭與棋格高亮（當 [[setting:erase-drawables]] 關閉時顯示）。
-- {{label:Board.Database.Save}}：將對局儲存至資料庫檔案或資料庫中。
-- 復原、重做、儲存與翻轉棋盤控制項。
+- 翻轉棋盤（`F`）：互換棋盤下方的白方與黑方。
+- 儲存：當對局有未儲存的變更，且自動儲存已關閉、無法使用（例如草稿）或上次寫入失敗時顯示。
+- {{label:Board.Action.More}}：開啟選單以執行 {{label:Board.Database.Save}}（將對局儲存至資料庫檔案或資料庫中）、{{label:Board.Action.TakeSnapshot}}（儲存目前棋盤的圖片）以及 {{label:Board.Action.EditPosition}}（透過擺放棋子或編輯 FEN 設定自訂局面）。
+- 復原、重做以及清除繪製的箭頭或高亮（當 [[setting:erase-drawables]] 關閉時）使用 [[settings-category:keybinds]] 中的鍵盤快捷鍵。
 
-在較早的局面走出不同的著法會建立變例。在記譜中的任何著法上按右鍵，即可選取 {{label:Menu.PromoteVariation}}、{{label:Menu.PromoteToMainLine}}、{{label:Menu.CopyVariationPGN}}、{{label:Menu.DeleteMove}}、{{label:Menu.DeleteVariation}}、{{label:Menu.DeleteMovesAfter}}、{{label:Board.Action.PlayFromHere}}、{{label:Notation.AddDiagram}} 或 {{label:Notation.MarkGameEndHere}}。使用記譜標題列按鈕可切換 {{label:Notation.HideMoves}}、{{label:Notation.TableView}}、{{label:Notation.HideComments}}、{{label:Notation.HideDiagrams}} 與 {{label:Notation.HideVariations}}。
+在較早的局面走出不同的著法會建立變例。在記譜中的任何著法上按右鍵，即可選取 {{label:Menu.PromoteVariation}}、{{label:Menu.PromoteToMainLine}}、{{label:Menu.CopyVariationPGN}}、{{label:Menu.DeleteMove}}、{{label:Menu.DeleteVariation}}、{{label:Menu.DeleteMovesAfter}}、{{label:Board.Action.PlayFromHere}}、{{label:Notation.AddDiagram}} 或 {{label:Notation.MarkGameEndHere}}。使用記譜標題列中的眼睛按鈕可切換 {{label:Notation.HideMoves}}，使用 {{label:Notation.ViewOptions}} 選單可切換 {{label:Notation.TableView}}、{{label:Notation.ShowComments}}、{{label:Notation.ShowDiagrams}} 與 {{label:Notation.ShowVariations}}。
 
 若要為著法加上評註與撰寫註解，請開啟 {{label:Board.Tabs.Annotate}} 分頁。點擊著法品質符號（或按數字鍵 1 到 6）可切換 `!!`、`!`、`!?`、`?!`、`?` 或 `??`，或點擊 {{label:Annotate.ShowMore}} 查看評估與局面符號。在符號下方，使用格式文字編輯器撰寫註解並切換行內棋盤局面圖。
 

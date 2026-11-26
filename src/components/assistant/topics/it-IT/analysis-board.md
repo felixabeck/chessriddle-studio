@@ -2,22 +2,21 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
 
 Esegui le mosse trascinando o cliccando i pezzi (configurabile in [[setting:move-method]]). Puoi anche attivare [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}) per digitare le mosse in notazione SAN. Usa i controlli delle mosse sotto la notazione, i tasti freccia o la rotellina del mouse (se [[setting:scroll-moves]] è attivo) per scorrere le mosse.
 
-La barra degli strumenti accanto alla notazione offre azioni sulla scacchiera:
-- {{label:Board.Action.TakeSnapshot}}: salva un’immagine della scacchiera corrente.
-- {{label:Board.Action.EditPosition}}: imposta una posizione personalizzata posizionando i pezzi o modificando la FEN.
+La barra superiore sopra la scacchiera offre le azioni sulla scacchiera:
 - {{label:Board.Action.PlayFromHere}}: inizia una partita dalla posizione corrente.
-- {{label:Board.Action.ClearDrawings}}: rimuove frecce e caselle evidenziate (visibile quando [[setting:erase-drawables]] è disattivato).
-- {{label:Board.Database.Save}}: salva la partita in un file della libreria o in un database.
-- Comandi per annullare, ripetere, salvare e ruotare la scacchiera.
+- Ruota scacchiera (`F`): scambia Bianco e Nero nella parte inferiore della scacchiera.
+- Salva: appare quando la partita ha modifiche non salvate e il salvataggio automatico è disattivato, non disponibile (come in una bozza) o non è riuscito.
+- {{label:Board.Action.More}}: apre il menu per {{label:Board.Database.Save}} (salva la partita in un file della libreria o in un database), {{label:Board.Action.TakeSnapshot}} (salva un’immagine della scacchiera corrente) e {{label:Board.Action.EditPosition}} (imposta una posizione personalizzata posizionando i pezzi o modificando la FEN).
+- Annullare, ripetere e cancellare frecce o caselle evidenziate (quando [[setting:erase-drawables]] è disattivato) usano le rispettive scorciatoie da tastiera in [[settings-category:keybinds]].
 
-Giocare una mossa diversa da una posizione precedente crea una variante. Fai clic con il tasto destro su qualsiasi mossa nella notazione per {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa i pulsanti nell’intestazione della notazione per attivare o disattivare {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} e {{label:Notation.HideVariations}}.
+Giocare una mossa diversa da una posizione precedente crea una variante. Fai clic con il tasto destro su qualsiasi mossa nella notazione per {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa il pulsante occhio nell’intestazione della notazione per {{label:Notation.HideMoves}}, e il menu {{label:Notation.ViewOptions}} per attivare o disattivare {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} e {{label:Notation.ShowVariations}}.
 
 Per annotare le mosse e scrivere commenti, apri la scheda {{label:Board.Tabs.Annotate}}. Fai clic su un simbolo di qualità della mossa (o premi i tasti da 1 a 6) per attivare o disattivare `!!`, `!`, `!?`, `?!`, `?` o `??`, oppure fai clic su {{label:Annotate.ShowMore}} per i simboli di valutazione e posizionali. Sotto i simboli, usa l’editor di testo formattato per scrivere commenti e inserire diagrammi della scacchiera nel testo.
 

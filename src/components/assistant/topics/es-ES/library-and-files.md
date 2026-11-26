@@ -2,7 +2,7 @@
 id: library-and-files
 title: Archivos y la Biblioteca
 summary: Configura una carpeta de trabajo, crea y organiza archivos PGN, abre y guarda partidas y gestiona la papelera.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne tus archivos PGN del espacio de trabajo (partidas, repertorios, torneos, puzles y otros archivos) junto con tus bases de datos de partidas.
@@ -15,9 +15,9 @@ En [[page:library]]:
 - Selecciona un archivo para previsualizar sus partidas (la vista previa puede ocultar las jugadas con el botón del ojo, [[setting:hide-preview-moves]]), abrirlo en el tablero de análisis o usar {{label:Files.Rename}}, {{label:Files.Move}} y {{label:Files.Trash}}.
 
 Mientras editas un archivo en el tablero de análisis:
-- Guarda los cambios con el botón de guardar en la barra del tablero, {{label:Menu.File}} -> {{label:Common.Save}}, o el atajo {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Guarda los cambios con el botón de guardar en la barra superior del tablero (visible cuando el guardado automático está desactivado, no disponible o falló), {{label:Menu.File}} -> {{label:Common.Save}}, o el atajo {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Activa [[setting:auto-save]] ({{label:Settings.AutoSave}}) para guardar automáticamente los cambios en los archivos abiertos.
-- Usa {{label:Menu.File}} -> {{label:Board.Database.Save}} (o el botón {{label:Board.Database.Save}} de la barra de herramientas) para guardar la partida actual en otro archivo de la biblioteca o base de datos.
+- Usa {{label:Menu.File}} -> {{label:Board.Database.Save}} (o {{label:Board.Action.More}} -> {{label:Board.Database.Save}} en la barra superior del tablero) para guardar la partida actual en otro archivo de la biblioteca o base de datos.
 
 Mover un archivo a {{label:Files.Trash}} no lo elimina de forma permanente al instante. Puedes hacer clic de inmediato en {{label:Common.Undo}} en el aviso, o desplazarte a la sección {{label:Files.Trash}} en [[page:library]] para {{label:Files.Restore}} un archivo, usar {{label:Files.DeletePermanently}} o ejecutar {{label:Files.EmptyTrash}}.
 

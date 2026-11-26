@@ -211,8 +211,8 @@ vi.mock("./OpponentForm", () => ({
   OpponentForm: ({ sideLabel }: { sideLabel: string }) => <div data-side={sideLabel} />,
 }));
 vi.mock("./Board", () => ({
-  default: (props: { onMove: (uci: string) => Promise<boolean> }) => {
-    const { onMove } = props;
+  default: (props: { onMove: (uci: string) => Promise<boolean>; actions?: React.ReactNode }) => {
+    const { onMove, actions } = props;
     fixtures.onMove = onMove;
     fixtures.boardProps = props;
     if ((props as any).cgRef) {
@@ -222,7 +222,7 @@ vi.mock("./Board", () => ({
         cancelPremove: fixtures.cancelPremove,
       };
     }
-    return null;
+    return <>{actions}</>;
   },
 }));
 vi.mock("./BoardControls", () => ({
@@ -249,9 +249,9 @@ vi.mock("../common/GameNotation", async () => {
   >("../common/MoveDeletionContext");
   return {
     // The notation's move menu (CompleteMoveCell) reads the deletion from inside this subtree.
-    default: ({ controls }: { controls?: React.ReactNode }) => {
+    default: () => {
       fixtures.notationDeletion = useContext(MoveDeletionContext);
-      return <>{controls}</>;
+      return null;
     },
   };
 });
@@ -4260,5 +4260,14 @@ describe("takeback between two humans", () => {
     expect(store.get(gameStateFamily("tab-a"))).toBe("gameOver");
     expect(fixtures.moveDeletion).toBeUndefined();
     expect(fixtures.notationDeletion).toBeUndefined();
+  });
+
+  test("forwards BoardControls to Board with Edit position allowed only while setting up", async () => {
+    await render();
+    expect(fixtures.boardControls.allowEditing).toBe(true);
+    expect(fixtures.boardControls.disableVariations).toBe(true);
+
+    await start();
+    expect(fixtures.boardControls.allowEditing).toBe(false);
   });
 });

@@ -90,7 +90,7 @@ afterEach(async () => {
 async function renderNotation() {
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <Provider store={jotai}>
           <TreeStateContext.Provider value={tree}>
             <WorkspaceTabScope tabId="diagram-test">
@@ -208,22 +208,31 @@ test("a castling diagram highlights the king's destination, and no move without 
   expect(board(diagrams()[0]).dataset.check).toBe("false");
 });
 
-test("the header toggle hides and restores the diagrams and hands the comment back to the move", async () => {
+test("the View menu toggles diagrams and hands the comment back to the move", async () => {
   play("e4");
   tree.getState().setComment("Key position");
   tree.getState().toggleDiagram();
   await renderNotation();
   expect(diagrams()).toHaveLength(1);
 
-  const hide = host.querySelector<HTMLButtonElement>('button[aria-label="Notation.HideDiagrams"]')!;
-  await act(async () => hide.click());
+  const viewButton = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Notation.ViewOptions"]',
+  )!;
+  await act(async () => viewButton.click());
+  const toggleItem = () =>
+    [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
+    ].find((el) => el.textContent?.includes("Notation.ShowDiagrams"));
+  await vi.waitFor(() => expect(toggleItem()).toBeDefined());
+  expect(toggleItem()!.getAttribute("aria-checked")).toBe("true");
+  await act(async () => toggleItem()!.click());
   expect(diagrams()).toHaveLength(0);
   expect(host.querySelector('[data-move-cell="e4"]')?.getAttribute("data-cell-comment")).toBe(
     "Key position",
   );
+  expect(toggleItem()!.getAttribute("aria-checked")).toBe("false");
 
-  const show = host.querySelector<HTMLButtonElement>('button[aria-label="Notation.ShowDiagrams"]')!;
-  await act(async () => show.click());
+  await act(async () => toggleItem()!.click());
   expect(diagrams()).toHaveLength(1);
 });
 

@@ -130,3 +130,28 @@ test("a placeholder is not shown when the title cannot be clicked", async () => 
   );
   expect(host.querySelector("[data-board-bar]")?.textContent).toBe("");
 });
+
+test("renders actions at the right end after children and keeps the name truncatable before actions wrap", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <BoardBar
+          name="Very long player name that truncates"
+          height="1.9rem"
+          placement="above"
+          actions={<button type="button">Flip</button>}
+        >
+          <span data-testid="material">Mat</span>
+        </BoardBar>
+      </MantineProvider>,
+    ),
+  );
+  const bar = host.querySelector<HTMLElement>("[data-board-bar='above']")!;
+  const leftGroup = bar.firstElementChild as HTMLElement;
+  const rightGroup = bar.lastElementChild as HTMLElement;
+  const nameText = leftGroup.querySelector<HTMLElement>("p")!;
+  expect(leftGroup.style.minWidth).toBe("0px");
+  expect(nameText.dataset.truncate).toBe("end");
+  expect(rightGroup.style.flexShrink).toBe("0");
+  expect(Array.from(rightGroup.children, (child) => child.textContent)).toEqual(["Mat", "Flip"]);
+});

@@ -2,7 +2,7 @@
 id: library-and-files
 title: Fichiers et Bibliothèque
 summary: Configurez un dossier de travail, créez et organisez des fichiers PGN, ouvrez et enregistrez des parties et gérez la corbeille.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) rassemble les fichiers PGN de votre espace de travail (parties, répertoires, tournois, problèmes et autres fichiers) ainsi que vos bases de parties.
@@ -15,9 +15,9 @@ Sur [[page:library]] :
 - Sélectionnez un fichier pour prévisualiser ses parties (l’aperçu peut masquer les coups avec le bouton œil, [[setting:hide-preview-moves]]), l’ouvrir sur l’échiquier d’analyse ou utiliser {{label:Files.Rename}}, {{label:Files.Move}} et {{label:Files.Trash}}.
 
 Lorsque vous modifiez un fichier sur l’échiquier d’analyse :
-- Enregistrez vos modifications via le bouton d’enregistrement de la barre d’outils de l’échiquier, {{label:Menu.File}} -> {{label:Common.Save}}, ou le raccourci {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Enregistrez vos modifications via le bouton d’enregistrement de la barre supérieure de l’échiquier (affiché lorsque l’enregistrement automatique est désactivé, indisponible ou a échoué), {{label:Menu.File}} -> {{label:Common.Save}}, ou le raccourci {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Activez [[setting:auto-save]] ({{label:Settings.AutoSave}}) pour enregistrer automatiquement les modifications des fichiers ouverts.
-- Utilisez {{label:Menu.File}} -> {{label:Board.Database.Save}} (ou le bouton {{label:Board.Database.Save}} de la barre d’outils) pour enregistrer la partie en cours dans un autre fichier de la bibliothèque ou une base de données.
+- Utilisez {{label:Menu.File}} -> {{label:Board.Database.Save}} (ou {{label:Board.Action.More}} -> {{label:Board.Database.Save}} dans la barre supérieure de l’échiquier) pour enregistrer la partie en cours dans un autre fichier de la bibliothèque ou une base de données.
 
 Déplacer un fichier vers {{label:Files.Trash}} ne le supprime pas définitivement tout de suite. Vous pouvez cliquer immédiatement sur {{label:Common.Undo}} dans la notification, ou faire défiler jusqu’à la section {{label:Files.Trash}} dans [[page:library]] pour {{label:Files.Restore}} un fichier, utiliser {{label:Files.DeletePermanently}} ou {{label:Files.EmptyTrash}}.
 

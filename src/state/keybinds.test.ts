@@ -167,3 +167,37 @@ test("off macOS no shortcut is left to a native menu", () => {
     expect(firedByNativeMenu("NEW_TAB")).toBe(false);
     expect(firedByNativeMenu("SAVE_FILE")).toBe(false);
 });
+
+test("older keymaps gain edit-position, snapshot, and save-to-database defaults and preserve custom overrides", () => {
+    const current = createStore().get(keyMapAtom);
+    expect(current.EDIT_POSITION).toEqual({ name: "Edit position", keys: "e" });
+    expect(current.TAKE_SNAPSHOT).toEqual({ name: "Take snapshot", keys: "ctrl+shift+s" });
+    expect(current.SAVE_TO_DATABASE).toEqual({
+        name: "Save to database",
+        keys: "ctrl+shift+d",
+    });
+
+    const { EDIT_POSITION, TAKE_SNAPSHOT, SAVE_TO_DATABASE, ...older } = current;
+    sessionStorage.setItem("keybinds", JSON.stringify(older));
+    const storage = createKeybindStorage(current, sessionStorage);
+    const hydrated = storage.getItem("keybinds", current);
+    expect(hydrated.EDIT_POSITION).toEqual(EDIT_POSITION);
+    expect(hydrated.TAKE_SNAPSHOT).toEqual(TAKE_SNAPSHOT);
+    expect(hydrated.SAVE_TO_DATABASE).toEqual(SAVE_TO_DATABASE);
+
+    sessionStorage.setItem(
+        "keybinds",
+        JSON.stringify({ ...current, EDIT_POSITION: { ...EDIT_POSITION, keys: "ctrl+e" } }),
+    );
+    expect(storage.getItem("keybinds", current).EDIT_POSITION.keys).toBe("ctrl+e");
+});
+
+test("edit-position, snapshot, and save-to-database defaults collide with no existing default", () => {
+    const current = createStore().get(keyMapAtom);
+    for (const id of ["EDIT_POSITION", "TAKE_SNAPSHOT", "SAVE_TO_DATABASE"] as const) {
+        const sharing = Object.entries(current)
+            .filter(([, binding]) => binding.keys === current[id].keys)
+            .map(([actionId]) => actionId);
+        expect(sharing).toEqual([id]);
+    }
+});

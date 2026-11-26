@@ -45,11 +45,6 @@
   --board-max-width: 100%;
   --board-eval-width: 8px;
   --board-gap: 0.1rem;
-  --notation-card-direction: column;
-  --notation-toolbar-height: auto;
-  --notation-toolbar-min-height: 0;
-  --notation-tools-direction: row;
-  --notation-tools-wrap: wrap;
   --notation-comment-wrap: anywhere;
 }
 

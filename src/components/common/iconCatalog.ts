@@ -13,6 +13,7 @@ import {
     Image,
     Info,
     Library,
+    ListOrdered,
     MessageSquarePlus,
     MessagesSquare,
     Puzzle,
@@ -135,6 +136,8 @@ export const PracticeIcon: LucideIcon = Dumbbell;
 export const GameInfoIcon: LucideIcon = Tags;
 /** A scoresheet photo under review: the board panel's Photo tab. */
 export const ScoresheetPhotoIcon: LucideIcon = Image;
+/** Chess notation: the move list panel on the board. */
+export const NotationIcon: LucideIcon = ListOrdered;
 export const UltraBulletIcon: LucideIcon = ChevronsRight;
 export const BulletIcon: LucideIcon = ChevronRight;
 export const BlitzIcon: LucideIcon = Zap;
@@ -162,6 +165,7 @@ export const LUCIDE_IDENTITIES = {
     practice: { icon: PracticeIcon, chessRiddle: "training" },
     gameInfo: { icon: GameInfoIcon },
     scoresheetPhoto: { icon: ScoresheetPhotoIcon },
+    notation: { icon: NotationIcon },
     ultraBullet: { icon: UltraBulletIcon },
     bullet: { icon: BulletIcon },
     blitz: { icon: BlitzIcon },

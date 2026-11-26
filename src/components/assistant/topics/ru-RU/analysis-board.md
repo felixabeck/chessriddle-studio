@@ -2,22 +2,21 @@
 id: analysis-board
 title: Доска анализа, варианты, комментарии и стрелки
 summary: Ввод ходов, редактирование позиций, работа с вариантами, написание комментариев, добавление аннотаций и рисование стрелок на доске.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Откройте доску анализа со страницы [[page:new-tab]], нажав {{label:Home.Card.AnalysisBoard.Title}}, или открыв сохранённую партию либо репертуар из [[page:library]].
 
 Делайте ходы перетаскиванием или нажатием на фигуры (настраивается в [[setting:move-method]]). Вы также можете включить [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}), чтобы вводить ходы в алгебраической нотации SAN. Используйте кнопки управления под нотацией, клавиши со стрелками или колесо мыши (если включён параметр [[setting:scroll-moves]]) для перехода по ходам.
 
-Панель инструментов рядом с нотацией содержит действия для доски:
-- {{label:Board.Action.TakeSnapshot}}: сохранить изображение текущей позиции на доске.
-- {{label:Board.Action.EditPosition}}: задать произвольную позицию, расставив фигуры или отредактировав FEN.
+Верхняя панель над доской содержит действия для доски:
 - {{label:Board.Action.PlayFromHere}}: начать партию с текущей позиции.
-- {{label:Board.Action.ClearDrawings}}: удалить стрелки и выделение полей (отображается, если выключен параметр [[setting:erase-drawables]]).
-- {{label:Board.Database.Save}}: сохранить партию в файл библиотеки или в базу данных.
-- Кнопки отмены, повтора, сохранения и переворота доски.
+- Перевернуть доску (`F`): поменять белых и чёрных местами в нижней части доски.
+- Сохранить: появляется, когда в партии есть несохранённые изменения и автосохранение выключено, недоступно (например, для черновика) или завершилось ошибкой.
+- {{label:Board.Action.More}}: открывает меню с пунктами {{label:Board.Database.Save}} (сохранить партию в файл библиотеки или в базу данных), {{label:Board.Action.TakeSnapshot}} (сохранить изображение текущей доски) и {{label:Board.Action.EditPosition}} (задать произвольную позицию, расставив фигуры или отредактировав FEN).
+- Отмена, повтор и очистка нарисованных стрелок и выделения полей (если выключен параметр [[setting:erase-drawables]]) работают через сочетания клавиш в [[settings-category:keybinds]].
 
-Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Кнопки в заголовке нотации позволяют переключать {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} и {{label:Notation.HideVariations}}.
+Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Используйте кнопку-глаз в заголовке нотации для {{label:Notation.HideMoves}}, а меню {{label:Notation.ViewOptions}} — для переключения {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} и {{label:Notation.ShowVariations}}.
 
 Чтобы добавлять аннотации к ходам и писать комментарии, откройте вкладку {{label:Board.Tabs.Annotate}}. Нажмите на символ оценки хода (или клавиши от 1 до 6), чтобы переключить `!!`, `!`, `!?`, `?!`, `?` или `??`, либо нажмите {{label:Annotate.ShowMore}} для символов оценки позиции. Под символами расположен текстовый редактор для форматированных комментариев и добавления встроенных диаграмм доски.
 

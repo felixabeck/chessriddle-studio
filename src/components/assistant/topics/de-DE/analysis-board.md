@@ -2,22 +2,21 @@
 id: analysis-board
 title: Analysebrett, Varianten, Kommentare und Pfeile
 summary: Züge eingeben, Stellungen bearbeiten, Varianten verwalten, Kommentare schreiben, Annotationen setzen und Pfeile auf dem Brett zeichnen.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Öffne ein Analysebrett über [[page:new-tab]] mit einem Klick auf {{label:Home.Card.AnalysisBoard.Title}} oder indem du eine gespeicherte Partie oder ein Repertoire aus [[page:library]] öffnest.
 
 Führe Züge durch Ziehen oder Klicken der Figuren aus (einstellbar unter [[setting:move-method]]). Du kannst auch [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}) aktivieren, um Züge in SAN-Notation einzutippen. Nutze die Zugsteuerung unter der Notation, die Pfeiltasten oder das Mausrad (wenn [[setting:scroll-moves]] aktiv ist), um durch die Züge zu blättern.
 
-Die Werkzeugleiste neben der Notation bietet folgende Brett-Aktionen:
-- {{label:Board.Action.TakeSnapshot}}: Ein Bild der aktuellen Stellung sichern.
-- {{label:Board.Action.EditPosition}}: Eine eigene Stellung durch Setzen von Figuren oder Bearbeiten der FEN aufbauen.
+Die obere Leiste über dem Brett bietet folgende Brett-Aktionen:
 - {{label:Board.Action.PlayFromHere}}: Eine Partie ab der aktuellen Stellung starten.
-- {{label:Board.Action.ClearDrawings}}: Pfeile und Feldmarkierungen entfernen (sichtbar, wenn [[setting:erase-drawables]] deaktiviert ist).
-- {{label:Board.Database.Save}}: Die Partie in einer Bibliotheksdatei oder Datenbank speichern.
-- Steuerung für Rückgängig, Wiederholen, Speichern und Brett drehen.
+- Brett drehen (`F`): Weiß und Schwarz am unteren Brettrand tauschen.
+- Speichern: Erscheint, wenn eine Partie ungespeicherte Änderungen hat und automatisches Speichern ausgeschaltet, nicht verfügbar (etwa bei einem Entwurf) oder fehlgeschlagen ist.
+- {{label:Board.Action.More}}: Öffnet das Menü für {{label:Board.Database.Save}} (die Partie in einer Bibliotheksdatei oder Datenbank speichern), {{label:Board.Action.TakeSnapshot}} (ein Bild der aktuellen Stellung sichern) und {{label:Board.Action.EditPosition}} (eine eigene Stellung durch Setzen von Figuren oder Bearbeiten der FEN aufbauen).
+- Rückgängig, Wiederholen sowie das Entfernen gezeichneter Pfeile oder Feldmarkierungen (wenn [[setting:erase-drawables]] deaktiviert ist) nutzen ihre Tastenkürzel unter [[settings-category:keybinds]].
 
-Wenn du in einer früheren Stellung einen anderen Zug spielst, entsteht eine Variante. Klicke mit der rechten Maustaste auf einen Zug in der Notation für {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} oder {{label:Notation.MarkGameEndHere}}. Über die Schaltflächen in der Notationskopfzeile schaltest du {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} und {{label:Notation.HideVariations}} um.
+Wenn du in einer früheren Stellung einen anderen Zug spielst, entsteht eine Variante. Klicke mit der rechten Maustaste auf einen Zug in der Notation für {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} oder {{label:Notation.MarkGameEndHere}}. Nutze das Augensymbol in der Notationskopfzeile für {{label:Notation.HideMoves}} und das Menü {{label:Notation.ViewOptions}}, um {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} und {{label:Notation.ShowVariations}} umzuschalten.
 
 Um Züge zu bewerten und Kommentare zu schreiben, öffne den Tab {{label:Board.Tabs.Annotate}}. Klicke auf ein Zugbewertungssymbol (oder drücke die Tasten 1 bis 6), um `!!`, `!`, `!?`, `?!`, `?` oder `??` umzuschalten, oder klicke auf {{label:Annotate.ShowMore}} für Stellungs- und Bewertungssymbole. Darunter kannst du mit dem Rich-Text-Editor formatierte Kommentare verfassen und Inline-Brettdiagramme einfügen.
 

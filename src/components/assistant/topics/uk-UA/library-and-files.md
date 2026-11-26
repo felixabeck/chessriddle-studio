@@ -2,7 +2,7 @@
 id: library-and-files
 title: Файли та бібліотека
 summary: Налаштування робочої теки, створення й упорядкування файлів PGN, відкриття та збереження партій і робота з кошиком.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 Розділ [[page:library]] ({{label:SideBar.Library}}) об’єднує ваші робочі файли PGN (партії, репертуари, турніри, задачі та інші файли) і бази даних партій.
@@ -15,9 +15,9 @@ source: 1c8e1ec37f492b22
 - Виберіть файл, щоб переглянути його партії (попередній перегляд може приховати ходи кнопкою-оком, [[setting:hide-preview-moves]]), відкрити на дошці аналізу або скористатися діями {{label:Files.Rename}}, {{label:Files.Move}} і {{label:Files.Trash}}.
 
 Під час редагування файлу на дошці аналізу:
-- Зберігайте зміни кнопкою збереження на панелі інструментів дошки, через {{label:Menu.File}} -> {{label:Common.Save}} або комбінацією клавіш {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Зберігайте зміни кнопкою збереження на верхній панелі дошки (з’являється, коли автозбереження вимкнено, недоступне або завершилося помилкою), через {{label:Menu.File}} -> {{label:Common.Save}} або комбінацією клавіш {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Увімкніть [[setting:auto-save]] ({{label:Settings.AutoSave}}), щоб зміни у відкритих файлах зберігалися автоматично.
-- Використовуйте {{label:Menu.File}} -> {{label:Board.Database.Save}} (або кнопку {{label:Board.Database.Save}} на панелі інструментів), щоб зберегти поточну партію в інший файл бібліотеки чи базу даних.
+- Використовуйте {{label:Menu.File}} -> {{label:Board.Database.Save}} (або {{label:Board.Action.More}} -> {{label:Board.Database.Save}} на верхній панелі дошки), щоб зберегти поточну партію в інший файл бібліотеки чи базу даних.
 
 Переміщення файлу в {{label:Files.Trash}} не видаляє його назавжди одразу. Ви можете негайно натиснути {{label:Common.Undo}} у сповіщенні або прокрутити до розділу {{label:Files.Trash}} у [[page:library]], щоб виконати {{label:Files.Restore}}, {{label:Files.DeletePermanently}} або {{label:Files.EmptyTrash}}.
 

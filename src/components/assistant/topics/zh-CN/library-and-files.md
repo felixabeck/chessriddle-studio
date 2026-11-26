@@ -2,7 +2,7 @@
 id: library-and-files
 title: 文件与资料库
 summary: 设置工作区文件夹、创建和整理 PGN 文件、打开和保存对局，以及管理回收站。
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 将您的工作区 PGN 文件（对局、开局库、赛事、谜题和其他文件）以及棋局数据库集中在一起。
@@ -15,9 +15,9 @@ source: 1c8e1ec37f492b22
 - 选择一个文件以预览其中的对局（预览可用眼睛按钮隐藏着法，[[setting:hide-preview-moves]]）、在分析棋盘上打开，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 和 {{label:Files.Trash}} 操作。
 
 在分析棋盘上编辑文件时：
-- 通过棋盘工具栏中的保存按钮、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷键保存更改。
+- 通过棋盘顶部栏中的保存按钮（在自动保存关闭、不可用或失败时显示）、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷键保存更改。
 - 开启 [[setting:auto-save]] ({{label:Settings.AutoSave}}) 以自动保存已打开文件的修改。
-- 使用 {{label:Menu.File}} -> {{label:Board.Database.Save}}（或工具栏上的 {{label:Board.Database.Save}} 按钮）将当前对局保存到另一个资料库文件或数据库中。
+- 使用 {{label:Menu.File}} -> {{label:Board.Database.Save}}（或棋盘顶部栏中的 {{label:Board.Action.More}} -> {{label:Board.Database.Save}}）将当前对局保存到另一个资料库文件或数据库中。
 
 将文件移至 {{label:Files.Trash}} 不会立即永久删除。您可以立即点击提示中的 {{label:Common.Undo}}，或滚动到 [[page:library]] 中的 {{label:Files.Trash}} 区域以执行 {{label:Files.Restore}}、{{label:Files.DeletePermanently}} 或 {{label:Files.EmptyTrash}}。
 

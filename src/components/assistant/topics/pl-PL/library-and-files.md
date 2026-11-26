@@ -2,7 +2,7 @@
 id: library-and-files
 title: Pliki i Biblioteka
 summary: Skonfiguruj folder roboczy, twórz i porządkuj pliki PGN, otwieraj i zapisuj partie oraz zarządzaj koszem.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) łączy pliki PGN z Twojego obszaru roboczego (partie, repertuary, turnieje, zagadki i inne pliki) z Twoimi bazami partii.
@@ -15,9 +15,9 @@ W [[page:library]]:
 - Wybierz plik, aby podejrzeć jego partie (podgląd może ukryć ruchy przyciskiem oka, [[setting:hide-preview-moves]]), otworzyć go na tablicy analizy lub użyć {{label:Files.Rename}}, {{label:Files.Move}} i {{label:Files.Trash}}.
 
 Podczas edycji pliku na tablicy analizy:
-- Zapisz zmiany przyciskiem zapisu na pasku szachownicy, przez {{label:Menu.File}} -> {{label:Common.Save}} lub skrótem {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Zapisz zmiany przyciskiem zapisu na górnym pasku szachownicy (widocznym, gdy automatyczny zapis jest wyłączony, niedostępny lub nie powiódł się), przez {{label:Menu.File}} -> {{label:Common.Save}} lub skrótem {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Włącz [[setting:auto-save]] ({{label:Settings.AutoSave}}), aby automatycznie zapisywać zmiany w otwartych plikach.
-- Użyj {{label:Menu.File}} -> {{label:Board.Database.Save}} (lub przycisku {{label:Board.Database.Save}} na pasku narzędzi), aby zapisać bieżącą partię w innym pliku biblioteki lub bazie danych.
+- Użyj {{label:Menu.File}} -> {{label:Board.Database.Save}} (lub {{label:Board.Action.More}} -> {{label:Board.Database.Save}} na górnym pasku szachownicy), aby zapisać bieżącą partię w innym pliku biblioteki lub bazie danych.
 
 Przeniesienie pliku do {{label:Files.Trash}} nie usuwa go od razu na stałe. Możesz od razu kliknąć {{label:Common.Undo}} w powiadomieniu albo przewinąć do sekcji {{label:Files.Trash}} w [[page:library]], aby użyć {{label:Files.Restore}}, {{label:Files.DeletePermanently}} lub {{label:Files.EmptyTrash}}.
 

@@ -2,22 +2,21 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: b6980e03955d9511
+source: 2b161f5c0298e17a
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
 
 Wykonuj ruchy przez przeciąganie lub klikanie bierek (konfigurowane w [[setting:move-method]]). Możesz też włączyć [[setting:text-input]] ({{label:Settings.Inputs.TextInput}}), aby wpisywać ruchy w notacji SAN. Użyj przycisków nawigacji ruchów pod notacją, klawiszy strzałek lub kółka myszy (jeśli [[setting:scroll-moves]] jest włączone), aby przeglądać ruchy.
 
-Pasek narzędzi obok notacji udostępnia akcje szachownicy:
-- {{label:Board.Action.TakeSnapshot}}: zapisz obraz bieżącej szachownicy.
-- {{label:Board.Action.EditPosition}}: ustaw własną pozycję przez rozstawienie bierek lub edycję FEN.
+Górny pasek nad szachownicą udostępnia akcje szachownicy:
 - {{label:Board.Action.PlayFromHere}}: rozpocznij partię od bieżącej pozycji.
-- {{label:Board.Action.ClearDrawings}}: usuń strzałki i podświetlenia pól (widoczne, gdy [[setting:erase-drawables]] jest wyłączone).
-- {{label:Board.Database.Save}}: zapisz partię w pliku biblioteki lub w bazie danych.
-- Przyciski cofania, ponawiania, zapisu i odwracania szachownicy.
+- Odwróć szachownicę (`F`): zamień Białe i Czarne na dole szachownicy.
+- Zapisz: pojawia się, gdy partia ma niezapisane zmiany, a automatyczny zapis jest wyłączony, niedostępny (np. w wersji roboczej) lub nie powiódł się.
+- {{label:Board.Action.More}}: otwiera menu z opcjami {{label:Board.Database.Save}} (zapisz partię w pliku biblioteki lub w bazie danych), {{label:Board.Action.TakeSnapshot}} (zapisz obraz bieżącej szachownicy) i {{label:Board.Action.EditPosition}} (ustaw własną pozycję przez rozstawienie bierek lub edycję FEN).
+- Cofanie, ponawianie oraz czyszczenie narysowanych strzałek i podświetleń (gdy [[setting:erase-drawables]] jest wyłączone) działają przez skróty klawiszowe w [[settings-category:keybinds]].
 
-Zagrania innego ruchu z wcześniejszej pozycji tworzy wariant. Kliknij prawym przyciskiem myszy dowolny ruch w notacji, aby wybrać {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} lub {{label:Notation.MarkGameEndHere}}. Użyj przycisków w nagłówku notacji, aby przełączać {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} i {{label:Notation.HideVariations}}.
+Zagranie innego ruchu z wcześniejszej pozycji tworzy wariant. Kliknij prawym przyciskiem myszy dowolny ruch w notacji, aby wybrać {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} lub {{label:Notation.MarkGameEndHere}}. Użyj przycisku oka w nagłówku notacji dla {{label:Notation.HideMoves}}, a menu {{label:Notation.ViewOptions}}, aby przełączać {{label:Notation.TableView}}, {{label:Notation.ShowComments}}, {{label:Notation.ShowDiagrams}} i {{label:Notation.ShowVariations}}.
 
 Aby oceniać ruchy i pisać komentarze, otwórz kartę {{label:Board.Tabs.Annotate}}. Kliknij symbol oceny ruchu (lub naciśnij klawisze od 1 do 6), aby przełączyć `!!`, `!`, `!?`, `?!`, `?` lub `??`, albo kliknij {{label:Annotate.ShowMore}}, aby zobaczyć symbole oceny pozycji. Poniżej symboli użyj edytora tekstu sformatowanego do pisania komentarzy i wstawiania diagramów szachownicy w treści.
 

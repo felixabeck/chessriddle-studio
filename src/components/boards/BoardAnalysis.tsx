@@ -26,6 +26,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { type StoreApi, useStore } from "zustand";
@@ -112,13 +113,37 @@ export const scoresheetPhotoPanelLoader = {
   load: () => import("../panels/scoresheet/ScoresheetPhotoPanel"),
 };
 
+// Tree stores whose current autosave failure streak was already reported (see `saveFile`).
+const autoSaveFailuresShown = new WeakSet<StoreApi<TreeStoreState>>();
+// Tree stores whose last autosave write failed, kept on the store so Save stays visible across remounts.
+const autoSaveFailedStores = new WeakSet<StoreApi<TreeStoreState>>();
+const autoSaveFailureListeners = new WeakMap<StoreApi<TreeStoreState>, Set<() => void>>();
+
+function subscribeAutoSaveFailure(store: StoreApi<TreeStoreState>, listener: () => void) {
+  let listeners = autoSaveFailureListeners.get(store);
+  if (!listeners) {
+    listeners = new Set();
+    autoSaveFailureListeners.set(store, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function setAutoSaveFailed(store: StoreApi<TreeStoreState>, failed: boolean) {
+  if (autoSaveFailedStores.has(store) === failed) return;
+  if (failed) autoSaveFailedStores.add(store);
+  else autoSaveFailedStores.delete(store);
+  for (const listener of autoSaveFailureListeners.get(store) ?? []) {
+    listener();
+  }
+}
+
 /**
  * Owns the single file position index request for the mounted file-backed analysis tab, releasing
  * it on unmount, leaving the file, or verified-revision changes.
  */
-// Tree stores whose current autosave failure streak was already reported (see `saveFile`).
-const autoSaveFailuresShown = new WeakSet<StoreApi<TreeStoreState>>();
-
 function FilePositionIndexSync() {
   const [currentTab] = useOwnerTab();
   const tabId = useOwnerTabId();
@@ -254,8 +279,11 @@ function BoardAnalysis() {
   const store = useContext(TreeStateContext)!;
 
   const dirty = useStore(store, (s) => s.dirty);
+  const autoSaveFailed = useSyncExternalStore(
+    useCallback((listener) => subscribeAutoSaveFailure(store, listener), [store]),
+    () => autoSaveFailedStores.has(store),
+  );
 
-  const clearShapes = useStore(store, (s) => s.clearShapes);
   const setAnnotation = useStore(store, (s) => s.setAnnotation);
 
   const notifyError = useCallback(
@@ -263,11 +291,15 @@ function BoardAnalysis() {
     [t],
   );
 
-  // Autosave reports a failure streak once; a clean tree ends the streak. This effect only
-  // resets that notice, `useAutoSave` below decides when to write. The streak belongs to the
-  // tab's store: a failed write can remount this board, and the streak must survive that.
+  // Autosave reports a failure streak once and surfaces Save until a clean tree or successful
+  // save ends it. This effect resets both that notice and the failure flag when the tree is clean,
+  // while `useAutoSave` below decides when to write. Both belong to the tab's store: a failed
+  // write can remount this board, and the failure state must survive that.
   useEffect(() => {
-    if (!dirty) autoSaveFailuresShown.delete(store);
+    if (!dirty) {
+      autoSaveFailuresShown.delete(store);
+      setAutoSaveFailed(store, false);
+    }
   }, [dirty, store]);
   const saveFile = useCallback(
     async (isUserSave = false) => {
@@ -280,8 +312,11 @@ function BoardAnalysis() {
         skipIfClean: !isUserSave,
       });
       if (typeof result === "object" && result.status === "failed") {
+        if (!isUserSave) setAutoSaveFailed(store, true);
         if (isUserSave || !autoSaveFailuresShown.has(store)) notifyError(result.error);
         if (!isUserSave && errorUnlessCancelled(result.error)) autoSaveFailuresShown.add(store);
+      } else if (result === "saved" || !store.getState().dirty) {
+        setAutoSaveFailed(store, false);
       } else if (isUserSave && result === "superseded") {
         notifyError({
           category: "validation",
@@ -461,7 +496,6 @@ function BoardAnalysis() {
       ...(firedByNativeMenu("SAVE_FILE")
         ? []
         : [[keyMap.SAVE_FILE.keys, () => requestUserSave()] satisfies HotkeyItem]),
-      [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
       [keyMap.UNDO.keys, () => store.getState().undo()],
       [keyMap.REDO.keys, () => store.getState().redo()],
     ]),
@@ -535,21 +569,6 @@ function BoardAnalysis() {
       ],
     ]),
   );
-
-  const notationGrip = arrangingAvailable ? (
-    <IconAction
-      label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Notation") })}
-      size="sm"
-      variant="subtle"
-      className={classes.grip}
-      data-arrange-grip="bottomRight"
-      onPointerDown={(e) => beginDrag("bottomRight", e)}
-      onClickCapture={consumeSuppressedClick}
-      onClick={() => startPlacing("bottomRight")}
-    >
-      <GripVertical size="0.875rem" />
-    </IconAction>
-  ) : undefined;
 
   const panelContent: Record<PanelAreaId, () => ReactNode> = {
     analysis: () => <AnalysisPanel />,
@@ -648,6 +667,18 @@ function BoardAnalysis() {
             editingMode={editingMode}
             boardRef={boardRef}
             selectedPiece={selectedPiece}
+            actions={
+              <BoardControls
+                boardRef={boardRef}
+                editingMode={editingMode}
+                toggleEditingMode={toggleEditingMode}
+                dirty={dirty}
+                saveFile={requestUserSave}
+                autoSaveActive={hasPersistentOrigin && autoSave}
+                autoSaveFailed={autoSaveFailed}
+                saveTo={() => setSaveToModal(true)}
+              />
+            }
           />
         </Paper>
       </Portal>
@@ -826,32 +857,28 @@ function BoardAnalysis() {
             <GameNotation
               topBar
               markOpenVariations
-              headerGrip={
-                notationGrip && (
-                  <>
-                    {tabsHidden && (
-                      <IconAction
-                        label={t("Board.Arrange.ShowTabs")}
-                        data-show-tabs="true"
-                        onClick={() => setTabsHidden(false)}
-                      >
-                        <PanelTop size="1rem" />
-                      </IconAction>
-                    )}
-                    {notationGrip}
-                  </>
-                )
+              arrange={
+                arrangingAvailable
+                  ? {
+                      onDragStart: (e) => beginDrag("bottomRight", e),
+                      onSuppressClick: consumeSuppressedClick,
+                      onStartPlacing: () => startPlacing("bottomRight"),
+                    }
+                  : undefined
               }
-              controls={
-                <BoardControls
-                  boardRef={boardRef}
-                  editingMode={editingMode}
-                  toggleEditingMode={toggleEditingMode}
-                  dirty={dirty}
-                  saveFile={requestUserSave}
-                  saveTo={() => setSaveToModal(true)}
-                  allowUndo
-                />
+              headerActions={
+                arrangingAvailable && tabsHidden ? (
+                  <IconAction
+                    label={t("Board.Arrange.ShowTabs")}
+                    size="sm"
+                    variant="subtle"
+                    data-show-tabs="true"
+                    data-no-drag="true"
+                    onClick={() => setTabsHidden(false)}
+                  >
+                    <PanelTop size="0.875rem" />
+                  </IconAction>
+                ) : undefined
               }
             />
             <MoveControls />

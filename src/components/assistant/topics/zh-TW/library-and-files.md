@@ -2,7 +2,7 @@
 id: library-and-files
 title: 檔案與資料庫
 summary: 設定工作區資料夾、建立與整理 PGN 檔案、開啟與儲存對局，以及管理垃圾桶。
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 整合了您的工作區 PGN 檔案（對局、開局庫、賽事、謎題與其他檔案）以及棋局資料庫。
@@ -15,9 +15,9 @@ source: 1c8e1ec37f492b22
 - 選取檔案即可預覽其中的對局（預覽可用眼睛按鈕隱藏著法，[[setting:hide-preview-moves]]）、在分析棋盤上開啟，或使用 {{label:Files.Rename}}、{{label:Files.Move}} 與 {{label:Files.Trash}}。
 
 在分析棋盤上編輯檔案時：
-- 使用棋盤工具列的儲存按鈕、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷鍵儲存變更。
+- 使用棋盤頂部列中的儲存按鈕（在自動儲存關閉、無法使用或失敗時顯示）、{{label:Menu.File}} -> {{label:Common.Save}}，或 {{label:Settings.Keybinds.Actions.SAVE_FILE}} 快捷鍵儲存變更。
 - 開啟 [[setting:auto-save]] ({{label:Settings.AutoSave}}) 以自動儲存已開啟檔案的編輯內容。
-- 使用 {{label:Menu.File}} -> {{label:Board.Database.Save}}（或工具列上的 {{label:Board.Database.Save}} 按鈕）將目前對局儲存至另一個資料庫檔案或資料庫中。
+- 使用 {{label:Menu.File}} -> {{label:Board.Database.Save}}（或棋盤頂部列中的 {{label:Board.Action.More}} -> {{label:Board.Database.Save}}）將目前對局儲存至另一個資料庫檔案或資料庫中。
 
 將檔案移至 {{label:Files.Trash}} 不會立即永久刪除。您可以立即點擊通知中的 {{label:Common.Undo}}，或捲動至 [[page:library]] 中的 {{label:Files.Trash}} 區段來 {{label:Files.Restore}} 檔案、{{label:Files.DeletePermanently}} 或 {{label:Files.EmptyTrash}}。
 

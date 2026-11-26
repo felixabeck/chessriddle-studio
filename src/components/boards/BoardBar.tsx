@@ -12,6 +12,8 @@ interface BoardBarProps {
   height: string;
   /** Which side of the board the bar sits on; its content always hugs the board. */
   placement: "above" | "below";
+  /** Board action controls rendered at the right end of the bar, after material and clock. */
+  actions?: ReactNode;
   children?: ReactNode;
 }
 
@@ -23,6 +25,7 @@ export function BoardBar({
   placeholder,
   height,
   placement,
+  actions,
   children,
 }: BoardBarProps) {
   const hasPlayerName = name.trim().length > 0 && name !== "?";
@@ -37,34 +40,40 @@ export function BoardBar({
       justify="space-between"
       wrap="nowrap"
       align={towardBoard}
+      gap="xs"
     >
-      <Group gap={6} align="baseline">
+      <Group gap={6} align="baseline" wrap="nowrap" style={{ minWidth: 0 }}>
         {(hasPlayerName || (placeholder && onNameClick)) &&
           (onNameClick ? (
-            <UnstyledButton type="button" onClick={onNameClick}>
-              <Text fw="bold" size="md" c={hasPlayerName ? undefined : "dimmed"}>
+            <UnstyledButton
+              type="button"
+              onClick={onNameClick}
+              style={{ minWidth: 0, maxWidth: "100%" }}
+            >
+              <Text fw="bold" size="md" truncate c={hasPlayerName ? undefined : "dimmed"}>
                 {hasPlayerName ? name : placeholder}
               </Text>
             </UnstyledButton>
           ) : (
-            <Text fw="bold" size="md">
+            <Text fw="bold" size="md" truncate>
               {name}
             </Text>
           ))}
         {hasPlayerName && detail && (
-          <Text size="sm" c="dimmed">
+          <Text size="sm" c="dimmed" truncate style={{ flexShrink: 1, minWidth: 0 }}>
             {detail}
           </Text>
         )}
         {rating && (
-          <Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             ({rating})
           </Text>
         )}
       </Group>
 
-      <Group align={towardBoard} wrap="nowrap">
+      <Group align={towardBoard} wrap="nowrap" gap="xs" style={{ flexShrink: 0 }}>
         {children}
+        {actions}
       </Group>
     </Group>
   );

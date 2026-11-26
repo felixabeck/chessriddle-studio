@@ -1,5 +1,15 @@
-.contentRow {
-  flex-direction: var(--notation-card-direction, row);
+.openingRow {
+  padding: 4px var(--mantine-spacing-sm);
+  border-bottom: 1px solid var(--cf-border);
+}
+
+.openingRow:empty,
+.openingRow:has(> :empty) {
+  display: none;
+}
+
+.preparationRow {
+  border-bottom: 1px solid var(--cf-border);
 }
 
 .gameEnd {
@@ -14,23 +24,6 @@
 .diagramBoard {
   display: block;
   border-radius: var(--mantine-radius-sm);
-}
-
-.toolbar {
-  /* Desktop defaults keep toolbar contents out of the card's intrinsic height while filling
-     its final row. The stacked layout overrides these custom properties to use natural height. */
-  height: var(--notation-toolbar-height, 0);
-  min-height: var(--notation-toolbar-min-height, 100%);
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  background: var(--cf-surface-inset);
-  border-right: 1px solid var(--cf-border);
-}
-
-.toolbar :global(.mantine-Stack-root) {
-  flex-direction: var(--notation-tools-direction, column);
-  flex-wrap: var(--notation-tools-wrap, nowrap);
 }
 
 /* The --notation-scale default keeps main-line comments unchanged; only .variationBlock sets it. */

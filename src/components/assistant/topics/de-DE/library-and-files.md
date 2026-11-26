@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dateien und die Bibliothek
 summary: Workspace-Ordner einrichten, PGN-Dateien erstellen und ordnen, Partien öffnen und speichern sowie den Papierkorb verwalten.
-source: 1c8e1ec37f492b22
+source: 4417697a9a5cd025
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) führt deine Workspace-PGN-Dateien (Partien, Repertoires, Turniere, Puzzles und sonstige Dateien) mit deinen Partiedatenbanken zusammen.
@@ -15,9 +15,9 @@ In [[page:library]]:
 - Wähle eine Datei aus, um eine Vorschau ihrer Partien anzuzeigen (die Vorschau kann ihre Züge mit dem Auge-Button ausblenden, [[setting:hide-preview-moves]]), sie auf dem Analysebrett zu öffnen oder {{label:Files.Rename}}, {{label:Files.Move}} und {{label:Files.Trash}} zu verwenden.
 
 Während du eine Datei auf dem Analysebrett bearbeitest:
-- Speichere Änderungen über die Speichern-Schaltfläche in der Brett-Werkzeugleiste, über {{label:Menu.File}} -> {{label:Common.Save}} oder mit dem Tastenkürzel {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
+- Speichere Änderungen über die Speichern-Schaltfläche in der oberen Leiste des Bretts (sichtbar, wenn automatisches Speichern ausgeschaltet, nicht verfügbar oder fehlgeschlagen ist), über {{label:Menu.File}} -> {{label:Common.Save}} oder mit dem Tastenkürzel {{label:Settings.Keybinds.Actions.SAVE_FILE}}.
 - Aktiviere [[setting:auto-save]] ({{label:Settings.AutoSave}}), um Änderungen an geöffneten Dateien automatisch zu sichern.
-- Nutze {{label:Menu.File}} -> {{label:Board.Database.Save}} (oder die Schaltfläche {{label:Board.Database.Save}} in der Werkzeugleiste), um die aktuelle Partie in einer anderen Bibliotheksdatei oder Datenbank zu speichern.
+- Nutze {{label:Menu.File}} -> {{label:Board.Database.Save}} (oder {{label:Board.Action.More}} -> {{label:Board.Database.Save}} in der oberen Leiste des Bretts), um die aktuelle Partie in einer anderen Bibliotheksdatei oder Datenbank zu speichern.
 
 Das Verschieben einer Datei in {{label:Files.Trash}} löscht sie nicht sofort endgültig. Du kannst im Hinweis direkt auf {{label:Common.Undo}} klicken oder in [[page:library]] zum Bereich {{label:Files.Trash}} scrollen, um eine Datei mit {{label:Files.Restore}} wiederherzustellen, sie mit {{label:Files.DeletePermanently}} zu entfernen oder {{label:Files.EmptyTrash}} auszuführen.
 

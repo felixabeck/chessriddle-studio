@@ -63,7 +63,13 @@ vi.mock("@/state/atoms", async () => {
 });
 vi.mock("@/state/keybinds", async () => {
   const { atom } = await import("jotai");
-  return { keyMapAtom: atom({ SWAP_ORIENTATION: { keys: "f" }, TOGGLE_EVAL_BAR: { keys: "b" } }) };
+  return {
+    keyMapAtom: atom({
+      SWAP_ORIENTATION: { keys: "f" },
+      TOGGLE_EVAL_BAR: { keys: "b" },
+      CLEAR_SHAPES: { keys: "ctrl+l" },
+    }),
+  };
 });
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const boardConfig = vi.hoisted(() => ({ current: {} as any }));
@@ -85,8 +91,11 @@ vi.mock("@/chessground/useNodeDrawables", () => ({ useNodeDrawables: () => ({}) 
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 vi.mock("./BoardFrame", () => ({ default: ({ children }: { children: ReactNode }) => children }));
 const boardBar = vi.hoisted(() =>
-  vi.fn(({ children, placement }: ComponentProps<typeof BoardBar>) => (
-    <div data-bar={placement}>{children}</div>
+  vi.fn(({ children, actions, placement }: ComponentProps<typeof BoardBar>) => (
+    <div data-bar={placement}>
+      {children}
+      {actions}
+    </div>
   )),
 );
 vi.mock("./BoardBar", () => ({ BoardBar: boardBar }));
@@ -776,3 +785,36 @@ test("board width cap uses --board-area-height with viewport fallback", async ()
   );
   expect(maxWidth).not.toContain("--board-below-height");
 });
+
+test("forwards actions into the top BoardBar only", async () => {
+  await render({ actions: <button type="button">Action</button> });
+  const bars = boardBar.mock.calls.slice(-2).map(([props]) => props);
+  expect(bars.find((props) => props.placement === "above")?.actions).toBeDefined();
+  expect(bars.find((props) => props.placement === "below")?.actions).toBeUndefined();
+  expect(host.querySelector('[data-bar="above"] button')?.textContent).toBe("Action");
+  expect(host.querySelector('[data-bar="below"] button')).toBeNull();
+});
+
+test.each([false, true])(
+  "Clear Shapes clears shapes (game mode disableVariations=%s) and ignores a focused blocking dialog",
+  async (disableVariations) => {
+    const shapes = [{ orig: "a1", dest: "a3", brush: "green" }] as const;
+    await act(async () => {
+      tree.getState().setShapes([...shapes]);
+      tree.setState({ dirty: false });
+    });
+    const { grid } = await render({ disableVariations, viewOnly: disableVariations });
+
+    const { button } = focusedDialogButton(host);
+    expect(document.activeElement).toBe(button);
+    const blocked = pressKey("l", { ctrlKey: true, target: button });
+    expect(tree.getState().currentNode().shapes).toEqual(shapes);
+    expect(tree.getState().dirty).toBe(false);
+    expect(blocked.defaultPrevented).toBe(false);
+
+    grid.focus();
+    const event = pressKey("l", { ctrlKey: true, target: grid });
+    expect(event.defaultPrevented).toBe(true);
+    expect(tree.getState().currentNode().shapes).toEqual([]);
+  },
+);

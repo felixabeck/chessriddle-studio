@@ -12,9 +12,16 @@
   min-width: 0;
   padding: 4px var(--mantine-spacing-xs);
   border-bottom: 1px solid var(--cf-border);
+}
+
+.headerDraggable {
   cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+.actions {
+  flex-shrink: 0;
 }
 
 .grip {

@@ -1,14 +1,14 @@
 import { useOwnerTab } from "@/state/tabScope";
-import { Stack } from "@mantine/core";
+import { Group, Menu, Text } from "@mantine/core";
 import {
   Undo2,
-  Redo2,
   Camera,
+  Check,
   Save,
   Database,
+  Ellipsis,
   Pencil,
   PencilOff,
-  Eraser,
   ArrowUpDown,
   Target,
   ScanSearch,
@@ -16,15 +16,16 @@ import {
 import { tauri } from "@/platform/tauri";
 import domtoimage from "dom-to-image";
 import { useAtomValue } from "jotai";
-import { memo, useContext } from "react";
+import { memo, useContext, useRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import IconAction from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { autoSaveAtom, eraseDrawablesOnClickAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { formatKeymap } from "@/utils/formatKeymap";
+import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { usePlayFromHere } from "./usePlayFromHere";
 
 interface BoardControlsProps {
@@ -33,14 +34,14 @@ interface BoardControlsProps {
   toggleEditingMode: () => void;
   dirty: boolean;
   saveFile?: () => void;
+  autoSaveActive?: boolean;
+  autoSaveFailed?: boolean;
   saveTo?: () => void;
   canTakeBack?: boolean;
   onTakeBack?: () => void;
   takeBackPending?: boolean;
   disableVariations?: boolean;
   allowEditing?: boolean;
-  /** Shows undo and redo of the game's edits. */
-  allowUndo?: boolean;
 }
 
 function BoardControls({
@@ -49,13 +50,14 @@ function BoardControls({
   toggleEditingMode,
   dirty,
   saveFile,
+  autoSaveActive = false,
+  autoSaveFailed = false,
   saveTo,
   canTakeBack,
   onTakeBack,
   takeBackPending,
   disableVariations,
   allowEditing,
-  allowUndo,
 }: BoardControlsProps) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -63,17 +65,11 @@ function BoardControls({
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);
   const setHeaders = useStore(store, (s) => s.setHeaders);
-  const clearShapes = useStore(store, (s) => s.clearShapes);
-  const canUndo = useStore(store, (s) => s.history.past.length > 0 && s.practicePath === null);
-  const canRedo = useStore(store, (s) => s.history.future.length > 0 && s.practicePath === null);
-  const undo = useStore(store, (s) => s.undo);
-  const redo = useStore(store, (s) => s.redo);
 
   const keyMap = useAtomValue(keyMapAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
-  const autoSave = useAtomValue(autoSaveAtom);
-  const eraseDrawablesOnClick = useAtomValue(eraseDrawablesOnClickAtom);
   const playFromHere = usePlayFromHere();
+  const snapshotInFlightRef = useRef(false);
 
   const orientation = headers.orientation || "white";
   const toggleOrientation = () =>
@@ -95,9 +91,11 @@ function BoardControls({
   }
 
   const takeSnapshot = async () => {
+    if (snapshotInFlightRef.current) return;
     const snapshotTarget = boardRef.current?.querySelector<HTMLElement>(".cg-wrap") ?? null;
     if (!snapshotTarget) return;
 
+    snapshotInFlightRef.current = true;
     try {
       const blob = await domtoimage.toBlob(snapshotTarget);
       if (blob == null) return;
@@ -106,40 +104,47 @@ function BoardControls({
       await tauri.saveBoardSnapshot(Array.from(new Uint8Array(arrayBuffer)));
     } catch (error) {
       notifyUnlessCancelled(t("Common.Error"), error);
+    } finally {
+      snapshotInFlightRef.current = false;
     }
   };
 
+  const canEdit = !disableVariations || Boolean(allowEditing);
+  const showSave = Boolean(saveFile && dirty && (!autoSaveActive || autoSaveFailed));
+
+  useHotkeys(keyMap.EDIT_POSITION.keys, () => toggleEditingMode(), {
+    ...backgroundHotkeyOptions,
+    enabled: canEdit,
+    preventDefault: true,
+  });
+  useHotkeys(
+    keyMap.TAKE_SNAPSHOT.keys,
+    () => {
+      void takeSnapshot();
+    },
+    {
+      ...backgroundHotkeyOptions,
+      preventDefault: true,
+    },
+  );
+  useHotkeys(keyMap.SAVE_TO_DATABASE.keys, () => saveTo?.(), {
+    ...backgroundHotkeyOptions,
+    enabled: Boolean(saveTo),
+    preventDefault: true,
+  });
+
   return (
-    <Stack gap={4} align="center">
-      <IconAction label={t("Board.Action.TakeSnapshot")} onClick={() => takeSnapshot()}>
-        <Camera size="1.2rem" />
-      </IconAction>
+    <Group gap={4} wrap="nowrap" data-no-drag="true">
       {canTakeBack && onTakeBack && (
         <IconAction
           label={t("Board.Action.TakeBack", { defaultValue: "Take back" })}
+          size="sm"
+          variant="subtle"
           onClick={() => onTakeBack()}
           pending={takeBackPending}
         >
-          <Undo2 />
+          <Undo2 size="1rem" />
         </IconAction>
-      )}
-      {allowUndo && (
-        <>
-          <IconAction
-            label={t("Board.Action.Undo", { key: formatKeymap(keyMap.UNDO.keys) })}
-            onClick={() => undo()}
-            disabled={!canUndo}
-          >
-            <Undo2 size="1.2rem" />
-          </IconAction>
-          <IconAction
-            label={t("Board.Action.Redo", { key: formatKeymap(keyMap.REDO.keys) })}
-            onClick={() => redo()}
-            disabled={!canRedo}
-          >
-            <Redo2 size="1.2rem" />
-          </IconAction>
-        </>
       )}
       <IconAction
         label={t(
@@ -147,48 +152,84 @@ function BoardControls({
             ? "Board.Action.PlayFromHere"
             : "Board.Action.AnalyzeGame",
         )}
+        size="sm"
+        variant="subtle"
         onClick={playFromHereOrAnalyze}
       >
-        {currentTab?.type === "analysis" ? <Target size="1.2rem" /> : <ScanSearch size="1.2rem" />}
+        {currentTab?.type === "analysis" ? <Target size="1rem" /> : <ScanSearch size="1rem" />}
       </IconAction>
-      {!eraseDrawablesOnClick && (
-        <IconAction label={t("Board.Action.ClearDrawings")} onClick={() => clearShapes()}>
-          <Eraser size="1.2rem" />
-        </IconAction>
-      )}
-      {(!disableVariations || allowEditing) && (
-        <IconAction
-          label={t("Board.Action.EditPosition")}
-          onClick={() => toggleEditingMode()}
-          pressed={editingMode}
-        >
-          {editingMode ? <PencilOff size="1.2rem" /> : <Pencil size="1.2rem" />}
-        </IconAction>
-      )}
-
-      {saveFile && (
-        <IconAction
-          label={t("Board.Action.SavePGN", { key: formatKeymap(keyMap.SAVE_FILE.keys) })}
-          onClick={() => saveFile()}
-          variant={dirty && !autoSave ? "default" : "transparent"}
-        >
-          <Save size="1.2rem" />
-        </IconAction>
-      )}
-      {saveTo && (
-        <IconAction label={t("Board.Database.Save")} onClick={saveTo}>
-          <Database size="1.2rem" />
-        </IconAction>
-      )}
       <IconAction
         label={t("Board.Action.FlipBoard", {
           key: formatKeymap(keyMap.SWAP_ORIENTATION.keys),
         })}
+        size="sm"
+        variant="subtle"
         onClick={() => toggleOrientation()}
       >
-        <ArrowUpDown size="1.2rem" />
+        <ArrowUpDown size="1rem" />
       </IconAction>
-    </Stack>
+      {showSave && saveFile && (
+        <IconAction
+          label={t("Board.Action.SavePGN", { key: formatKeymap(keyMap.SAVE_FILE.keys) })}
+          size="sm"
+          variant="default"
+          onClick={() => saveFile()}
+        >
+          <Save size="1rem" />
+        </IconAction>
+      )}
+      <Menu position="bottom-end" shadow="md" withinPortal>
+        <Menu.Target>
+          <IconAction label={t("Board.Action.More")} size="sm" variant="subtle" data-no-drag="true">
+            <Ellipsis size="1rem" />
+          </IconAction>
+        </Menu.Target>
+        <Menu.Dropdown>
+          {saveTo && (
+            <Menu.Item
+              leftSection={<Database size="0.875rem" />}
+              rightSection={
+                <Text size="xs" c="dimmed">
+                  {formatKeymap(keyMap.SAVE_TO_DATABASE.keys)}
+                </Text>
+              }
+              onClick={saveTo}
+            >
+              {t("Board.Database.Save")}
+            </Menu.Item>
+          )}
+          <Menu.Item
+            leftSection={<Camera size="0.875rem" />}
+            rightSection={
+              <Text size="xs" c="dimmed">
+                {formatKeymap(keyMap.TAKE_SNAPSHOT.keys)}
+              </Text>
+            }
+            onClick={() => void takeSnapshot()}
+          >
+            {t("Board.Action.TakeSnapshot")}
+          </Menu.Item>
+          {canEdit && (
+            <Menu.Item
+              role="menuitemcheckbox"
+              aria-checked={editingMode}
+              leftSection={editingMode ? <PencilOff size="0.875rem" /> : <Pencil size="0.875rem" />}
+              rightSection={
+                <Group gap={6} wrap="nowrap">
+                  {editingMode && <Check size="0.875rem" />}
+                  <Text size="xs" c="dimmed">
+                    {formatKeymap(keyMap.EDIT_POSITION.keys)}
+                  </Text>
+                </Group>
+              }
+              onClick={() => toggleEditingMode()}
+            >
+              {t("Board.Action.EditPosition")}
+            </Menu.Item>
+          )}
+        </Menu.Dropdown>
+      </Menu>
+    </Group>
   );
 }
 
