@@ -354,6 +354,29 @@ impl OperationRegistry {
         Ok((snapshot, Some(lease)))
     }
 
+    pub(crate) fn has_uninterruptible_work(&self) -> bool {
+        let Ok(state) = self.state() else {
+            return true;
+        };
+        state.accepted.values().any(|entry| {
+            matches!(
+                entry.kind,
+                Some(ReservationKindOwned::Download | ReservationKindOwned::Conversion)
+            )
+        })
+    }
+
+    pub(crate) fn cancel_active_reads(&self) {
+        let Ok(state) = self.state() else {
+            return;
+        };
+        for entry in state.reads.values() {
+            if let ReadState::Active { cancellation, .. } = &entry.state {
+                cancellation.cancel();
+            }
+        }
+    }
+
     pub(crate) fn engine_completions(&self, owner: &str) -> Result<Vec<EngineCompletion>, Error> {
         let state = self.state()?;
         Ok(state

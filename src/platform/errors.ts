@@ -3,6 +3,7 @@ import type {
     ErrorCategory,
     ErrorPayload,
     ErrorPayloadTag,
+    FolderSwitchFailure,
     RemoteHttpRejection,
     RootFailure,
 } from "@/bindings";
@@ -30,6 +31,7 @@ export type AppError = {
     databaseBusy?: true;
     chessBaseDatabase?: true;
     progress_generation?: string;
+    folderSwitch?: FolderSwitchFailure;
 };
 
 const reportedErrors = new WeakSet<object>();
@@ -82,6 +84,7 @@ const BACKEND_CATEGORY: Record<ErrorCategory, AppErrorCategory> = {
 const BACKEND_TAG: Record<ErrorPayloadTag, true> = {
     "backend-error": true,
     "engine-failure": true,
+    "folder-switch": true,
 };
 
 const FEN_BOARD_PATTERN = /[rnbqkpRNBQKP1-8]+(?:\/[rnbqkpRNBQKP1-8]+){1,7}/g;
@@ -265,6 +268,7 @@ export function normalizeError(error: unknown): AppError {
                   }
                 : {}),
             ...(error.rootFailure == null ? {} : { rootFailure: error.rootFailure }),
+            ...(error.folderSwitch == null ? {} : { folderSwitch: error.folderSwitch }),
             ...(error.engineFailure == null
                 ? {}
                 : { engineFailure: safeEngineFailure(error.engineFailure) }),

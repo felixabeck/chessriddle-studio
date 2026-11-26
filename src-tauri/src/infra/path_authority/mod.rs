@@ -49,6 +49,9 @@ mod catalog_install;
 mod databases;
 mod dialogs;
 mod engine_attachments;
+mod folder_switch;
+#[cfg(test)]
+mod folder_switch_tests;
 mod handoff_endpoint;
 mod listing;
 mod registry;
@@ -71,6 +74,10 @@ use engine_attachments::{
 };
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) use engine_attachments::{set_engine_launch_failure, EngineLaunchFailure};
+pub(crate) use folder_switch::{
+    execute_folder_move_blocking, open_directory_for_identity_probe, FolderSwitchCoordinator,
+};
+pub use folder_switch::{FolderSwitchGrant, FolderSwitchKind, FolderSwitchMode, WorkspaceChoice};
 pub(crate) use handoff_endpoint::{HandoffDirectory, HandoffEndpoint, PublishedEndpoint};
 pub(crate) use listing::CapabilityDirectory;
 #[cfg(test)]
@@ -1320,6 +1327,7 @@ impl EngineResourceHandle {
 /// Backend leases remain held until confirmed reap, while child copies survive backend loss.
 #[derive(Debug)]
 pub(crate) struct EngineResourceLease {
+    path_ref: Option<PathRef>,
     #[cfg(unix)]
     file: OwnedFile,
     #[cfg(target_os = "macos")]
@@ -1347,6 +1355,16 @@ fn descriptor_path(file: &impl std::os::fd::AsFd) -> Result<PathBuf, Error> {
 }
 
 impl EngineResourceLease {
+    #[cfg(any(unix, test))]
+    pub(crate) fn with_path_ref(mut self, path_ref: PathRef) -> Self {
+        self.path_ref = Some(path_ref);
+        self
+    }
+
+    pub(crate) fn path_ref(&self) -> Option<&PathRef> {
+        self.path_ref.as_ref()
+    }
+
     #[cfg(windows)]
     pub(crate) fn windows_seal_handles(
         &self,
@@ -1373,6 +1391,7 @@ impl EngineResourceLease {
         #[cfg(not(target_os = "macos"))]
         let _ = target_override;
         Ok(Self {
+            path_ref: None,
             file,
             #[cfg(target_os = "macos")]
             target: std::sync::OnceLock::from(target),
@@ -1474,6 +1493,17 @@ impl EngineResourceLease {
         let fallback_target = Some(descriptor_path(&file).unwrap_or_default());
         Self::from_file(file.into(), true, fallback_target)
             .expect("test directory lease must be constructible")
+    }
+}
+#[cfg(all(test, windows))]
+impl EngineResourceLease {
+    pub(crate) fn test_file(file: fs::File) -> Self {
+        Self {
+            path_ref: None,
+            _file: file.into(),
+            _directories: Vec::new(),
+            target: PathBuf::new(),
+        }
     }
 }
 #[cfg(all(test, unix))]
@@ -4194,6 +4224,8 @@ pub struct PathAuthority {
     registry_durability_pending: bool,
     active_image_issuances: Arc<ActiveImageIssuances>,
     engine_image_sweep_root: Option<AppDataDir>,
+    unresolved_journals: BTreeSet<FolderSwitchKind>,
+    quiesced_engine_roots: Arc<std::sync::Mutex<std::collections::HashSet<(u64, u64)>>>,
     #[cfg(test)]
     activation_observer: Option<Arc<dyn ActivationObserver + Send + Sync>>,
     #[cfg(target_os = "macos")]
@@ -5407,6 +5439,22 @@ impl PathAuthority {
         if actual != entry.stored.identity {
             return Err(root_error(Error::Conflict(
                 "path authority is unavailable because its object changed".into(),
+            )));
+        }
+        if matches!(
+            operation,
+            PathOperation::EngineExecute
+                | PathOperation::EngineConfigure
+                | PathOperation::EngineResourceRead
+                | PathOperation::EngineInstall
+                | PathOperation::DownloadArchive
+        ) && self.is_under_quiesced_engine_root(
+            &root,
+            Some((actual.a, actual.b)),
+            entry.stored.parent_identity.as_ref().map(|id| (id.a, id.b)),
+        ) {
+            return Err(root_error(Error::Conflict(
+                "engine folder move is in progress".into(),
             )));
         }
         #[cfg(test)]

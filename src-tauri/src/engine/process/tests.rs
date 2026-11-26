@@ -11350,3 +11350,56 @@ async fn apple_directory_resource_removal_and_file_swap_are_refused_before_setop
         actor.terminate().await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn publish_admitted_locked_refuses_pending_actor_holding_quiesced_resource() {
+    let dir = tempfile::tempdir().unwrap();
+    let res_file = dir.path().join("eval.nnue");
+    std::fs::write(&res_file, b"nnue").unwrap();
+
+    let supervisor = EngineSupervisor::default();
+    let key = EngineKey::new("pub-res-tab".into(), "ext-engine".into()).unwrap();
+    let external_exec = path_ref("pub-res-external-exec");
+    let res_ref = path_ref("pub-res-in-engines-root");
+
+    let admission = supervisor
+        .admit(key.clone(), "ext-engine".into(), external_exec, false)
+        .await
+        .unwrap();
+    let lease = Arc::new(
+        crate::infra::path_authority::EngineResourceLease::test_file(
+            std::fs::File::open(&res_file).unwrap(),
+        )
+        .with_path_ref(res_ref.clone()),
+    );
+    let (actor, _) = EngineActor::recording_test_actor_with_resources_and_deadlines_impl(
+        &["uciok", "readyok"],
+        vec![lease],
+        EngineDeadlines::default(),
+        None,
+    );
+    let _ = actor
+        .registration_identity
+        .set((key.clone(), admission.generation()));
+    let pending = supervisor.track_pending_actor(key.clone(), actor, &admission);
+
+    let mut quiesced_resources = std::collections::HashSet::new();
+    quiesced_resources.insert(res_ref);
+    let guard = supervisor
+        .quiesce_executables(std::collections::HashSet::new(), quiesced_resources)
+        .await
+        .unwrap();
+
+    let publish_result = supervisor
+        .publish_admitted_locked(key.clone(), pending, admission, None)
+        .await;
+    assert!(
+        matches!(publish_result, Err(Error::Conflict(_))),
+        "publish_admitted_locked must refuse a pending actor holding a quiesced resource lease"
+    );
+    assert!(
+        supervisor.get_exact(&key).is_none(),
+        "refused pending actor must never be inserted into supervisor.actors"
+    );
+    guard.lift();
+}

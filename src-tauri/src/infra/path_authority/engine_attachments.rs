@@ -47,6 +47,9 @@ impl Drop for ActiveImageIssuanceLease {
 
 impl PathAuthority {
     pub(crate) fn active_engine_root(&mut self) -> Result<Option<EngineRootHandle>, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Engine) {
+            return Err(Self::interrupted_move_root_error());
+        }
         self.resolve_active_root(
             self.active_engine_root.clone(),
             PathOperation::EngineInstall,
@@ -83,6 +86,9 @@ impl PathAuthority {
         path: &Path,
         display_name: impl Into<String>,
     ) -> Result<EngineHandle, Error> {
+        if self.is_under_quiesced_engine_root(path, None, None) {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
+        }
         let operations = engine_file_operations();
         let commit = self.get_or_create_persistent_file_inner(
             path,
@@ -177,9 +183,11 @@ impl PathAuthority {
                     .take_file()
                     .ok_or_else(|| Error::InvalidInput("engine resource must be a file".into()))?;
                 #[cfg(unix)]
-                return EngineResourceLease::from_file(file, false, None);
+                return Ok(EngineResourceLease::from_file(file, false, None)?
+                    .with_path_ref(resource.path_ref().clone()));
                 #[cfg(windows)]
                 Ok(EngineResourceLease {
+                    path_ref: Some(resource.path_ref().clone()),
                     _file,
                     _directories: directories,
                     target: resolved.take_target().ok_or_else(|| {
@@ -193,7 +201,10 @@ impl PathAuthority {
                     let file = resolved.take_directory().ok_or_else(|| {
                         Error::InvalidInput("engine resource must be a directory".into())
                     })?;
-                    EngineResourceLease::from_file(OwnedFile::directory(file)?, true, None)
+                    Ok(
+                        EngineResourceLease::from_file(OwnedFile::directory(file)?, true, None)?
+                            .with_path_ref(resource.path_ref().clone()),
+                    )
                 }
                 #[cfg(windows)]
                 {
@@ -202,6 +213,7 @@ impl PathAuthority {
                     // arm above. The handle is retained for the lease lifetime; the path is
                     // only the UCI/CreateProcess string.
                     Ok(EngineResourceLease {
+                        path_ref: Some(resource.path_ref().clone()),
                         _directories: directories,
                         _file: OwnedFile::directory(resolved.take_directory().ok_or_else(
                             || Error::InvalidInput("engine resource must be a directory".into()),
@@ -414,6 +426,9 @@ impl PathAuthority {
         let components = engine_relative_components(relative_path)?;
         let (catalog_root, catalog_path, root_directory) =
             self.prepare_catalog_engine_registration(root, &components, probe)?;
+        if self.is_engine_root_quiesced((catalog_root.identity.a, catalog_root.identity.b)) {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
+        }
         let resolved = self.resolve_with_engine_probe(
             root.path_ref(),
             PathOperation::EngineInstall,

@@ -849,12 +849,21 @@ impl PathAuthority {
         default_kind: VisibleDefaultKind,
         lookups: &DefaultDirLookups<'_>,
     ) -> Result<FolderStatus, Error> {
+        let switch_kind = match default_kind {
+            VisibleDefaultKind::Databases => Some(FolderSwitchKind::Database),
+            VisibleDefaultKind::Engines => Some(FolderSwitchKind::Engine),
+            VisibleDefaultKind::Puzzles => Some(FolderSwitchKind::Puzzle),
+            VisibleDefaultKind::Pgn => None,
+        };
         let default_display = default_kind.leaf();
         let Some(id) = active else {
+            let root_failure = switch_kind
+                .filter(|kind| self.has_unresolved_journal(*kind))
+                .map(|_| crate::error::RootFailure::InterruptedMove);
             return Ok(FolderStatus {
                 display_name: default_display.to_string(),
                 is_default: true,
-                root_failure: None,
+                root_failure,
             });
         };
         let display_name = self
@@ -863,6 +872,13 @@ impl PathAuthority {
             .map(|entry| folder_leaf_display_name(&entry.stored))
             .unwrap_or_else(|| default_display.to_string());
         let is_default = self.root_matches_default(&id, default_kind, lookups);
+        if switch_kind.is_some_and(|kind| self.has_unresolved_journal(kind)) {
+            return Ok(FolderStatus {
+                display_name,
+                is_default,
+                root_failure: Some(crate::error::RootFailure::InterruptedMove),
+            });
+        }
         let root_failure = match self.resolve_active_root(Some(id), operation) {
             Ok(_) => None,
             Err(error) => error.label_root_failure().root_failure(),

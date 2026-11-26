@@ -147,11 +147,13 @@ mod signed_modified {
 
 struct Failure {
     identity: DatabaseIdentity,
+    parent_identity: Option<(u64, u64)>,
     verdict: Verdict,
     pending: bool,
 }
 struct Scan {
     identity: DatabaseIdentity,
+    parent_identity: Option<(u64, u64)>,
     token: CancellationToken,
 }
 #[derive(Default)]
@@ -186,6 +188,142 @@ fn read_stamp(target: &DatabaseFileTarget) -> Result<Option<Stamp>, Error> {
     Ok(serde_json::from_slice::<Stamp>(&bytes)
         .ok()
         .filter(|stamp| stamp.version == VERSION))
+}
+
+/// Rebinds a copied `.integrity` stamp to the destination database's newly observed identity
+/// and metadata so a valid stamp stays valid after a cross-volume folder move.
+/// Returns `Ok(true)` when the stamp matched the source database provenance and was rebound,
+/// or `Ok(false)` when absent, corrupt/older-version, or stale for the source database.
+pub(crate) fn rebind_stamp_at(
+    parent: &std::fs::File,
+    db_leaf: &std::ffi::OsStr,
+    expected_source: super::SidecarFileStamp,
+    new_target: super::SidecarFileStamp,
+) -> Result<bool, Error> {
+    let stamp_leaf = integrity_stamp_leaf(db_leaf);
+    let file = match open_regular_at(parent, &stamp_leaf, RegularFileAccess::ReadOnly) {
+        Ok(file) => file,
+        Err(error) if error.is_missing_entry() => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let mut bytes = Vec::new();
+    file.take((MAX_STAMP_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_STAMP_BYTES {
+        return Ok(false);
+    }
+    let Some(mut stamp) = serde_json::from_slice::<Stamp>(&bytes)
+        .ok()
+        .filter(|stamp| stamp.version == VERSION)
+    else {
+        return Ok(false);
+    };
+    if stamp.identity.object != expected_source.object
+        || stamp.identity.length != expected_source.length
+        || stamp.identity.modified != expected_source.modified
+    {
+        return Ok(false);
+    }
+    stamp.identity.object = new_target.object;
+    stamp.identity.length = new_target.length;
+    stamp.identity.modified = new_target.modified;
+    let updated = serde_json::to_vec(&stamp).map_err(std::io::Error::other)?;
+    let outcome = crate::infra::fs::atomic_replace_at(parent, &stamp_leaf, |file| {
+        file.write_all(&updated)?;
+        Ok(())
+    })?;
+    require_durable(
+        outcome,
+        crate::error::DurabilityStage::WorkspaceSidecarReplacement,
+    )?;
+    Ok(true)
+}
+
+#[cfg(test)]
+pub(crate) fn write_stamp_for_test(
+    repository: &DatabaseRepository,
+    target: &DatabaseFileTarget,
+    identity: &DatabaseIdentity,
+) -> Result<(), Error> {
+    write_stamp(
+        repository,
+        target,
+        identity,
+        &Verdict::Passed,
+        &CancellationToken::new(),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn seed_failure_for_test(
+    repository: &DatabaseRepository,
+    path: PathBuf,
+    parent_identity: (u64, u64),
+    identity: DatabaseIdentity,
+) {
+    let mut state = repository.content_validation.state.lock();
+    state.failures.insert(
+        path,
+        Failure {
+            identity,
+            parent_identity: Some(parent_identity),
+            verdict: Verdict::IntegrityFailure,
+            pending: false,
+        },
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn failure_count_for_test(repository: &DatabaseRepository) -> usize {
+    repository.content_validation.state.lock().failures.len()
+}
+
+/// Cancels active content-validation scans under `root_identity` / `root_path`, waits for them
+/// to drain, and forgets cached validation failures for files under that root.
+pub(crate) fn quiesce_root(
+    repository: &DatabaseRepository,
+    root_identity: (u64, u64),
+    root_path: &Path,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let deadline = Instant::now() + DELETE_WAIT_TIMEOUT;
+    let mut state = repository.content_validation.state.lock();
+    loop {
+        let mut active = false;
+        for (path, scans) in state.scans.iter() {
+            let matches_root = path.starts_with(root_path)
+                || scans
+                    .iter()
+                    .any(|scan| scan.parent_identity == Some(root_identity));
+            if matches_root && !scans.is_empty() {
+                active = true;
+                for scan in scans {
+                    scan.token.cancel();
+                }
+            }
+        }
+        if !active {
+            state.failures.retain(|path, failure| {
+                !path.starts_with(root_path) && failure.parent_identity != Some(root_identity)
+            });
+            return Ok(());
+        }
+        if cancellation.is_cancelled() {
+            return Err(Error::Cancellation);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(Error::Conflict(
+                "timed out waiting for database validation scans to finish".into(),
+            ));
+        }
+        repository.content_validation.changed.wait_for(
+            &mut state,
+            deadline
+                .saturating_duration_since(now)
+                .min(DELETE_CANCELLATION_POLL),
+        );
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -298,7 +436,7 @@ fn mutate_target(
 
 /// Returns whether metadata must schedule a scan. A pending failed write is retried
 /// once here; the verdict remains visible even if that retry also fails.
-pub(super) fn inspect(
+pub(crate) fn inspect(
     repository: &DatabaseRepository,
     target: &DatabaseFileTarget,
     identity: &DatabaseIdentity,
@@ -341,6 +479,10 @@ pub(super) fn inspect(
                         target.path().to_path_buf(),
                         Failure {
                             identity: identity.clone(),
+                            parent_identity: crate::infra::path_authority::opened_file_identity(
+                                target.parent(),
+                            )
+                            .ok(),
                             verdict: stamp.verdict,
                             pending: false,
                         },
@@ -453,20 +595,30 @@ pub(super) async fn schedule<R: tauri::Runtime>(
     // finished. Re-read outside the state lock before admitting another scan.
     let stamp_authority = authority.clone();
     let stamp_file = file.clone();
-    if BLOCKING_GATEWAY
-        .spawn(move || {
-            mutate_target(&stamp_authority, &stamp_file).and_then(|target| read_stamp(&target))
+    let stamp_repository = Arc::clone(&repository);
+    let stamp_identity = identity.clone();
+    let stamp_check = BLOCKING_GATEWAY
+        .spawn(move || -> Result<(bool, Option<(u64, u64)>), Error> {
+            let target = mutate_target(&stamp_authority, &stamp_file)?;
+            let parent_id =
+                crate::infra::path_authority::opened_file_identity(target.parent()).ok();
+            if parent_id.is_some_and(|id| stamp_repository.is_root_quiesced(id)) {
+                return Ok((true, parent_id));
+            }
+            let already_valid =
+                read_stamp(&target)?.is_some_and(|stamp| stamp.identity == stamp_identity);
+            Ok((already_valid, parent_id))
         })
-        .await
-        .ok()
-        .flatten()
-        .is_some_and(|stamp| stamp.identity == identity)
-    {
-        return;
-    }
+        .await;
+    let parent_identity = match stamp_check {
+        Ok((true, _)) => return,
+        Ok((false, parent_id)) => parent_id,
+        Err(_) => None,
+    };
     let (lease, token) = {
         let mut state = repository.content_validation.state.lock();
-        if state.deleting.contains(&path)
+        if parent_identity.is_some_and(|id| repository.is_root_quiesced(id))
+            || state.deleting.contains(&path)
             || state
                 .failures
                 .get(&path)
@@ -494,6 +646,7 @@ pub(super) async fn schedule<R: tauri::Runtime>(
         }
         scans.push(Scan {
             identity: identity.clone(),
+            parent_identity,
             token: token.clone(),
         });
         (lease, token)
@@ -609,6 +762,10 @@ pub(super) fn scan_worker(
                     target.path().to_path_buf(),
                     Failure {
                         identity: identity.clone(),
+                        parent_identity: crate::infra::path_authority::opened_file_identity(
+                            target.parent(),
+                        )
+                        .ok(),
                         verdict: verdict.clone(),
                         pending: true,
                     },

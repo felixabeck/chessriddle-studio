@@ -16,6 +16,13 @@ pub use self::import::*;
 pub use self::player_statistics::*;
 pub use self::queries::*;
 mod content_validation;
+pub(crate) use content_validation::rebind_stamp_at;
+#[cfg(test)]
+pub(crate) use content_validation::{
+    failure_count_for_test as content_validation_failure_count_for_test,
+    inspect as inspect_content_validation,
+    seed_failure_for_test as seed_content_validation_failure_for_test, write_stamp_for_test,
+};
 mod encoding;
 mod event_summaries;
 pub(crate) mod linked_collections;
@@ -34,8 +41,14 @@ pub(crate) use repository::cancel_snapshot_copy_after_chunks;
 pub(crate) use repository::test_target;
 mod schema;
 mod search;
+#[cfg(test)]
+pub(crate) use search::open_valid_preferred;
 pub(crate) use search::{is_position_in_db_cancellable, ExcludedGame};
 mod search_index;
+pub(crate) use search_index::{
+    integrity_stamp_leaf, legacy_sidecar_leaf, preferred_sidecar_leaf, rebind_index_source_at,
+    SidecarFileStamp,
+};
 pub(crate) mod sqlite_cancellation;
 
 /// Shared with the non-engine start positions of `engine::parse_fen_to_position`, which keeps

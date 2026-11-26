@@ -159,7 +159,7 @@ async function render(puzzleDbs: { title: string }[] = []) {
 }
 
 test("refreshes puzzle databases and closes after choosing a workspace", async () => {
-  mocks.choosePuzzleDatabase.mockResolvedValue(undefined);
+  mocks.choosePuzzleDatabase.mockResolvedValue({ switched: true, displayName: "Puzzles" });
   mocks.getPuzzleDatabases.mockResolvedValue([{ title: "Tactics.db3" }]);
   const actions = await render();
   await act(async () => host.querySelector("button")!.click());
@@ -191,8 +191,18 @@ test("keeps the modal open silently when choosing a workspace is cancelled", asy
   expect(mocks.notify).not.toHaveBeenCalled();
 });
 
+test("keeps the modal open without refreshing when the folder-switch dialog is cancelled", async () => {
+  mocks.choosePuzzleDatabase.mockResolvedValue({ switched: false });
+  const actions = await render();
+  await act(async () => host.querySelector("button")!.click());
+  expect(actions.onWorkspaceChanged).not.toHaveBeenCalled();
+  expect(mocks.getPuzzleDatabases).not.toHaveBeenCalled();
+  expect(actions.setOpened).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
+});
+
 test("surfaces an ordinary preview-list failure after workspace selection", async () => {
-  mocks.choosePuzzleDatabase.mockResolvedValue(undefined);
+  mocks.choosePuzzleDatabase.mockResolvedValue({ switched: true, displayName: "Puzzles" });
   mocks.getPuzzleDatabases.mockRejectedValue(new Error("listing failed"));
   const actions = await render();
   await act(async () => host.querySelector("button")!.click());
@@ -352,7 +362,7 @@ test("does not notify when cancellation loses the completed-job race", async () 
 });
 
 test("unmount cancels a held workspace preview and refuses its stale database list", async () => {
-  mocks.choosePuzzleDatabase.mockResolvedValue(undefined);
+  mocks.choosePuzzleDatabase.mockResolvedValue({ switched: true, displayName: "Puzzles" });
   let signal!: AbortSignal;
   let resolve!: (value: Array<{ title: string }>) => void;
   mocks.getPuzzleDatabases.mockImplementation(
@@ -376,8 +386,8 @@ test("unmount cancels a held workspace preview and refuses its stale database li
 test("unmount during the accepted picker prevents a later preview", async () => {
   let finishPicker!: () => void;
   mocks.choosePuzzleDatabase.mockReturnValue(
-    new Promise<void>((resolve) => {
-      finishPicker = resolve;
+    new Promise<{ switched: true; displayName: string }>((resolve) => {
+      finishPicker = () => resolve({ switched: true, displayName: "Puzzles" });
     }),
   );
   const actions = await render();

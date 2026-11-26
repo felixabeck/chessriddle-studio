@@ -132,6 +132,63 @@ impl std::fmt::Display for ErrorCategory {
 pub enum ErrorPayloadTag {
     BackendError,
     EngineFailure,
+    FolderSwitch,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(tag = "reason", rename_all = "kebab-case")]
+pub enum FolderSwitchFailure {
+    SameFolder,
+    NestedFolders,
+    NameCollision { count: u32 },
+    TargetUnwritable,
+    SourceUnreadable,
+    RootBusy,
+    ExpiredGrant,
+    IdentityChanged,
+    JournalWriteFailed,
+    QuiesceFailed,
+    SymlinkInTree,
+    TransferFailedRolledBack,
+    RollbackIncomplete,
+    InterruptedMove,
+    SwitchInProgress,
+}
+
+impl std::fmt::Display for FolderSwitchFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SameFolder => formatter.write_str("The selected folder is already in use"),
+            Self::NestedFolders => {
+                formatter.write_str("The current and selected folders cannot be nested inside each other")
+            }
+            Self::NameCollision { count } => {
+                write!(formatter, "{count} file name collision(s) in the selected folder")
+            }
+            Self::TargetUnwritable => formatter.write_str("The selected folder is not writable"),
+            Self::SourceUnreadable => formatter.write_str("The current folder cannot be read"),
+            Self::RootBusy => formatter.write_str("Work is currently in progress in this folder"),
+            Self::ExpiredGrant => formatter.write_str("The folder switch confirmation expired"),
+            Self::IdentityChanged => formatter.write_str("One of the folders changed before switching"),
+            Self::JournalWriteFailed => formatter.write_str("Could not start the folder move"),
+            Self::QuiesceFailed => formatter.write_str("Could not close open resources before moving"),
+            Self::SymlinkInTree => {
+                formatter.write_str("Links or reparse points inside the folder cannot be moved")
+            }
+            Self::TransferFailedRolledBack => {
+                formatter.write_str("Moving files failed; the previous folder remains active and intact")
+            }
+            Self::RollbackIncomplete => formatter.write_str(
+                "Moving files failed and cleanup could not finish; Studio will finish recovery on the next start",
+            ),
+            Self::InterruptedMove => formatter.write_str(
+                "An interrupted folder move is pending; Studio will finish it on the next start",
+            ),
+            Self::SwitchInProgress => {
+                formatter.write_str("A folder switch is already in progress for this category")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -181,6 +238,9 @@ pub struct ErrorPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub progress_generation: Option<crate::progress::ProgressGeneration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub folder_switch: Option<FolderSwitchFailure>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Type)]
@@ -191,6 +251,7 @@ pub enum RootFailure {
     Unusable,
     Permission,
     TooLarge,
+    InterruptedMove,
 }
 
 pub(crate) const WORKSPACE_FILE_NAME_TAKEN: &str = "workspace file already exists";
@@ -381,6 +442,9 @@ pub enum Error {
 
     #[error("Operation failed; temporary cleanup also failed")]
     OperationAndCleanup { primary: String, cleanup: String },
+
+    #[error("{0}")]
+    FolderSwitch(FolderSwitchFailure),
 }
 
 /// Whether the OS reported that the named filesystem entry does not exist.
@@ -650,6 +714,24 @@ impl Error {
             } => ErrorCategory::OperationAndCleanup,
             Self::EngineFailure { .. } => ErrorCategory::EngineFailure,
             Self::PuzzleThemesUnavailable => ErrorCategory::PuzzleThemesUnavailable,
+            Self::FolderSwitch(failure) => match failure {
+                FolderSwitchFailure::TargetUnwritable | FolderSwitchFailure::SourceUnreadable => {
+                    ErrorCategory::Permission
+                }
+                FolderSwitchFailure::JournalWriteFailed
+                | FolderSwitchFailure::QuiesceFailed
+                | FolderSwitchFailure::TransferFailedRolledBack
+                | FolderSwitchFailure::RollbackIncomplete => ErrorCategory::Io,
+                FolderSwitchFailure::SameFolder
+                | FolderSwitchFailure::NestedFolders
+                | FolderSwitchFailure::NameCollision { .. }
+                | FolderSwitchFailure::RootBusy
+                | FolderSwitchFailure::ExpiredGrant
+                | FolderSwitchFailure::IdentityChanged
+                | FolderSwitchFailure::SymlinkInTree
+                | FolderSwitchFailure::InterruptedMove
+                | FolderSwitchFailure::SwitchInProgress => ErrorCategory::Conflict,
+            },
         }
     }
 
@@ -1104,11 +1186,23 @@ impl From<std::time::SystemTimeError> for Error {
 }
 
 impl Error {
+    pub(crate) fn folder_switch_failure(&self) -> Option<FolderSwitchFailure> {
+        match self {
+            Self::Shared(error) => error.folder_switch_failure(),
+            Self::RootFailure { error, .. } => error.folder_switch_failure(),
+            Self::FolderSwitch(failure) => Some(failure.clone()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn renderer_payload(&self) -> ErrorPayload {
+        let folder_switch = self.folder_switch_failure();
         // Backend log records do not reach the renderer; the payload stays on the fixed Display.
         ErrorPayload {
             tag: if self.is_engine_failure() {
                 ErrorPayloadTag::EngineFailure
+            } else if folder_switch.is_some() {
+                ErrorPayloadTag::FolderSwitch
             } else {
                 ErrorPayloadTag::BackendError
             },
@@ -1128,6 +1222,7 @@ impl Error {
             chess_base_database: matches!(self.unlabelled(), Self::ChessBaseDatabase)
                 .then_some(true),
             progress_generation: None,
+            folder_switch,
         }
     }
 }

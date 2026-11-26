@@ -351,12 +351,14 @@ pub(crate) fn load_search_index_cancellable(
     let (read_target, invalidation_snapshot, _, expected_source) = probe_attempt()?;
     #[cfg(test)]
     run_after_fast_identity_probe_hook();
+    repository.check_target_not_quiesced(&read_target)?;
     if let Some((identity, index)) = open_valid_preferred(
         &read_target,
         &expected_source,
         cancellation,
         Some((search_cache, invalidation_snapshot)),
     )? {
+        repository.check_target_not_quiesced(&read_target)?;
         return cache_loaded_index(
             search_cache,
             identity,
@@ -378,12 +380,14 @@ pub(crate) fn load_search_index_cancellable(
         generation_object,
         "database changed while waiting for search generation",
     )?;
+    repository.check_target_not_quiesced(&read_target)?;
     if let Some((identity, index)) = open_valid_preferred(
         &read_target,
         &expected_source,
         cancellation,
         Some((search_cache, invalidation_snapshot)),
     )? {
+        repository.check_target_not_quiesced(&read_target)?;
         return cache_loaded_index(
             search_cache,
             identity,
@@ -412,6 +416,7 @@ pub(crate) fn load_search_index_cancellable(
         generation_object,
         "database changed before search generation",
     )?;
+    repository.check_target_not_quiesced(&mutate_target)?;
     let preferred_leaf = preferred_sidecar_leaf(mutate_target.leaf());
     let legacy_leaf = legacy_sidecar_leaf(mutate_target.leaf());
     search_cache.invalidate_database(&mutate_target);
@@ -489,7 +494,7 @@ fn require_generation_object(
     Ok(())
 }
 
-fn open_valid_preferred(
+pub(crate) fn open_valid_preferred(
     target: &DatabaseFileTarget,
     expected_source: &IndexSource,
     cancellation: &CancellationToken,
@@ -5325,7 +5330,7 @@ mod tests {
             .split("pub(crate) fn load_search_index_cancellable(")
             .nth(1)
             .unwrap()
-            .split("fn open_valid_preferred(")
+            .split("pub(crate) fn open_valid_preferred(")
             .next()
             .unwrap();
         assert!(loader.contains("resolve_database("));

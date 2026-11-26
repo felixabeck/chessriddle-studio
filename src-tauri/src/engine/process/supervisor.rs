@@ -183,6 +183,51 @@ pub(super) fn is_game_engine_key(key: &EngineKey) -> bool {
 /// then publishes the new generation. `retire_engine` reaps every actor owned
 /// by an application engine id. `retire_executables` tombstones PathRefs and
 /// terminates matching actors without retiring the application id.
+/// RAII guard for an engine-move quiesce barrier. Lifts the barrier on explicit `lift()` or
+/// on `Drop` (never panics, never inserts into `retired_executables`).
+pub(crate) struct EngineQuiesceGuard<'a> {
+    supervisor: &'a EngineSupervisor,
+    executables: HashSet<PathRef>,
+    resources: HashSet<PathRef>,
+    lifted: bool,
+}
+
+impl EngineQuiesceGuard<'_> {
+    pub(crate) fn lift(mut self) {
+        self.lift_inner();
+    }
+
+    fn lift_inner(&mut self) {
+        if self.lifted {
+            return;
+        }
+        self.lifted = true;
+        let mut quiesced = self
+            .supervisor
+            .quiesced_executables
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for executable in &self.executables {
+            quiesced.remove(executable);
+        }
+        drop(quiesced);
+        let mut quiesced_resources = self
+            .supervisor
+            .quiesced_resources
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for resource in &self.resources {
+            quiesced_resources.remove(resource);
+        }
+    }
+}
+
+impl Drop for EngineQuiesceGuard<'_> {
+    fn drop(&mut self) {
+        self.lift_inner();
+    }
+}
+
 pub struct EngineSupervisor {
     #[cfg(test)]
     pub(super) spawn_attempts: std::sync::atomic::AtomicUsize,
@@ -197,6 +242,8 @@ pub struct EngineSupervisor {
     pub(super) retired: StdMutex<RetiredSet<String>>,
     pub(super) retired_executables: StdMutex<RetiredSet<PathRef>>,
     pub(super) retired_binaries: StdMutex<RetiredSet<(String, PathRef)>>,
+    pub(super) quiesced_executables: StdMutex<HashSet<PathRef>>,
+    pub(super) quiesced_resources: StdMutex<HashSet<PathRef>>,
     // `lifecycle` provides the per-key transition locks. Lifecycle transitions
     // may capture an actor before awaiting the per-key lock and recheck under
     // that lock before mutating an actor they still own. Kill and
@@ -222,6 +269,8 @@ impl Default for EngineSupervisor {
             retired: StdMutex::new(RetiredSet::new(MAX_RETIRED_ENGINE_IDS)),
             retired_executables: StdMutex::new(RetiredSet::new(MAX_RETIRED_PATH_REFS)),
             retired_binaries: StdMutex::new(RetiredSet::new(MAX_RETIRED_ENGINE_BINARIES)),
+            quiesced_executables: StdMutex::new(HashSet::new()),
+            quiesced_resources: StdMutex::new(HashSet::new()),
             lifecycle: KeyedLocks::default(),
         }
     }
@@ -357,6 +406,19 @@ impl EngineSupervisor {
         }
         if self.is_retired_executable(executable) {
             return Err(Error::Conflict("engine executable is retired".into()));
+        }
+        if self
+            .quiesced_executables
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(executable)
+            || self
+                .quiesced_resources
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .contains(executable)
+        {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
         }
         if !is_game_engine_key(key) && self.is_retired_binary(engine_id, executable) {
             return Err(Error::Conflict("engine binary pair is retired".into()));
@@ -723,6 +785,25 @@ impl EngineSupervisor {
         ) {
             drop(registration);
             return Err(reject_actor(&pending, self.pending_actors.clone(), error).await);
+        }
+        let resource_quiesced = {
+            let quiesced_resources = self
+                .quiesced_resources
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            pending
+                .resources
+                .iter()
+                .any(|resource| quiesced_resources.contains(resource))
+        };
+        if resource_quiesced {
+            drop(registration);
+            return Err(reject_actor(
+                &pending,
+                self.pending_actors.clone(),
+                Error::Conflict("engine folder move is in progress".into()),
+            )
+            .await);
         }
         let published = {
             let _coordination = self
@@ -1474,6 +1555,76 @@ impl EngineSupervisor {
         .await
     }
 
+    /// Cancels all admissions (including prepared search reservations across all tabs, game and
+    /// configure keys), refuses new admits for `executables`, and drains matching actors (including
+    /// actors holding a resource lease in `resources`) without inserting into `retired_executables`.
+    /// The returned guard lifts the barrier on every exit path so the same `PathRef` ids can start
+    /// again afterwards.
+    pub(crate) async fn quiesce_executables<'a>(
+        &'a self,
+        executables: HashSet<PathRef>,
+        resources: HashSet<PathRef>,
+    ) -> Result<EngineQuiesceGuard<'a>, Error> {
+        let guard = {
+            let registration = self.registration.lock().await;
+            let _coordination = self
+                .admission_coordination
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            {
+                let mut quiesced = self
+                    .quiesced_executables
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                for executable in &executables {
+                    quiesced.insert(executable.clone());
+                }
+                drop(quiesced);
+                let mut quiesced_resources = self
+                    .quiesced_resources
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                for resource in &resources {
+                    quiesced_resources.insert(resource.clone());
+                }
+            }
+            let guard = EngineQuiesceGuard {
+                supervisor: self,
+                executables: executables.clone(),
+                resources: resources.clone(),
+                lifted: false,
+            };
+            self.cancel_admissions_matching(AdmissionCancellation::Cancelled, |_, admission| {
+                executables.contains(&admission.executable)
+                    || resources.contains(&admission.executable)
+            });
+            drop(_coordination);
+            drop(registration);
+            guard
+        };
+        if let Err(error) = self
+            .drain_matching_actors(
+                |_, entry| {
+                    executables.contains(&entry.executable)
+                        || entry.actor.resources.iter().any(|lease| {
+                            lease
+                                .path_ref()
+                                .is_some_and(|path_ref| resources.contains(path_ref))
+                        })
+                },
+                |pending| {
+                    executables.contains(&pending.executable)
+                        || pending.resources.iter().any(|r| resources.contains(r))
+                },
+            )
+            .await
+        {
+            guard.lift();
+            return Err(error);
+        }
+        Ok(guard)
+    }
+
     /// All tombstone operations cross the same admission/publication barrier before draining.
     pub(super) async fn retire_matching(
         &self,
@@ -1516,6 +1667,18 @@ impl EngineSupervisor {
         &self,
         matches: impl Fn(&EngineKey, &str, &PathRef) -> bool,
     ) -> Result<(), Error> {
+        self.drain_matching_actors(
+            |key, entry| matches(key, &entry.engine_id, &entry.executable),
+            |pending| matches(&pending.key, &pending.engine_id, &pending.executable),
+        )
+        .await
+    }
+
+    pub(super) async fn drain_matching_actors(
+        &self,
+        matches_actor: impl Fn(&EngineKey, &SupervisedEngine) -> bool,
+        matches_pending: impl Fn(&PendingActor) -> bool,
+    ) -> Result<(), Error> {
         let mut failures = Vec::new();
         let mut visited = HashSet::new();
         loop {
@@ -1529,7 +1692,7 @@ impl EngineSupervisor {
                 let targets: Vec<_> = self
                     .actors
                     .iter()
-                    .filter(|entry| matches(entry.key(), &entry.engine_id, &entry.executable))
+                    .filter(|entry| matches_actor(entry.key(), entry.value()))
                     .filter(|entry| !visited.contains(&entry.generation))
                     .map(|entry| {
                         (
@@ -1542,7 +1705,7 @@ impl EngineSupervisor {
                 let pending: Vec<_> = self
                     .pending_actors
                     .iter()
-                    .filter(|entry| matches(&entry.key, &entry.engine_id, &entry.executable))
+                    .filter(|entry| matches_pending(entry.value()))
                     .filter(|entry| !visited.contains(&entry.generation))
                     .map(|entry| entry.value().clone())
                     .collect();
@@ -1619,6 +1782,57 @@ impl EngineSupervisor {
     }
 
     #[cfg(test)]
+    pub(crate) fn insert_test_actor_with_resources(
+        &self,
+        key: EngineKey,
+        engine_id: String,
+        executable: PathRef,
+        resources: Vec<Arc<crate::infra::path_authority::EngineResourceLease>>,
+        pending_only: bool,
+    ) {
+        let (actor, _) = EngineActor::recording_test_actor_with_resources_and_deadlines_impl(
+            &["uciok", "readyok"],
+            resources,
+            EngineDeadlines::default(),
+            None,
+        );
+        let generation = self.next_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = actor.registration_identity.set((key.clone(), generation));
+        if pending_only {
+            let pending = Arc::new(PendingActor::new(
+                actor, key, generation, engine_id, executable,
+            ));
+            self.pending_actors.insert(generation, pending);
+        } else {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let barrier = PublicationBarrier::new(cancelled.clone());
+            self.actors.insert(
+                key,
+                SupervisedEngine {
+                    generation,
+                    engine_id,
+                    executable,
+                    actor,
+                    cancelled,
+                    barrier,
+                    interactive: Arc::new(Mutex::new(None)),
+                    search: Arc::new(StdMutex::new(None)),
+                },
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn actor_count_for_test(&self) -> usize {
+        self.actors.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_actor_count_for_test(&self) -> usize {
+        self.pending_actors.len()
+    }
+
+    #[cfg(test)]
     pub(super) fn track_pending_actor(
         &self,
         key: EngineKey,
@@ -1657,6 +1871,11 @@ impl EngineSupervisor {
             })?;
         let cleanup = Arc::new(ChildOwner::default());
         cleanup.state.lock().unwrap_or_else(|e| e.into_inner()).slot = Some(slot);
+        let pending_resources: Vec<PathRef> = executable
+            .resource_leases()
+            .iter()
+            .filter_map(|lease| lease.path_ref().cloned())
+            .collect();
         let pending = Arc::new(PendingActor {
             actor: OnceLock::new(),
             cleanup: Some(cleanup.clone()),
@@ -1667,6 +1886,7 @@ impl EngineSupervisor {
             owner_generation: admission.generation(),
             engine_id: admission.admission.engine_id.clone(),
             executable: admission.admission.executable.clone(),
+            resources: pending_resources.clone(),
             termination: StdMutex::default(),
         });
         {
@@ -1676,6 +1896,18 @@ impl EngineSupervisor {
                 .unwrap_or_else(|e| e.into_inner());
             if let Some(error) = admission.cancel_error() {
                 return Err(error);
+            }
+            if !pending_resources.is_empty() {
+                let quiesced_resources = self
+                    .quiesced_resources
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if pending_resources
+                    .iter()
+                    .any(|r| quiesced_resources.contains(r))
+                {
+                    return Err(Error::Conflict("engine folder move is in progress".into()));
+                }
             }
             self.pending_actors
                 .insert(pending.generation, pending.clone());

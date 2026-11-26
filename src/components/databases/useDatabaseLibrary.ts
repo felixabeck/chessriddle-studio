@@ -39,6 +39,7 @@ import {
 import { databaseLoadFailureMessage } from "./databaseLoadFailure";
 import { forgetDeletedDatabase } from "./forgetDeletedDatabase";
 import { capabilityKey } from "@/utils/pathCapabilities";
+import { runFolderSwitch } from "@/components/settings/folderSwitch";
 import { standaloneDatabases } from "@/components/library/libraryData";
 import { openDatabaseTable } from "@/components/library/openDatabaseTable";
 
@@ -64,15 +65,16 @@ export function useDatabaseLibrary(
     }));
     const failure = listingFailure(error);
     const loadFailureMessage = databaseLoadFailureMessage(error, t);
-    const needsFolder = failure !== "silent" && failure !== "retry";
+    const needsFolder =
+        failure !== "silent" && failure !== "retry" && failure !== "interruptedMove";
     function chooseWorkspace() {
         return picker.run(async () => {
             const result = await runUnlessCancelled(
                 t("Common.Error"),
-                () => tauri.issueDatabaseWorkspace(),
+                () => runFolderSwitch(() => tauri.issueDatabaseWorkspace()),
                 "database",
             );
-            if (!result) return;
+            if (!result?.switched) return;
             await databaseOwner!.supersede();
             await mutate();
         });

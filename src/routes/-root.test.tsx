@@ -109,6 +109,7 @@ vi.mock("@/components/tabs/NavigationRow", () => ({
 }));
 vi.mock("@/components/WindowResizeHandles", () => ({ WindowResizeHandles: () => null }));
 vi.mock("@/components/tabs/QuitConfirmModal", () => ({ default: () => null }));
+vi.mock("@/components/settings/FolderSwitchModal", () => ({ FolderSwitchDialogHost: () => null }));
 vi.mock("@/components/tabs/useIncomingGameLinks", () => ({
   useIncomingGameLinks: mocks.useIncomingGameLinks,
 }));

@@ -45,7 +45,8 @@ function AddPuzzle({
     const controller = new AbortController();
     previewRequest.current = controller;
     try {
-      await choosePuzzleDatabase();
+      const result = await choosePuzzleDatabase();
+      if (!result.switched) return;
       onWorkspaceChanged();
       if (controller.signal.aborted) return;
       await refreshPuzzleDbs(controller.signal);

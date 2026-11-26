@@ -704,3 +704,229 @@ fn default_get_or_create_reuses_by_live_identity_for_verbatim_and_8_3_spellings(
         assert_eq!(first.path_ref(), third.path_ref());
     }
 }
+
+#[tokio::test]
+async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety() {
+    use tokio_util::sync::CancellationToken;
+
+    // 1. Production RtlUpcaseUnicodeChar collision folding (ASCII + Greek final sigma ς vs Σ).
+    assert_eq!(
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("Game.db3")),
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("game.db3"))
+    );
+    assert_eq!(
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03C2}.db3")),
+        folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03A3}.db3"))
+    );
+
+    // 2. Drain a real open SQLite pool AND a real mmapped .ecsi in SearchCache via quiesce_root
+    //    before renaming both files on Windows.
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("SrcDbs");
+    let src_case_variant = dir.path().join("srcdbs");
+    let dst = dir.path().join("DstDbs");
+    fs::create_dir(&src).unwrap();
+    fs::create_dir(&dst).unwrap();
+
+    let mut auth = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = auth
+        .get_or_create_database_root(&src_case_variant, "srcdbs", None)
+        .unwrap();
+    auth.set_active_database_root(&root).unwrap();
+    let db_handle = auth
+        .create_database_child(&root, OsStr::new("pooled.db3"))
+        .unwrap();
+    {
+        use diesel::{Connection, RunQueryDsl, SqliteConnection};
+        let mut conn =
+            SqliteConnection::establish(src.join("pooled.db3").to_str().unwrap()).unwrap();
+        diesel::sql_query("CREATE TABLE Info (Name TEXT PRIMARY KEY, Value TEXT);")
+            .execute(&mut conn)
+            .unwrap();
+    }
+
+    let target = auth
+        .database_file_target(&db_handle, PathOperation::DatabaseMutate)
+        .unwrap();
+    let repo = crate::db::DatabaseRepository::default();
+    let _ = repo.connection(&target, None).unwrap();
+
+    // Open and cache a real .ecsi mmap in SearchCache.
+    let db_id = repo
+        .database_identity_expected(&target, target.identity(), None)
+        .unwrap();
+    let index_source = crate::IndexSource::from_database_identity(&db_id).unwrap();
+    let _ = crate::db::SearchIndexChunk::new()
+        .write_to_with_source(src.join("pooled.db3.ecsi"), index_source.clone())
+        .unwrap();
+    let search_cache = crate::SearchCache::default();
+    let (idx_id, mmap_idx) =
+        crate::db::open_valid_preferred(&target, &index_source, &CancellationToken::new(), None)
+            .unwrap()
+            .expect("valid .ecsi");
+    let snap = search_cache.invalidation_snapshot();
+    let _ = search_cache.insert_index(idx_id, mmap_idx, snap);
+    assert_eq!(search_cache.cached_index_count(), 1);
+
+    let src_id = opened_file_identity(&open_windows_nofollow(&src, false).unwrap()).unwrap();
+    let dst_id = opened_file_identity(&open_windows_nofollow(&dst, false).unwrap()).unwrap();
+
+    // NTFS case-variant tombstone under `srcdbs\pooled.db3` must still block quiesce_root on `SrcDbs`!
+    repo.insert_tombstone_for_test(src_case_variant.join("pooled.db3"));
+    assert!(repo
+        .quiesce_root(src_id, &src, &CancellationToken::new())
+        .is_err());
+    repo.remove_tombstone_for_test(&src_case_variant.join("pooled.db3"));
+
+    // The identity probe must really open NTFS directories (a failing probe would also make
+    // quiesce_root refuse conservatively, so the blocking assertion above cannot prove it).
+    assert_eq!(
+        opened_file_identity(&open_directory_for_identity_probe(&src_case_variant).unwrap())
+            .unwrap(),
+        src_id
+    );
+
+    let src_dir = crate::infra::fs::open_verified_directory(&src, src_id).unwrap();
+    let dst_dir = crate::infra::fs::open_verified_directory(&dst, dst_id).unwrap();
+    let file_id =
+        crate::infra::fs::entry_identity_at(src_dir.as_file(), OsStr::new("pooled.db3"), false)
+            .unwrap();
+    let ecsi_id = crate::infra::fs::entry_identity_at(
+        src_dir.as_file(),
+        OsStr::new("pooled.db3.ecsi"),
+        false,
+    )
+    .unwrap();
+
+    // Before quiesce, mmapped .ecsi blocks rename on Windows.
+    assert!(
+        crate::infra::fs::rename_entry_at(
+            src_dir.as_file(),
+            OsStr::new("pooled.db3.ecsi"),
+            ecsi_id,
+            false,
+            dst_dir.as_file(),
+            OsStr::new("pooled.db3.ecsi"),
+        )
+        .is_err(),
+        "mmapped .ecsi must block rename before SearchCache::quiesce_root"
+    );
+
+    let db_guard = repo
+        .quiesce_root(src_id, &src, &CancellationToken::new())
+        .unwrap();
+    let sc_guard = search_cache.quiesce_root(src_id);
+    assert_eq!(search_cache.cached_index_count(), 0);
+
+    let _ = crate::infra::fs::rename_entry_at(
+        src_dir.as_file(),
+        OsStr::new("pooled.db3"),
+        file_id,
+        false,
+        dst_dir.as_file(),
+        OsStr::new("pooled.db3"),
+    )
+    .unwrap();
+    let _ = crate::infra::fs::rename_entry_at(
+        src_dir.as_file(),
+        OsStr::new("pooled.db3.ecsi"),
+        ecsi_id,
+        false,
+        dst_dir.as_file(),
+        OsStr::new("pooled.db3.ecsi"),
+    )
+    .unwrap();
+    assert!(dst.join("pooled.db3").exists());
+    assert!(dst.join("pooled.db3.ecsi").exists());
+    assert!(!src.join("pooled.db3").exists());
+    assert!(!src.join("pooled.db3.ecsi").exists());
+    drop(sc_guard);
+    db_guard.lift();
+
+    // A tombstone in another existing directory must not block quiesce_root.
+    repo.insert_tombstone_for_test(dst.join("unrelated.db3"));
+    repo.quiesce_root(src_id, &src, &CancellationToken::new())
+        .expect("unrelated tombstone in another existing directory must not block quiesce_root")
+        .lift();
+    repo.remove_tombstone_for_test(&dst.join("unrelated.db3"));
+
+    // 3. Drain a published engine actor holding a real OS file handle without FILE_SHARE_DELETE
+    //    via EngineSupervisor::quiesce_executables before renaming the engine file on Windows.
+    let eng_path = src.join("engine.exe");
+    fs::write(&eng_path, b"MZ-test-engine").unwrap();
+    let eng_id =
+        crate::infra::fs::entry_identity_at(src_dir.as_file(), OsStr::new("engine.exe"), false)
+            .unwrap();
+    let eng_handle = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&eng_path)
+            .unwrap()
+    };
+    let supervisor = crate::engine::EngineSupervisor::default();
+    let exec_ref = PathRef::fresh();
+    let eng_lease = std::sync::Arc::new(
+        EngineResourceLease::test_file(eng_handle).with_path_ref(exec_ref.clone()),
+    );
+    let key = crate::engine::EngineKey::new("win-tab".into(), "win-eng".into()).unwrap();
+    supervisor.insert_test_actor_with_resources(
+        key,
+        "win-eng".into(),
+        exec_ref.clone(),
+        vec![eng_lease],
+        false,
+    );
+    assert_eq!(supervisor.actor_count_for_test(), 1);
+    assert_eq!(supervisor.pending_actor_count_for_test(), 0);
+    assert!(
+        crate::infra::fs::rename_entry_at(
+            src_dir.as_file(),
+            OsStr::new("engine.exe"),
+            eng_id,
+            false,
+            dst_dir.as_file(),
+            OsStr::new("engine.exe"),
+        )
+        .is_err(),
+        "actor-held handle without FILE_SHARE_DELETE must block rename before quiesce_executables"
+    );
+    let mut execs = std::collections::HashSet::new();
+    execs.insert(exec_ref);
+    let sup_guard = supervisor
+        .quiesce_executables(execs, std::collections::HashSet::new())
+        .await
+        .unwrap();
+    assert_eq!(supervisor.actor_count_for_test(), 0);
+    let _ = crate::infra::fs::rename_entry_at(
+        src_dir.as_file(),
+        OsStr::new("engine.exe"),
+        eng_id,
+        false,
+        dst_dir.as_file(),
+        OsStr::new("engine.exe"),
+    )
+    .unwrap();
+    assert!(dst.join("engine.exe").exists());
+    assert!(!src.join("engine.exe").exists());
+    sup_guard.lift();
+
+    // 4. Actually construct and drop MoveBackstopGuard with PanicInBackstop during unwinding:
+    //    must catch the panic internally and never abort!
+    let _fault = folder_switch::install_folder_switch_fault(
+        folder_switch::FolderSwitchTestFault::PanicInBackstop,
+    );
+    let caught = std::panic::catch_unwind(|| {
+        let _backstop = folder_switch::MoveBackstopGuard::new(FolderSwitchKind::Database);
+        panic!("simulated unwind");
+    });
+    assert!(caught.is_err());
+    assert!(
+        !folder_switch::is_test_fault_pending(
+            folder_switch::FolderSwitchTestFault::PanicInBackstop
+        ),
+        "MoveBackstopGuard::drop must have executed and consumed PanicInBackstop"
+    );
+}

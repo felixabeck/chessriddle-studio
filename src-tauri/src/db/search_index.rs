@@ -161,6 +161,110 @@ pub(crate) fn read_index_source(reader: &mut impl Read) -> io::Result<IndexSourc
     Ok(source)
 }
 
+/// Observed file provenance `(object, length, modified)` for rebinding copied database sidecars.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SidecarFileStamp {
+    pub(crate) object: (u64, u64),
+    pub(crate) length: u64,
+    pub(crate) modified: std::time::SystemTime,
+}
+
+/// Rebinds a copied search index archive's `IndexSource` header to the destination database's
+/// newly observed identity and metadata, copying existing chunks verbatim without rebuilding.
+/// Returns `Ok(true)` when the sidecar matched the source database provenance and was rebound,
+/// or `Ok(false)` when the sidecar is absent, corrupt/truncated/older-version, or stale.
+pub(crate) fn rebind_index_source_at(
+    parent: &File,
+    leaf: &OsStr,
+    expected_source: SidecarFileStamp,
+    new_target: SidecarFileStamp,
+) -> Result<bool, Error> {
+    let mut source_file = match crate::infra::fs::open_regular_at(
+        parent,
+        leaf,
+        crate::infra::fs::RegularFileAccess::ReadOnly,
+    ) {
+        Ok(file) => file,
+        Err(error) if error.is_missing_entry() => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let mut header_bytes = [0; HEADER_SIZE];
+    match read_source_exact(
+        &mut source_file,
+        &mut header_bytes,
+        "File too small for header",
+    ) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
+            return Ok(false);
+        }
+        Err(error) => return Err(error.into()),
+    }
+    let (header, mut source, source_end) = match decode_index_source(&header_bytes, |source_len| {
+        let mut bytes = rkyv::util::AlignedVec::<ARCHIVE_ALIGNMENT>::with_capacity(source_len);
+        bytes.resize(source_len, 0);
+        read_source_exact(&mut source_file, &mut bytes, "truncated index source")?;
+        Ok(bytes)
+    }) {
+        Ok(decoded) => decoded,
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
+            return Ok(false);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let expected_modified_nanos = expected_source
+        .modified
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_err(std::io::Error::other)?
+        .as_nanos();
+    if source.object != expected_source.object
+        || source.database_length != expected_source.length
+        || source.database_modified_nanos != expected_modified_nanos
+    {
+        return Ok(false);
+    }
+    let new_modified_nanos = new_target
+        .modified
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_err(std::io::Error::other)?
+        .as_nanos();
+    source.object = new_target.object;
+    source.database_length = new_target.length;
+    source.database_modified_nanos = new_modified_nanos;
+    let source_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&source).map_err(|error| {
+        Error::InvalidInput(format!("index source serialization failed: {error}"))
+    })?;
+    if source_bytes.len() > MAX_SOURCE_BYTES {
+        return Err(Error::ResourceLimit(
+            "search index source exceeds the metadata limit".into(),
+        ));
+    }
+    let aligned_source_len = align_up(source_bytes.len()).map_err(Error::from)?;
+    let source_len_u64 = u64::try_from(aligned_source_len)
+        .map_err(|_| Error::ResourceLimit("search index source is too large".into()))?;
+    let entry_count_u64 = u64::try_from(header.entry_count)
+        .map_err(|_| Error::ResourceLimit("search index entry count overflow".into()))?;
+    let chunk_count_u64 = u64::try_from(header.chunk_count)
+        .map_err(|_| Error::ResourceLimit("search index chunk count overflow".into()))?;
+    source_file
+        .seek(SeekFrom::Start(u64::try_from(source_end).map_err(
+            |_| Error::InvalidInput("source offset overflow".into()),
+        )?))
+        .map_err(Error::from)?;
+    // Move `source_file` into the write closure and drop it before `atomic_replace_at` commits
+    // the rename so classic-rename Windows filesystems do not reject the replace.
+    let outcome = atomic_replace_at(parent, leaf, move |dest| {
+        write_header(dest, source_len_u64, entry_count_u64, chunk_count_u64)?;
+        dest.write_all(&source_bytes)?;
+        let _ = write_padding(dest, HEADER_SIZE + source_bytes.len())?;
+        io::copy(&mut source_file, dest)?;
+        drop(source_file);
+        Ok(())
+    })?;
+    crate::infra::fs::require_durable(outcome, DurabilityStage::SearchIndexReplacement)?;
+    Ok(true)
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Archive, Serialize, Deserialize)]
 #[rkyv(compare(PartialEq), derive(Debug))]
 #[repr(u8)]

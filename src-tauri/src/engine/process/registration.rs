@@ -60,6 +60,7 @@ pub(super) struct PendingActor {
     pub(super) owner_generation: u64,
     pub(super) engine_id: String,
     pub(super) executable: PathRef,
+    pub(super) resources: Vec<PathRef>,
     pub(super) termination: StdMutex<Option<Arc<PendingTermination>>>,
 }
 
@@ -97,6 +98,11 @@ impl PendingActor {
         engine_id: String,
         executable: PathRef,
     ) -> Self {
+        let resources = actor
+            .resources
+            .iter()
+            .filter_map(|lease| lease.path_ref().cloned())
+            .collect();
         Self {
             cleanup: actor.cleanup.clone(),
             actor: OnceLock::from(actor),
@@ -107,6 +113,7 @@ impl PendingActor {
             owner_generation: generation,
             engine_id,
             executable,
+            resources,
             termination: StdMutex::default(),
         }
     }

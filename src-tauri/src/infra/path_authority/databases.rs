@@ -2,6 +2,9 @@ use super::*;
 
 impl PathAuthority {
     pub(crate) fn active_database_root(&mut self) -> Result<Option<DatabaseRootHandle>, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Database) {
+            return Err(Self::interrupted_move_root_error());
+        }
         self.resolve_active_root(
             self.active_database_root.clone(),
             PathOperation::DatabaseRead,
@@ -10,6 +13,9 @@ impl PathAuthority {
     }
 
     pub(crate) fn active_puzzle_root(&mut self) -> Result<Option<PuzzleRootDescriptor>, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Puzzle) {
+            return Err(Self::interrupted_move_root_error());
+        }
         let Some(id) =
             self.resolve_active_root(self.active_puzzle_root.clone(), PathOperation::PuzzleRead)?
         else {
@@ -164,6 +170,9 @@ impl PathAuthority {
         root: &PuzzleRootHandle,
         cancellation: &CancellationToken,
     ) -> Result<Vec<PuzzleDatabaseDescriptor>, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Puzzle) {
+            return Err(Self::interrupted_move_root_error());
+        }
         self.reconcile_db3_listing(
             root.path_ref(),
             EntryPurpose::PuzzleFile,
@@ -320,6 +329,9 @@ impl PathAuthority {
         root: &DatabaseRootHandle,
         cancellation: &CancellationToken,
     ) -> Result<DatabaseListing, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Database) {
+            return Err(Self::interrupted_move_root_error());
+        }
         self.reconcile_db3_listing(
             root.path_ref(),
             EntryPurpose::DatabaseFile,

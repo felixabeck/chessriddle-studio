@@ -543,6 +543,127 @@ fn walk(
 }
 
 impl PathAuthority {
+    #[cfg(test)]
+    pub(super) fn active_catalog_install_identities_for_test(
+        &self,
+    ) -> Vec<((u64, u64), (u64, u64))> {
+        self.catalog_installs
+            .values()
+            .filter(|record| !record.cleaning && !record.preserved)
+            .map(|record| {
+                (
+                    (record.root.identity.a, record.root.identity.b),
+                    (record.identity.a, record.identity.b),
+                )
+            })
+            .collect()
+    }
+
+    pub(super) fn catalog_install_leaves_for_root(&self, root_identity: Identity) -> Vec<OsString> {
+        let mut leaves: Vec<OsString> = self
+            .catalog_installs
+            .values()
+            .filter(|record| {
+                record.root.identity == root_identity && !record.cleaning && !record.preserved
+            })
+            .filter_map(|record| {
+                relative_path(&record.destination)
+                    .ok()
+                    .map(|p| p.into_os_string())
+            })
+            .collect();
+        leaves.sort();
+        leaves.dedup();
+        leaves
+    }
+
+    /// Rewrites `catalog_installs` and `catalog_uses` after a verified engine-folder move.
+    /// Every moved install record updates its `root`, re-observes its live directory identity,
+    /// and re-observes every `ManagedEntry` identity in `inventory`, proving file SHA-256 hashes.
+    pub(super) fn rebase_catalog_installs_for_move(
+        &mut self,
+        source_root_identity: Identity,
+        target_root: &StoredEntry,
+        moved_leaves_folded: &std::collections::HashSet<Vec<u8>>,
+        identity_map: &BTreeMap<(PathBuf, u64, u64), (PathBuf, u64, u64)>,
+    ) -> Result<(), Error> {
+        let target_root_path = target_root.path.to_path()?;
+        let target_dir = open_verified_directory(
+            &target_root_path,
+            (target_root.identity.a, target_root.identity.b),
+        )?;
+
+        for record in self.catalog_installs.values_mut() {
+            if record.root.identity != source_root_identity || record.cleaning || record.preserved {
+                continue;
+            }
+            let leaf_path = relative_path(&record.destination)?;
+            if !moved_leaves_folded.contains(&super::folder_switch::fold_leaf_name_for_collision(
+                leaf_path.as_os_str(),
+            )) {
+                continue;
+            }
+            let install_dir = crate::infra::fs::open_directory_at(
+                target_dir.as_file(),
+                leaf_path.as_os_str(),
+                false,
+            )?;
+            let install_dir_id = opened_file_identity(&install_dir)?;
+
+            let mut updated_inventory = Vec::with_capacity(record.inventory.len());
+            for entry in &record.inventory {
+                let rel = relative_path(&entry.relative)?;
+                let components = relative_components(&rel);
+                let (leaf_comp, parents) = components.split_last().ok_or_else(invalid_record)?;
+                let mut cur_dir = install_dir.try_clone()?;
+                for parent in parents {
+                    cur_dir = crate::infra::fs::open_directory_at(&cur_dir, parent, false)?;
+                }
+                let new_id = if entry.directory {
+                    let id = crate::infra::fs::entry_identity_at(&cur_dir, leaf_comp, true)?;
+                    Identity { a: id.0, b: id.1 }
+                } else {
+                    let mut file = crate::infra::fs::open_regular_at(
+                        &cur_dir,
+                        leaf_comp,
+                        crate::infra::fs::RegularFileAccess::ReadOnly,
+                    )?;
+                    let id = opened_file_identity(&file)?;
+                    if let Some(expected_sha) = &entry.sha256 {
+                        let mut buf = [0u8; 64 * 1024];
+                        let (_, actual_sha) =
+                            sha256_read_core(&mut file, &mut buf, || Ok(()), |_| Ok(()))?;
+                        if !actual_sha.eq_ignore_ascii_case(expected_sha) {
+                            return Err(Error::Conflict(
+                                "catalog inventory content hash mismatch after move".into(),
+                            ));
+                        }
+                    }
+                    Identity { a: id.0, b: id.1 }
+                };
+                let mut updated = entry.clone();
+                updated.identity = new_id;
+                updated_inventory.push(updated);
+            }
+
+            record.root = target_root.clone();
+            record.identity = Identity {
+                a: install_dir_id.0,
+                b: install_dir_id.1,
+            };
+            record.inventory = updated_inventory;
+        }
+
+        if !identity_map.is_empty() {
+            let old_uses = std::mem::take(&mut self.catalog_uses);
+            for (key, sessions) in old_uses {
+                let new_key = identity_map.get(&key).cloned().unwrap_or(key);
+                self.catalog_uses.insert(new_key, sessions);
+            }
+        }
+        Ok(())
+    }
+
     /// Native completion ownership outlives every renderer document. Retain the root before
     /// publication, then the installed and previous executable until application is acknowledged.
     pub(crate) fn retain_completion_resources(
@@ -785,6 +906,9 @@ impl PathAuthority {
     ) -> Result<bool, Error> {
         let path = resolved.target().ok_or_else(invalid_record)?;
         let root = self.catalog_destination_root(destination, path)?;
+        if self.is_engine_root_quiesced((root.identity.a, root.identity.b)) {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
+        }
         self.protect_catalog_path(path, false, false, None)?;
         let confirmed = self.confirm_catalog_destination(&root, path, None, None, probe)?;
         let directory = probe.filesystem(engine_install_directory(&root))?;
@@ -841,6 +965,9 @@ impl PathAuthority {
             ),
         }
         let root = self.catalog_destination_root(destination, path)?;
+        if self.is_engine_root_quiesced((root.identity.a, root.identity.b)) {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
+        }
         let directory = probe.filesystem(engine_install_directory(&root))?;
         let Some(identity) = probe.filesystem(catalog_directory_identity(&directory, &leaf))?
         else {
@@ -1089,6 +1216,9 @@ impl PathAuthority {
             ));
         }
         let root = self.catalog_destination_root(destination, path)?;
+        if self.is_engine_root_quiesced((root.identity.a, root.identity.b)) {
+            return Err(Error::Conflict("engine folder move is in progress".into()));
+        }
         if probe.filesystem(staging.parent_identity())? != (root.identity.a, root.identity.b) {
             return Err(Error::InvalidInput(
                 "catalog staging must share the destination parent".into(),

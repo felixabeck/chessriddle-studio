@@ -11,6 +11,7 @@ import {
   moveHighlightAtom,
   practiceGradingAtom,
   practiceNewPerSessionAtom,
+  puzzleWorkspaceGenerationAtom,
   restoreOpenTabsAtom,
 } from "@/state/atoms";
 import { readRestoreOpenTabsPreference, RESTORE_OPEN_TABS_KEY } from "@/state/restoreOpenTabs";
@@ -27,8 +28,9 @@ import Page, { loadPgnDirectoryStatus } from "./SettingsPage";
 import { ensureFileWorkspace } from "@/utils/files";
 import classes from "./SettingsPage.module.css";
 
+const platformMock = vi.hoisted(() => vi.fn(() => "windows"));
 vi.mock("@/platform/native", () => ({
-  platform: vi.fn(() => "linux"),
+  platform: platformMock,
   warn: vi.fn(),
   error: vi.fn(),
 }));
@@ -63,12 +65,26 @@ vi.mock("./DirectorySetting", () => ({ DirectorySetting: () => null }));
 const directoryRows = vi.hoisted(() => ({
   current: [] as Array<{
     load: () => Promise<{ displayName: string }>;
-    issue: () => Promise<{ displayName: string }>;
+    issue: () => Promise<{ displayName: string } | null>;
+    restoreDefault?: () => Promise<{ displayName: string } | null>;
     onShowInFolder?: () => Promise<void> | void;
+    onSelected?: (name: string) => void;
     onError: (error: unknown) => void;
     reportLoadError?: boolean;
   }>,
 }));
+const publishDatabaseListMock = vi.hoisted(() => vi.fn((..._args: unknown[]) => Promise.resolve()));
+const swrMutateMock = vi.hoisted(() => vi.fn((..._args: unknown[]) => Promise.resolve()));
+vi.mock("@/hooks/useDatabaseList", () => ({
+  publishDatabaseList: publishDatabaseListMock,
+}));
+vi.mock("swr", async (original) => {
+  const actual = await original<typeof import("swr")>();
+  return {
+    ...actual,
+    useSWRConfig: () => ({ mutate: swrMutateMock }),
+  };
+});
 vi.mock("./WorkspaceDirectorySetting", () => ({
   WorkspaceDirectorySetting: (props: (typeof directoryRows.current)[number]) => {
     directoryRows.current.push(props);
@@ -81,6 +97,17 @@ const tauriMocks = vi.hoisted(() => ({
   openDatabaseWorkspace: vi.fn(),
   openEngineWorkspace: vi.fn(),
   openPuzzleWorkspace: vi.fn(),
+  issueDatabaseWorkspace: vi.fn(),
+  restoreDatabaseWorkspace: vi.fn(),
+  issueEngineWorkspace: vi.fn(),
+  restoreEngineWorkspace: vi.fn(),
+  issuePuzzleWorkspace: vi.fn(),
+  restorePuzzleWorkspace: vi.fn(),
+  getDatabaseFolderStatus: vi.fn(),
+  getEngineFolderStatus: vi.fn(),
+  getPuzzleFolderStatus: vi.fn(),
+  applyFolderSwitch: vi.fn(),
+  cancelFolderSwitch: vi.fn(),
   getDefaultFileWorkspace: vi.fn(),
   getFileFolderStatus: vi.fn(),
 }));
@@ -91,6 +118,18 @@ vi.mock("@/platform/tauri", async (original) => {
     tauri: {
       ...actual.tauri,
       issueFileWorkspace: (...args: unknown[]) => tauriMocks.issueFileWorkspace(...args),
+      issueDatabaseWorkspace: (...args: unknown[]) => tauriMocks.issueDatabaseWorkspace(...args),
+      restoreDatabaseWorkspace: (...args: unknown[]) =>
+        tauriMocks.restoreDatabaseWorkspace(...args),
+      issueEngineWorkspace: (...args: unknown[]) => tauriMocks.issueEngineWorkspace(...args),
+      restoreEngineWorkspace: (...args: unknown[]) => tauriMocks.restoreEngineWorkspace(...args),
+      issuePuzzleWorkspace: (...args: unknown[]) => tauriMocks.issuePuzzleWorkspace(...args),
+      restorePuzzleWorkspace: (...args: unknown[]) => tauriMocks.restorePuzzleWorkspace(...args),
+      getDatabaseFolderStatus: (...args: unknown[]) => tauriMocks.getDatabaseFolderStatus(...args),
+      getEngineFolderStatus: (...args: unknown[]) => tauriMocks.getEngineFolderStatus(...args),
+      getPuzzleFolderStatus: (...args: unknown[]) => tauriMocks.getPuzzleFolderStatus(...args),
+      applyFolderSwitch: (...args: unknown[]) => tauriMocks.applyFolderSwitch(...args),
+      cancelFolderSwitch: (...args: unknown[]) => tauriMocks.cancelFolderSwitch(...args),
       openFileWorkspace: (...args: unknown[]) => tauriMocks.openFileWorkspace(...args),
       openDatabaseWorkspace: (...args: unknown[]) => tauriMocks.openDatabaseWorkspace(...args),
       openEngineWorkspace: (...args: unknown[]) => tauriMocks.openEngineWorkspace(...args),
@@ -1075,4 +1114,91 @@ test("Import then Settings PGN seed keep one file-workspace handle", async () =>
   expect(tauriMocks.getDefaultFileWorkspace).toHaveBeenCalledOnce();
   expect(tauriMocks.getFileFolderStatus).toHaveBeenCalledExactlyOnceWith(handle);
   expect(getDefaultStore().get(fileWorkspaceAtom)).toEqual(handle);
+});
+
+test("Files & folders rows trigger real database, engine, and puzzle refresh signals on switch", async () => {
+  publishDatabaseListMock.mockClear();
+  swrMutateMock.mockClear();
+  platformMock.mockReturnValue("windows");
+  const atoms = createStore();
+  atoms.set(puzzleWorkspaceGenerationAtom, 0);
+  const { rows } = await openDirectoryRows(atoms);
+
+  // Databases row uses publishDatabaseList (works without a mounted reader)
+  rows[1]?.onSelected?.("MovedDatabases");
+  expect(publishDatabaseListMock).toHaveBeenCalledWith(swrMutateMock);
+
+  // Engines row revalidates file-exists, engine-config, and the real Platform OS key ("windows", not "win32")
+  rows[2]?.onSelected?.("MovedEngines");
+  expect(swrMutateMock).not.toHaveBeenCalledWith("default_engines");
+  expect(swrMutateMock).not.toHaveBeenCalledWith("win32", undefined, { revalidate: true });
+  expect(swrMutateMock).toHaveBeenCalledWith("windows", undefined, { revalidate: true });
+  const predicates = swrMutateMock.mock.calls
+    .map((call) => call[0])
+    .filter((arg): arg is (key: unknown) => boolean => typeof arg === "function");
+  expect(predicates.some((fn) => fn(["file-exists", "eng-1"]))).toBe(true);
+  expect(predicates.some((fn) => fn(["engine-config", "eng-1"]))).toBe(true);
+
+  // Puzzles row bumps puzzleWorkspaceGenerationAtom
+  rows[3]?.onSelected?.("MovedPuzzles");
+  expect(atoms.get(puzzleWorkspaceGenerationAtom)).toBe(1);
+});
+
+test("SettingsPage Databases, Engines, and Puzzles rows handle Pending + Cancel and keep persisted engines byte-identical", async () => {
+  const { getPendingFolderSwitch, setPendingFolderSwitch } = await import("./folderSwitch");
+  const initialEngines = JSON.stringify([
+    {
+      type: "local",
+      name: "Stockfish",
+      version: "17",
+      path: { id: { id: "ref-1" }, kind: "engine" },
+      loaded: true,
+      settings: [],
+    },
+  ]);
+  localStorage.setItem("engines", initialEngines);
+
+  tauriMocks.issueDatabaseWorkspace.mockResolvedValueOnce({
+    status: "pending",
+    grant: { id: { id: "gd1" }, kind: "database" },
+    displayName: "NewDBs",
+    itemCount: 1,
+  });
+  tauriMocks.issueEngineWorkspace.mockResolvedValueOnce({
+    status: "pending",
+    grant: { id: { id: "ge1" }, kind: "engine" },
+    displayName: "NewEngs",
+    itemCount: 1,
+  });
+  tauriMocks.restorePuzzleWorkspace.mockResolvedValueOnce({
+    status: "pending",
+    grant: { id: { id: "gp1" }, kind: "puzzle" },
+    displayName: "Puzzles",
+    itemCount: 2,
+  });
+
+  const { rows } = await openDirectoryRows();
+
+  // Databases Pending -> Cancel resolves null
+  const dbPending = rows[1]?.issue();
+  await act(async () => {});
+  getPendingFolderSwitch()?.resolve(null);
+  setPendingFolderSwitch(null);
+  await expect(dbPending).resolves.toBeNull();
+
+  // Engines Pending -> Move resolves status and keeps localStorage["engines"] byte-identical
+  const engPending = rows[2]?.issue();
+  await act(async () => {});
+  getPendingFolderSwitch()?.resolve({ displayName: "NewEngs", isDefault: false });
+  setPendingFolderSwitch(null);
+  await expect(engPending).resolves.toEqual({ displayName: "NewEngs", isDefault: false });
+  rows[2]?.onSelected?.("NewEngs");
+  expect(localStorage.getItem("engines")).toBe(initialEngines);
+
+  // Puzzles restoreDefault Pending -> Cancel resolves null
+  const puzPending = rows[3]?.restoreDefault?.();
+  await act(async () => {});
+  getPendingFolderSwitch()?.resolve(null);
+  setPendingFolderSwitch(null);
+  await expect(puzPending).resolves.toBeNull();
 });

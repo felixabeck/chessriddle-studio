@@ -10,7 +10,8 @@ export type ListingFailure =
     | "missing"
     | "unusable"
     | "permission"
-    | "tooLarge";
+    | "tooLarge"
+    | "interruptedMove";
 
 export type RootFailureDomain = "database" | "puzzle" | "engine" | "files";
 
@@ -43,6 +44,10 @@ export function rootFailureMessage(
                 "too-large": t("Databases.LoadError.TooLarge", {
                     defaultValue: "This database folder is too large to list. Choose another.",
                 }),
+                "interrupted-move": t("Databases.LoadError.InterruptedMove", {
+                    defaultValue:
+                        "A database folder move was interrupted. ChessRiddle Studio will finish it on the next start.",
+                }),
             };
             break;
         case "puzzle":
@@ -62,6 +67,10 @@ export function rootFailureMessage(
                     defaultValue:
                         "ChessRiddle Studio is not allowed to read this puzzle folder. Choose another in Settings.",
                 }),
+                "interrupted-move": t("Puzzle.LoadError.InterruptedMove", {
+                    defaultValue:
+                        "A puzzle folder move was interrupted. ChessRiddle Studio will finish it on the next start.",
+                }),
             };
             break;
         case "engine":
@@ -80,6 +89,10 @@ export function rootFailureMessage(
                 permission: t("Engines.LoadError.RootPermission", {
                     defaultValue:
                         "ChessRiddle Studio is not allowed to read this engine folder. Choose another in Settings.",
+                }),
+                "interrupted-move": t("Engines.LoadError.InterruptedMove", {
+                    defaultValue:
+                        "An engine folder move was interrupted. ChessRiddle Studio will finish it on the next start.",
                 }),
             };
             break;
@@ -111,5 +124,7 @@ export function listingFailure(error: unknown): ListingFailure {
     if (error == null) return "silent";
     const visible = errorUnlessCancelled(error);
     if (!visible) return "silent";
-    return visible.rootFailure === "too-large" ? "tooLarge" : (visible.rootFailure ?? "retry");
+    if (visible.rootFailure === "too-large") return "tooLarge";
+    if (visible.rootFailure === "interrupted-move") return "interruptedMove";
+    return visible.rootFailure ?? "retry";
 }

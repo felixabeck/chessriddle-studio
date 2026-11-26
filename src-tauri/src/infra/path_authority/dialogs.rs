@@ -6,6 +6,7 @@ pub(super) struct DialogGrant {
     pub(super) expires_at: SystemTime,
     pub(super) uses_left: u32,
     pub(super) inserted_at: u64,
+    pub(super) folder_switch: Option<folder_switch::FolderSwitchGrantMetadata>,
 }
 
 impl PathAuthority {
@@ -47,6 +48,25 @@ impl PathAuthority {
         ttl: Duration,
         uses_left: u32,
     ) -> Result<PathRef, Error> {
+        self.insert_dialog_grant(
+            acquired,
+            display_name,
+            class,
+            operations,
+            (ttl, uses_left),
+            None,
+        )
+    }
+
+    pub(super) fn insert_dialog_grant(
+        &mut self,
+        acquired: AcquiredTarget,
+        display_name: String,
+        class: PathClass,
+        operations: Vec<PathOperation>,
+        (ttl, uses_left): (Duration, u32),
+        folder_switch: Option<folder_switch::FolderSwitchGrantMetadata>,
+    ) -> Result<PathRef, Error> {
         Self::check_dialog_grant_shape(class, &operations, uses_left)?;
         // Validate before evicting: malformed dialog input must not affect live grants.
         self.evict_dialogs();
@@ -84,6 +104,7 @@ impl PathAuthority {
                 expires_at: self.clock.now() + ttl,
                 uses_left,
                 inserted_at: self.next_insertion,
+                folder_switch,
             },
         );
         Ok(id)
@@ -145,6 +166,11 @@ impl PathAuthority {
         let grant = self.dialogs.get(&dialog.id).cloned().ok_or_else(|| {
             Error::InvalidInput("unknown, revoked, or expired dialog grant".into())
         })?;
+        if grant.folder_switch.is_some() {
+            return Err(Error::InvalidInput(
+                "unknown, revoked, or expired dialog grant".into(),
+            ));
+        }
         self.dialogs.remove(&dialog.id);
         if grant.expires_at <= self.clock.now() {
             return Err(Error::InvalidInput(
@@ -267,6 +293,13 @@ impl PathAuthority {
         required: Option<PathOperation>,
     ) -> Result<DialogGrant, Error> {
         self.evict_dialogs();
+        if self
+            .dialogs
+            .get(&id.id)
+            .is_some_and(|grant| grant.folder_switch.is_some())
+        {
+            return Err(Error::UnknownPathCapability);
+        }
         let mut grant = self
             .dialogs
             .remove(&id.id)

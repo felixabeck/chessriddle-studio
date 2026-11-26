@@ -1449,6 +1449,24 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         get_database_folder_status: {
             result: { displayName: "Databases", isDefault: true },
         },
+        issue_database_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "database-root" }, kind: "databaseRoot" },
+                    displayName: "Databases",
+                },
+            },
+        },
+        restore_database_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "database-root" }, kind: "databaseRoot" },
+                    displayName: "Databases",
+                },
+            },
+        },
         get_engine_workspace: {
             result: {
                 root: { id: { id: "engine-root" }, kind: "engineRoot" },
@@ -1458,9 +1476,49 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         get_engine_folder_status: {
             result: { displayName: "Engines", isDefault: true },
         },
+        issue_engine_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "engine-root" }, kind: "engineRoot" },
+                    displayName: "Engines",
+                },
+            },
+        },
+        restore_engine_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "engine-root" }, kind: "engineRoot" },
+                    displayName: "Engines",
+                },
+            },
+        },
         get_puzzle_folder_status: {
             result: { displayName: "E2E puzzles", isDefault: true },
         },
+        issue_puzzle_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },
+                    displayName: "Puzzles",
+                },
+            },
+        },
+        restore_puzzle_workspace: {
+            result: {
+                status: "activated",
+                descriptor: {
+                    root: { id: { id: "puzzle-root" }, kind: "puzzleRoot" },
+                    displayName: "Puzzles",
+                },
+            },
+        },
+        apply_folder_switch: {
+            result: { displayName: "Databases", isDefault: true },
+        },
+        cancel_folder_switch: { result: null },
         get_file_folder_status: {
             result: { displayName: "PGN", isDefault: true },
         },

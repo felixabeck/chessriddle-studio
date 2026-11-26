@@ -5,12 +5,19 @@ import { type AppError, errorUnlessCancelled, isErrorReported } from "@/platform
 import { rootFailureMessage, type RootFailureDomain } from "./listingFailure";
 import { workspaceErrorMessage } from "./workspaceError";
 import { remoteHttpGuidance } from "./remoteHttpGuidance";
+import { folderSwitchFailureMessage } from "@/components/settings/folderSwitch";
 
 export function failureMessage(
     visible: AppError,
     domain: RootFailureDomain | undefined,
     fallback: string,
 ): { message: string; remoteRejection: RemoteHttpRejection | undefined } {
+    if (visible.folderSwitch) {
+        return {
+            message: folderSwitchFailureMessage(visible.folderSwitch, i18n.t),
+            remoteRejection: undefined,
+        };
+    }
     const rootMessage = (domain ? rootFailureMessage(domain, visible) : undefined) ?? fallback;
     let message =
         domain === "files"

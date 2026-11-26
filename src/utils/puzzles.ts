@@ -1,5 +1,6 @@
 import { tauri } from "@/platform/tauri";
-import type { PuzzleDatabaseInfo, PuzzleRootDescriptor } from "@/bindings";
+import type { PuzzleDatabaseInfo } from "@/bindings";
+import { runFolderSwitch, type FolderSwitchResult } from "@/components/settings/folderSwitch";
 import { isNormal, parseUci, type Move, type NormalMove } from "chessops";
 import type { Chess } from "chessops/chess";
 import type { TreeStore } from "@/state/store/tree";
@@ -104,6 +105,6 @@ export async function getPuzzleDatabases(signal?: AbortSignal): Promise<PuzzleDa
     return await tauri.listPuzzleDatabases({ signal });
 }
 
-export async function choosePuzzleDatabase(): Promise<PuzzleRootDescriptor> {
-    return await tauri.issuePuzzleWorkspace();
+export async function choosePuzzleDatabase(): Promise<FolderSwitchResult> {
+    return await runFolderSwitch(() => tauri.issuePuzzleWorkspace());
 }

@@ -51,7 +51,9 @@ test("settings directories hydrate and retain selected workspace names", async (
             outcomes: [{ result: { displayName: current, isDefault: false } }],
             result: { displayName: selected, isDefault: false },
         };
-        commands[`issue_${noun}_workspace`] = { result: { root, displayName: selected } };
+        commands[`issue_${noun}_workspace`] = {
+            result: { status: "activated", descriptor: { root, displayName: selected } },
+        };
     }
     await mockScenario({ commands });
     await page.goto("/settings");

@@ -4296,7 +4296,10 @@ test("the real download and picker keep the new workspace inventory when an old 
       { sha256: manifest.sha256, signature: manifest.signature },
     );
 
-    mocks.issuePuzzleWorkspace.mockResolvedValue(otherWorkspace);
+    mocks.issuePuzzleWorkspace.mockResolvedValue({
+      status: "activated",
+      descriptor: otherWorkspace,
+    });
     mocks.getPuzzleWorkspace.mockResolvedValue(otherWorkspace);
     // The picker preview starts synchronously before the parent's generation effect lists B.
     // Hold both so the preview must publish B after the new generation has rendered.

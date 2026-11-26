@@ -20,7 +20,10 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { RESET } from "jotai/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSWRConfig } from "swr";
 import { changeLocale } from "@/i18n";
+import { runFolderSwitch } from "./folderSwitch";
+import { publishDatabaseList } from "@/hooks/useDatabaseList";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import {
   autoPromoteAtom,
@@ -74,8 +77,8 @@ import {
   LAST_MOVE_HIGHLIGHT_OPACITY_STEP,
 } from "@/state/lastMoveHighlight";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
-import { ensureFileWorkspace } from "@/utils/files";
-import type { FileWorkspaceHandle } from "@/bindings";
+import { ensureFileWorkspace, usePlatform, writeDefaultFileWorkspace } from "@/utils/files";
+import type { FileWorkspaceHandle, FolderStatus, WorkspaceChoice } from "@/bindings";
 import type { RootFailureDomain } from "@/components/files/listingFailure";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import DraftNumberInput from "../common/DraftNumberInput";
@@ -119,6 +122,15 @@ import SettingsSwitch from "./SettingsSwitch";
 import SoundSelect from "./SoundSelect";
 import ThemeButton from "./ThemeButton";
 import VolumeSlider from "./VolumeSlider";
+
+async function switchWorkspaceFolder(
+  choose: () => Promise<WorkspaceChoice<{ displayName: string }>>,
+  loadStatus: () => Promise<FolderStatus>,
+): Promise<FolderStatus | null> {
+  const result = await runFolderSwitch(choose);
+  if (!result.switched) return null;
+  return result.status ?? (await loadStatus());
+}
 
 const FONT_SIZE_MARKS = [FONT_SCALE_MIN, 100, 150, FONT_SCALE_MAX];
 const PIECE_SIZE_MARKS = [PIECE_SCALE_MIN, 85, PIECE_SCALE_MAX];
@@ -171,6 +183,7 @@ export async function loadPgnDirectoryStatus(fileWorkspace: FileWorkspaceHandle 
 
 export default function Page() {
   const { t, i18n } = useTranslation();
+  const { mutate: mutateCache } = useSWRConfig();
   const compactTabs = useScaledMaxWidth(COMPACT_SETTINGS_WIDTH_EM);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<SettingCategory>("board");
@@ -211,6 +224,7 @@ export default function Page() {
     [coachEnabled],
   );
   const effectiveCategory = categories.includes(activeCategory) ? activeCategory : categories[0];
+  const { os } = usePlatform();
 
   const settings = useMemo(
     () =>
@@ -445,7 +459,11 @@ export default function Page() {
             const workspace = await tauri.issueFileWorkspace(fileWorkspace);
             setFileWorkspace(workspace.handle);
             setFileWorkspaceDisplayName(workspace.displayName);
-            return workspace;
+            return await tauri.getFileFolderStatus(workspace.handle);
+          }}
+          restoreDefault={async () => {
+            const handle = await writeDefaultFileWorkspace();
+            return await tauri.getFileFolderStatus(handle);
           }}
           onShowInFolder={
             fileWorkspace
@@ -457,37 +475,72 @@ export default function Page() {
           onError={(error) => showDirectoryError(error, "files")}
         />
       ),
-      "databases-directory": () => (
-        <WorkspaceDirectorySetting
-          load={() => tauri.getDatabaseFolderStatus()}
-          issue={() => tauri.issueDatabaseWorkspace()}
-          onShowInFolder={async () => {
-            await tauri.openDatabaseWorkspace();
-          }}
-          onError={(error) => showDirectoryError(error, "database")}
-        />
-      ),
-      "engines-directory": () => (
-        <WorkspaceDirectorySetting
-          load={() => tauri.getEngineFolderStatus()}
-          issue={() => tauri.issueEngineWorkspace()}
-          onShowInFolder={async () => {
-            await tauri.openEngineWorkspace();
-          }}
-          onError={(error) => showDirectoryError(error, "engine")}
-        />
-      ),
-      "puzzles-directory": () => (
-        <WorkspaceDirectorySetting
-          load={() => tauri.getPuzzleFolderStatus()}
-          issue={() => tauri.issuePuzzleWorkspace()}
-          onShowInFolder={async () => {
-            await tauri.openPuzzleWorkspace();
-          }}
-          onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
-          onError={(error) => showDirectoryError(error, "puzzle")}
-        />
-      ),
+      "databases-directory": () => {
+        const switchDatabase = (
+          choose: () => Promise<WorkspaceChoice<{ displayName: string }>>,
+        ): Promise<FolderStatus | null> =>
+          switchWorkspaceFolder(choose, () => tauri.getDatabaseFolderStatus());
+        return (
+          <WorkspaceDirectorySetting
+            load={() => tauri.getDatabaseFolderStatus()}
+            issue={() => switchDatabase(() => tauri.issueDatabaseWorkspace())}
+            restoreDefault={() => switchDatabase(() => tauri.restoreDatabaseWorkspace())}
+            onShowInFolder={async () => {
+              await tauri.openDatabaseWorkspace();
+            }}
+            onSelected={() => {
+              void publishDatabaseList(mutateCache).catch(() => undefined);
+            }}
+            onError={(error) => showDirectoryError(error, "database")}
+          />
+        );
+      },
+      "engines-directory": () => {
+        const switchEngine = (
+          choose: () => Promise<WorkspaceChoice<{ displayName: string }>>,
+        ): Promise<FolderStatus | null> =>
+          switchWorkspaceFolder(choose, () => tauri.getEngineFolderStatus());
+        return (
+          <WorkspaceDirectorySetting
+            load={() => tauri.getEngineFolderStatus()}
+            issue={() => switchEngine(() => tauri.issueEngineWorkspace())}
+            restoreDefault={() => switchEngine(() => tauri.restoreEngineWorkspace())}
+            onShowInFolder={async () => {
+              await tauri.openEngineWorkspace();
+            }}
+            onSelected={() => {
+              void mutateCache(
+                (key) =>
+                  Array.isArray(key) && (key[0] === "file-exists" || key[0] === "engine-config"),
+                undefined,
+                { revalidate: true },
+              );
+              if (os) {
+                void mutateCache(os, undefined, { revalidate: true });
+              }
+            }}
+            onError={(error) => showDirectoryError(error, "engine")}
+          />
+        );
+      },
+      "puzzles-directory": () => {
+        const switchPuzzle = (
+          choose: () => Promise<WorkspaceChoice<{ displayName: string }>>,
+        ): Promise<FolderStatus | null> =>
+          switchWorkspaceFolder(choose, () => tauri.getPuzzleFolderStatus());
+        return (
+          <WorkspaceDirectorySetting
+            load={() => tauri.getPuzzleFolderStatus()}
+            issue={() => switchPuzzle(() => tauri.issuePuzzleWorkspace())}
+            restoreDefault={() => switchPuzzle(() => tauri.restorePuzzleWorkspace())}
+            onShowInFolder={async () => {
+              await tauri.openPuzzleWorkspace();
+            }}
+            onSelected={() => setPuzzleWorkspaceGeneration((generation) => generation + 1)}
+            onError={(error) => showDirectoryError(error, "puzzle")}
+          />
+        );
+      },
       "coach-model": () => <CoachModelSetting />,
       "coach-engine": () => <CoachEngineSelect />,
       "restore-open-tabs": () => <SettingsSwitch atom={restoreOpenTabsAtom} />,
@@ -534,6 +587,8 @@ export default function Page() {
       practiceNewPerSession,
       setPracticeNewPerSession,
       showDirectoryError,
+      mutateCache,
+      os,
     ],
   );
 

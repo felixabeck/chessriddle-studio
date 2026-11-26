@@ -5,6 +5,11 @@ import { WorkspaceDirectorySetting } from "./WorkspaceDirectorySetting";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("@mantine/core", () => ({
+  Button: ({ children, onClick, disabled }: any) => (
+    <button type="button" onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
+  ),
   Input: ({ children, component: Component = "div", ...props }: any) => (
     <Component {...props}>{children}</Component>
   ),
@@ -22,8 +27,13 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let root: Root;
 let host: HTMLDivElement;
-let load: ReturnType<typeof vi.fn<() => Promise<{ displayName: string }>>>;
-let issue: ReturnType<typeof vi.fn<() => Promise<{ displayName: string }>>>;
+let load: ReturnType<typeof vi.fn<() => Promise<{ displayName: string; isDefault?: boolean }>>>;
+let issue: ReturnType<
+  typeof vi.fn<() => Promise<{ displayName: string; isDefault?: boolean } | null>>
+>;
+let restoreDefault: ReturnType<
+  typeof vi.fn<() => Promise<{ displayName: string; isDefault?: boolean } | null>>
+>;
 let onShowInFolder: ReturnType<typeof vi.fn<() => Promise<void>>>;
 let onSelected: ReturnType<typeof vi.fn<(name: string) => void>>;
 let onError: ReturnType<typeof vi.fn<(error: unknown) => void>>;
@@ -32,8 +42,9 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  load = vi.fn().mockResolvedValue({ displayName: "MyChessDBs" });
-  issue = vi.fn().mockResolvedValue({ displayName: "NewFolder" });
+  load = vi.fn().mockResolvedValue({ displayName: "MyChessDBs", isDefault: true });
+  issue = vi.fn().mockResolvedValue({ displayName: "NewFolder", isDefault: false });
+  restoreDefault = vi.fn().mockResolvedValue({ displayName: "Databases", isDefault: true });
   onShowInFolder = vi.fn().mockResolvedValue(undefined);
   onSelected = vi.fn();
   onError = vi.fn();
@@ -48,15 +59,23 @@ function pickerButton() {
   return host.querySelector<HTMLButtonElement>('button[aria-label="Settings.Directories.Select"]')!;
 }
 
-async function render() {
+function restoreButton() {
+  return Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
+    (btn) => btn.textContent === "Settings.Directories.RestoreDefault",
+  );
+}
+
+async function render(options?: { reportLoadError?: boolean; withRestore?: boolean }) {
   await act(async () =>
     root.render(
       <WorkspaceDirectorySetting
         load={load}
         issue={issue}
+        restoreDefault={options?.withRestore ? restoreDefault : undefined}
         onShowInFolder={onShowInFolder}
         onSelected={onSelected}
         onError={onError}
+        reportLoadError={options?.reportLoadError}
       />,
     ),
   );
@@ -95,18 +114,7 @@ test("failed hydration offers selection without reporting a picker error", async
 test("failed PGN hydration reports the load error through onError", async () => {
   const error = new Error("workspace unavailable");
   load.mockRejectedValue(error);
-  await act(async () =>
-    root.render(
-      <WorkspaceDirectorySetting
-        load={load}
-        issue={issue}
-        onShowInFolder={onShowInFolder}
-        onSelected={onSelected}
-        onError={onError}
-        reportLoadError
-      />,
-    ),
-  );
+  await render({ reportLoadError: true });
   expect(host.textContent).toContain("Settings.Directories.Select");
   expect(onError).toHaveBeenCalledExactlyOnceWith(error);
 });
@@ -134,18 +142,7 @@ test("late hydration failure cannot overwrite a successfully selected name", asy
 test("late hydration failure after a newer pick does not report a stale error", async () => {
   let reject!: (error: Error) => void;
   load.mockReturnValue(new Promise((_, fail) => (reject = fail)));
-  await act(async () =>
-    root.render(
-      <WorkspaceDirectorySetting
-        load={load}
-        issue={issue}
-        onShowInFolder={onShowInFolder}
-        onSelected={onSelected}
-        onError={onError}
-        reportLoadError
-      />,
-    ),
-  );
+  await render({ reportLoadError: true });
   await act(async () => pickerButton().click());
   await act(async () => reject(new Error("stale")));
   expect(host.textContent).toContain("NewFolder");
@@ -194,4 +191,15 @@ test("a selection that lands after unmount still reports the switched native roo
   root = createRoot(host);
   await act(async () => resolve({ displayName: "NewFolder" }));
   expect(onSelected).toHaveBeenCalledExactlyOnceWith("NewFolder");
+});
+
+test("shows Restore default when isDefault is false (including root-failure rows) and hides when default", async () => {
+  load.mockResolvedValue({ displayName: "BrokenCustom", isDefault: false });
+  await render({ withRestore: true });
+  expect(restoreButton()).toBeDefined();
+
+  await act(async () => restoreButton()!.click());
+  expect(restoreDefault).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain("Databases");
+  expect(restoreButton()).toBeUndefined();
 });

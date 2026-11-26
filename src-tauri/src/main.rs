@@ -120,18 +120,19 @@ use crate::practice::{
 use crate::puzzle::{
     delete_puzzle_database, get_puzzle, get_puzzle_folder_status, get_puzzle_themes,
     get_puzzle_workspace, get_themes_for_puzzle, issue_puzzle_download_destination,
-    issue_puzzle_workspace, list_puzzle_databases, open_puzzle_workspace,
+    issue_puzzle_workspace, list_puzzle_databases, open_puzzle_workspace, restore_puzzle_workspace,
 };
 use crate::sound::get_sound_server_port;
 use crate::unsaved_games::{clear_unsaved_games, list_unsaved_games, remove_unsaved_game};
 use crate::workspace_commands::{
-    create_workspace_database, database_download_destination, download_destination_is_known,
-    get_database_folder_status, get_database_workspace, get_engine_folder_status,
-    get_engine_workspace, issue_database_workspace, issue_download_destination,
-    issue_engine_binary, issue_engine_image, issue_engine_resource, issue_engine_workspace,
-    issue_opening_book, issue_pgn_export_destination, issue_pgn_workspace,
-    list_workspace_databases, open_database_workspace, open_engine_workspace, read_engine_image,
-    save_board_snapshot, save_engine_logs,
+    apply_folder_switch, cancel_folder_switch, create_workspace_database,
+    database_download_destination, download_destination_is_known, get_database_folder_status,
+    get_database_workspace, get_engine_folder_status, get_engine_workspace,
+    issue_database_workspace, issue_download_destination, issue_engine_binary, issue_engine_image,
+    issue_engine_resource, issue_engine_workspace, issue_opening_book,
+    issue_pgn_export_destination, issue_pgn_workspace, list_workspace_databases,
+    open_database_workspace, open_engine_workspace, read_engine_image, restore_database_workspace,
+    restore_engine_workspace, save_board_snapshot, save_engine_logs,
 };
 use crate::workspace_session::{
     clear_workspace_session, list_workspace_session_names, quarantine_workspace_session_leaves,
@@ -406,11 +407,27 @@ pub(crate) struct SearchCache {
     results: Mutex<WeightedSearchCache<SearchResultKey, SearchResult>>,
     position_stats: Mutex<WeightedSearchCache<PositionStatsKey, Vec<PositionStats>>>,
     indexes: Mutex<BoundedSearchCache<SearchIndexIdentity, MmapSearchIndex>>,
+    quiesced_roots: Mutex<std::collections::HashSet<(u64, u64)>>,
     collisions: KeyedLocks<(GameQuery, (u64, u64)), parking_lot::Mutex<()>>,
     generation_locks: KeyedLocks<(u64, u64), parking_lot::Mutex<()>>,
     /// Global invalidation sequence: one atomic, no per-database registry. A load of
     /// another database may skip caching once when any database is invalidated.
     invalidation_counter: AtomicU64,
+}
+
+pub(crate) struct SearchCacheQuiesceGuard<'a> {
+    cache: &'a SearchCache,
+    root_identity: (u64, u64),
+}
+
+impl Drop for SearchCacheQuiesceGuard<'_> {
+    fn drop(&mut self) {
+        self.cache
+            .quiesced_roots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.root_identity);
+    }
 }
 
 impl SearchCache {
@@ -496,7 +513,14 @@ impl SearchCache {
     ) -> MmapSearchIndex {
         let (loaded, discarded) = {
             let mut cache = self.indexes.lock().expect("search index cache poisoned");
-            if let Some(existing) = cache.get(&identity) {
+            let quiesced = self
+                .quiesced_roots
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .contains(&identity.parent_object);
+            if quiesced {
+                (index, Vec::new())
+            } else if let Some(existing) = cache.get(&identity) {
                 (existing, vec![index])
             } else if self.invalidation_snapshot() != invalidation_snapshot {
                 (index, Vec::new())
@@ -555,6 +579,39 @@ impl SearchCache {
             .retain(|identity, _| !identity.matches_invalidation_scope(parent, target.identity()));
         drop(evicted);
     }
+
+    /// Evicts all cached indexes, results, and position stats whose parent directory matches
+    /// `root_identity` so no `.ecsi` mmap pins a file in a folder being moved.
+    pub(crate) fn invalidate_root(&self, root_identity: (u64, u64)) {
+        self.invalidation_counter.fetch_add(1, Ordering::SeqCst);
+        let matches_root = |identity: &SearchIndexIdentity| identity.parent_object == root_identity;
+        if let Ok(mut stats) = self.position_stats.lock() {
+            stats.retain(|key, _| !matches_root(&key.identity));
+        }
+        if let Ok(mut results) = self.results.lock() {
+            results.retain(|key, _| !matches_root(&key.identity));
+        }
+        let evicted = self
+            .indexes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|identity, _| !matches_root(identity));
+        drop(evicted);
+    }
+
+    /// Installs a root-scoped barrier preventing repopulation of `SearchCache` for `root_identity`
+    /// and evicts all existing cached entries under that root. Lifted on `Drop`.
+    pub(crate) fn quiesce_root(&self, root_identity: (u64, u64)) -> SearchCacheQuiesceGuard<'_> {
+        self.quiesced_roots
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(root_identity);
+        self.invalidate_root(root_identity);
+        SearchCacheQuiesceGuard {
+            cache: self,
+            root_identity,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -564,6 +621,7 @@ pub struct AppState {
     pub(crate) search_cache: Arc<SearchCache>,
     pub pgn_repository: crate::pgn::PgnRepository,
     pub pgn_path_authority: crate::infra::path_authority::SharedPathAuthority,
+    pub(crate) folder_switch: crate::infra::path_authority::FolderSwitchCoordinator,
     pub(crate) workspace_mutation: Arc<std::sync::Mutex<()>>,
 
     engine_supervisor: Arc<EngineSupervisor>,
@@ -607,6 +665,7 @@ impl AppState {
             search_cache: Arc::new(SearchCache::default()),
             pgn_repository: Default::default(),
             pgn_path_authority: crate::infra::path_authority::SharedPathAuthority::uninitialized(),
+            folder_switch: crate::infra::path_authority::FolderSwitchCoordinator::default(),
             workspace_mutation: Arc::new(std::sync::Mutex::new(())),
             engine_supervisor: Arc::new(EngineSupervisor::default()),
             auth: Arc::new(AuthLifecycle::default()),
@@ -1557,12 +1616,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             issue_download_destination,
             download_destination_is_known,
             issue_database_workspace,
+            restore_database_workspace,
             get_database_workspace,
             get_database_folder_status,
             list_workspace_databases,
             create_workspace_database,
             database_download_destination,
             issue_engine_workspace,
+            restore_engine_workspace,
+            apply_folder_switch,
+            cancel_folder_switch,
             get_engine_workspace,
             get_engine_folder_status,
             issue_engine_binary,
@@ -1601,6 +1664,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get_puzzle,
             issue_puzzle_download_destination,
             issue_puzzle_workspace,
+            restore_puzzle_workspace,
             get_puzzle_workspace,
             get_puzzle_folder_status,
             open_puzzle_workspace,
@@ -1912,6 +1976,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .map_err(|error| format!("path authority initialization failed: {error}"))?;
             authority.set_engine_image_sweep_root(app_data_locked.then_some(app_data));
+            crate::infra::path_authority::with_app_default_lookups(app.handle(), |lookups| {
+                authority.recover_folder_switch_journals(lookups);
+                Ok::<_, Error>(())
+            })
+            .map_err(|error| format!("folder switch recovery failed: {error}"))?;
             app.state::<AppState>()
                 .pgn_path_authority
                 .install(authority)

@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { DirectorySetting } from "./DirectorySetting";
 
+type WorkspaceFolderState = {
+  displayName: string;
+  isDefault?: boolean;
+};
+
 type WorkspaceDirectorySettingProps = {
-  load: () => Promise<{ displayName: string }>;
-  issue: () => Promise<{ displayName: string }>;
+  load: () => Promise<WorkspaceFolderState>;
+  issue: () => Promise<WorkspaceFolderState | null>;
+  restoreDefault?: () => Promise<WorkspaceFolderState | null>;
   onShowInFolder?: () => Promise<void> | void;
   onSelected?: (name: string) => void;
   onError: (error: unknown) => void;
@@ -14,26 +20,32 @@ type WorkspaceDirectorySettingProps = {
 export function WorkspaceDirectorySetting({
   load,
   issue,
+  restoreDefault,
   onShowInFolder,
   onSelected,
   onError,
   reportLoadError = false,
 }: WorkspaceDirectorySettingProps) {
   const [name, setName] = useState<string | null | undefined>(undefined);
-  const initialLoad = useRef(load);
+  const [isDefault, setIsDefault] = useState<boolean>(true);
+  const loadRef = useRef(load);
   const reportLoadErrorRef = useRef(reportLoadError);
   const onErrorRef = useRef(onError);
   const generation = useRef(0);
   const mounted = useRef(false);
+  loadRef.current = load;
   reportLoadErrorRef.current = reportLoadError;
   onErrorRef.current = onError;
 
   useEffect(() => {
     mounted.current = true;
     const current = ++generation.current;
-    void initialLoad.current().then(
+    void loadRef.current().then(
       (workspace) => {
-        if (generation.current === current) setName(workspace.displayName);
+        if (generation.current === current) {
+          setName(workspace.displayName);
+          setIsDefault(workspace.isDefault ?? true);
+        }
       },
       (error: unknown) => {
         if (generation.current !== current) return;
@@ -47,11 +59,26 @@ export function WorkspaceDirectorySetting({
     };
   }, []);
 
+  async function applySelection(
+    action: () => Promise<WorkspaceFolderState | null>,
+  ): Promise<string | null> {
+    const result = await action();
+    if (!result) return null;
+    if (mounted.current) {
+      generation.current += 1;
+      setName(result.displayName);
+      setIsDefault(result.isDefault ?? true);
+    }
+    return result.displayName;
+  }
+
   return (
     <DirectorySetting
       value={name}
-      issueWorkspace={async () => (await issue()).displayName}
+      issueWorkspace={() => applySelection(issue)}
       onShowInFolder={onShowInFolder}
+      onRestoreDefault={restoreDefault ? () => applySelection(restoreDefault) : undefined}
+      showRestoreDefault={Boolean(restoreDefault) && name !== undefined && !isDefault}
       onSelect={(selected) => {
         // The native root is already switched, so consumers hear about it even after unmount.
         onSelected?.(selected);

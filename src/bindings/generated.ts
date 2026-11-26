@@ -458,13 +458,25 @@ async downloadDestinationIsKnown(destination: PathRef) : Promise<Result<boolean,
 }
 },
 /**
- * Native-only database-root selection.  A directory is promoted immediately
- * to a persistent database workspace and the renderer receives its opaque
- * handle and the folder's display name, never its path.
+ * Native-only database-root selection. Returns `Activated` when the current root is empty,
+ * unusable/missing, or equals the target; returns `Pending` with a single-use grant when
+ * movable content exists.
  */
-async issueDatabaseWorkspace() : Promise<Result<DatabaseRootDescriptor, ErrorPayload>> {
+async issueDatabaseWorkspace() : Promise<Result<WorkspaceChoice<DatabaseRootDescriptor>, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_database_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Restores the visible default database folder through the same switch flow (offers Move
+ * when the current folder has movable content; activates directly when empty or unusable).
+ */
+async restoreDatabaseWorkspace() : Promise<Result<WorkspaceChoice<DatabaseRootDescriptor>, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_database_workspace") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -514,9 +526,40 @@ async databaseDownloadDestination(root: DatabaseRootHandle) : Promise<Result<Pat
     else return { status: "error", error: e  as any };
 }
 },
-async issueEngineWorkspace() : Promise<Result<EngineRootDescriptor, ErrorPayload>> {
+async issueEngineWorkspace() : Promise<Result<WorkspaceChoice<EngineRootDescriptor>, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_engine_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreEngineWorkspace() : Promise<Result<WorkspaceChoice<EngineRootDescriptor>, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_engine_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Applies a pending folder switch grant in either `Move` or `UseOnly` mode.
+ * Lost-reply replay for an already-committed grant returns the committed `FolderStatus`.
+ */
+async applyFolderSwitch(grant: FolderSwitchGrant, mode: FolderSwitchMode) : Promise<Result<FolderStatus, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_folder_switch", { grant, mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Drops a pending folder-switch grant when the user chooses Cancel.
+ */
+async cancelFolderSwitch(grant: FolderSwitchGrant) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_folder_switch", { grant }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -829,9 +872,17 @@ async issuePuzzleDownloadDestination() : Promise<Result<PathRef, ErrorPayload>> 
     else return { status: "error", error: e  as any };
 }
 },
-async issuePuzzleWorkspace() : Promise<Result<PuzzleRootDescriptor, ErrorPayload>> {
+async issuePuzzleWorkspace() : Promise<Result<WorkspaceChoice<PuzzleRootDescriptor>, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("issue_puzzle_workspace") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restorePuzzleWorkspace() : Promise<Result<WorkspaceChoice<PuzzleRootDescriptor>, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_puzzle_workspace") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2205,8 +2256,8 @@ export type EngineTerminalEntry = { type: "infoString"; value: string } | { type
  */
 export type EngineTerminalSnapshot = { kind: EngineFailureKind; exitStatus: EngineExitStatus | null; reason: string | null; entries: EngineTerminalEntry[] }
 export type ErrorCategory = "io" | "parsing" | "platform" | "network" | "chess-data" | "database" | "invalid-input" | "stale-game" | "missing-resource" | "conflict" | "resource-limit" | "authentication" | "credential" | "cancellation" | "durability" | "partial-removal" | "operation-and-cleanup" | "engine-timeout" | "engine-position-rejected" | "engine-retired" | "engine-failure" | "permission" | "puzzle-themes-unavailable"
-export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; databaseBusy?: boolean | null; chessBaseDatabase?: boolean | null; progressGeneration?: string | null }
-export type ErrorPayloadTag = "backend-error" | "engine-failure"
+export type ErrorPayload = { tag: ErrorPayloadTag; category: ErrorCategory; message: string; rootFailure?: RootFailure | null; engineFailure?: EngineTerminalSnapshot | null; remoteHttpRejection?: RemoteHttpRejection | null; nameTaken?: boolean | null; databaseAdmission?: boolean | null; databaseBusy?: boolean | null; chessBaseDatabase?: boolean | null; progressGeneration?: string | null; folderSwitch?: FolderSwitchFailure | null }
+export type ErrorPayloadTag = "backend-error" | "engine-failure" | "folder-switch"
 export type Event = { id: number; name: string | null; start_date: string | null; end_date: string | null; site: string | null; player_count: number; game_count: number; avg_elo: number | null }
 export type FeedbackOutcome = "sent" | "inProgress" | "keyMismatch" | "invalidInput" | "invalidImage" | "rateLimited" | "deliveryFailed" | "serviceUnavailable"
 export type FeedbackType = "bug" | "suggestion" | "praise" | "other"
@@ -2223,6 +2274,10 @@ export type FileWorkspaceHandleKind = "fileWorkspace"
  * resolver, never by path spelling.
  */
 export type FolderStatus = { displayName: string; isDefault: boolean; rootFailure?: RootFailure | null }
+export type FolderSwitchFailure = { reason: "same-folder" } | { reason: "nested-folders" } | { reason: "name-collision"; count: number } | { reason: "target-unwritable" } | { reason: "source-unreadable" } | { reason: "root-busy" } | { reason: "expired-grant" } | { reason: "identity-changed" } | { reason: "journal-write-failed" } | { reason: "quiesce-failed" } | { reason: "symlink-in-tree" } | { reason: "transfer-failed-rolled-back" } | { reason: "rollback-incomplete" } | { reason: "interrupted-move" } | { reason: "switch-in-progress" }
+export type FolderSwitchGrant = { id: PathRef; kind: FolderSwitchKind }
+export type FolderSwitchKind = "database" | "engine" | "puzzle"
+export type FolderSwitchMode = "move" | "useOnly"
 export type GameAnalysis = { positions: ReportPosition[]; novelty: NoveltyOutcome }
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
@@ -2448,7 +2503,7 @@ export type ReportPosition = { best: BestMoves[]; terminal: ReportTerminal | nul
  * library. Stalemate and insufficient material are both draws.
  */
 export type ReportTerminal = "checkmate" | "draw"
-export type RootFailure = "changed" | "missing" | "unusable" | "permission" | "too-large"
+export type RootFailure = "changed" | "missing" | "unusable" | "permission" | "too-large" | "interrupted-move"
 export type SampleOrder = "elo" | "date"
 export type Score = { value: ScoreValue; 
 /**
@@ -2627,6 +2682,7 @@ default: string | null } }
 export type UnsavedGameInventory = { records: UnsavedGameRecord[]; skipped: UnsavedGameSkip[]; omitted: number }
 export type UnsavedGameRecord = { id: string; document: string }
 export type UnsavedGameSkip = { id: string; reason: string }
+export type WorkspaceChoice<D> = { status: "activated"; descriptor: D } | { status: "pending"; grant: FolderSwitchGrant; displayName: string; itemCount: number }
 export type WorkspaceEntry = { handle: FileWorkspaceHandle; kind: WorkspaceEntryKind; name: string; children: WorkspaceEntry[]; metadata: WorkspaceMetadata | null; readError: ErrorCategory | null; gameCount: number | null; lastModified: bigint }
 export type WorkspaceEntryKind = "file" | "directory"
 export type WorkspaceFileContent = { kind: "text"; pgn: string } | { kind: "copy"; source: FileWorkspaceHandle; revision: string }

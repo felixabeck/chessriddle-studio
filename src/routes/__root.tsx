@@ -23,6 +23,7 @@ import NavigationRow from "@/components/tabs/NavigationRow";
 import { TabCommandsProvider, useTabCommands } from "@/components/tabs/TabCommands";
 import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
+import { FolderSwitchDialogHost } from "@/components/settings/FolderSwitchModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
 import {
@@ -486,6 +487,7 @@ function RootShell() {
           }}
           onSaveAndQuit={saveAndQuit}
         />
+        <FolderSwitchDialogHost />
         <AppShell.Header>
           <NavigationRow
             menuActions={inAppMenuActions}

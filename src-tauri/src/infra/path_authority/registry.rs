@@ -290,6 +290,10 @@ impl PathAuthority {
             registry_durability_pending: false,
             active_image_issuances: Arc::new(ActiveImageIssuances::new()),
             engine_image_sweep_root: None,
+            unresolved_journals: BTreeSet::new(),
+            quiesced_engine_roots: Arc::new(
+                std::sync::Mutex::new(std::collections::HashSet::new()),
+            ),
             #[cfg(test)]
             activation_observer: None,
             #[cfg(target_os = "macos")]

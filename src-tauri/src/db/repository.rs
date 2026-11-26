@@ -717,10 +717,44 @@ type UpgradeTestHook =
 #[cfg(test)]
 type SchemaProbeTestHook = Arc<dyn Fn() + Send + Sync>;
 
+/// RAII guard for a root-scoped database quiesce barrier. Lifts the barrier on explicit
+/// `lift()` or on `Drop` (best-effort, never panics).
+pub(crate) struct DatabaseRootQuiesceGuard<'a> {
+    repository: &'a DatabaseRepository,
+    root_identity: (u64, u64),
+    lifted: bool,
+}
+
+impl DatabaseRootQuiesceGuard<'_> {
+    pub(crate) fn lift(mut self) {
+        self.lift_inner();
+    }
+
+    fn lift_inner(&mut self) {
+        if self.lifted {
+            return;
+        }
+        self.lifted = true;
+        let mut state = self
+            .repository
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.quiesced_roots.remove(&self.root_identity);
+    }
+}
+
+impl Drop for DatabaseRootQuiesceGuard<'_> {
+    fn drop(&mut self) {
+        self.lift_inner();
+    }
+}
+
 #[derive(Default)]
 struct RepositoryState {
     entries: HashMap<EntryKey, Arc<DatabaseEntry>>,
     tombstones: HashSet<PathBuf>,
+    quiesced_roots: HashSet<(u64, u64)>,
     building: HashSet<EntryKey>,
     retired: Vec<Retirement>,
     retirement_reservations: usize,
@@ -1664,18 +1698,60 @@ impl DatabaseRepository {
         Ok(revision)
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_tombstone_for_test(&self, path: PathBuf) {
+        self.state
+            .lock()
+            .expect("repository state")
+            .tombstones
+            .insert(path);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn remove_tombstone_for_test(&self, path: &std::path::Path) {
+        self.state
+            .lock()
+            .expect("repository state")
+            .tombstones
+            .remove(path);
+    }
+
+    pub(crate) fn is_root_quiesced(&self, parent_identity: (u64, u64)) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .quiesced_roots
+            .contains(&parent_identity)
+    }
+
+    pub(crate) fn check_target_not_quiesced(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+    ) -> Result<(), Error> {
+        let parent_identity = crate::infra::path_authority::opened_file_identity(target.parent())?;
+        if self.is_root_quiesced(parent_identity) {
+            return Err(Error::Conflict(
+                "database folder move is in progress".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Refuses database access when `target` has an active deletion tombstone OR its parent root
+    /// is currently quiesced for a folder move (`state.quiesced_roots`).
     fn tombstone_conflict(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,
     ) -> Result<(), Error> {
-        if self
-            .state
-            .lock()
-            .map_err(repository_state_poisoned)?
-            .tombstones
-            .contains(target.path())
-        {
+        let parent_identity = crate::infra::path_authority::opened_file_identity(target.parent())?;
+        let state = self.state.lock().map_err(repository_state_poisoned)?;
+        if state.tombstones.contains(target.path()) {
             return Err(Error::Conflict("database is being deleted".into()));
+        }
+        if state.quiesced_roots.contains(&parent_identity) {
+            return Err(Error::Conflict(
+                "database folder move is in progress".into(),
+            ));
         }
         Ok(())
     }
@@ -1896,6 +1972,73 @@ impl DatabaseRepository {
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Installs a root-scoped barrier refusing new database openings under `root_identity`,
+    /// checks for in-flight mutations/builds under that root, and exclusively closes and drops
+    /// every open pool/binding under that root. Lifting the guard (explicitly or on drop)
+    /// removes the barrier on every exit path.
+    pub(crate) fn quiesce_root<'a>(
+        &'a self,
+        root_identity: (u64, u64),
+        root_path: &std::path::Path,
+        cancellation: &CancellationToken,
+    ) -> Result<DatabaseRootQuiesceGuard<'a>, Error> {
+        let deadline = Instant::now() + self.retire_wait;
+        let matching_entries: Vec<(EntryKey, Arc<DatabaseEntry>)> = {
+            let mut state = self.state.lock().map_err(repository_state_poisoned)?;
+            let tombstone_matches = state.tombstones.iter().any(|path| {
+                if path.starts_with(root_path) {
+                    return true;
+                }
+                let Some(parent) = path.parent() else {
+                    return true;
+                };
+                match crate::infra::path_authority::open_directory_for_identity_probe(parent)
+                    .and_then(|dir| crate::infra::path_authority::opened_file_identity(&dir))
+                {
+                    Ok(id) => id == root_identity,
+                    // Never silently degrade to unrelated when an identity probe fails.
+                    Err(_) => true,
+                }
+            });
+            if tombstone_matches
+                || state.building.iter().any(|key| {
+                    key.parent_identity == root_identity || key.path.starts_with(root_path)
+                })
+            {
+                return Err(Error::FolderSwitch(
+                    crate::error::FolderSwitchFailure::RootBusy,
+                ));
+            }
+            if !state.quiesced_roots.insert(root_identity) {
+                return Err(Error::FolderSwitch(
+                    crate::error::FolderSwitchFailure::SwitchInProgress,
+                ));
+            }
+            state
+                .entries
+                .iter()
+                .filter(|(key, _)| {
+                    key.parent_identity == root_identity || key.path.starts_with(root_path)
+                })
+                .map(|(key, entry)| (key.clone(), Arc::clone(entry)))
+                .collect()
+        };
+        let guard = DatabaseRootQuiesceGuard {
+            repository: self,
+            root_identity,
+            lifted: false,
+        };
+        for (key, entry) in matching_entries {
+            entry.retire_and_wait_cancellable(
+                deadline.saturating_duration_since(Instant::now()),
+                Some(cancellation),
+            )?;
+            self.close_retired_entry_until(&key, &entry, deadline, Some(cancellation))?;
+        }
+        super::content_validation::quiesce_root(self, root_identity, root_path, cancellation)?;
+        Ok(guard)
+    }
+
     fn entry(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,
@@ -1926,6 +2069,11 @@ impl DatabaseRepository {
             state.prune_retirements();
             if state.tombstones.contains(target.path()) {
                 return Err(Error::Conflict("database is being deleted".into()));
+            }
+            if state.quiesced_roots.contains(&key.parent_identity) {
+                return Err(Error::Conflict(
+                    "database folder move is in progress".into(),
+                ));
             }
             state.clock = state.clock.saturating_add(1);
             let now = state.clock;

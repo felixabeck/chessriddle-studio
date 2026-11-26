@@ -421,7 +421,10 @@ beforeEach(async () => {
     event_count: 0,
     indexed: false,
   });
-  mocks.issueDatabaseWorkspace.mockResolvedValue(folder("new"));
+  mocks.issueDatabaseWorkspace.mockResolvedValue({
+    status: "activated",
+    descriptor: folder("new"),
+  });
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -445,6 +448,34 @@ describe("listing failure copy and state", () => {
     expect(choose()).toBeDefined();
     expect(host.textContent).not.toContain("No databases installed");
     expect(host.textContent).not.toContain("Add a database to get started");
+  });
+  test("interrupted-move renders CR-1 message without Choose another folder action", async () => {
+    mocks.listWorkspaceDatabases.mockRejectedValue(failure("interrupted-move"));
+    await render();
+    expect(alert()?.textContent).toContain(
+      "A database folder move was interrupted. ChessRiddle Studio will finish it on the next start.",
+    );
+    expect(choose()).toBeUndefined();
+  });
+  test("Pending choice cancelled via modal does not refetch database listing", async () => {
+    const { getPendingFolderSwitch, setPendingFolderSwitch } =
+      await import("@/components/settings/folderSwitch");
+    mocks.listWorkspaceDatabases.mockRejectedValue(failure("missing"));
+    mocks.issueDatabaseWorkspace.mockResolvedValue({
+      status: "pending",
+      grant: { id: { id: "gdb-cancel" }, kind: "database" },
+      displayName: "OtherFolder",
+      itemCount: 1,
+    });
+    await render();
+    const initialListCalls = mocks.listWorkspaceDatabases.mock.calls.length;
+    await act(async () => choose()!.click());
+    expect(getPendingFolderSwitch()?.grant).toEqual({ id: { id: "gdb-cancel" }, kind: "database" });
+    await act(async () => {
+      getPendingFolderSwitch()?.resolve(null);
+      setPendingFolderSwitch(null);
+    });
+    expect(mocks.listWorkspaceDatabases.mock.calls.length).toBe(initialListCalls);
   });
   test.each(["conflict", "missing-resource", "permission", "resource-limit", "io", "plain"])(
     "%s without rootFailure retries without chooser",
@@ -554,7 +585,7 @@ describe("database folder recovery", () => {
     await failedListing();
     mocks.issueDatabaseWorkspace.mockImplementation(async () => {
       mocks.getDatabaseWorkspace.mockResolvedValue(folder("new"));
-      return folder("new");
+      return { status: "activated", descriptor: folder("new") };
     });
     newListing();
     await clickChoose();
@@ -591,7 +622,7 @@ describe("database folder recovery", () => {
     expect(mocks.getDatabaseWorkspace).toHaveBeenCalledTimes(2);
     mocks.issueDatabaseWorkspace.mockImplementation(async () => {
       mocks.getDatabaseWorkspace.mockResolvedValue(folder("new"));
-      return folder("new");
+      return { status: "activated", descriptor: folder("new") };
     });
     const newFailure = outcome.startsWith("new failure");
     if (newFailure) mocks.listWorkspaceDatabases.mockRejectedValue(failure("too-large"));
@@ -648,7 +679,7 @@ describe("database folder recovery", () => {
   });
   test("a pending chooser admits only one activation", async () => {
     await failedListing();
-    const pick = deferred<ReturnType<typeof folder>>();
+    const pick = deferred<{ status: "activated"; descriptor: ReturnType<typeof folder> }>();
     mocks.issueDatabaseWorkspace.mockReturnValue(pick.promise);
     const button = choose()!;
     await act(async () => {
@@ -658,7 +689,7 @@ describe("database folder recovery", () => {
     expect(mocks.issueDatabaseWorkspace).toHaveBeenCalledOnce();
     expect(button.disabled).toBe(true);
     newListing();
-    await act(async () => pick.resolve(folder("new")));
+    await act(async () => pick.resolve({ status: "activated", descriptor: folder("new") }));
     expect(host.textContent).toContain("New root content");
     expect(alert()).toBeNull();
   });

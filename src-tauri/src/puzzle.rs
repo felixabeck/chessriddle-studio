@@ -71,6 +71,52 @@ impl PuzzleCache {
             self.puzzles.clear();
         }
     }
+
+    pub(crate) fn clear_for_root(
+        &mut self,
+        root_identity: (u64, u64),
+        root_path: &std::path::Path,
+    ) {
+        let matches = self.key.as_ref().is_some_and(|key| {
+            if key.database_path.starts_with(root_path) {
+                return true;
+            }
+            let Some(parent) = key.database_path.parent() else {
+                return true;
+            };
+            match crate::infra::path_authority::open_directory_for_identity_probe(parent)
+                .and_then(|dir| crate::infra::path_authority::opened_file_identity(&dir))
+            {
+                Ok(id) => id == root_identity,
+                Err(_) => true,
+            }
+        });
+        if matches {
+            self.key = None;
+            self.puzzles.clear();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn seed_for_test(&mut self, database_path: PathBuf) {
+        self.key = Some(PuzzleCacheKey {
+            database: DatabaseIdentity {
+                data_revision: 1,
+                object: (1, 1),
+                length: 1,
+                modified: std::time::UNIX_EPOCH,
+            },
+            database_path,
+            min_rating: 0,
+            max_rating: 3000,
+            theme: None,
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.key.is_none() && self.puzzles.is_empty()
+    }
 }
 
 fn validate_ratings(min_rating: u16, max_rating: u16) -> Result<(), Error> {
@@ -388,7 +434,15 @@ fn active_or_default_puzzle_workspace(
 pub async fn issue_puzzle_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
-) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::PuzzleRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Puzzle)?;
     let authority = state.pgn_path_authority.clone();
     let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
@@ -417,15 +471,80 @@ pub async fn issue_puzzle_workspace(
 fn issue_puzzle_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
-) -> Result<crate::infra::path_authority::PuzzleRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::PuzzleRootDescriptor,
+    >,
+    Error,
+> {
     let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Puzzles");
-    authority.with_mut(|authority| {
-        let root = authority.get_or_create_puzzle_root(&path, display_name, None)?;
-        authority.set_active_puzzle_root(&root)?;
-        authority
-            .active_puzzle_root()?
-            .ok_or_else(|| Error::Conflict("selected puzzle workspace became unavailable".into()))
-    })?
+    crate::workspace_commands::choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        &path,
+        display_name,
+        None,
+        |authority| {
+            authority.active_puzzle_root()?.ok_or_else(|| {
+                Error::Conflict("selected puzzle workspace became unavailable".into())
+            })
+        },
+    )
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_puzzle_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::PuzzleRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Puzzle)?;
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "restore_puzzle_workspace",
+        move || {
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                restore_puzzle_workspace_blocking(&authority, lookups)
+            })
+        },
+    )
+    .await
+}
+
+fn restore_puzzle_workspace_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::PuzzleRootDescriptor,
+    >,
+    Error,
+> {
+    let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+        lookups,
+        crate::infra::path_authority::VisibleDefaultKind::Puzzles,
+    )
+    .map_err(Error::label_root_failure)?;
+    crate::workspace_commands::choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Puzzle,
+        authorized_dir.path(),
+        "Puzzles".to_string(),
+        Some(authorized_dir.identity()),
+        |authority| {
+            authority.active_puzzle_root()?.ok_or_else(|| {
+                Error::Conflict("default puzzle workspace became unavailable".into())
+            })
+        },
+    )
 }
 
 /// Returns the selected puzzle workspace or refuses an unusable selection. With no selection,
@@ -858,7 +977,12 @@ mod workspace_tests {
             PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
         );
 
-        let workspace_a = issue_puzzle_workspace_blocking(&authority, path_a.clone()).unwrap();
+        let crate::infra::path_authority::WorkspaceChoice::Activated {
+            descriptor: workspace_a,
+        } = issue_puzzle_workspace_blocking(&authority, path_a.clone()).unwrap()
+        else {
+            panic!("empty puzzle folder should activate directly");
+        };
         assert_eq!(workspace_a.display_name, "puzzles-a");
         assert_eq!(
             authority
@@ -886,7 +1010,12 @@ mod workspace_tests {
         assert_eq!(error.root_failure(), Some(RootFailure::Missing));
         assert!(!looked_up.get());
 
-        let workspace_b = issue_puzzle_workspace_blocking(&authority, path_b).unwrap();
+        let crate::infra::path_authority::WorkspaceChoice::Activated {
+            descriptor: workspace_b,
+        } = issue_puzzle_workspace_blocking(&authority, path_b).unwrap()
+        else {
+            panic!("unusable source puzzle folder should activate directly");
+        };
         assert_eq!(
             authority
                 .raw_for_test()

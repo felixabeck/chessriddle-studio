@@ -303,15 +303,23 @@ fn download_destination_is_known_blocking(
     authority.with_mut(|authority| Ok(authority.download_destination_is_known(&destination)))?
 }
 
-/// Native-only database-root selection.  A directory is promoted immediately
-/// to a persistent database workspace and the renderer receives its opaque
-/// handle and the folder's display name, never its path.
+/// Native-only database-root selection. Returns `Activated` when the current root is empty,
+/// unusable/missing, or equals the target; returns `Pending` with a single-use grant when
+/// movable content exists.
 #[tauri::command]
 #[specta::specta]
 pub async fn issue_database_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::DatabaseRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Database)?;
     let authority = state.pgn_path_authority.clone();
     let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
@@ -337,16 +345,112 @@ pub async fn issue_database_workspace(
     .await
 }
 
+pub(crate) fn choose_workspace_choice<D>(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    kind: crate::infra::path_authority::FolderSwitchKind,
+    target_path: &std::path::Path,
+    display_name: String,
+    expected_identity: Option<crate::infra::path_authority::VerifiedIdentity>,
+    describe_active: impl FnOnce(&mut crate::infra::path_authority::PathAuthority) -> Result<D, Error>,
+) -> Result<crate::infra::path_authority::WorkspaceChoice<D>, Error> {
+    authority.with_mut(|authority| {
+        match authority.choose_folder_switch(kind, target_path, display_name, expected_identity)? {
+            Some((grant, display_name, item_count)) => {
+                Ok(crate::infra::path_authority::WorkspaceChoice::Pending {
+                    grant,
+                    display_name,
+                    item_count,
+                })
+            }
+            None => {
+                let descriptor = describe_active(authority)?;
+                Ok(crate::infra::path_authority::WorkspaceChoice::Activated { descriptor })
+            }
+        }
+    })?
+}
+
 fn issue_database_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
-) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::DatabaseRootDescriptor,
+    >,
+    Error,
+> {
     let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Databases");
-    authority.with_mut(|authority| {
-        let root = authority.get_or_create_database_root(&path, display_name, None)?;
-        authority.set_active_database_root(&root)?;
-        authority.database_root_descriptor(root)
-    })?
+    choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        &path,
+        display_name,
+        None,
+        |authority| {
+            let root = authority.active_database_root()?.ok_or_else(|| {
+                Error::Conflict("selected database workspace became unavailable".into())
+            })?;
+            authority.database_root_descriptor(root)
+        },
+    )
+}
+
+/// Restores the visible default database folder through the same switch flow (offers Move
+/// when the current folder has movable content; activates directly when empty or unusable).
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_database_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::DatabaseRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Database)?;
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "restore_database_workspace",
+        move || {
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                restore_database_workspace_blocking(&authority, lookups)
+            })
+        },
+    )
+    .await
+}
+
+fn restore_database_workspace_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::DatabaseRootDescriptor,
+    >,
+    Error,
+> {
+    let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+        lookups,
+        crate::infra::path_authority::VisibleDefaultKind::Databases,
+    )
+    .map_err(Error::label_root_failure)?;
+    choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Database,
+        authorized_dir.path(),
+        "Databases".to_string(),
+        Some(authorized_dir.identity()),
+        |authority| {
+            let root = authority.active_database_root()?.ok_or_else(|| {
+                Error::Conflict("default database workspace became unavailable".into())
+            })?;
+            authority.database_root_descriptor(root)
+        },
+    )
 }
 
 /// Returns the active database root or refuses an unusable selection. With no selection,
@@ -510,7 +614,15 @@ fn database_download_destination_blocking(
 pub async fn issue_engine_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::EngineRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Engine)?;
     let authority = state.pgn_path_authority.clone();
     let picker_authority = authority.clone();
     let path = tokio::task::spawn_blocking(move || {
@@ -539,13 +651,250 @@ pub async fn issue_engine_workspace(
 fn issue_engine_workspace_blocking(
     authority: &crate::infra::path_authority::SharedPathAuthority,
     path: PathBuf,
-) -> Result<crate::infra::path_authority::EngineRootDescriptor, Error> {
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::EngineRootDescriptor,
+    >,
+    Error,
+> {
     let display_name = crate::infra::path_authority::selected_root_display_name(&path, "Engines");
-    authority.with_mut(|authority| {
-        let root = authority.get_or_create_engine_root(&path, display_name, None)?;
-        authority.set_active_engine_root(&root)?;
-        authority.engine_root_descriptor(root)
-    })?
+    choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Engine,
+        &path,
+        display_name,
+        None,
+        |authority| {
+            let root = authority.active_engine_root()?.ok_or_else(|| {
+                Error::Conflict("selected engine workspace became unavailable".into())
+            })?;
+            authority.engine_root_descriptor(root)
+        },
+    )
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_engine_workspace(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::EngineRootDescriptor,
+    >,
+    Error,
+> {
+    let _writer = state
+        .folder_switch
+        .try_acquire(crate::infra::path_authority::FolderSwitchKind::Engine)?;
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "restore_engine_workspace",
+        move || {
+            crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                restore_engine_workspace_blocking(&authority, lookups)
+            })
+        },
+    )
+    .await
+}
+
+fn restore_engine_workspace_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    lookups: &crate::infra::path_authority::DefaultDirLookups<'_>,
+) -> Result<
+    crate::infra::path_authority::WorkspaceChoice<
+        crate::infra::path_authority::EngineRootDescriptor,
+    >,
+    Error,
+> {
+    let authorized_dir = crate::infra::path_authority::resolve_visible_default_dir(
+        lookups,
+        crate::infra::path_authority::VisibleDefaultKind::Engines,
+    )
+    .map_err(Error::label_root_failure)?;
+    choose_workspace_choice(
+        authority,
+        crate::infra::path_authority::FolderSwitchKind::Engine,
+        authorized_dir.path(),
+        "Engines".to_string(),
+        Some(authorized_dir.identity()),
+        |authority| {
+            let root = authority.active_engine_root()?.ok_or_else(|| {
+                Error::Conflict("default engine workspace became unavailable".into())
+            })?;
+            authority.engine_root_descriptor(root)
+        },
+    )
+}
+
+/// Applies a pending folder switch grant in either `Move` or `UseOnly` mode.
+/// Lost-reply replay for an already-committed grant returns the committed `FolderStatus`.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_folder_switch(
+    grant: crate::infra::path_authority::FolderSwitchGrant,
+    mode: crate::infra::path_authority::FolderSwitchMode,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<crate::infra::path_authority::FolderStatus, Error> {
+    let _writer = state.folder_switch.try_acquire(grant.kind)?;
+    let authority = state.pgn_path_authority.clone();
+    if mode == crate::infra::path_authority::FolderSwitchMode::UseOnly {
+        return crate::infra::operations::run_accepted_blocking(
+            &state.operations,
+            "apply_folder_switch",
+            move || {
+                crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                    authority.with_mut(|auth| auth.apply_folder_switch_use_only(&grant, lookups))?
+                })
+            },
+        )
+        .await;
+    }
+
+    // Detect lost-reply replay before checking uninterruptible work so a committed grant
+    // replays its FolderStatus even while unrelated downloads or conversions are active.
+    let prep_authority = authority.clone();
+    let prep_grant = grant.clone();
+    let prepared = crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "apply_folder_switch_prepare",
+        move || prep_authority.with_mut(|auth| auth.prepare_folder_move(&prep_grant))?,
+    )
+    .await?;
+
+    let prepared = match prepared {
+        Ok(prepared) => prepared,
+        Err(replayed_status) => return Ok(replayed_status),
+    };
+
+    if state.operations.has_uninterruptible_work() {
+        return Err(Error::FolderSwitch(
+            crate::error::FolderSwitchFailure::RootBusy,
+        ));
+    }
+
+    // Cancel active cancellable reads before quiescing pools/caches/engines.
+    state.operations.cancel_active_reads();
+
+    // Quiesce engines: install root-scoped registration/resolution barrier first, then re-snapshot
+    // matching executable & resource PathRefs and drain matching actors (no lock held across .await).
+    let (engine_root_guard, engine_guard) =
+        if prepared.kind == crate::infra::path_authority::FolderSwitchKind::Engine {
+            let root_identity = prepared.source_identity;
+            let (root_guard, executable_refs, resource_refs) = authority.with_mut(|auth| {
+                let guard = auth.quiesce_engine_root(root_identity);
+                let (execs, resources) = auth.collect_engine_refs_under_root(root_identity);
+                (guard, execs, resources)
+            })?;
+            let supervisor_guard = state
+                .engine_supervisor
+                .quiesce_executables(executable_refs, resource_refs)
+                .await
+                .map_err(|error| {
+                    log::error!(
+                        "engine quiesce failed during folder move: {}",
+                        error.diagnostic()
+                    );
+                    Error::FolderSwitch(crate::error::FolderSwitchFailure::QuiesceFailed)
+                })?;
+            (Some(root_guard), Some(supervisor_guard))
+        } else {
+            (None, None)
+        };
+
+    // Quiesce puzzle cache briefly (no lock held across .await).
+    if prepared.kind == crate::infra::path_authority::FolderSwitchKind::Puzzle {
+        let mut cache = state.puzzle_cache.lock().await;
+        cache.clear_for_root(prepared.source_identity, &prepared.source_path);
+    }
+
+    let database_repository = std::sync::Arc::clone(&state.database_repository);
+    let search_cache = std::sync::Arc::clone(&state.search_cache);
+    let operation = state.operations.accept("apply_folder_switch")?;
+    let cancellation = operation.token();
+    let result = crate::infra::operations::run_native_operation(
+        operation,
+        "apply_folder_switch",
+        async move {
+            BLOCKING_GATEWAY
+                .spawn_cancellable(cancellation, move |token| {
+                    let (db_guard, search_guard) = if matches!(
+                        prepared.kind,
+                        crate::infra::path_authority::FolderSwitchKind::Database
+                            | crate::infra::path_authority::FolderSwitchKind::Puzzle
+                    ) {
+                        let guard = database_repository
+                            .quiesce_root(prepared.source_identity, &prepared.source_path, token)
+                            .map_err(|error| match error.unlabelled() {
+                                Error::FolderSwitch(failure) => {
+                                    Error::FolderSwitch(failure.clone())
+                                }
+                                _ => {
+                                    log::error!(
+                                        "database quiesce failed during folder move: {}",
+                                        error.diagnostic()
+                                    );
+                                    Error::FolderSwitch(
+                                        crate::error::FolderSwitchFailure::QuiesceFailed,
+                                    )
+                                }
+                            })?;
+                        let search_guard = if prepared.kind
+                            == crate::infra::path_authority::FolderSwitchKind::Database
+                        {
+                            Some(search_cache.quiesce_root(prepared.source_identity))
+                        } else {
+                            None
+                        };
+                        (Some(guard), search_guard)
+                    } else {
+                        (None, None)
+                    };
+                    let outcome =
+                        crate::infra::path_authority::with_app_default_lookups(&app, |lookups| {
+                            crate::infra::path_authority::execute_folder_move_blocking(
+                                &authority, &grant, &prepared, lookups,
+                            )
+                        });
+                    drop(search_guard);
+                    if let Some(guard) = db_guard {
+                        guard.lift();
+                    }
+                    outcome
+                })
+                .await
+        },
+    )
+    .await;
+    if let Some(guard) = engine_guard {
+        guard.lift();
+    }
+    if let Some(guard) = engine_root_guard {
+        guard.lift();
+    }
+    result
+}
+
+/// Drops a pending folder-switch grant when the user chooses Cancel.
+#[tauri::command]
+#[specta::specta]
+pub async fn cancel_folder_switch(
+    grant: crate::infra::path_authority::FolderSwitchGrant,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), Error> {
+    let authority = state.pgn_path_authority.clone();
+    crate::infra::operations::run_accepted_blocking(
+        &state.operations,
+        "cancel_folder_switch",
+        move || {
+            authority.with_mut(|auth| auth.cancel_folder_switch_grant(&grant))?;
+            Ok(())
+        },
+    )
+    .await
 }
 
 /// Returns the active engine root or refuses an unusable selection. The visible default
@@ -1125,13 +1474,22 @@ mod tests {
         let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
         let no_default = crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
 
-        let database = issue_database_workspace_blocking(&authority, databases).unwrap();
+        let crate::infra::path_authority::WorkspaceChoice::Activated {
+            descriptor: database,
+        } = issue_database_workspace_blocking(&authority, databases).unwrap()
+        else {
+            panic!("empty database folder should activate directly");
+        };
         assert_eq!(database.display_name, "MyChessDBs");
         assert_eq!(
             get_database_workspace_blocking(&authority, &no_default).unwrap(),
             database
         );
-        let engine = issue_engine_workspace_blocking(&authority, engines).unwrap();
+        let crate::infra::path_authority::WorkspaceChoice::Activated { descriptor: engine } =
+            issue_engine_workspace_blocking(&authority, engines).unwrap()
+        else {
+            panic!("empty engine folder should activate directly");
+        };
         assert_eq!(engine.display_name, "MyChessEngines");
         assert_eq!(
             get_engine_workspace_blocking(&authority, &no_default).unwrap(),

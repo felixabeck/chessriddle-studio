@@ -7828,6 +7828,171 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
       selectedRootCheck,
       `observed Databases alert: ${JSON.stringify({ ...alert, dbExists })}`,
     );
+
+    // Phase 3 real-app check: create a database in a custom folder, switch to another folder
+    // with Move (via Restore default -> FolderSwitchModal -> Move), assert the database opens
+    // from the new folder and the old file is gone.
+    const moveSwitchCheck =
+      "folder switch with Move relocates a custom-folder database, opens it from the new folder, and deletes the old file";
+    try {
+      const missingClose = await closeApplicationThroughTitlebar(session, "selected-root-missing");
+      if (!missingClose.gone || missingClose.survivors.length > 0)
+        throw new Error("the selected-root-missing application survived close");
+      const missingRelease = await session.quit();
+      if (!missingRelease.released)
+        throw new Error(
+          `could not release the selected-root-missing session: ${missingRelease.error}`,
+        );
+
+      const customDbRoot = join(profileDirectory, "custom-move-dbs");
+      await rm(join(selectedDatabaseRoot, "..", "db-moved"), { recursive: true, force: true });
+      await rm(selectedDatabaseRoot, { recursive: true, force: true });
+      await mkdir(customDbRoot, { recursive: true });
+      const customStat = statSync(customDbRoot);
+      const registry = JSON.parse(await readFile(registryFile, "utf8"));
+      const activeEntry = registry.entries.find(
+        ({ id }) => id.id === registry.active_database_root?.id,
+      );
+      if (!activeEntry) throw new Error("no active database root entry in registry");
+      activeEntry.display_name = "custom-move-dbs";
+      activeEntry.path = {
+        platform: "unix",
+        bytes: Buffer.from(customDbRoot).toString("base64"),
+      };
+      activeEntry.identity = { a: Number(customStat.dev), b: Number(customStat.ino) };
+      await writeFile(registryFile, JSON.stringify(registry, null, 2), "utf8");
+
+      session = await Session.open(APP_BINARY);
+      await waitFor("renderer ready for folder move check", () =>
+        session.execute("return Boolean(window.__TAURI_INTERNALS__?.invoke)"),
+      );
+      const fileWorkspace = await invokeIpc(
+        session,
+        "__folderMoveGetFileWorkspace",
+        "get_default_file_workspace",
+        {},
+      );
+      const seedPgn = await invokeIpc(
+        session,
+        "__folderMoveCreateSeedPgn",
+        "create_workspace_file",
+        {
+          workspace: fileWorkspace.handle,
+          parent: fileWorkspace.handle,
+          name: "move-verify-seed",
+          metadata: { type: "other", tags: [] },
+          content: {
+            kind: "text",
+            pgn: '[Event "Move Verify"]\n[White "White"]\n[Black "Black"]\n[Result "1-0"]\n\n1. e4 e5 1-0\n',
+          },
+        },
+      );
+      const customWorkspace = await invokeIpc(
+        session,
+        "__folderMoveGetDbWorkspace",
+        "get_database_workspace",
+        {},
+      );
+      const createdHandle = await invokeIpc(
+        session,
+        "__folderMoveCreateDb",
+        "create_workspace_database",
+        {
+          root: customWorkspace.root,
+          filename: "move-verify.db3",
+        },
+      );
+      await invokeIpc(session, "__folderMoveInitDb", "convert_pgn", {
+        progressId: "move-verify",
+        files: [seedPgn.handle],
+        database: createdHandle,
+        timestamp: null,
+        title: "Move Verify",
+        description: "Verify folder move",
+      });
+      if (!existsSync(join(customDbRoot, "move-verify.db3"))) {
+        throw new Error("move-verify.db3 was not created in custom folder");
+      }
+
+      await goToSettings(session);
+      const dirTab = await reachableStableCoordinates(
+        session,
+        "Directories settings tab for move check",
+        `document.querySelector('[role="tab"][data-settings-category="directories"]')`,
+      );
+      await clickAt(session, dirTab.x, dirTab.y);
+      await waitFor(
+        "Databases row shows custom-move-dbs and Restore default",
+        async () =>
+          Boolean(
+            await session.execute(`
+              const row = document.querySelector('[data-setting-id="databases-directory"]');
+              if (!row) return false;
+              const picker = row.querySelector('button[aria-label="Select directory"]');
+              const restore = Array.from(row.querySelectorAll('button')).find(
+                (b) => b.textContent.trim() === 'Restore default'
+              );
+              return Boolean(picker && picker.textContent.trim() === 'custom-move-dbs' && restore);
+            `),
+          ),
+        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+      );
+      const restoreCoords = await reachableStableCoordinates(
+        session,
+        "Databases Restore default button",
+        `Array.from(document.querySelectorAll('[data-setting-id="databases-directory"] button')).find((b) => b.textContent.trim() === 'Restore default')`,
+      );
+      await clickAt(session, restoreCoords.x, restoreCoords.y);
+      const moveCoords = await reachableStableCoordinates(
+        session,
+        "Move files to new folder button",
+        `Array.from(document.querySelectorAll('[role="dialog"] button')).find((b) => b.textContent.trim() === 'Move files to new folder')`,
+      );
+      await clickAt(session, moveCoords.x, moveCoords.y);
+      await waitFor(
+        "Databases row switched to Databases after Move",
+        async () =>
+          Boolean(
+            await session.execute(`
+              const row = document.querySelector('[data-setting-id="databases-directory"]');
+              const dialog = document.querySelector('[role="dialog"]');
+              const picker = row && row.querySelector('button[aria-label="Select directory"]');
+              return !dialog && Boolean(picker && picker.textContent.trim() === 'Databases');
+            `),
+          ),
+        { timeoutMs: FILES_PROBE_TIMEOUT_MS },
+      );
+
+      const movedExists = existsSync(join(selectedDatabaseRoot, "move-verify.db3"));
+      const oldGone = !existsSync(join(customDbRoot, "move-verify.db3"));
+      const movedWorkspace = await invokeIpc(
+        session,
+        "__folderMoveAfterWorkspace",
+        "get_database_workspace",
+        {},
+      );
+      const listing = await invokeIpc(
+        session,
+        "__folderMoveAfterList",
+        "list_workspace_databases",
+        { root: movedWorkspace.root, ticket: null },
+      );
+      const entry = listing?.entries?.find((e) => e.filename === "move-verify.db3");
+      const info = entry
+        ? await invokeIpc(session, "__folderMoveAfterInfo", "get_db_info", {
+            file: entry.handle,
+            ticket: null,
+          })
+        : null;
+      const listed = { found: Boolean(entry), opened: info?.title === "Move Verify" };
+      check(
+        movedExists && oldGone && Boolean(listed?.found) && Boolean(listed?.opened),
+        moveSwitchCheck,
+        `observed move result: ${JSON.stringify({ movedExists, oldGone, listed })}`,
+      );
+    } catch (error) {
+      check(false, moveSwitchCheck, error.message);
+    }
   } catch (error) {
     if (!defaultLocationSeen) check(false, defaultLocationCheck, error.message);
     if (!pgnControlSeen) check(false, pgnControlCheck, error.message);
