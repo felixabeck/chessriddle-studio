@@ -5163,12 +5163,12 @@ fn home_default_path_is_the_canonical_spelling_and_activates() {
 }
 
 /// On a case-sensitive filesystem a studio folder renamed to another case and replaced by a
-/// link to it after the open stays inside home but is a link at the requested spelling: it
-/// must be refused, as a link there is before the open. Linux only: macOS's default APFS
-/// is case-insensitive, so the case-variant rename and the link cannot coexist there.
+/// link to it after the open: the producer keeps working in the directory it holds and spells
+/// it by that directory's own on-disk name, never by the link. Linux only: macOS's default
+/// APFS is case-insensitive, so the case-variant rename and the link cannot coexist there.
 #[cfg(target_os = "linux")]
 #[test]
-fn home_default_refuses_a_case_variant_link_planted_at_the_studio_spelling() {
+fn home_default_spells_the_held_studio_folder_not_a_link_planted_at_its_name() {
     let dir = tempfile::tempdir().unwrap();
     let home_path = dir.path().join("home");
     fs::create_dir_all(&home_path).unwrap();
@@ -5182,6 +5182,9 @@ fn home_default_refuses_a_case_variant_link_planted_at_the_studio_spelling() {
             std::os::unix::fs::symlink(&variant_hook, &studio_hook).unwrap();
         }));
     });
-    assert!(ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).is_err());
-    assert!(!variant.join("Databases").exists());
+    let authorized = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    assert_eq!(authorized.path(), variant.join("Databases"));
+    assert!(fs::symlink_metadata(variant.join("Databases"))
+        .unwrap()
+        .is_dir());
 }

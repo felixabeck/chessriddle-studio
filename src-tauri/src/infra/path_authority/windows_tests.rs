@@ -997,3 +997,26 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
         "MoveBackstopGuard::drop must have executed and consumed PanicInBackstop"
     );
 }
+
+#[test]
+fn app_owned_default_whose_leaf_exists_in_another_case_resolves_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_data = dir.path().join("app-data");
+    // The legacy leaf already exists upper-case; NTFS opens it case-insensitively.
+    fs::create_dir_all(app_data.join("DB")).unwrap();
+    let app_data_dir = AppDataDir::for_test(&app_data);
+    let authorized =
+        ensure_app_owned_default_dir(&app_data_dir, AppOwnedDefaultRoot::Databases).unwrap();
+    assert_eq!(authorized.path().file_name(), Some(OsStr::new("DB")));
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(authorized.path(), "db", Some(authorized.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let child = authority
+        .create_database_child(&root, OsStr::new("games.db3"))
+        .unwrap();
+    authority
+        .database_file_target(&child, PathOperation::DatabaseMutate)
+        .unwrap();
+}

@@ -2898,7 +2898,8 @@ fn authorize_existing_dir(path: &Path) -> Result<AuthorizedDir, Error> {
 ///
 /// The leaf is created if missing and opened no-follow relative to the descriptor [`AppDataDir`]
 /// retains, so no pathname walk of the app-data spelling happens here and a swapped ancestor
-/// cannot redirect it. The returned path is the canonical app-data path joined with the leaf.
+/// cannot redirect it. The returned path is the canonical app-data path joined with the leaf
+/// as it is spelled on disk.
 /// Subsequent writes must use the returned descriptor rather than reopening the pathname.
 ///
 /// The refusal is built as an `std::io::Error`, so it reaches the renderer as `Error::Io` —
@@ -2909,9 +2910,15 @@ pub(crate) fn ensure_app_owned_default_dir(
     root: AppOwnedDefaultRoot,
 ) -> Result<AuthorizedDir, Error> {
     let leaf = OsStr::new(root.leaf());
-    let path = app_data_dir.as_path().join(leaf);
+    let requested = app_data_dir.as_path().join(leaf);
     let opened = crate::infra::fs::ensure_directory_at(&app_data_dir.directory, leaf)
-        .map_err(|error| default_root_refusal(&path, error))?;
+        .map_err(|error| default_root_refusal(&requested, error))?;
+    // An existing leaf in another case (case-insensitive NTFS or APFS) keeps its on-disk
+    // spelling, which every child below this root is re-proved under.
+    let path = app_data_dir.as_path().join(
+        on_disk_child_name(&app_data_dir.directory, root.leaf(), &opened)
+            .map_err(|error| default_root_refusal(&requested, error))?,
+    );
     let identity = opened_file_identity(&opened)?;
     let directory = VerifiedDir::new(opened, identity)?;
     #[cfg(unix)]
@@ -2929,7 +2936,7 @@ pub(crate) fn ensure_app_owned_default_dir(
 /// Materialise one visible default folder under the OS home: first the studio folder
 /// (`ChessRiddle Studio` or `ChessRiddle Studio Dev`), then the kind leaf. Both levels
 /// are created and opened no-follow and spelled as they are on disk
-/// ([`on_disk_child_spelling`]). A link-like or non-directory component is refused with the
+/// ([`on_disk_child_name`]). A link-like or non-directory component is refused with the
 /// same path-free `Error::Io` text as [`ensure_app_owned_default_dir`].
 pub(crate) fn ensure_home_owned_default_dir(
     home: &HomeDir,
@@ -2945,13 +2952,17 @@ pub(crate) fn ensure_home_owned_default_dir(
             hook();
         }
     });
-    let canonical_studio =
-        on_disk_child_spelling(home.as_path(), &home.directory, home.studio_leaf(), &studio)?;
+    let studio_on_disk = on_disk_child_name(&home.directory, home.studio_leaf(), &studio)
+        .map_err(|error| default_root_refusal(&studio_path, error))?;
+    let studio_path = home.as_path().join(studio_on_disk);
     let leaf = kind.leaf();
-    let requested = canonical_studio.join(leaf);
+    let requested = studio_path.join(leaf);
     let opened = crate::infra::fs::ensure_directory_at(&studio, OsStr::new(leaf))
         .map_err(|error| default_root_refusal(&requested, error))?;
-    let path = on_disk_child_spelling(&canonical_studio, &studio, leaf, &opened)?;
+    let path = studio_path.join(
+        on_disk_child_name(&studio, leaf, &opened)
+            .map_err(|error| default_root_refusal(&requested, error))?,
+    );
     let identity = opened_file_identity(&opened)?;
     let directory = VerifiedDir::new(opened, identity)?;
     Ok(AuthorizedDir {
@@ -2961,52 +2972,33 @@ pub(crate) fn ensure_home_owned_default_dir(
     })
 }
 
-/// Spells a directory the producer has just opened no-follow as `name` under `parent_path`
-/// (itself canonical and open as `parent`) the way it is on disk. A verified registration
-/// keeps the spelling it is given and acquire_stored_target re-proves it as canonical
-/// parent + leaf, so an existing folder in another case (opened case-insensitively on NTFS
-/// or APFS) must carry its on-disk case, at this level and for every child below it. The
-/// canonical spelling must still be `parent_path`'s child of that name (ASCII
-/// case-insensitive), the requested spelling must still open no-follow, and both must name
-/// the opened directory: a rename plus link planted after the open is refused.
-fn on_disk_child_spelling(
-    parent_path: &Path,
-    parent: &fs::File,
-    name: &str,
-    opened: &fs::File,
-) -> Result<PathBuf, Error> {
-    let requested = parent_path.join(name);
-    let refuse = |error: Error| default_root_refusal(&requested, error);
-    let changed = || {
-        refuse(Error::Conflict(
-            "default folder changed while it was opened".into(),
-        ))
-    };
-    let identity_at = |path: &Path| -> Result<(u64, u64), Error> {
-        opened_file_identity(&folder_switch::open_directory_nofollow_readonly(path)?)
-    };
-    let canonical_parent =
-        fs::canonicalize(parent_path).map_err(|error| refuse(Error::from(error)))?;
-    let canonical = fs::canonicalize(&requested).map_err(|error| refuse(Error::from(error)))?;
-    let same_name = canonical
-        .file_name()
-        .and_then(OsStr::to_str)
-        .is_some_and(|on_disk| on_disk.eq_ignore_ascii_case(name));
-    // The parent was canonicalized when it was acquired and is never followed again.
-    if canonical_parent != parent_path
-        || !same_name
-        || canonical.parent() != Some(canonical_parent.as_path())
-    {
-        return Err(changed());
-    }
-    let opened_identity = opened_file_identity(opened)?;
-    if identity_at(&canonical_parent).map_err(refuse)? != opened_file_identity(parent)?
-        || identity_at(&requested).map_err(refuse)? != opened_identity
-        || identity_at(&canonical).map_err(refuse)? != opened_identity
-    {
-        return Err(changed());
-    }
-    Ok(canonical)
+/// The on-disk name of `opened`, a directory just opened no-follow as `name` in `parent`.
+/// A verified registration keeps the spelling it is given and every later access re-proves
+/// it as canonical parent + leaf, so an existing folder in another case (opened
+/// case-insensitively on NTFS or APFS) must be spelled as it is on disk, at this level and
+/// for every child below it. The name is read from the held parent descriptor, never from a
+/// pathname: the entry must be a directory whose identity is the opened one (a link has its
+/// own identity), so a rename plus link planted after the open is refused, not followed.
+fn on_disk_child_name(parent: &fs::File, name: &str, opened: &fs::File) -> Result<OsString, Error> {
+    let target = opened_file_identity(opened)?;
+    let entries = crate::infra::fs::read_directory_entries_at(
+        parent,
+        &CancellationToken::new(),
+        None,
+        &mut |entry| {
+            entry
+                .to_str()
+                .is_some_and(|entry| entry.eq_ignore_ascii_case(name))
+        },
+    )?;
+    entries
+        .into_iter()
+        .find(|entry| {
+            matches!(entry.kind, crate::infra::fs::DirectoryEntryKind::Directory)
+                && entry.identity == target
+        })
+        .map(|entry| entry.name)
+        .ok_or_else(|| Error::Conflict("default folder changed while it was opened".into()))
 }
 
 fn log_visible_home_default_fallback(kind: VisibleDefaultKind, error: &Error) {
