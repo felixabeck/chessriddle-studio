@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盘、变例、评注与箭头
 summary: 输入着法、编辑局面、管理变例、撰写评注、添加注释符号以及在棋盘上绘制箭头。
-source: 55f6c4572027d33b
+source: 958c8f05fc6ed494
 ---
 
 在 [[page:new-tab]] 中点击 {{label:Home.Card.AnalysisBoard.Title}}，或在 [[page:library]] 中打开已保存的对局或开局库，即可打开分析棋盘。
@@ -26,3 +26,5 @@ source: 55f6c4572027d33b
 {{label:Board.Tabs.Info}} 标签页显示对局头信息、FEN、PGN 文本和变化树统计信息，并允许您在多对局 PGN 文件中切换对局。
 
 要调整分析棋盘的布局，可以拖动面板标签页（{{label:Board.Tabs.Analysis}}、{{label:Board.Tabs.Database}}、{{label:Board.Tabs.Annotate}}、{{label:Board.Tabs.Coach}}或{{label:Board.Tabs.Info}}），或使用标签栏、记谱标题栏或面板区域标题栏上的拖动手柄按钮，通过预览或键盘将区域放置到其他区域的左侧、右侧、上方或下方。若要让一个面板横跨两个区域（例如将{{label:Board.Tabs.Database}}放在记谱和标签页上方），请先将该面板放到其中一个区域上方，再把另一个区域移到它旁边。点击{{label:Board.Area.ReturnToTabs}}或将面板区域拖回标签栏即可放回标签页，使用[[setting:board-layout]]（{{label:Settings.BoardLayout.Reset}}）可恢复默认布局。
+
+要隐藏标签页（例如所用的每个面板都已显示为独立区域时），请点击标签栏末尾的{{label:Board.Area.HideTabs}}，相邻区域会占据其空间。标签页会保留位置和大小：通过记谱标题栏拖动手柄菜单中的{{label:Board.Arrange.ShowTabs}}、标签页快捷键或生成报告即可重新显示。标签页隐藏时放回的面板会进入隐藏的标签页。

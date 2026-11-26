@@ -1,6 +1,7 @@
 import { getDefaultStore } from "jotai";
 import type { FileMetadata } from "@/components/files/file";
-import { addRecentFileAtom, applyPreviewMovesHidden, tabFamily } from "@/state/atoms";
+import { addRecentFileAtom, applyPreviewMovesHidden } from "@/state/atoms";
+import { selectStripTab } from "@/state/stripTab";
 import { setFileFreshness } from "@/state/fileFreshness";
 import { beginFileOpen, StaleFileGameError } from "@/state/fileStructureChange";
 import { getFileGameName, loadFileGame } from "./files";
@@ -62,7 +63,7 @@ export async function openFile(
         }
 
         if (options?.panel === "practice") {
-            store.set(tabFamily(id), "practice");
+            selectStripTab(store, id, "practice");
         }
 
         if (options?.fromPreview) {

@@ -38,9 +38,9 @@ import {
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   pinnedExplorerFurtherColumnsFamily,
-  tabFamily,
   tabsAtom,
 } from "@/state/atoms";
+import { selectStripTab } from "@/state/stripTab";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
@@ -334,7 +334,7 @@ function OpeningTree({
             }
             atoms.set(dbTypeFamily(id), "local");
             atoms.set(dbTabFamily(id), "stats");
-            atoms.set(tabFamily(id), "database");
+            selectStripTab(atoms, id, "database");
           }
           return navigate({ to: "/" });
         },

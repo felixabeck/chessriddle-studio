@@ -28,6 +28,14 @@
   padding-inline: 10px;
 }
 
+/* Grip and hide button share one narrow column so the tab list keeps its width. */
+.stripActions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .grip {
   align-self: center;
   flex-shrink: 0;

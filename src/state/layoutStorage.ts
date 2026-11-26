@@ -1,5 +1,6 @@
 import type { MosaicNode } from "react-mosaic-component";
 import { atomWithStorage } from "jotai/utils";
+import { z } from "zod";
 import type { SyncStorage, SyncStringStorage } from "jotai/vanilla/utils/atomWithStorage";
 import { warn } from "@/platform/native";
 import {
@@ -25,6 +26,7 @@ export interface WindowsState {
 
 export const WINDOWS_STATE_KEY = "windowsState";
 export const ANALYSIS_BOARD_LAYOUT_KEY = "analysis-board-layout";
+export const ANALYSIS_TABS_HIDDEN_KEY = "analysis-board-tabs-hidden";
 
 const LEGACY_LAYOUT_KEY_MAP = {
     panelsBesideNotation: "panels-beside-notation",
@@ -187,5 +189,16 @@ export const boardArrangementAtom = atomWithStorage<BoardArrangement>(
     ANALYSIS_BOARD_LAYOUT_KEY,
     defaultBoardArrangement(),
     createBoardArrangementStorage(localStorage),
+    { getOnInit: true },
+);
+
+/**
+ * Whether the analysis board's tab strip is hidden from its arrangement. Kept apart from the
+ * arrangement so the strip keeps its place and size in the stored tree while hidden.
+ */
+export const analysisTabsHiddenAtom = atomWithStorage<boolean>(
+    ANALYSIS_TABS_HIDDEN_KEY,
+    false,
+    createZodStorage(z.boolean(), localStorage),
     { getOnInit: true },
 );

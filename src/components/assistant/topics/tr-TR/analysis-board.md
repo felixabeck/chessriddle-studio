@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analiz tahtası, varyasyonlar, yorumlar ve oklar
 summary: Hamle girme, konum düzenleme, varyasyonları yönetme, yorum yazma, açıklama ekleme ve tahta üzerinde oklar çizme.
-source: 55f6c4572027d33b
+source: 958c8f05fc6ed494
 ---
 
 [[page:new-tab]] üzerinden {{label:Home.Card.AnalysisBoard.Title}} öğesine tıklayarak veya [[page:library]] sayfasından kayıtlı bir oyun ya da repertuvar açarak bir analiz tahtası açın.
@@ -26,3 +26,5 @@ Ok çizmek ve kareleri vurgulamak için tahta üzerinde sağ tıklayıp sürükl
 {{label:Board.Tabs.Info}} sekmesi oyun başlıklarını, FEN'i, PGN metnini ve ağaç istatistiklerini gösterir; ayrıca çok oyunlu bir PGN dosyasındaki oyunlar arasında geçiş yapmanızı sağlar.
 
 Analiz tahtasını düzenlemek için bir panel sekmesini ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} veya {{label:Board.Tabs.Info}}) sürükleyin ya da sekme çubuğu, notasyon başlığı veya bir panel alanının başlığındaki tutma düğmelerini kullanarak alanları önizlemeyle veya klavyeyle başka bir alanın yanına, üstüne veya altına yerleştirin. Bir paneli iki alanın üzerine yaymak için (örneğin {{label:Board.Tabs.Database}} panelini hem notasyonun hem sekmelerin üstüne yerleştirmek için) önce paneli bunlardan birinin üstüne koyun, ardından diğerini yanına taşıyın. Bir panel alanını sekmelere geri göndermek için {{label:Board.Area.ReturnToTabs}} düğmesini kullanın veya sekme listesinin üzerine sürükleyin; varsayılan düzeni geri yüklemek için [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) ayarını kullanın.
+
+Sekmeleri gizlemek için, örneğin kullandığınız her panel kendi alanı olarak gösterildiğinde, sekme şeridinin sonundaki {{label:Board.Area.HideTabs}} düğmesine tıklayın; komşu alanlar onların yerini alır. Sekmeler konumlarını ve boyutlarını korur: onları notasyon başlığındaki tutamacın menüsündeki {{label:Board.Arrange.ShowTabs}} ile, bir sekme kısayoluyla veya rapor oluşturarak yeniden gösterin. Sekmeler gizliyken geri döndürdüğünüz bir panel gizli sekmelere gider.

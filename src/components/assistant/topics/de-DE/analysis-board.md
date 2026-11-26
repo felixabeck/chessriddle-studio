@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, Varianten, Kommentare und Pfeile
 summary: Züge eingeben, Stellungen bearbeiten, Varianten verwalten, Kommentare schreiben, Annotationen setzen und Pfeile auf dem Brett zeichnen.
-source: 55f6c4572027d33b
+source: 958c8f05fc6ed494
 ---
 
 Öffne ein Analysebrett über [[page:new-tab]] mit einem Klick auf {{label:Home.Card.AnalysisBoard.Title}} oder indem du eine gespeicherte Partie oder ein Repertoire aus [[page:library]] öffnest.
@@ -26,3 +26,5 @@ Um Pfeile zu zeichnen und Felder hervorzuheben, ziehe mit gedrückter rechter Ma
 Der Tab {{label:Board.Tabs.Info}} zeigt Partieköpfe, FEN, PGN-Text und Baumstatistiken und lässt dich zwischen Partien einer Mehrpartien-PGN-Datei wechseln.
 
 Um das Analysebrett anzuordnen, ziehe einen Panel-Tab ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} oder {{label:Board.Tabs.Info}}) oder nutze die Griff-Schaltflächen in der Tab-Leiste, in der Notationskopfzeile oder im Kopf eines Panel-Bereichs, um Bereiche mit Vorschau oder per Tastatur neben, über oder unter einem anderen Bereich zu platzieren. Um ein Panel über zwei Bereiche zu spannen (etwa {{label:Board.Tabs.Database}} über Notation und Tabs), platziere das Panel zuerst über einem der beiden und verschiebe dann den anderen daneben. Mit {{label:Board.Area.ReturnToTabs}} oder durch Zurückziehen auf die Tab-Leiste kehrst du einen Bereich in die Tabs zurück, und [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) stellt die Standardanordnung wieder her.
+
+Um die Tabs auszublenden, etwa wenn jedes genutzte Panel als eigener Bereich angezeigt wird, klicke auf {{label:Board.Area.HideTabs}} am Ende der Tab-Leiste; die benachbarten Bereiche übernehmen ihren Platz. Die Tabs behalten Position und Größe: Du blendest sie mit {{label:Board.Arrange.ShowTabs}} im Menü des Griffs in der Notationskopfzeile, mit einem Tab-Tastenkürzel oder mit „Bericht erstellen“ wieder ein. Ein Panel, das du bei ausgeblendeten Tabs zurückgibst, landet in den ausgeblendeten Tabs.

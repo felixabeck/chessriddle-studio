@@ -4,7 +4,7 @@ import { errorUnlessCancelled } from "@/platform/errors";
 import { Menu, Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
-import { GripVertical, NotebookPen } from "lucide-react";
+import { GripVertical, NotebookPen, X } from "lucide-react";
 import {
   AiChatIcon,
   AnalysisIcon,
@@ -35,6 +35,7 @@ import {
   tabPreparationViewFamily,
 } from "@/state/atoms";
 import { isPanelArea, PANEL_AREA_IDS, type PanelAreaId } from "@/state/boardArrangement";
+import { selectStripTab } from "@/state/stripTab";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { locateBoardState } from "@/utils/treeReducer";
@@ -161,6 +162,8 @@ function BoardAnalysis() {
     beginDrag,
     consumeSuppressedClick,
     startPlacing,
+    tabsHidden,
+    setTabsHidden,
   } = useContext(BoardArrangementContext);
 
   const [editingMode, toggleEditingMode] = useToggle();
@@ -266,10 +269,6 @@ function BoardAnalysis() {
 
   const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
-  useEffect(() => {
-    registerReturnListener((panel) => setCurrentTabSelected(panel));
-    return () => registerReturnListener(null);
-  }, [registerReturnListener, setCurrentTabSelected]);
   // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab exists only while a
   // scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
   const coachEnabled = useAtomValue(coachEnabledAtom);
@@ -305,6 +304,15 @@ function BoardAnalysis() {
     : stripTabIds.includes("annotate")
       ? "annotate"
       : (stripTabIds.find((id) => id !== "practice" && id !== "photo") ?? "annotate");
+  // A panel returning to a shown strip is selected. One returning to the hidden strip leaves the
+  // selection on the tab that was last visible, so "Show tabs" shows that tab again.
+  useEffect(() => {
+    registerReturnListener((panel) => {
+      if (!tabsHidden) setCurrentTabSelected(panel);
+      else if (shownTab !== currentTabSelected) setCurrentTabSelected(shownTab);
+    });
+    return () => registerReturnListener(null);
+  }, [registerReturnListener, setCurrentTabSelected, tabsHidden, shownTab, currentTabSelected]);
   const [, setReportModalOpen] = useAtom(useTabAtom(reportModalOpenFamily));
   const practiceTabSelected = useAtomValue(useTabAtom(practiceTabFamily));
   const destinationFile = getTabDestinationFile(currentTab);
@@ -314,6 +322,7 @@ function BoardAnalysis() {
   const practiceMoveController = useAtomValue(useTabAtom(practiceMoveControllerFamily));
   const atoms = useAtomStore();
   const tabId = useOwnerTabId();
+  const selectInStrip = (tab: string) => selectStripTab(atoms, tabId, tab);
 
   useHotkeys(
     withKeyboardOwnership([
@@ -403,19 +412,19 @@ function BoardAnalysis() {
       [
         keyMap.PRACTICE_TAB.keys,
         () => {
-          if (isRepertoire) setCurrentTabSelected("practice");
+          if (isRepertoire) selectInStrip("practice");
         },
       ],
       [
         keyMap.ANALYSIS_TAB.keys,
         () => {
-          if (!shownPanelAreas.has("analysis")) setCurrentTabSelected("analysis");
+          if (!shownPanelAreas.has("analysis")) selectInStrip("analysis");
         },
       ],
       [
         keyMap.GENERATE_REPORT.keys,
         (e) => {
-          if (!shownPanelAreas.has("analysis")) setCurrentTabSelected("analysis");
+          if (!shownPanelAreas.has("analysis")) selectInStrip("analysis");
           setAnalysisTab("report");
           // Without moves, or while this tab runs a report, the shortcut only shows the tab.
           const { root, report } = store.getState();
@@ -433,7 +442,7 @@ function BoardAnalysis() {
         keys,
         () => {
           if (shownPanelAreas.has(panel)) return;
-          setCurrentTabSelected(panel);
+          selectInStrip(panel);
         },
       ]),
       ...(coachEnabled
@@ -441,7 +450,7 @@ function BoardAnalysis() {
             [
               keyMap.COACH_TAB.keys,
               () => {
-                if (!shownPanelAreas.has("coach")) setCurrentTabSelected("coach");
+                if (!shownPanelAreas.has("coach")) selectInStrip("coach");
               },
             ] satisfies HotkeyItem,
           ]
@@ -455,6 +464,22 @@ function BoardAnalysis() {
       ],
     ]),
   );
+
+  // While the tabs are hidden the notation grip opens a menu that can show them again.
+  const notationGrip = arrangingAvailable ? (
+    <IconAction
+      label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Notation") })}
+      size="sm"
+      variant="subtle"
+      className={classes.grip}
+      data-arrange-grip="bottomRight"
+      onPointerDown={(e) => beginDrag("bottomRight", e)}
+      onClickCapture={consumeSuppressedClick}
+      onClick={tabsHidden ? undefined : () => startPlacing("bottomRight")}
+    >
+      <GripVertical size="0.875rem" />
+    </IconAction>
+  ) : undefined;
 
   const panelContent: Record<PanelAreaId, () => ReactNode> = {
     analysis: () => <AnalysisPanel />,
@@ -571,7 +596,7 @@ function BoardAnalysis() {
       </Portal>
       <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
         <Stack h="100%" gap="xs" className={paneClasses.root}>
-          <DetachedEval placement="tabs" />
+          {!tabsHidden && <DetachedEval placement="tabs" />}
           <Paper
             withBorder
             className={paneClasses.root}
@@ -612,38 +637,49 @@ function BoardAnalysis() {
               {arrangingAvailable ? (
                 <div className={classes.tabStripRow} data-board-tab-list="true">
                   {tabList}
-                  <Menu position="bottom-end" shadow="md" withinPortal>
-                    <Menu.Target>
-                      <IconAction
-                        label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Tabs") })}
-                        size="xs"
-                        variant="subtle"
-                        className={classes.grip}
-                        data-arrange-grip="topRight"
-                        onPointerDown={(e) => beginDrag("topRight", e)}
-                        onClickCapture={consumeSuppressedClick}
-                      >
-                        <GripVertical size="0.875rem" />
-                      </IconAction>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item onClick={() => startPlacing("topRight", "topRight")}>
-                        {t("Board.Arrange.MoveTabs")}
-                      </Menu.Item>
-                      {takeOutPanels.map((panel) => {
-                        const { title, Icon } = panelMeta[panel];
-                        return (
-                          <Menu.Item
-                            key={panel}
-                            leftSection={<Icon size="0.875rem" />}
-                            onClick={() => startPlacing(panel, "topRight")}
-                          >
-                            {t("Board.Arrange.ShowAsArea", { panel: title })}
-                          </Menu.Item>
-                        );
-                      })}
-                    </Menu.Dropdown>
-                  </Menu>
+                  <div className={classes.stripActions}>
+                    <Menu position="bottom-end" shadow="md" withinPortal>
+                      <Menu.Target>
+                        <IconAction
+                          label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Tabs") })}
+                          size="xs"
+                          variant="subtle"
+                          className={classes.grip}
+                          data-arrange-grip="topRight"
+                          onPointerDown={(e) => beginDrag("topRight", e)}
+                          onClickCapture={consumeSuppressedClick}
+                        >
+                          <GripVertical size="0.875rem" />
+                        </IconAction>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item onClick={() => startPlacing("topRight", "topRight")}>
+                          {t("Board.Arrange.MoveTabs")}
+                        </Menu.Item>
+                        {takeOutPanels.map((panel) => {
+                          const { title, Icon } = panelMeta[panel];
+                          return (
+                            <Menu.Item
+                              key={panel}
+                              leftSection={<Icon size="0.875rem" />}
+                              onClick={() => startPlacing(panel, "topRight")}
+                            >
+                              {t("Board.Arrange.ShowAsArea", { panel: title })}
+                            </Menu.Item>
+                          );
+                        })}
+                      </Menu.Dropdown>
+                    </Menu>
+                    <IconAction
+                      label={t("Board.Area.HideTabs")}
+                      size="xs"
+                      variant="subtle"
+                      data-hide-tabs="true"
+                      onClick={() => setTabsHidden(true)}
+                    >
+                      <X size="0.875rem" />
+                    </IconAction>
+                  </div>
                 </div>
               ) : (
                 tabList
@@ -706,25 +742,28 @@ function BoardAnalysis() {
           />
         ) : (
           <NotationColumn>
+            {/* A bar pinned above the hidden tabs stays reachable above the notation. */}
+            {tabsHidden && <DetachedEval placement="tabs" />}
             <DetachedEval placement="notation" />
             <GameNotation
               topBar
               markOpenVariations
               headerGrip={
-                arrangingAvailable ? (
-                  <IconAction
-                    label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Notation") })}
-                    size="sm"
-                    variant="subtle"
-                    className={classes.grip}
-                    data-arrange-grip="bottomRight"
-                    onPointerDown={(e) => beginDrag("bottomRight", e)}
-                    onClickCapture={consumeSuppressedClick}
-                    onClick={() => startPlacing("bottomRight")}
-                  >
-                    <GripVertical size="0.875rem" />
-                  </IconAction>
-                ) : undefined
+                !notationGrip ? undefined : tabsHidden ? (
+                  <Menu position="bottom-end" shadow="md" withinPortal>
+                    <Menu.Target>{notationGrip}</Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item onClick={() => startPlacing("bottomRight")}>
+                        {t("Board.Arrange.MoveNotation")}
+                      </Menu.Item>
+                      <Menu.Item onClick={() => setTabsHidden(false)}>
+                        {t("Board.Arrange.ShowTabs")}
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
+                ) : (
+                  notationGrip
+                )
               }
               controls={
                 <BoardControls

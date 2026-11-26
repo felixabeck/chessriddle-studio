@@ -64,6 +64,7 @@ import { fontSizeAtom } from "@/state/atoms";
 import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import {
   ANALYSIS_BOARD_LAYOUT_KEY,
+  ANALYSIS_TABS_HIDDEN_KEY,
   boardArrangementAtom,
   WINDOWS_STATE_KEY,
 } from "@/state/layoutStorage";
@@ -431,6 +432,108 @@ test("hidden coach panel area is omitted while Coach is off and kept across divi
   // Turning Coach on reveals the coach area in its preserved position.
   await act(async () => store.set(coachMock.atom!, true));
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["coach"]);
+});
+
+test("hidden tabs leave the shown arrangement only; stacked, fallback and other boards still show them", async () => {
+  const stored: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: {
+      direction: "column",
+      first: "topRight",
+      splitPercentage: 30,
+      second: "bottomRight",
+    },
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(stored));
+  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
+  const stripHidden = () => document.getElementById("topRight")?.closest("[hidden]") != null;
+
+  await renderAt(1400, true);
+  expect(mosaicTree()).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: "bottomRight",
+  });
+  expect(latestContext?.tabsHidden).toBe(true);
+  expect(stripHidden()).toBe(true);
+
+  // A divider drag while hidden keeps the strip's own split.
+  await act(async () =>
+    dividers.get("left+bottomRight")!({
+      direction: "row",
+      first: "left",
+      splitPercentage: 60,
+      second: "bottomRight",
+    }),
+  );
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual({
+    ...stored,
+    splitPercentage: 60,
+  });
+
+  // Stacked and other boards ignore the flag.
+  await renderAt(645, true);
+  expect(latestContext?.tabsHidden).toBe(false);
+  expect(stripHidden()).toBe(false);
+  await renderAt(1400, false);
+  expect(latestContext?.tabsHidden).toBe(false);
+  expect(stripHidden()).toBe(false);
+
+  // Showing again restores the strip at its place and size.
+  await renderAt(1400, true);
+  await act(async () => latestContext!.setTabsHidden(false));
+  expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("false");
+  expect(mosaicTree()).toEqual({ ...stored, splitPercentage: 60 });
+  expect(stripHidden()).toBe(false);
+});
+
+test("hidden tabs: the too-narrow fallback shows them, and a keyboard return focuses the notation grip", async () => {
+  // Four columns: without the tabs three remain, which need 972px.
+  const fourColumns: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    second: {
+      direction: "row",
+      first: "bottomRight",
+      second: { direction: "row", first: "database", second: "topRight" },
+    },
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(fourColumns));
+  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
+  const stripHidden = () => document.getElementById("topRight")?.closest("[hidden]") != null;
+
+  await renderAt(971, true);
+  expect(latestContext?.arrangingAvailable).toBe(false);
+  expect(latestContext?.tabsHidden).toBe(false);
+  expect(stripHidden()).toBe(false);
+
+  await renderAt(1100, true);
+  expect(latestContext?.tabsHidden).toBe(true);
+  expect(stripHidden()).toBe(true);
+  const notationGrip = document.createElement("button");
+  notationGrip.setAttribute("data-arrange-grip", "bottomRight");
+  document.getElementById("bottomRight")!.appendChild(notationGrip);
+  const hiddenDbTab = document.createElement("button");
+  hiddenDbTab.setAttribute("role", "tab");
+  hiddenDbTab.setAttribute("data-panel-tab", "database");
+  document.getElementById("topRight")!.appendChild(hiddenDbTab);
+
+  await act(async () => latestContext!.startPlacing("database"));
+  const dialog = container.querySelector<HTMLElement>('[data-testid="board-arrange-placing"]')!;
+  const back = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Board.Arrange.BackIntoTabs",
+  )!;
+  await act(async () => back.click());
+  expect(document.activeElement).toBe(notationGrip);
+  expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("true");
+  expect(store.get(boardArrangementAtom)).toEqual({
+    direction: "row",
+    first: "left",
+    second: { direction: "row", first: "bottomRight", second: "topRight" },
+  });
 });
 
 test("returnPanel removes the panel area from analysis-board-layout", async () => {

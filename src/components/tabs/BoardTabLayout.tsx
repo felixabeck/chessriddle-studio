@@ -20,6 +20,7 @@ import {
   BOARD_AREA_IDS,
   type BoardAreaId,
   canTakeOutPanel,
+  type HideableAreaId,
   isPanelArea,
   type PanelAreaId,
   placeArea,
@@ -28,7 +29,12 @@ import {
   shownArrangement,
 } from "@/state/boardArrangement";
 import { coachEnabledAtom } from "@/state/coach";
-import { boardArrangementAtom, type ViewId, windowsStateAtom } from "@/state/layoutStorage";
+import {
+  analysisTabsHiddenAtom,
+  boardArrangementAtom,
+  type ViewId,
+  windowsStateAtom,
+} from "@/state/layoutStorage";
 import { arrangementFitsWidth, needsTwoPaneStack } from "@/state/paneLayout";
 import BoardArrangeOverlay from "./BoardArrangeOverlay";
 import classes from "./BoardsPage.module.css";
@@ -36,7 +42,10 @@ import { useBoardArranging } from "./useBoardArranging";
 
 const resize = { minimumPaneSizePercentage: 0 };
 const EMPTY_PANEL_SET: ReadonlySet<PanelAreaId> = new Set();
-const COACH_HIDDEN_SET: ReadonlySet<PanelAreaId> = new Set(["coach"]);
+const NOTHING_HIDDEN: ReadonlySet<HideableAreaId> = new Set();
+const COACH_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach"]);
+const TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["topRight"]);
+const COACH_AND_TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach", "topRight"]);
 
 /** DOM id of the portal destination for a board area. Base areas keep their existing ids. */
 export function boardAreaTargetId(area: BoardAreaId): string {
@@ -60,6 +69,10 @@ export interface BoardArrangementContextValue {
   consumeSuppressedClick: (event: ReactMouseEvent) => void;
   /** Starts keyboard/click placing for `area`, returning focus on cancel to `originArea`. */
   startPlacing: (area: BoardAreaId, originArea?: BoardAreaId) => void;
+  /** Whether the tab strip is hidden from the displayed arrangement. */
+  tabsHidden: boolean;
+  /** Hides or shows the tab strip; it keeps its place and size in the arrangement. */
+  setTabsHidden: (hidden: boolean) => void;
 }
 
 export const BoardArrangementContext = createContext<BoardArrangementContextValue>({
@@ -71,6 +84,8 @@ export const BoardArrangementContext = createContext<BoardArrangementContextValu
   beginDrag: () => undefined,
   consumeSuppressedClick: () => undefined,
   startPlacing: () => undefined,
+  tabsHidden: false,
+  setTabsHidden: () => undefined,
 });
 
 function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct?: boolean }) {
@@ -99,14 +114,24 @@ export default function BoardTabLayout({
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
   const [storedArrangement, setStoredArrangement] = useAtom(boardArrangementAtom);
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const [tabsHiddenStored, setTabsHidden] = useAtom(analysisTabsHiddenAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
   const returnListenerRef = useRef<((panel: PanelAreaId) => void) | null>(null);
 
-  const hiddenPanels = coachEnabled ? EMPTY_PANEL_SET : COACH_HIDDEN_SET;
+  // The tab strip is hidden only from the analysis board's arrangement; other boards and the
+  // stacked and too-narrow layouts below always show it.
+  const tabsHiddenHere = arrangeable && tabsHiddenStored;
+  const hiddenAreas = coachEnabled
+    ? tabsHiddenHere
+      ? TABS_HIDDEN
+      : NOTHING_HIDDEN
+    : tabsHiddenHere
+      ? COACH_AND_TABS_HIDDEN
+      : COACH_HIDDEN;
   const displayedArrangement = useMemo(
-    () => shownArrangement(storedArrangement, hiddenPanels),
-    [storedArrangement, hiddenPanels],
+    () => shownArrangement(storedArrangement, hiddenAreas),
+    [storedArrangement, hiddenAreas],
   );
 
   const stacked = needsTwoPaneStack(width, rootFont);
@@ -114,6 +139,7 @@ export default function BoardTabLayout({
   // fits, or the shared three-area layout from `windowsState` while the window is too narrow.
   const useArrangement =
     arrangeable && !stacked && arrangementFitsWidth(displayedArrangement, width, rootFont);
+  const tabsHidden = useArrangement && tabsHiddenHere;
   const mode: "stacked" | "mosaic" = stacked ? "stacked" : "mosaic";
 
   // React owns the hosts, while this mount owns the portal destinations.
@@ -161,7 +187,7 @@ export default function BoardTabLayout({
     targets,
     storedArrangement,
     displayedArrangement,
-    hiddenPanels,
+    hiddenAreas,
     width,
     rootFont,
     onPlace: handlePlace,
@@ -183,6 +209,8 @@ export default function BoardTabLayout({
       beginDrag: arranging.beginDrag,
       consumeSuppressedClick: arranging.consumeSuppressedClick,
       startPlacing: arranging.startPlacing,
+      tabsHidden,
+      setTabsHidden,
     }),
     [
       shownPanelAreas,
@@ -193,6 +221,8 @@ export default function BoardTabLayout({
       arranging.beginDrag,
       arranging.consumeSuppressedClick,
       arranging.startPlacing,
+      tabsHidden,
+      setTabsHidden,
     ],
   );
 
@@ -220,7 +250,7 @@ export default function BoardTabLayout({
             value={displayedArrangement}
             onChange={(next) => {
               if (next === null) return;
-              setStoredArrangement((stored) => applyShownSplits(stored, next, hiddenPanels));
+              setStoredArrangement((stored) => applyShownSplits(stored, next, hiddenAreas));
             }}
             resize={resize}
           />

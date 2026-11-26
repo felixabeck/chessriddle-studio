@@ -8,6 +8,7 @@ import {
     canTakeOutPanel,
     computeCarryOverArrangement,
     defaultBoardArrangement,
+    type HideableAreaId,
     isValidBoardArrangement,
     type LegacyLayoutValues,
     type PanelAreaId,
@@ -511,6 +512,87 @@ describe("shownArrangement and applyShownSplits", () => {
             second: "coach",
         });
         expect(shownArrangement(updated, hidden)).toEqual(draggedShown);
+    });
+
+    test("hides the tab strip with its place and split kept, and a panel returned while hidden joins the strip", () => {
+        // Felix's layout: Database above the board column's right side, notation and Annotate below.
+        const stored: BoardArrangement = {
+            direction: "row",
+            splitPercentage: 45,
+            first: "left",
+            second: {
+                direction: "column",
+                splitPercentage: 35,
+                first: "database",
+                second: {
+                    direction: "row",
+                    splitPercentage: 50,
+                    first: {
+                        direction: "column",
+                        splitPercentage: 40,
+                        first: "topRight",
+                        second: "bottomRight",
+                    },
+                    second: "annotate",
+                },
+            },
+        };
+        const hidden = new Set<HideableAreaId>(["topRight"]);
+        const shown = shownArrangement(stored, hidden);
+        expect(arrangementLeaves(shown)).toEqual(["left", "database", "bottomRight", "annotate"]);
+
+        // A divider moved while hidden keeps the strip's own 40 % split and its place above the notation.
+        const draggedShown: BoardArrangement = {
+            direction: "row",
+            splitPercentage: 45,
+            first: "left",
+            second: {
+                direction: "column",
+                splitPercentage: 35,
+                first: "database",
+                second: {
+                    direction: "row",
+                    splitPercentage: 60,
+                    first: "bottomRight",
+                    second: "annotate",
+                },
+            },
+        };
+        const afterDrag = applyShownSplits(stored, draggedShown, hidden);
+        expect(afterDrag).toEqual({
+            ...stored,
+            second: {
+                ...(stored as { second: object }).second,
+                second: {
+                    direction: "row",
+                    splitPercentage: 60,
+                    first: {
+                        direction: "column",
+                        splitPercentage: 40,
+                        first: "topRight",
+                        second: "bottomRight",
+                    },
+                    second: "annotate",
+                },
+            },
+        });
+        // Showing again restores the full stored tree.
+        expect(shownArrangement(afterDrag, new Set())).toBe(afterDrag);
+
+        // Returning Annotate while hidden removes its area; the strip keeps its place.
+        const afterReturn = returnPanelArea(afterDrag, "annotate");
+        expect(arrangementLeaves(afterReturn)).toEqual([
+            "left",
+            "database",
+            "topRight",
+            "bottomRight",
+        ]);
+        expect(isValidBoardArrangement(afterReturn)).toBe(true);
+        expect(arrangementLeaves(shownArrangement(afterReturn, hidden))).toEqual([
+            "left",
+            "database",
+            "bottomRight",
+        ]);
     });
 
     test("returns stored unchanged when no hidden panel is present or structure mismatches", () => {

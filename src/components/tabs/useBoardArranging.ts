@@ -12,6 +12,7 @@ import {
     arrangementLeaves,
     type BoardAreaId,
     type BoardArrangement,
+    type HideableAreaId,
     isPanelArea,
     type PanelAreaId,
     type PlacementSide,
@@ -89,7 +90,7 @@ export function useBoardArranging({
     targets,
     storedArrangement,
     displayedArrangement,
-    hiddenPanels,
+    hiddenAreas,
     width,
     rootFont,
     onPlace,
@@ -100,7 +101,7 @@ export function useBoardArranging({
     targets: Record<BoardAreaId, HTMLDivElement>;
     storedArrangement: BoardArrangement;
     displayedArrangement: BoardArrangement;
-    hiddenPanels: ReadonlySet<PanelAreaId>;
+    hiddenAreas: ReadonlySet<HideableAreaId>;
     width: number;
     rootFont: number;
     onPlace: (area: BoardAreaId, target: BoardAreaId, side: PlacementSide) => void;
@@ -124,7 +125,7 @@ export function useBoardArranging({
         targets,
         storedArrangement,
         displayedArrangement,
-        hiddenPanels,
+        hiddenAreas,
         width,
         rootFont,
         onPlace,
@@ -135,7 +136,7 @@ export function useBoardArranging({
         targets,
         storedArrangement,
         displayedArrangement,
-        hiddenPanels,
+        hiddenAreas,
         width,
         rootFont,
         onPlace,
@@ -279,7 +280,7 @@ export function useBoardArranging({
                 area: placingRequest.area,
                 stored: storedArrangement,
                 displayed: displayedArrangement,
-                hiddenPanels,
+                hiddenAreas,
                 width,
                 rootFont,
             }),
@@ -289,7 +290,7 @@ export function useBoardArranging({
         placingRequest,
         storedArrangement,
         displayedArrangement,
-        hiddenPanels,
+        hiddenAreas,
         width,
         rootFont,
     ]);
@@ -306,7 +307,7 @@ export function useBoardArranging({
             const {
                 storedArrangement: stored,
                 displayedArrangement: displayed,
-                hiddenPanels: hidden,
+                hiddenAreas: hidden,
                 width: currentWidth,
                 rootFont: currentFont,
             } = latestRef.current;
@@ -315,7 +316,7 @@ export function useBoardArranging({
                 area,
                 stored,
                 displayed,
-                hiddenPanels: hidden,
+                hiddenAreas: hidden,
                 width: currentWidth,
                 rootFont: currentFont,
             });
@@ -471,7 +472,10 @@ export function useBoardArranging({
             setPlacingRequest(null);
             if (target.kind === "return") {
                 if (isPanelArea(movedArea)) {
-                    pendingFocusRef.current = { kind: "tab", panel: movedArea };
+                    // A panel returned into the hidden tab strip has no visible tab to focus.
+                    pendingFocusRef.current = latestRef.current.hiddenAreas.has("topRight")
+                        ? { kind: "grip", area: "bottomRight" }
+                        : { kind: "tab", panel: movedArea };
                     onReturn(movedArea);
                 }
             } else {

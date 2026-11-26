@@ -34,6 +34,8 @@ vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
 import type { StampedGame } from "@/bindings";
 import i18n, { initializeI18n } from "@/i18n";
 import { addRecentFileAtom, hidePreviewMovesAtom, invisibleFamily, tabFamily } from "@/state/atoms";
+import { defaultBoardArrangement } from "@/state/boardArrangement";
+import { analysisTabsHiddenAtom, boardArrangementAtom } from "@/state/layoutStorage";
 import { getFileFreshness } from "@/state/fileFreshness";
 import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { openFile } from "./openFile";
@@ -242,6 +244,10 @@ describe("openFile tab admission", () => {
 
     test("passes the owner through full preparation and selects Practice only on request", async () => {
         mocks.createTab.mockResolvedValueOnce("practice-id");
+        const prior = mocks.storeGet.getMockImplementation();
+        mocks.storeGet.mockImplementation((atom: unknown) =>
+            atom === boardArrangementAtom ? defaultBoardArrangement() : prior?.(atom),
+        );
         await openFile(file, setTabs, { ownerId: "home", panel: "practice" });
         expect(mocks.createTab).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -250,6 +256,8 @@ describe("openFile tab admission", () => {
             }),
         );
         expect(mocks.storeSet).toHaveBeenCalledWith(tabFamily("practice-id"), "practice");
+        // Practice lives in the tab strip, so a hidden strip is shown.
+        expect(mocks.storeSet).toHaveBeenCalledWith(analysisTabsHiddenAtom, false);
     });
 
     test("an owner without an admitted id leaves freshness and all metadata untouched", async () => {

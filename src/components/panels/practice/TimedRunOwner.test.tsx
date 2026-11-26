@@ -2,6 +2,7 @@ import { Provider, createStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
 import {
   activeTabAtom,
   practiceRunRequestFamily,
@@ -253,6 +254,8 @@ test("advances to the next chapter after queue exhaustion and skips a failed ope
   await flush();
   expect(harness.openFile).toHaveBeenCalledTimes(1);
   expect(harness.openFile.mock.calls[0]?.[0]).toMatchObject({ name: "a.pgn" });
+  // openFile selects Practice (and shows a hidden tab strip) in the run's own store.
+  expect(harness.openFile.mock.calls[0]?.[2]).toMatchObject({ panel: "practice", store });
   await endSegment("tab-a", "queue-exhausted", 1);
   expect(harness.notify).toHaveBeenCalledTimes(1);
   expect(harness.notify.mock.calls[0]?.[0]).toMatchObject({
@@ -310,6 +313,7 @@ test("reuses an already-open chapter tab without cancelling", async () => {
   store.set(tabsAtom, [homeTab(), existing, fileTab("foreign", "z")]);
   store.set(activeTabAtom, "home");
   store.set(tabFamily("existing-a"), "info");
+  store.set(analysisTabsHiddenAtom, true);
   store.set(practiceTabFamily("existing-a"), "build");
   store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
   await renderOwner();
@@ -326,6 +330,7 @@ test("reuses an already-open chapter tab without cancelling", async () => {
   expect(harness.openFile).not.toHaveBeenCalled();
   expect(store.get(activeTabAtom)).toBe("existing-a");
   expect(store.get(tabFamily("existing-a"))).toBe("practice");
+  expect(store.get(analysisTabsHiddenAtom)).toBe(false);
   expect(store.get(practiceTabFamily("existing-a"))).toBe("train");
   expect(store.get(timedRunAtom)?.phase).toBe("running");
   expect(store.get(practiceRunRequestFamily("existing-a"))).toBeTruthy();

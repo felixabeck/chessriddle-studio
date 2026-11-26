@@ -430,3 +430,74 @@ test("board-arrange: keyboard placing, aria-modal hotkey suppression, fit rule, 
     });
     expect(dialogFits).toBe(true);
 });
+
+test("board-arrange: hiding the tabs keeps their place and size, survives reload, and Show tabs restores them", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({});
+    const stored = {
+        direction: "row",
+        first: "left",
+        splitPercentage: 50,
+        second: {
+            direction: "column",
+            first: "database",
+            splitPercentage: 30,
+            second: {
+                direction: "column",
+                first: "topRight",
+                second: "bottomRight",
+                splitPercentage: 40,
+            },
+        },
+    };
+    await page.addInitScript((layout) => {
+        if (localStorage.getItem("analysis-board-layout") === null) {
+            localStorage.setItem("analysis-board-layout", JSON.stringify(layout));
+        }
+    }, stored);
+    await openAnalysisBoard(page);
+
+    const tabList = page.locator("[data-board-tab-list]");
+    await expect(tabList).toBeVisible();
+    await page.getByRole("button", { name: "Hide the tabs" }).click();
+    await expect(tabList).toBeHidden();
+    await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
+
+    // Returning the Database area while hidden keeps the tabs hidden.
+    await page
+        .locator('[data-panel-area="database"]')
+        .getByRole("button", { name: "Return to the tabs" })
+        .click();
+    await expect(page.locator('[data-panel-area="database"]')).toHaveCount(0);
+    await expect(tabList).toBeHidden();
+
+    await preserveStorageForReload(page);
+    await expect(page.locator("[data-board-layout]")).toHaveAttribute(
+        "data-board-layout",
+        "mosaic",
+    );
+    await expect(tabList).toBeHidden();
+    expect(await page.evaluate(() => localStorage.getItem("analysis-board-tabs-hidden"))).toBe(
+        "true",
+    );
+
+    // The notation grip offers Show tabs while they are hidden.
+    await page.locator('[data-arrange-grip="bottomRight"]').click();
+    await page.getByRole("menuitem", { name: "Show the tabs" }).click();
+    await expect(tabList).toBeVisible();
+    expect(
+        await page.evaluate(() => JSON.parse(localStorage.getItem("analysis-board-layout")!)),
+    ).toEqual({
+        direction: "row",
+        first: "left",
+        splitPercentage: 50,
+        second: {
+            direction: "column",
+            first: "topRight",
+            second: "bottomRight",
+            splitPercentage: 40,
+        },
+    });
+});

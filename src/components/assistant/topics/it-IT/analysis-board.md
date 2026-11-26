@@ -2,7 +2,7 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: 55f6c4572027d33b
+source: 958c8f05fc6ed494
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
@@ -26,3 +26,5 @@ Per disegnare frecce ed evidenziare caselle, fai clic con il tasto destro e tras
 La scheda {{label:Board.Tabs.Info}} mostra le intestazioni della partita, la FEN, il testo PGN e le statistiche dell’albero, e ti consente di passare da una partita all’altra in un file PGN multi-partita.
 
 Per organizzare la scacchiera di analisi, trascina la scheda di un pannello ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} o {{label:Board.Tabs.Info}}) oppure usa le impugnature nella barra delle schede, nell’intestazione della notazione o nell’intestazione di un’area pannello per posizionare le aree accanto, sopra o sotto un’altra area con anteprima o da tastiera. Per estendere un pannello sopra due aree (ad esempio {{label:Board.Tabs.Database}} sopra notazione e schede), posiziona prima il pannello sopra una delle due e poi sposta l’altra accanto. Usa {{label:Board.Area.ReturnToTabs}} oppure trascina un’area pannello sopra la barra delle schede per riportarla nelle schede, e usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) per ripristinare la disposizione predefinita.
+
+Per nascondere le schede, ad esempio quando ogni pannello che usi è mostrato come area propria, fai clic su {{label:Board.Area.HideTabs}} alla fine della barra delle schede; le aree vicine ne occupano lo spazio. Le schede mantengono posizione e dimensioni: mostrale di nuovo con {{label:Board.Arrange.ShowTabs}} nel menu della maniglia nell’intestazione della notazione, con una scorciatoia di scheda o generando il report. Un pannello che rimetti nelle schede mentre sono nascoste finisce nelle schede nascoste.

@@ -8,6 +8,7 @@ import {
   type BoardArrangementContextValue,
 } from "@/components/tabs/BoardTabLayout";
 import { ALWAYS_PRESENT_PANEL_IDS, type PanelAreaId } from "@/state/boardArrangement";
+import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
@@ -611,6 +612,8 @@ describe("BoardAnalysis", () => {
       beginDrag: vi.fn(),
       consumeSuppressedClick: vi.fn(),
       startPlacing: vi.fn(),
+      tabsHidden: false,
+      setTabsHidden: vi.fn(),
       ...overrides,
     };
     await act(async () => {
@@ -862,6 +865,151 @@ describe("BoardAnalysis", () => {
     mocks.editingMode = true;
     await renderWithArrangement(["database"], vi.fn(), { startPlacing, beginDrag });
     expect(container.querySelector('[data-arrange-grip="bottomRight"]')).toBeNull();
+  });
+
+  test("the tab strip hides with its × and shows again from the notation grip menu, which otherwise stays a plain grip", async () => {
+    const setTabsHidden = vi.fn();
+    const startPlacing = vi.fn();
+    await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing });
+
+    // Shown: the strip offers Hide, the notation grip places directly, the engine bar slot sits in the strip.
+    const hide = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Board.Area.HideTabs"]',
+    )!;
+    expect(hide).not.toBeNull();
+    await act(async () => hide.click());
+    expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(true);
+    const notationPortal = () => container.querySelector('[data-portal-target="#bottomRight"]')!;
+    const stripPortal = () => container.querySelector('[data-portal-target="#topRight"]')!;
+    expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
+    expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
+    const plainGrip = container.querySelector<HTMLButtonElement>(
+      '[data-arrange-grip="bottomRight"]',
+    )!;
+    await act(async () => plainGrip.click());
+    expect(startPlacing).toHaveBeenCalledExactlyOnceWith("bottomRight");
+    const menuText = () =>
+      [...container.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent);
+    expect(menuText()).not.toContain("Board.Arrange.ShowTabs");
+
+    // Hidden: the notation grip opens a menu with Move and Show; the engine bar pinned above the
+    // tabs moves above the notation.
+    startPlacing.mockClear();
+    setTabsHidden.mockClear();
+    await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing, tabsHidden: true });
+    expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
+    expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
+    expect(menuText()).toEqual(
+      expect.arrayContaining(["Board.Arrange.MoveNotation", "Board.Arrange.ShowTabs"]),
+    );
+    const item = (text: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (el) => el.textContent === text,
+      )!;
+    await act(async () => item("Board.Arrange.MoveNotation").click());
+    expect(startPlacing).toHaveBeenCalledExactlyOnceWith("bottomRight");
+    await act(async () => item("Board.Arrange.ShowTabs").click());
+    expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  test("a panel returning to the hidden strip keeps the strip hidden and the selection on the tab last visible", async () => {
+    // Stored selection "annotate" is detached, so the strip showed Analysis as its fallback.
+    await act(async () => {
+      jotaiStore.set(tabFamily(tabId), "annotate");
+      jotaiStore.set(analysisTabsHiddenAtom, true);
+    });
+    const first = await renderWithArrangement(["annotate", "database"], vi.fn(), {
+      tabsHidden: true,
+    });
+    await act(async () => first.triggerReturn("database"));
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");
+    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+
+    // A selection that is in the strip is left alone.
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+    const second = await renderWithArrangement(["database"], vi.fn(), { tabsHidden: true });
+    await act(async () => second.triggerReturn("database"));
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+  });
+
+  test("every strip-tab shortcut and Generate Report shows the hidden strip with that tab; a detached panel's shortcut does not", async () => {
+    await act(async () => {
+      treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
+      treeStore.getState().makeMove({ payload: "e4" });
+    });
+    await renderWithArrangement(["annotate"], vi.fn(), { tabsHidden: true });
+    const fire = async (keys: string) => {
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys)!;
+      await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
+    };
+    const keyMap = jotaiStore.get(keyMapAtom);
+    for (const [keys, tab] of [
+      [keyMap.ANALYSIS_TAB.keys, "analysis"],
+      [keyMap.DATABASE_TAB.keys, "database"],
+      [keyMap.INFO_TAB.keys, "info"],
+      [keyMap.GENERATE_REPORT.keys, "analysis"],
+    ] as const) {
+      await act(async () => {
+        jotaiStore.set(analysisTabsHiddenAtom, true);
+        jotaiStore.set(tabFamily(tabId), tab === "info" ? "database" : "info");
+      });
+      await fire(keys);
+      expect(jotaiStore.get(tabFamily(tabId))).toBe(tab);
+      expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(false);
+    }
+
+    await act(async () => {
+      jotaiStore.set(analysisTabsHiddenAtom, true);
+      jotaiStore.set(tabFamily(tabId), "info");
+    });
+    await fire(keyMap.ANNOTATE_TAB.keys);
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
+    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+  });
+
+  test("PRACTICE_TAB on a repertoire tab and COACH_TAB show the hidden strip with their tab (available: true)", async () => {
+    await act(async () => {
+      jotaiStore.set(tabsAtom, (tabs) =>
+        tabs.map((current) =>
+          current.value === tabId && current.gameOrigin.kind === "file"
+            ? {
+                ...current,
+                gameOrigin: {
+                  ...current.gameOrigin,
+                  file: {
+                    ...current.gameOrigin.file,
+                    metadata: { ...current.gameOrigin.file.metadata, type: "repertoire" },
+                  },
+                },
+              }
+            : current,
+        ),
+      );
+    });
+    await renderWithArrangement([], vi.fn(), { tabsHidden: true });
+    await act(async () => {});
+    const fire = async (keys: string) => {
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys)!;
+      await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
+    };
+    const keyMap = jotaiStore.get(keyMapAtom);
+    for (const [keys, tab] of [
+      [keyMap.PRACTICE_TAB.keys, "practice"],
+      [keyMap.COACH_TAB.keys, "coach"],
+    ] as const) {
+      await act(async () => {
+        jotaiStore.set(analysisTabsHiddenAtom, true);
+        jotaiStore.set(tabFamily(tabId), "info");
+      });
+      await fire(keys);
+      expect(jotaiStore.get(tabFamily(tabId))).toBe(tab);
+      expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(false);
+    }
   });
 
   async function renderCoachChoice() {

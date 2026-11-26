@@ -4,8 +4,8 @@ import {
     type BoardAreaId,
     type BoardArrangement,
     canTakeOutPanel,
+    type HideableAreaId,
     isPanelArea,
-    type PanelAreaId,
     placeArea,
     type PlacementSide,
     returnPanelArea,
@@ -45,14 +45,14 @@ export function validArrangeTargets({
     area,
     stored,
     displayed,
-    hiddenPanels,
+    hiddenAreas,
     width,
     rootFont,
 }: {
     area: BoardAreaId;
     stored: BoardArrangement;
     displayed: BoardArrangement;
-    hiddenPanels: ReadonlySet<PanelAreaId>;
+    hiddenAreas: ReadonlySet<HideableAreaId>;
     width: number;
     rootFont: number;
 }): ArrangeTarget[] {
@@ -70,7 +70,7 @@ export function validArrangeTargets({
         for (const side of PLACEMENT_SIDES) {
             const nextStored = placeArea(stored, area, target, side);
             if (nextStored === stored) continue;
-            const nextShown = shownArrangement(nextStored, hiddenPanels);
+            const nextShown = shownArrangement(nextStored, hiddenAreas);
             if (arrangementFitsWidth(nextShown, width, rootFont)) {
                 targets.push({ kind: "place", target, side });
             }
@@ -80,7 +80,7 @@ export function validArrangeTargets({
     if (inTree && isPanelArea(area)) {
         const nextStored = returnPanelArea(stored, area);
         if (nextStored !== stored) {
-            const nextShown = shownArrangement(nextStored, hiddenPanels);
+            const nextShown = shownArrangement(nextStored, hiddenAreas);
             if (arrangementFitsWidth(nextShown, width, rootFont)) {
                 targets.push({ kind: "return" });
             }

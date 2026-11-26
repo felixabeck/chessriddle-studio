@@ -3,6 +3,7 @@ import { createStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
 import type { ConnectionSummary, ModelInfo, ScoresheetGame } from "@/bindings";
 import { CoachCommandError } from "@/platform/coach";
 import { tabFamily, tabsAtom } from "@/state/atoms";
@@ -543,6 +544,7 @@ test("first-use notice blocks sending until accepted, then reads, builds tree, s
   const onClose = vi.fn();
   const replaceImportedTab = vi.fn(() => ({ kind: "committed" as const, id: "review-tab-1" }));
   const store = await renderPane({ hasConnection: true, onClose, replaceImportedTab });
+  store.set(analysisTabsHiddenAtom, true);
 
   await addOnePhoto();
   mocks.scoresheetRead.mockResolvedValueOnce(SAMPLE_GAME);
@@ -563,6 +565,8 @@ test("first-use notice blocks sending until accepted, then reads, builds tree, s
   expect(replaceImportedTab).toHaveBeenCalledOnce();
   expect(getScoresheetPhotos("review-tab-1")).toEqual([PHOTO_1]);
   expect(store.get(tabFamily("review-tab-1"))).toBe("photo");
+  // The Photo tab lives in the tab strip, so a hidden strip is shown.
+  expect(store.get(analysisTabsHiddenAtom)).toBe(false);
   expect(onClose).toHaveBeenCalledOnce();
 });
 

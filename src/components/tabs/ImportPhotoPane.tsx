@@ -17,7 +17,8 @@ import { coachErrorCode } from "@/platform/coach";
 import { normalizeError, warnSafely } from "@/platform/errors";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
 import { useTauriListener } from "@/platform/useTauriListener";
-import { tabFamily, tabsAtom } from "@/state/atoms";
+import { tabsAtom } from "@/state/atoms";
+import { selectStripTab } from "@/state/stripTab";
 import { withNoticeAccepted } from "@/state/coach";
 import {
   assistantAvailableAtom,
@@ -326,7 +327,7 @@ function ImportPhotoPane({
       }
 
       setScoresheetPhotos(result.id, submittedPhotos);
-      store.set(tabFamily(result.id), "photo");
+      selectStripTab(store, result.id, "photo");
       onClose();
     } finally {
       if (readControllerRef.current === controller) {

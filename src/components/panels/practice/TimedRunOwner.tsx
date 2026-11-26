@@ -23,6 +23,7 @@ import {
   type TimedRun,
   type TimedRunSegment,
 } from "@/state/atoms";
+import { selectStripTab } from "@/state/stripTab";
 import { getCachedTreeStore } from "@/state/store/tree";
 import { openFile } from "@/utils/openFile";
 import { findChapterTab, type SetTabs, type Tab } from "@/utils/tabs";
@@ -410,7 +411,7 @@ async function openSegment(options: {
 }): Promise<{ tabId: string; openedByRun: boolean } | null> {
   if (options.signal.aborted || !options.owns() || !options.chapter) return null;
   if (options.existing) {
-    options.store.set(tabFamily(options.existing.value), "practice");
+    selectStripTab(options.store, options.existing.value, "practice");
     options.store.set(practiceTabFamily(options.existing.value), "train");
     options.selectTab(options.existing.value);
     return {
@@ -426,7 +427,6 @@ async function openSegment(options: {
     signal: options.signal,
   });
   if (options.signal.aborted || !options.owns() || !tabId) return null;
-  options.store.set(tabFamily(tabId), "practice");
   options.store.set(practiceTabFamily(tabId), "train");
   options.selectTab(tabId);
   return { tabId, openedByRun: true };

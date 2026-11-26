@@ -15,6 +15,9 @@ export const ALWAYS_PRESENT_PANEL_IDS = ["analysis", "database", "annotate", "in
 export const BOARD_AREA_IDS = [...BASE_AREA_IDS, ...PANEL_AREA_IDS] as const;
 export type BoardAreaId = (typeof BOARD_AREA_IDS)[number];
 
+/** Areas that can be left out of the shown arrangement: panel areas and the tab strip. */
+export type HideableAreaId = PanelAreaId | "topRight";
+
 export type BoardArrangement = MosaicNode<BoardAreaId>;
 
 export type PlacementSide = "left" | "right" | "top" | "bottom";
@@ -239,53 +242,53 @@ export function returnPanelArea(
     return removed ?? arrangement;
 }
 
-/** The arrangement shown on a tab that does not offer `hiddenPanels`. */
+/** The arrangement shown without the areas in `hiddenAreas`; the stored tree keeps them. */
 export function shownArrangement(
     stored: BoardArrangement,
-    hiddenPanels: ReadonlySet<PanelAreaId>,
+    hiddenAreas: ReadonlySet<HideableAreaId>,
 ): BoardArrangement {
-    if (hiddenPanels.size === 0) return stored;
+    if (hiddenAreas.size === 0) return stored;
     let current = stored;
-    for (const panel of hiddenPanels) {
-        const next = removeLeaf(current, panel);
+    for (const area of hiddenAreas) {
+        const next = removeLeaf<BoardAreaId>(current, area);
         if (next !== null) current = next;
     }
     return current;
 }
 
-function hasVisibleLeaf(node: BoardArrangement, hiddenPanels: ReadonlySet<PanelAreaId>): boolean {
+function hasVisibleLeaf(node: BoardArrangement, hiddenAreas: ReadonlySet<HideableAreaId>): boolean {
     if (typeof node === "string") {
-        return !isPanelArea(node) || !hiddenPanels.has(node);
+        return node === "left" || node === "bottomRight" || !hiddenAreas.has(node);
     }
-    return hasVisibleLeaf(node.first, hiddenPanels) || hasVisibleLeaf(node.second, hiddenPanels);
+    return hasVisibleLeaf(node.first, hiddenAreas) || hasVisibleLeaf(node.second, hiddenAreas);
 }
 
 /**
  * Writes divider changes from a tab's shown arrangement back to the stored arrangement so that
- * hidden panel areas keep their positions and own split percentages.
+ * hidden areas keep their positions and own split percentages.
  */
 export function applyShownSplits(
     stored: BoardArrangement,
     nextShown: BoardArrangement,
-    hiddenPanels: ReadonlySet<PanelAreaId>,
+    hiddenAreas: ReadonlySet<HideableAreaId>,
 ): BoardArrangement {
     if (typeof stored === "string") return stored;
-    const firstVisible = hasVisibleLeaf(stored.first, hiddenPanels);
-    const secondVisible = hasVisibleLeaf(stored.second, hiddenPanels);
+    const firstVisible = hasVisibleLeaf(stored.first, hiddenAreas);
+    const secondVisible = hasVisibleLeaf(stored.second, hiddenAreas);
     if (!firstVisible && !secondVisible) return stored;
     if (!firstVisible) {
-        const second = applyShownSplits(stored.second, nextShown, hiddenPanels);
+        const second = applyShownSplits(stored.second, nextShown, hiddenAreas);
         return second === stored.second ? stored : { ...stored, second };
     }
     if (!secondVisible) {
-        const first = applyShownSplits(stored.first, nextShown, hiddenPanels);
+        const first = applyShownSplits(stored.first, nextShown, hiddenAreas);
         return first === stored.first ? stored : { ...stored, first };
     }
     if (typeof nextShown === "string" || nextShown.direction !== stored.direction) {
         return stored;
     }
-    const first = applyShownSplits(stored.first, nextShown.first, hiddenPanels);
-    const second = applyShownSplits(stored.second, nextShown.second, hiddenPanels);
+    const first = applyShownSplits(stored.first, nextShown.first, hiddenAreas);
+    const second = applyShownSplits(stored.second, nextShown.second, hiddenAreas);
     const splitPercentage = nextShown.splitPercentage;
     if (
         first === stored.first &&
