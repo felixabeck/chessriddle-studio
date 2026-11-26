@@ -1,8 +1,8 @@
 ---
 id: import-game
 title: Импорт партии
-summary: Импорт партии из PGN-файла, вставленного текста PGN, ссылки Lichess или Chess.com, позиции FEN либо фотографий рукописного бланка партии.
-source: bda7f1cdec3151e0
+summary: Импорт партии из PGN-файла, вставленного текста PGN, ссылки Lichess или Chess.com, позиции FEN либо фотографий или PDF-сканов рукописного бланка партии.
+source: 2a3b47d982e0f514
 ---
 
 Чтобы импортировать партию или позицию, откройте [[page:new-tab]] и нажмите {{label:Home.Card.ImportGame.Button}}, чтобы открыть окно {{label:Home.Card.ImportGame.Title}}. Вы также можете открыть PGN-файл напрямую через {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (или по горячей клавише {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -11,12 +11,12 @@ source: bda7f1cdec3151e0
 - **PGN**: выберите {{label:Common.PGNFile}} на компьютере или вставьте текст в поле {{label:Common.PGNGame}}. Отметьте {{label:Import.SaveToCollection}}, чтобы сохранить копию в рабочую папку в [[page:library]], затем введите {{label:Common.Name}} и выберите {{label:Files.FileType}}.
 - **{{label:Import.Online}}**: вставьте {{label:Import.GameURL}} с Lichess или Chess.com, чтобы загрузить партию и открыть её на доске анализа.
 - **FEN**: вставьте строку FEN, чтобы открыть доску анализа с этой позицией.
-- **{{label:Import.FromPhoto}}** (когда функции ИИ доступны): распознайте от 1 до 4 фотографий рукописного бланка партии в новую партию. Для этого нужно хотя бы одно подключение ИИ в разделе [[settings-category:coach]] ({{label:Settings.AI}}).
+- **{{label:Import.FromPhoto}}** (когда функции ИИ доступны): распознайте от 1 до 4 фотографий или страниц PDF рукописного бланка партии в новую партию. Для этого нужно хотя бы одно подключение ИИ в разделе [[settings-category:coach]] ({{label:Settings.AI}}).
 
 Для PGN, {{label:Import.Online}} и FEN нажмите {{label:Home.Card.ImportGame.Button}}, чтобы загрузить партию в текущую вкладку.
 
 Чтобы импортировать через **{{label:Import.FromPhoto}}**:
-- Добавьте до 4 фотографий JPEG, PNG или WebP с помощью {{label:Scoresheet.Intake.ChoosePhotos}}, {{label:Scoresheet.Intake.PasteFromClipboard}} (или Ctrl+V / Cmd+V, пока открыта панель) либо перетащите фотографии на открытую панель.
+- Добавьте до 4 фотографий JPEG, PNG или WebP или страниц PDF с помощью {{label:Scoresheet.Intake.ChoosePhotos}}, {{label:Scoresheet.Intake.PasteFromClipboard}} (или Ctrl+V / Cmd+V, пока открыта панель) либо перетащите фотографии или PDF-файлы на открытую панель. Вставка работает только с фотографиями. Каждая страница PDF считается одной фотографией; из более длинного PDF берутся первые страницы.
 - Выберите подключение ИИ и модель с поддержкой изображений через кнопку модели или в [[setting:coach-model]] ({{label:Settings.Coach.Model}}).
 - Нажмите {{label:Scoresheet.Read.Button}}, чтобы начать. Перед первым чтением через подключение окно {{label:Scoresheet.Notice.Title}} поясняет, что выбранные фотографии (включая имена игроков и всё остальное на бланке) отправляются этому провайдеру, метаданные вроде координат камеры предварительно удаляются, а никакие другие данные не отправляются.
 - Студия проверяет каждый ход по стандартным правилам шахмат из начальной позиции и открывает партию в новой несохранённой вкладке анализа с панелью {{label:Board.Tabs.Photo}} рядом с доской.

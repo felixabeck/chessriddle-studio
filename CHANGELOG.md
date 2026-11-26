@@ -14,6 +14,8 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 ### Improved
 
+- Scoresheet import: add PDF scans as well as photos. Each PDF page counts as one of the four images, and Studio reads the pages on your computer before anything is sent. While the AI reads the sheet, a full-width progress button with a spinner shows that it is working, with Cancel right below.
+- Dialogs: content no longer touches the line under a dialog's title, and the Import Game cards keep the same height (the photo card is now called "Photo").
 - Files & folders: each row shows its folder's name, "Show in folder" opens it in your file manager, "Restore default" switches back to Studio's own folder, and the folder picker opens in the current folder. The PGN collection now has a default folder too.
 - Your databases, puzzles, engines and PGN files now live in a visible folder in your home folder, "ChessRiddle Studio", with one subfolder each, instead of hidden application data. Folders you chose yourself stay where they are; Studio's previous default folders are moved there once at the next start.
 - Assistant: drag its left edge, or use the arrow keys on it, to make the docked Assistant wider or narrower (from 20rem); double-click restores the default width, and Studio remembers your choice.
