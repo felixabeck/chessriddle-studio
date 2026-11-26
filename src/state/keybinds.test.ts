@@ -210,3 +210,25 @@ test("only a binding with Ctrl, Cmd or Alt counts as a command that may act whil
         expect({ keys, command: hasCommandModifier(keys) }).toEqual({ keys, command: false });
     }
 });
+
+test("Apply layout 1/2/3 defaults are ctrl+alt+1..3, collision-free, and hydrated into older keymaps", () => {
+    const current = createStore().get(keyMapAtom);
+    expect(current.APPLY_LAYOUT_1).toEqual({ name: "Apply layout 1", keys: "ctrl+alt+1" });
+    expect(current.APPLY_LAYOUT_2).toEqual({ name: "Apply layout 2", keys: "ctrl+alt+2" });
+    expect(current.APPLY_LAYOUT_3).toEqual({ name: "Apply layout 3", keys: "ctrl+alt+3" });
+
+    for (const id of ["APPLY_LAYOUT_1", "APPLY_LAYOUT_2", "APPLY_LAYOUT_3"] as const) {
+        const sharing = Object.entries(current)
+            .filter(([, binding]) => binding.keys === current[id].keys)
+            .map(([actionId]) => actionId);
+        expect(sharing).toEqual([id]);
+    }
+
+    const { APPLY_LAYOUT_1, APPLY_LAYOUT_2, APPLY_LAYOUT_3, ...older } = current;
+    sessionStorage.setItem("keybinds", JSON.stringify(older));
+    const storage = createKeybindStorage(current, sessionStorage);
+    const hydrated = storage.getItem("keybinds", current);
+    expect(hydrated.APPLY_LAYOUT_1).toEqual(APPLY_LAYOUT_1);
+    expect(hydrated.APPLY_LAYOUT_2).toEqual(APPLY_LAYOUT_2);
+    expect(hydrated.APPLY_LAYOUT_3).toEqual(APPLY_LAYOUT_3);
+});

@@ -91,7 +91,14 @@ const mocks = vi.hoisted(() => ({
   // A destination argument stays visible, so a label that names it can be checked.
   translate: (key: string, options?: { target?: string }) =>
     options?.target === undefined ? key : `${key}(${options.target})`,
-  boardControls: undefined as { saveFile?: () => void } | undefined,
+  boardControls: undefined as
+    | {
+        saveFile?: () => void;
+        onApplyLayout?: (layoutId: string) => void;
+        onSaveLayoutAs?: () => void;
+        onManageLayouts?: () => void;
+      }
+    | undefined,
   addGameActivation: undefined as (() => void) | undefined,
   notationChapterSwitch: undefined as SwitchFileChapter | null | undefined,
   requestFilePositionIndex: vi.fn(),
@@ -150,6 +157,8 @@ vi.mock("@mantine/core", async (importOriginal) => {
     {
       Target: ({ children }: { children?: ReactNode }) => <>{children}</>,
       Dropdown: ({ children }: { children?: ReactNode }) => <div role="menu">{children}</div>,
+      Divider: () => <hr />,
+      Label: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
       Item: ({
         children,
         onClick,
@@ -220,6 +229,50 @@ vi.mock("@mantine/core", async (importOriginal) => {
     ),
     Loader: () => <span>loader</span>,
     Text: passthrough,
+    Alert: ({ children, role }: { children?: ReactNode; role?: string }) => (
+      <div role={role}>{children}</div>
+    ),
+    Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+    Modal: ({
+      opened,
+      title,
+      children,
+      onClose,
+    }: {
+      opened: boolean;
+      title?: string;
+      children?: ReactNode;
+      onClose?: () => void;
+    }) =>
+      opened ? (
+        <div role="dialog" aria-label={title}>
+          <h2>{title}</h2>
+          <button type="button" aria-label="close-modal" onClick={onClose}>
+            close
+          </button>
+          {children}
+        </div>
+      ) : null,
+    TextInput: ({
+      label,
+      value,
+      onChange,
+      placeholder,
+      "aria-label": ariaLabel,
+    }: {
+      label?: string;
+      value?: string;
+      onChange?: React.ChangeEventHandler<HTMLInputElement>;
+      placeholder?: string;
+      "aria-label"?: string;
+    }) => (
+      <input
+        aria-label={ariaLabel ?? label}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+      />
+    ),
   };
 });
 
@@ -4368,5 +4421,187 @@ describe("BoardAnalysis preparation landing", () => {
       consoleError.mockRestore();
       mocks.realTabs = false;
     }
+  });
+
+  test("APPLY_LAYOUT_1/2/3 apply list entries 1–3 to the active analysis tab's kind and leave other kinds unchanged", async () => {
+    const { LAYOUT_PRESETS } = await import("@/state/layoutPresets");
+    await act(async () => {
+      jotaiStore.set(
+        tabsAtom,
+        [
+          {
+            name: "Game",
+            value: tabId,
+            type: "analysis",
+            gameOrigin: { kind: "none" },
+          },
+        ],
+        tabId,
+      );
+      jotaiStore.set(enginesAtom, []);
+      jotaiStore.set(boardLayoutFamily("repertoire"), {
+        arrangement: LAYOUT_PRESETS[2].layout.arrangement,
+        tabsHidden: true,
+      });
+    });
+
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <WorkspaceTabScope tabId={tabId}>
+              <TreeStateContext.Provider value={treeStore}>
+                <BoardAnalysis />
+              </TreeStateContext.Provider>
+            </WorkspaceTabScope>
+          </JotaiProvider>
+        </MantineProvider>,
+      );
+    });
+    const fire = async (keys: string) => {
+      const binding = hotkeys.mock.calls
+        .flatMap(([bindings]) => bindings)
+        .findLast(([bound]) => bound === keys);
+      expect(binding).toBeDefined();
+      await act(async () => binding![1](new KeyboardEvent("keydown", { cancelable: true })));
+    };
+    const keyMap = jotaiStore.get(keyMapAtom);
+
+    await fire(keyMap.APPLY_LAYOUT_1.keys);
+    expect(jotaiStore.get(boardLayoutFamily("game"))).toEqual(LAYOUT_PRESETS[0].layout);
+    expect(jotaiStore.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(true);
+
+    await fire(keyMap.APPLY_LAYOUT_2.keys);
+    expect(jotaiStore.get(boardLayoutFamily("game"))).toEqual(LAYOUT_PRESETS[1].layout);
+
+    await fire(keyMap.APPLY_LAYOUT_3.keys);
+    expect(jotaiStore.get(boardLayoutFamily("game"))).toEqual(LAYOUT_PRESETS[2].layout);
+    expect(jotaiStore.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(true);
+  });
+
+  test("board commands and BoardControls layout callbacks open the layout modal for the tab's kind and apply layouts", async () => {
+    const { LAYOUT_PRESETS } = await import("@/state/layoutPresets");
+    const { boardLayoutsAtom } = await import("@/state/layoutStorage");
+
+    await act(async () => {
+      jotaiStore.set(
+        tabsAtom,
+        [
+          {
+            name: "Repertoire",
+            value: tabId,
+            type: "analysis",
+            gameOrigin: {
+              kind: "file",
+              file: {
+                type: "file",
+                handle: { id: { id: "rep-file" }, kind: "fileWorkspace" },
+                name: "rep.pgn",
+                metadata: { type: "repertoire", tags: [] },
+                numGames: 1,
+                lastModified: 0,
+              },
+              gameNumber: 0,
+            },
+          },
+        ],
+        tabId,
+      );
+      jotaiStore.set(activeTabAtom, tabId);
+      jotaiStore.set(enginesAtom, []);
+      jotaiStore.set(boardLayoutFamily("repertoire"), {
+        arrangement: LAYOUT_PRESETS[0].layout.arrangement,
+        tabsHidden: true,
+      });
+      jotaiStore.set(boardLayoutFamily("game"), {
+        arrangement: LAYOUT_PRESETS[1].layout.arrangement,
+        tabsHidden: false,
+      });
+    });
+
+    await act(async () => {
+      root.render(
+        <MantineProvider>
+          <JotaiProvider store={jotaiStore}>
+            <WorkspaceTabScope tabId={tabId}>
+              <TreeStateContext.Provider value={treeStore}>
+                <BoardAnalysis />
+              </TreeStateContext.Provider>
+            </WorkspaceTabScope>
+          </JotaiProvider>
+        </MantineProvider>,
+      );
+    });
+
+    // requestBoardCommand "saveLayoutAs" opens the dialog in save mode with the repertoire kind.
+    await act(async () => {
+      expect(requestBoardCommand(jotaiStore, "saveLayoutAs")).toBe(true);
+    });
+    await vi.waitFor(() => {
+      const dialog = container.querySelector('[role="dialog"]');
+      expect(dialog?.getAttribute("aria-label")).toBe("Board.Layout.SaveTitle");
+    });
+
+    const input = container.querySelector<HTMLInputElement>('[role="dialog"] input')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, "Rep Snapshot");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const saveBtn = [
+      ...container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ].find((btn) => btn.textContent?.trim() === "Common.Save")!;
+    await act(async () => saveBtn.click());
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    });
+    // Saved layout captured the repertoire kind's tabsHidden=true, not game's tabsHidden=false.
+    const saved = jotaiStore.get(boardLayoutsAtom).saved.find((s) => s.name === "Rep Snapshot");
+    expect(saved?.tabsHidden).toBe(true);
+
+    // requestBoardCommand "manageLayouts" opens the dialog in manage mode.
+    await act(async () => {
+      expect(requestBoardCommand(jotaiStore, "manageLayouts")).toBe(true);
+    });
+    await vi.waitFor(() => {
+      const dialog = container.querySelector('[role="dialog"]');
+      expect(dialog?.getAttribute("aria-label")).toBe("Board.Layout.ManageTitle");
+    });
+    const closeBtn = container.querySelector<HTMLButtonElement>('[aria-label="close-modal"]')!;
+    await act(async () => closeBtn.click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    // BoardControls receives onApplyLayout, onSaveLayoutAs, and onManageLayouts.
+    expect(mocks.boardControls?.onApplyLayout).toBeTypeOf("function");
+    expect(mocks.boardControls?.onSaveLayoutAs).toBeTypeOf("function");
+    expect(mocks.boardControls?.onManageLayouts).toBeTypeOf("function");
+
+    await act(async () => {
+      mocks.boardControls!.onApplyLayout!(LAYOUT_PRESETS[2].id);
+    });
+    expect(jotaiStore.get(boardLayoutFamily("repertoire"))).toEqual(LAYOUT_PRESETS[2].layout);
+    expect(jotaiStore.get(boardLayoutFamily("game"))).toEqual(LAYOUT_PRESETS[1].layout);
+
+    await act(async () => {
+      mocks.boardControls!.onSaveLayoutAs!();
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
+        "Board.Layout.SaveTitle",
+      );
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="close-modal"]')!.click();
+    });
+
+    await act(async () => {
+      mocks.boardControls!.onManageLayouts!();
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
+        "Board.Layout.ManageTitle",
+      );
+    });
   });
 });

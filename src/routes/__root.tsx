@@ -1,6 +1,11 @@
 import { AppShell } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { createRootRouteWithContext, Outlet, useNavigate } from "@tanstack/react-router";
+import {
+  createRootRouteWithContext,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@/platform/native";
 import { exit, getCurrentWebviewWindow, getCurrentWindow, platform } from "@/platform/native";
 import { logFailureSafely, warnSafely } from "@/platform/errors";
@@ -20,6 +25,7 @@ import {
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import NavigationRow from "@/components/tabs/NavigationRow";
+import { isBoardsPath } from "@/components/tabs/boardTabDom";
 import { TabCommandsProvider, useTabCommands } from "@/components/tabs/TabCommands";
 import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
@@ -133,6 +139,9 @@ function RootShell() {
   const [assistantOpened, setAssistantOpened] = useAtom(assistantPanelOpenAtom);
   const refreshAssistantAvailability = useSetAtom(refreshAssistantAvailabilityAtom);
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const currentTab = useAtomValue(currentTabAtom);
+  const showBoardLayouts = isBoardsPath(pathname) && currentTab?.type === "analysis";
 
   useEffect(() => {
     if (coachEnabled) void refreshAssistantAvailability();
@@ -344,8 +353,15 @@ function RootShell() {
         exit: () => requestQuit(),
         toggleFullscreen,
         toggleFocusMode,
+        saveLayoutAs: () => {
+          requestBoardCommand(jotaiStore, "saveLayoutAs");
+        },
+        manageLayouts: () => {
+          requestBoardCommand(jotaiStore, "manageLayouts");
+        },
       }),
     [
+      jotaiStore,
       newTab,
       openAccounts,
       openAssistant,
@@ -398,6 +414,7 @@ function RootShell() {
             t,
             isMacOS,
             showAssistant: assistantAvailable,
+            showBoardLayouts,
             newTabShortcut: keyMap.NEW_TAB.keys,
             openFileShortcut: keyMap.OPEN_FILE.keys,
             saveShortcut: keyMap.SAVE_FILE.keys,
@@ -413,6 +430,7 @@ function RootShell() {
       keyMap.OPEN_FILE.keys,
       keyMap.SAVE_FILE.keys,
       menuCallbacks,
+      showBoardLayouts,
       t,
     ],
   );
@@ -422,6 +440,7 @@ function RootShell() {
         t,
         isMacOS,
         showAssistant: assistantAvailable,
+        showBoardLayouts,
         newTabShortcut: keyMap.NEW_TAB.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
         saveShortcut: keyMap.SAVE_FILE.keys,
@@ -436,6 +455,7 @@ function RootShell() {
       keyMap.OPEN_FILE.keys,
       keyMap.SAVE_FILE.keys,
       menuCallbacks,
+      showBoardLayouts,
       t,
     ],
   );

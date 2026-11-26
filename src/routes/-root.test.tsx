@@ -2,13 +2,15 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { FeedbackType } from "@/bindings";
-import type { AppMenuCallbacks } from "./-appMenu";
+import type { AppMenuCallbacks, MenuAction } from "./-appMenu";
 import { focusedDialogButton, press } from "@/tests/keyboard";
 
 const mocks = vi.hoisted(() => ({
   fileRevision: vi.fn(),
   windowFocus: vi.fn(),
   lastCallbacks: null as AppMenuCallbacks | null,
+  lastInAppMenuItems: null as MenuAction[] | null,
+  pathname: "/",
   lastFeedbackProps: null as {
     opened: boolean;
     initialType?: FeedbackType;
@@ -185,7 +187,9 @@ vi.mock("./-appMenu", async (importOriginal) => {
     ...actual,
     buildInAppMenuItems: (args: Parameters<typeof actual.buildInAppMenuItems>[0]) => {
       mocks.lastCallbacks = args.callbacks;
-      return actual.buildInAppMenuItems(args);
+      const items = actual.buildInAppMenuItems(args);
+      mocks.lastInAppMenuItems = items;
+      return items;
     },
     buildAppMenuTree: (args: Parameters<typeof actual.buildAppMenuTree>[0]) => {
       mocks.lastCallbacks = args.callbacks;
@@ -199,6 +203,11 @@ vi.mock("@tanstack/react-router", () => ({
   Outlet: () => mocks.outlet(),
   createRootRouteWithContext: () => (options: unknown) => options,
   useNavigate: () => mocks.navigate,
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { pathname: string } }) => unknown;
+  }) => select({ location: { pathname: mocks.pathname } }),
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -206,13 +215,15 @@ import { RootLayout, startRootFileFreshnessPoll, useOpenFeedback } from "./__roo
 import { installAppMenuSurface, menuWindowPlatform, wantRealMenu } from "./-appMenu";
 import { getDefaultStore } from "jotai";
 import { getCurrentWindow } from "@/platform/native";
-import { nativeBarAtom } from "@/state/atoms";
+import { currentTabAtom, nativeBarAtom } from "@/state/atoms";
 import type { Tab } from "@/utils/tabs";
 
 beforeEach(() => {
   mocks.fileRevision.mockReset().mockResolvedValue("dev:ino:revision");
   mocks.windowFocus.mockReset().mockResolvedValue(vi.fn());
   mocks.lastCallbacks = null;
+  mocks.lastInAppMenuItems = null;
+  mocks.pathname = "/";
   mocks.lastFeedbackProps = null;
   mocks.outlet = () => null;
   mocks.createTab.mockReset().mockResolvedValue("created");
@@ -827,5 +838,69 @@ test("the focus-mode shortcut is left to the native menu when that menu carries 
   } finally {
     await resetFocusMode();
     await unmount();
+  }
+});
+
+test("View layout entries appear only on the boards route with an analysis tab, and are absent off-route or on non-analysis tabs", async () => {
+  const store = getDefaultStore();
+  const analysisTab = {
+    value: "analysis-tab",
+    name: "Game",
+    type: "analysis" as const,
+    gameOrigin: { kind: "none" as const },
+  };
+  const playTab = {
+    value: "play-tab",
+    name: "Play",
+    type: "play" as const,
+    gameOrigin: { kind: "none" as const },
+  };
+  const menuIds = () =>
+    (mocks.lastInAppMenuItems ?? []).flatMap((item) =>
+      "kind" in item || !item.id ? [] : [item.id],
+    );
+
+  // On `/` with an analysis tab: both entries are present and trigger board commands.
+  mocks.pathname = "/";
+  store.set(currentTabAtom, analysisTab as never);
+  const first = await renderWithWindow(false);
+  try {
+    expect(menuIds()).toContain("save_layout_as");
+    expect(menuIds()).toContain("manage_layouts");
+
+    mocks.requestBoardCommand.mockClear();
+    mocks.lastCallbacks?.saveLayoutAs?.();
+    mocks.lastCallbacks?.manageLayouts?.();
+    expect(mocks.requestBoardCommand).toHaveBeenNthCalledWith(1, expect.anything(), "saveLayoutAs");
+    expect(mocks.requestBoardCommand).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      "manageLayouts",
+    );
+  } finally {
+    await first.unmount();
+  }
+
+  // Off the boards route while currentTabAtom is still an analysis tab: both entries are absent.
+  mocks.pathname = "/settings";
+  store.set(currentTabAtom, analysisTab as never);
+  const offRoute = await renderWithWindow(false);
+  try {
+    expect(menuIds()).not.toContain("save_layout_as");
+    expect(menuIds()).not.toContain("manage_layouts");
+  } finally {
+    await offRoute.unmount();
+  }
+
+  // On `/` with a non-analysis tab: both entries are absent.
+  mocks.pathname = "/";
+  store.set(currentTabAtom, playTab as never);
+  const nonAnalysis = await renderWithWindow(false);
+  try {
+    expect(menuIds()).not.toContain("save_layout_as");
+    expect(menuIds()).not.toContain("manage_layouts");
+  } finally {
+    store.set(currentTabAtom, analysisTab as never);
+    await nonAnalysis.unmount();
   }
 });

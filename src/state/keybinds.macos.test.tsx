@@ -75,4 +75,15 @@ test("only the shortcuts the native macOS menu carries are left to it", () => {
   ).toBe(true);
   expect(firedByNativeMenu("UNDO")).toBe(false);
   expect(firedByNativeMenu("PROMOTE_VARIATION")).toBe(false);
+  expect(firedByNativeMenu("APPLY_LAYOUT_1")).toBe(false);
+  expect(firedByNativeMenu("APPLY_LAYOUT_2")).toBe(false);
+  expect(firedByNativeMenu("APPLY_LAYOUT_3")).toBe(false);
+});
+
+test("Apply layout 1/2/3 defaults use meta+alt on macOS", () => {
+  localStorage.removeItem("keybinds");
+  const map = createStore().get(keyMapAtom);
+  expect(map.APPLY_LAYOUT_1.keys).toBe("meta+alt+1");
+  expect(map.APPLY_LAYOUT_2.keys).toBe("meta+alt+2");
+  expect(map.APPLY_LAYOUT_3.keys).toBe("meta+alt+3");
 });

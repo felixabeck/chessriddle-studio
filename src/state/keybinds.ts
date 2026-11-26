@@ -251,6 +251,21 @@ const definitions = {
         name: "Go to info tab",
         keys: "i",
     },
+    APPLY_LAYOUT_1: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.APPLY_LAYOUT_1"),
+        name: "Apply layout 1",
+        keys: `${meta}+alt+1`,
+    },
+    APPLY_LAYOUT_2: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.APPLY_LAYOUT_2"),
+        name: "Apply layout 2",
+        keys: `${meta}+alt+2`,
+    },
+    APPLY_LAYOUT_3: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.APPLY_LAYOUT_3"),
+        name: "Apply layout 3",
+        keys: `${meta}+alt+3`,
+    },
     ANNOTATION_BRILLIANT: {
         labelKey: i18nKey("Settings.Keybinds.Actions.ANNOTATION_BRILLIANT"),
         name: "Toggle brilliant move annotation",

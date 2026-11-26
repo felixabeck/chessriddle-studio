@@ -3,16 +3,19 @@ import { useEffect } from "react";
 import { currentTabAtom } from "@/state/atoms";
 
 /**
- * A save requested from outside the board (the File menu). The mounted `BoardAnalysis` of the
- * named tab consumes it with its own save handlers, so the menu and the in-board controls share
- * one save path and one error handling. Every request is a new object, so a repeated request
- * re-runs the consumer.
+ * A board command requested from outside the board (the File or View menu). The mounted
+ * `BoardAnalysis` of the named tab consumes it with its own handlers, so menus and in-board
+ * controls share one path and modals stay out of the entry bundle. Every request is a new object,
+ * so a repeated request re-runs the consumer.
  */
-export type BoardCommand = { tabId: string; kind: "save" | "saveTo" };
+export type BoardCommand = {
+    tabId: string;
+    kind: "save" | "saveTo" | "saveLayoutAs" | "manageLayouts";
+};
 
 export const boardCommandAtom = atom<BoardCommand | null>(null);
 
-/** Requests Save or Save to… for the active analysis tab; false when none is active. */
+/** Requests a board command for the active analysis tab; false when none is active. */
 export function requestBoardCommand(
     store: ReturnType<typeof getDefaultStore>,
     kind: BoardCommand["kind"],
@@ -26,15 +29,32 @@ export function requestBoardCommand(
 /** Runs a pending request addressed to `tabId` once, through the board's own handlers. */
 export function useBoardCommands(
     tabId: string | undefined,
-    handlers: { save: () => void; saveTo: () => void },
+    handlers: {
+        save: () => void;
+        saveTo: () => void;
+        saveLayoutAs: () => void;
+        manageLayouts: () => void;
+    },
 ): void {
     const command = useAtomValue(boardCommandAtom);
     const setCommand = useSetAtom(boardCommandAtom);
-    const { save, saveTo } = handlers;
+    const { save, saveTo, saveLayoutAs, manageLayouts } = handlers;
     useEffect(() => {
         if (!command || tabId === undefined || command.tabId !== tabId) return;
         setCommand(null);
-        if (command.kind === "save") save();
-        else saveTo();
-    }, [command, tabId, setCommand, save, saveTo]);
+        switch (command.kind) {
+            case "save":
+                save();
+                break;
+            case "saveTo":
+                saveTo();
+                break;
+            case "saveLayoutAs":
+                saveLayoutAs();
+                break;
+            case "manageLayouts":
+                manageLayouts();
+                break;
+        }
+    }, [command, tabId, setCommand, save, saveTo, saveLayoutAs, manageLayouts]);
 }

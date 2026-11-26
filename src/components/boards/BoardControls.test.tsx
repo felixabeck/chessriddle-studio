@@ -14,6 +14,9 @@ import {
   gameStateFamily,
   tabsAtom,
 } from "@/state/atoms";
+import { defaultBoardArrangement } from "@/state/boardArrangement";
+import { defaultKindLayouts } from "@/state/layoutPresets";
+import { BOARD_LAYOUTS_VERSION, boardLayoutsAtom } from "@/state/layoutStorage";
 import {
   closeTreeStore,
   createTreeStore,
@@ -41,11 +44,13 @@ vi.mock("react-i18next", () => ({
 vi.mock("lucide-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("lucide-react")>()),
   Undo2: () => null,
+  BookmarkPlus: () => null,
   Camera: () => null,
   Check: () => null,
   Save: () => null,
   Database: () => null,
   Ellipsis: () => null,
+  LayoutGrid: () => null,
   Pencil: () => null,
   PencilOff: () => null,
   ArrowUpDown: () => null,
@@ -687,5 +692,79 @@ describe("BoardControls", () => {
 
     expect(jotaiStore.get(tabsAtom)).toEqual([{ ...tab, type: "analysis" }]);
     expect(jotaiStore.get(gameStateFamily(tabId))).toBe("playing");
+  });
+
+  test("More menu shows the Layout section on the analysis board without check marks, and omits it on the play board", async () => {
+    const onApplyLayout = vi.fn();
+    const onSaveLayoutAs = vi.fn();
+    const onManageLayouts = vi.fn();
+    jotaiStore.set(boardLayoutsAtom, {
+      version: BOARD_LAYOUTS_VERSION,
+      kinds: defaultKindLayouts(),
+      saved: [
+        {
+          id: "saved-custom",
+          name: "My Study",
+          arrangement: defaultBoardArrangement(),
+          tabsHidden: false,
+        },
+      ],
+    });
+
+    await renderControls({
+      saveTo: vi.fn(),
+      onApplyLayout,
+      onSaveLayoutAs,
+      onManageLayouts,
+    });
+    await openMoreMenu();
+
+    expect(document.body.textContent).toContain("Board.Layout.Section");
+    const repertoireItem = menuItem("Board.Layout.Preset.Repertoire");
+    const gameReviewItem = menuItem("Board.Layout.Preset.GameReview");
+    const preparationItem = menuItem("Board.Layout.Preset.Preparation");
+    const savedItem = menuItem("My Study");
+    const saveAsItem = menuItem("Board.Layout.SaveAs");
+    const manageItem = menuItem("Board.Layout.Manage");
+    expect(repertoireItem).not.toBeNull();
+    expect(gameReviewItem).not.toBeNull();
+    expect(preparationItem).not.toBeNull();
+    expect(savedItem).not.toBeNull();
+    expect(saveAsItem).not.toBeNull();
+    expect(manageItem).not.toBeNull();
+
+    // Layout items carry no check mark / checkbox role.
+    for (const item of [repertoireItem!, gameReviewItem!, preparationItem!, savedItem!]) {
+      expect(item.getAttribute("role")).toBe("menuitem");
+      expect(item.hasAttribute("aria-checked")).toBe(false);
+    }
+
+    await act(async () => savedItem!.click());
+    expect(onApplyLayout).toHaveBeenCalledWith("saved-custom");
+
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Layout.SaveAs")!.click());
+    expect(onSaveLayoutAs).toHaveBeenCalledOnce();
+
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Layout.Manage")!.click());
+    expect(onManageLayouts).toHaveBeenCalledOnce();
+
+    // Play board never shows the Layout section.
+    await act(async () => {
+      jotaiStore.set(tabsAtom, [{ ...tab, type: "play" }], tabId);
+    });
+    await renderControls({
+      disableVariations: true,
+      allowEditing: false,
+      onApplyLayout,
+      onSaveLayoutAs,
+      onManageLayouts,
+    });
+    await openMoreMenu();
+    expect(menuItem("Board.Layout.Preset.Repertoire")).toBeNull();
+    expect(menuItem("My Study")).toBeNull();
+    expect(menuItem("Board.Layout.SaveAs")).toBeNull();
+    expect(menuItem("Board.Layout.Manage")).toBeNull();
   });
 });

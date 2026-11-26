@@ -10,8 +10,19 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-function Consumer(props: { tabId: string; save: () => void; saveTo: () => void }) {
-  useBoardCommands(props.tabId, { save: props.save, saveTo: props.saveTo });
+function Consumer(props: {
+  tabId: string;
+  save: () => void;
+  saveTo: () => void;
+  saveLayoutAs: () => void;
+  manageLayouts: () => void;
+}) {
+  useBoardCommands(props.tabId, {
+    save: props.save,
+    saveTo: props.saveTo,
+    saveLayoutAs: props.saveLayoutAs,
+    manageLayouts: props.manageLayouts,
+  });
   return null;
 }
 
@@ -20,13 +31,21 @@ async function setup(tabId: string) {
   const store = createStore();
   const save = vi.fn();
   const saveTo = vi.fn();
+  const saveLayoutAs = vi.fn();
+  const manageLayouts = vi.fn();
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   await act(async () =>
     root.render(
       <Provider store={store}>
-        <Consumer tabId={tabId} save={save} saveTo={saveTo} />
+        <Consumer
+          tabId={tabId}
+          save={save}
+          saveTo={saveTo}
+          saveLayoutAs={saveLayoutAs}
+          manageLayouts={manageLayouts}
+        />
       </Provider>,
     ),
   );
@@ -34,7 +53,7 @@ async function setup(tabId: string) {
     act(() => root.unmount());
     host.remove();
   });
-  return { store, save, saveTo };
+  return { store, save, saveTo, saveLayoutAs, manageLayouts };
 }
 
 test("a Save request for this tab runs the board's save once and is consumed", async () => {
@@ -50,6 +69,18 @@ test("a Save to… request opens the board's dialog", async () => {
   await act(async () => store.set(boardCommandAtom, { tabId: "tab-a", kind: "saveTo" }));
   expect(saveTo).toHaveBeenCalledOnce();
   expect(save).not.toHaveBeenCalled();
+});
+
+test("layout requests open Save layout as… and Manage layouts… and are consumed", async () => {
+  const { store, saveLayoutAs, manageLayouts } = await setup("tab-a");
+  await act(async () => store.set(boardCommandAtom, { tabId: "tab-a", kind: "saveLayoutAs" }));
+  expect(saveLayoutAs).toHaveBeenCalledOnce();
+  expect(manageLayouts).not.toHaveBeenCalled();
+  expect(store.get(boardCommandAtom)).toBeNull();
+
+  await act(async () => store.set(boardCommandAtom, { tabId: "tab-a", kind: "manageLayouts" }));
+  expect(manageLayouts).toHaveBeenCalledOnce();
+  expect(store.get(boardCommandAtom)).toBeNull();
 });
 
 test("a request for another tab is left alone", async () => {

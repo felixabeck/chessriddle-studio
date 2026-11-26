@@ -9,10 +9,12 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router";
 import { getCurrentWebviewWindow } from "@/platform/native";
 import {
+  BookmarkPlus,
   Castle,
   ChevronDown,
   Database,
   FolderOpen,
+  LayoutGrid,
   LogOut,
   Maximize,
   PanelTopClose,
@@ -124,6 +126,8 @@ const IN_APP_MENU_ICONS: Record<string, typeof SettingsIcon> = {
   settings: SettingsIcon,
   toggle_fullscreen: Maximize,
   toggle_focus_mode: PanelTopClose,
+  save_layout_as: BookmarkPlus,
+  manage_layouts: LayoutGrid,
   guide: GuideIcon,
   assistant: AiChatIcon,
   send_feedback: FeedbackIcon,

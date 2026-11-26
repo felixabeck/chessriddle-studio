@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: 2b161f5c0298e17a
+source: 332d035e7fda54c8
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
@@ -24,6 +24,8 @@ Aby rysować strzałki i wyróżniać pola, przytrzymaj prawy przycisk myszy i p
 
 Karta {{label:Board.Tabs.Info}} wyświetla nagłówki partii, FEN, tekst PGN oraz statystyki drzewa i pozwala przełączać się między partiami w pliku PGN zawierającym wiele partii.
 
-Aby ułożyć obszary szachownicy analizy, przeciągnij kartę panelu ({{label:Board.Tabs.Analysis}}, {{label:Board.Analysis.Report}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} lub {{label:Board.Tabs.Info}}) albo sześciopunktowy uchwyt karty silnika albo użyj uchwytów na pasku kart, w nagłówku notacji lub w nagłówku obszaru panelu, aby umieścić obszary obok, nad lub pod innym obszarem z podglądem albo za pomocą klawiatury. Aby rozciągnąć panel nad dwoma obszarami (na przykład {{label:Board.Tabs.Database}} nad notacją i kartami), najpierw umieść panel nad jednym z nich, a potem przenieś drugi obok. Użyj {{label:Board.Area.ReturnToTabs}} (lub {{label:Board.Area.ReturnToEngines}} dla okna silnika) albo przeciągnij obszar z powrotem na pasek kart, aby go przywrócić, oraz użyj [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}), aby przywrócić domyślny układ.
+Aby ułożyć obszary szachownicy analizy, przeciągnij kartę panelu ({{label:Board.Tabs.Analysis}}, {{label:Board.Analysis.Report}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} lub {{label:Board.Tabs.Info}}) albo sześciopunktowy uchwyt karty silnika albo użyj uchwytów na pasku kart, w nagłówku notacji lub w nagłówku obszaru panelu, aby umieścić obszary obok, nad lub pod innym obszarem z podglądem albo za pomocą klawiatury. Aby rozciągnąć panel nad dwoma obszarami (na przykład {{label:Board.Tabs.Database}} nad notacją i kartami), najpierw umieść panel nad jednym z nich, a potem przenieś drugi obok. Użyj {{label:Board.Area.ReturnToTabs}} (lub {{label:Board.Area.ReturnToEngines}} dla okna silnika) albo przeciągnij obszar z powrotem na pasek kart, aby go przywrócić.
+
+Karty repertuaru, partii i przygotowania pod przeciwnika zachowują każda własny aktywny układ. Dostępne są trzy gotowe układy ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} oraz {{label:Board.Layout.Preset.Preparation}}), a własne układy możesz zapisywać, przełączać, zmieniać ich nazwy i usuwać z menu {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} i {{label:Board.Layout.Manage}}) lub z menu {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} i {{label:Board.Layout.LayoutsMenu}}). Użyj [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}), aby przywrócić gotowe układy dla wszystkich trzech rodzajów kart, zachowując zapisane układy.
 
 Aby ukryć karty, na przykład gdy każdy używany panel jest wyświetlany jako osobny obszar, kliknij {{label:Board.Area.HideTabs}} pod uchwytem na końcu paska kart; sąsiednie obszary zajmą ich miejsce. Karty zachowują położenie i rozmiar: pokażesz je ponownie przyciskiem {{label:Board.Arrange.ShowTabs}}, który pojawia się w nagłówku notacji, gdy karty są ukryte, skrótem karty albo generując raport. Panel zwrócony, gdy karty są ukryte, trafia do ukrytych kart.

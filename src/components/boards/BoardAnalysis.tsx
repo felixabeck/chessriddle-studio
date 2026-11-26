@@ -17,9 +17,11 @@ import {
 import { parseUci, type Piece } from "chessops";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import {
+  lazy,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -54,6 +56,9 @@ import {
 } from "@/state/boardArrangement";
 import type { Engine } from "@/utils/engines";
 import { selectStripTab } from "@/state/stripTab";
+import { resolveBoardLayoutKind } from "@/state/boardLayoutKind";
+import type { BoardLayoutKind } from "@/state/layoutPresets";
+import { applyBoardLayoutToKind, boardLayoutListAtom } from "@/state/layoutStorage";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { locateBoardState } from "@/utils/treeReducer";
@@ -107,6 +112,8 @@ import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
 import { BoardArrangementContext } from "../tabs/BoardTabLayout";
+
+const BoardLayoutModal = lazy(() => import("./BoardLayoutModal"));
 
 /** Testable seam for the Photo panel's lazy chunk loader. */
 export const scoresheetPhotoPanelLoader = {
@@ -265,12 +272,18 @@ function BoardAnalysis() {
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
   const [currentTab] = useOwnerTab();
+  const atoms = useAtomStore();
+  const tabId = useOwnerTabId();
   const { getTab, updateTab } = useTabActions();
   const [addGameConfirm, setAddGameConfirm] = useState(false);
   const tabFile = getTabFile(currentTab);
   const hasPersistentOrigin =
     !!currentTab && isPersistentGameOrigin(currentTab) && !isDraftGameOrigin(currentTab.gameOrigin);
   const [saveToModal, setSaveToModal] = useState(false);
+  const [layoutModal, setLayoutModal] = useState<{
+    mode: "save" | "manage";
+    kind: BoardLayoutKind;
+  } | null>(null);
   const autoSave = useAtomValue(autoSaveAtom);
   const engines = useAtomValue(enginesAtom);
   const loadedEngines = useMemo(() => (engines ?? []).filter((e) => e.loaded), [engines]);
@@ -350,9 +363,31 @@ function BoardAnalysis() {
     }
     void saveFile(true);
   }, [saveFile, currentTab, getTab]);
-  // File menu → Save / Save to…: handled here, Save through the board controls' own handler.
+  // File and View menu commands: handled here so menus and in-board controls share one path.
   const openSaveTo = useCallback(() => setSaveToModal(true), []);
-  useBoardCommands(currentTab?.value, { save: requestUserSave, saveTo: openSaveTo });
+  const openSaveLayoutAs = useCallback(() => {
+    setLayoutModal({ mode: "save", kind: resolveBoardLayoutKind(atoms, tabId) });
+  }, [atoms, tabId]);
+  const openManageLayouts = useCallback(() => {
+    setLayoutModal({ mode: "manage", kind: resolveBoardLayoutKind(atoms, tabId) });
+  }, [atoms, tabId]);
+  const applyLayout = useCallback(
+    (layoutId: string) => {
+      applyBoardLayoutToKind(
+        atoms,
+        resolveBoardLayoutKind(atoms, tabId),
+        layoutId,
+        atoms.get(enginesAtom),
+      );
+    },
+    [atoms, tabId],
+  );
+  useBoardCommands(currentTab?.value, {
+    save: requestUserSave,
+    saveTo: openSaveTo,
+    saveLayoutAs: openSaveLayoutAs,
+    manageLayouts: openManageLayouts,
+  });
   useAutoSave(store, hasPersistentOrigin && autoSave, saveFile);
 
   const addGameAction = useContext(AddGameContext);
@@ -427,8 +462,6 @@ function BoardAnalysis() {
   const practicing = currentTabSelected === "practice" && practiceTabSelected === "train";
   const practiceState = useAtomValue(useTabAtom(practiceStateFamily));
   const practiceMoveController = useAtomValue(useTabAtom(practiceMoveControllerFamily));
-  const atoms = useAtomStore();
-  const tabId = useOwnerTabId();
   const selectInStrip = (tab: string) => selectStripTab(atoms, tabId, tab);
 
   useHotkeys(
@@ -567,6 +600,22 @@ function BoardAnalysis() {
           e.preventDefault();
         },
       ],
+      ...(
+        [
+          [keyMap.APPLY_LAYOUT_1.keys, 0],
+          [keyMap.APPLY_LAYOUT_2.keys, 1],
+          [keyMap.APPLY_LAYOUT_3.keys, 2],
+        ] as const
+      ).map<HotkeyItem>(([keys, index]) => [
+        keys,
+        (e) => {
+          const entry = atoms.get(boardLayoutListAtom)[index];
+          if (!entry) return;
+          const id = entry.kind === "preset" ? entry.preset.id : entry.saved.id;
+          applyLayout(id);
+          e.preventDefault();
+        },
+      ]),
     ]),
   );
 
@@ -644,6 +693,16 @@ function BoardAnalysis() {
           store={store}
         />
       )}
+      {layoutModal && (
+        <Suspense fallback={null}>
+          <BoardLayoutModal
+            opened
+            mode={layoutModal.mode}
+            kind={layoutModal.kind}
+            onClose={() => setLayoutModal(null)}
+          />
+        </Suspense>
+      )}
       <ConfirmChangesModal
         opened={addGameConfirm}
         toggle={() => setAddGameConfirm(false)}
@@ -677,6 +736,9 @@ function BoardAnalysis() {
                 autoSaveActive={hasPersistentOrigin && autoSave}
                 autoSaveFailed={autoSaveFailed}
                 saveTo={() => setSaveToModal(true)}
+                onApplyLayout={applyLayout}
+                onSaveLayoutAs={openSaveLayoutAs}
+                onManageLayouts={openManageLayouts}
               />
             }
           />

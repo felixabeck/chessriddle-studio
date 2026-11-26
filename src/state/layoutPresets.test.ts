@@ -22,7 +22,6 @@ describe("layoutPresets", () => {
         for (const preset of LAYOUT_PRESETS) {
             expect(preset.id.length).toBeGreaterThan(0);
             expect(preset.nameKey.length).toBeGreaterThan(0);
-            expect(preset.defaultName.length).toBeGreaterThan(0);
             expect(typeof preset.layout.tabsHidden).toBe("boolean");
             expect(isValidBoardArrangement(preset.layout.arrangement)).toBe(true);
             for (const engineLeaf of arrangementEngineAreas(preset.layout.arrangement)) {

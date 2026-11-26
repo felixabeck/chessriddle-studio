@@ -2,11 +2,13 @@ import { useOwnerTab } from "@/state/tabScope";
 import { Group, Menu, Text } from "@mantine/core";
 import {
   Undo2,
+  BookmarkPlus,
   Camera,
   Check,
   Save,
   Database,
   Ellipsis,
+  LayoutGrid,
   Pencil,
   PencilOff,
   ArrowUpDown,
@@ -24,6 +26,7 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import IconAction from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { keyMapAtom } from "@/state/keybinds";
+import { boardLayoutListAtom } from "@/state/layoutStorage";
 import { formatKeymap } from "@/utils/formatKeymap";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
 import { usePlayFromHere } from "./usePlayFromHere";
@@ -42,6 +45,9 @@ interface BoardControlsProps {
   takeBackPending?: boolean;
   disableVariations?: boolean;
   allowEditing?: boolean;
+  onApplyLayout?: (layoutId: string) => void;
+  onSaveLayoutAs?: () => void;
+  onManageLayouts?: () => void;
 }
 
 function BoardControls({
@@ -58,6 +64,9 @@ function BoardControls({
   takeBackPending,
   disableVariations,
   allowEditing,
+  onApplyLayout,
+  onSaveLayoutAs,
+  onManageLayouts,
 }: BoardControlsProps) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -67,6 +76,7 @@ function BoardControls({
   const setHeaders = useStore(store, (s) => s.setHeaders);
 
   const keyMap = useAtomValue(keyMapAtom);
+  const layoutList = useAtomValue(boardLayoutListAtom);
   const [currentTab, setCurrentTab] = useOwnerTab();
   const playFromHere = usePlayFromHere();
   const snapshotInFlightRef = useRef(false);
@@ -111,6 +121,8 @@ function BoardControls({
 
   const canEdit = !disableVariations || Boolean(allowEditing);
   const showSave = Boolean(saveFile && dirty && (!autoSaveActive || autoSaveFailed));
+  const showLayouts =
+    currentTab?.type === "analysis" && Boolean(onApplyLayout && onSaveLayoutAs && onManageLayouts);
 
   useHotkeys(keyMap.EDIT_POSITION.keys, () => toggleEditingMode(), {
     ...backgroundHotkeyOptions,
@@ -226,6 +238,28 @@ function BoardControls({
             >
               {t("Board.Action.EditPosition")}
             </Menu.Item>
+          )}
+          {showLayouts && onApplyLayout && onSaveLayoutAs && onManageLayouts && (
+            <>
+              <Menu.Divider />
+              <Menu.Label>{t("Board.Layout.Section")}</Menu.Label>
+              {layoutList.map((entry) => {
+                const id = entry.kind === "preset" ? entry.preset.id : entry.saved.id;
+                const label = entry.kind === "preset" ? t(entry.preset.nameKey) : entry.saved.name;
+                return (
+                  <Menu.Item key={id} onClick={() => onApplyLayout(id)}>
+                    {label}
+                  </Menu.Item>
+                );
+              })}
+              <Menu.Divider />
+              <Menu.Item leftSection={<BookmarkPlus size="0.875rem" />} onClick={onSaveLayoutAs}>
+                {t("Board.Layout.SaveAs")}
+              </Menu.Item>
+              <Menu.Item leftSection={<LayoutGrid size="0.875rem" />} onClick={onManageLayouts}>
+                {t("Board.Layout.Manage")}
+              </Menu.Item>
+            </>
           )}
         </Menu.Dropdown>
       </Menu>

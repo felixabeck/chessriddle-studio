@@ -330,6 +330,84 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
     expect(openedGuide).toBe(2);
 });
 
+test("View menu and in-app menu include Save layout as… and Layouts… only when showBoardLayouts is true, without accelerators", () => {
+    let savedAs = 0;
+    let managed = 0;
+    const actions = callbacks({
+        saveLayoutAs: () => {
+            savedAs += 1;
+        },
+        manageLayouts: () => {
+            managed += 1;
+        },
+    });
+
+    const hiddenTree = buildAppMenuTree({
+        t,
+        isMacOS: true,
+        showBoardLayouts: false,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "meta+shift+f" },
+        callbacks: actions,
+    });
+    expect(idsOf(hiddenTree, "Menu.View")).toEqual(["toggle_fullscreen", "toggle_focus_mode"]);
+
+    const shownTree = buildAppMenuTree({
+        t,
+        isMacOS: true,
+        showBoardLayouts: true,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "meta+shift+f" },
+        callbacks: actions,
+    });
+    expect(idsOf(shownTree, "Menu.View")).toEqual([
+        "toggle_fullscreen",
+        "toggle_focus_mode",
+        "save_layout_as",
+        "manage_layouts",
+    ]);
+    expect(option(shownTree, "Menu.View", "save_layout_as").shortcut).toBeUndefined();
+    expect(option(shownTree, "Menu.View", "manage_layouts").shortcut).toBeUndefined();
+    option(shownTree, "Menu.View", "save_layout_as").action?.();
+    option(shownTree, "Menu.View", "manage_layouts").action?.();
+    expect(savedAs).toBe(1);
+    expect(managed).toBe(1);
+
+    const hiddenItems = buildInAppMenuItems({
+        t,
+        isMacOS: false,
+        showBoardLayouts: false,
+        newTabShortcut: "Ctrl+T",
+        openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
+        callbacks: actions,
+    });
+    expect(idsOfItems(hiddenItems)).not.toContain("save_layout_as");
+    expect(idsOfItems(hiddenItems)).not.toContain("manage_layouts");
+
+    const shownItems = buildInAppMenuItems({
+        t,
+        isMacOS: false,
+        showBoardLayouts: true,
+        newTabShortcut: "Ctrl+T",
+        openFileShortcut: "Ctrl+O",
+        saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
+        callbacks: actions,
+    });
+    expect(item(shownItems, "save_layout_as").shortcut).toBeUndefined();
+    expect(item(shownItems, "manage_layouts").shortcut).toBeUndefined();
+    item(shownItems, "save_layout_as").action?.();
+    item(shownItems, "manage_layouts").action?.();
+    expect(savedAs).toBe(2);
+    expect(managed).toBe(2);
+});
+
 test("changing t changes labels", () => {
     const items = buildInAppMenuItems({
         t: (key) => `${key}.fr`,

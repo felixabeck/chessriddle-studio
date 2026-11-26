@@ -103,6 +103,9 @@ export const KEYBIND_GROUPS = [
             "ANNOTATE_TAB",
             "COACH_TAB",
             "INFO_TAB",
+            "APPLY_LAYOUT_1",
+            "APPLY_LAYOUT_2",
+            "APPLY_LAYOUT_3",
         ],
     },
 ] as const satisfies readonly {

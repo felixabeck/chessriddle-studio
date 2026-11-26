@@ -36,6 +36,8 @@ export type AppMenuCallbacks = {
     exit: () => void | Promise<void>;
     toggleFullscreen: () => void | Promise<void>;
     toggleFocusMode: () => void;
+    saveLayoutAs?: () => void;
+    manageLayouts?: () => void;
 };
 
 /** Focus mode hides the navigation row; the View entry's label says what choosing it does. */
@@ -61,6 +63,7 @@ function viewMenuOptions(
     isMacOS: boolean,
     focusMode: FocusModeMenuState,
     callbacks: AppMenuCallbacks,
+    showBoardLayouts: boolean,
 ): MenuItemAction[] {
     return [
         {
@@ -75,6 +78,20 @@ function viewMenuOptions(
             shortcut: focusMode.shortcut,
             action: callbacks.toggleFocusMode,
         },
+        ...(showBoardLayouts
+            ? [
+                  {
+                      label: t("Board.Layout.SaveAs"),
+                      id: "save_layout_as",
+                      action: callbacks.saveLayoutAs,
+                  },
+                  {
+                      label: t("Board.Layout.LayoutsMenu"),
+                      id: "manage_layouts",
+                      action: callbacks.manageLayouts,
+                  },
+              ]
+            : []),
     ];
 }
 
@@ -99,6 +116,7 @@ export function buildAppMenuTree(args: {
     t: MenuTranslator;
     isMacOS: boolean;
     showAssistant?: boolean;
+    showBoardLayouts?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
@@ -109,6 +127,7 @@ export function buildAppMenuTree(args: {
         t,
         isMacOS,
         showAssistant = false,
+        showBoardLayouts = false,
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
@@ -213,7 +232,7 @@ export function buildAppMenuTree(args: {
         ...(!isMacOS ? [] : [macOSEditMenu]),
         {
             label: t("Menu.View"),
-            options: viewMenuOptions(t, isMacOS, focusMode, callbacks),
+            options: viewMenuOptions(t, isMacOS, focusMode, callbacks, showBoardLayouts),
         },
         {
             label: t("Menu.Help"),
@@ -247,6 +266,7 @@ export function buildInAppMenuItems(args: {
     t: MenuTranslator;
     isMacOS: boolean;
     showAssistant?: boolean;
+    showBoardLayouts?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
@@ -257,6 +277,7 @@ export function buildInAppMenuItems(args: {
         t,
         isMacOS,
         showAssistant = false,
+        showBoardLayouts = false,
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
@@ -305,7 +326,7 @@ export function buildInAppMenuItems(args: {
             action: callbacks.openSettings,
         },
         { kind: "separator" },
-        ...viewMenuOptions(t, isMacOS, focusMode, callbacks),
+        ...viewMenuOptions(t, isMacOS, focusMode, callbacks, showBoardLayouts),
         { kind: "separator" },
         {
             label: t("Menu.Help.Guide"),
@@ -402,6 +423,8 @@ export type AppMenuCommandBindings = {
     exit: () => Promise<unknown>;
     toggleFullscreen: () => Promise<unknown>;
     toggleFocusMode: () => void;
+    saveLayoutAs?: () => void;
+    manageLayouts?: () => void;
 };
 
 export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuCallbacks {
@@ -420,6 +443,8 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         exit: () => bindings.runMenu(bindings.exit),
         toggleFullscreen: () => bindings.runMenu(bindings.toggleFullscreen),
         toggleFocusMode: bindings.toggleFocusMode,
+        ...(bindings.saveLayoutAs ? { saveLayoutAs: bindings.saveLayoutAs } : {}),
+        ...(bindings.manageLayouts ? { manageLayouts: bindings.manageLayouts } : {}),
     };
 }
 

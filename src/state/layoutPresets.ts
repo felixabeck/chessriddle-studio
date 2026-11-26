@@ -1,3 +1,4 @@
+import { i18nKey } from "@/utils/i18nKey";
 import {
     type BoardArrangement,
     defaultBoardArrangement,
@@ -20,9 +21,7 @@ export type LayoutPresetId = "preset:repertoire" | "preset:game" | "preset:prepa
 export interface LayoutPreset {
     readonly id: LayoutPresetId;
     /** Translation key for the preset's display name. */
-    readonly nameKey: string;
-    /** English fallback name. */
-    readonly defaultName: string;
+    readonly nameKey: Parameters<typeof i18nKey>[0];
     readonly layout: BoardLayout;
 }
 
@@ -54,8 +53,7 @@ export function cloneBoardLayout(layout: BoardLayout): BoardLayout {
 export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
     {
         id: "preset:repertoire",
-        nameKey: "Board.Layout.Preset.Repertoire",
-        defaultName: "Repertoire",
+        nameKey: i18nKey("Board.Layout.Preset.Repertoire"),
         layout: {
             arrangement: {
                 direction: "row",
@@ -87,8 +85,7 @@ export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
     },
     {
         id: "preset:game",
-        nameKey: "Board.Layout.Preset.GameReview",
-        defaultName: "Game review",
+        nameKey: i18nKey("Board.Layout.Preset.GameReview"),
         layout: {
             arrangement: defaultBoardArrangement(),
             tabsHidden: false,
@@ -96,8 +93,7 @@ export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
     },
     {
         id: "preset:preparation",
-        nameKey: "Board.Layout.Preset.Preparation",
-        defaultName: "Preparation",
+        nameKey: i18nKey("Board.Layout.Preset.Preparation"),
         layout: {
             arrangement: {
                 direction: "row",
