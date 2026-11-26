@@ -29769,3 +29769,16 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Spotted outside diff:** while writing `e2e/saved-layouts.spec.ts` in the saved-layouts build (2026-11-26), a full-page `assertAccessible()` on a fresh opponent-preparation tab reported axe `nested-interactive`; the spec now checks the layout dialogs only (commit 640daa931).
 * **Failure scenario:** `src/components/panels/info/GameSelectorAccordion.tsx` renders the `IconAction` "Add game" (`Board.Action.AddGame`) inside `Accordion.Control`, which is itself a `<button>`. A button inside a button is invalid HTML: screen readers announce one merged control, keyboard focus order is undefined across browsers, and axe reports `nested-interactive` on every analysis tab that shows the chapter accordion (visible in Felix's 2026-11-26 screenshot as the "+" beside "3. Systeme mit Sge7").
 * **Open question:** none; move the action out of the trigger (e.g. `Accordion.Control`'s sibling or Mantine's `chevron`-adjacent slot) so trigger and action are separate focusable controls, then run a full-page `assertAccessible()` on a file-backed tab.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The Annotate panel fails axe: the comment editor carries aria-multiline without a textbox role, and the "Show more annotations" button sits inside a separator
+
+* **ID:** f-20261126-17 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+
+* **Impact class:** ux
+* **Spotted outside diff:** the saved-layouts build (2026-11-26) gives fresh repertoire tabs a preset with Annotate as its own area; the full-page `assertAccessible()` of `e2e/repertoire-pgn-import.spec.ts` then reported axe violations on the visible Annotate panel. The spec now seeds the two-pane default layout because it tests the import.
+* **Failure scenario:** with the Annotate panel visible, axe reports (1) `aria-allowed-attr` / `aria-prohibited-attr` on the TipTap editor `<div contenteditable aria-label="Comment" aria-multiline="true" class="tiptap ProseMirror">` (aria-multiline and aria-label are not allowed on a div without `role="textbox"`), and (2) `nested-interactive` on a Mantine `Divider` with label (`role="separator"`) that contains the button "Show more annotations". Screen-reader users get an unnamed editable region and a button inside a separator. Felix's 2026-11-26 screenshot shows the panel as its own area, so it is an everyday view.
+* **Open question:** none; give the editor `role="textbox"` (keeping aria-multiline and its label), and move the "Show more annotations" button out of the Divider label; prove with a full-page `assertAccessible()` on a tab with Annotate as its own area.
