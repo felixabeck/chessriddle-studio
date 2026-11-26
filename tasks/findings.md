@@ -29470,3 +29470,17 @@ Filed from the scoresheet photo import build (session c4fe3a7e-d00d-4487-ac2f-31
 * **Failure scenario:** `Test` run 45742639135 on master `01ca41f11` (a records-only commit: one `tasks/build-ledger.md` row on top of `9f6e1a865`), job `rust-windows-test` (job id 139651131493) started 02:28:23Z and was cancelled at 03:03:25Z by `timeout-minutes: 30` while the step "Run Rust tests" was still running; every other job of the run passed. The same job on `9f6e1a865` (run 45742430192, identical source tree) passed in 13 minutes. The job log was not retained (`gh api …/jobs/139651131493/logs` answered 404 BlobNotFound), so the hanging test is unknown. Master's `Test` status is red on a commit that changed no code, which blocks the installer for that SHA.
 * **Open question:** which Windows Rust test (or the runner's test process) hangs intermittently, and does the job need a per-test timeout (e.g. nextest's slow-timeout) so a hang names the test instead of eating the job budget?
 * **Spotted outside diff:** the board-layout-arrange build (frontend-only change) after its ledger push.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### Default `pnpm verify:app` stops at "the Practice tab to show Start Practice" on master after the board-arranging build
+
+* **ID:** f-20261126-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Failure scenario:** default `pnpm verify:app` against a release build of master `f4a9edb0f` (2026-11-26, tuxedo-atlas, with the staged f-20261125-22/-13 harness fix) aborts after 57 ok lines with `verify:app could not run: timed out waiting for the Practice tab to show Start Practice` (`scripts/verify-app.mjs` `selectPracticeTab`, ~line 3326): the Practice tab is found and clicked, but `document.body.innerText` never contains "Start Practice". The same harness against a release build of `06720f913` reaches its end (191 ok; AO1, AO2, the Repertoire filter, RF0–RF8 pass), so the cause lies in `06720f913..f4a9edb0f`, whose only renderer change of the board panels is the board-arranging build `fb5738944..9f6e1a865` (arrangement model, panel areas, tab-strip fallback that skips Practice).
+* **Open question:** product regression (Practice panel not showing its Start Practice control after a tab click in the new arrangement, e.g. a hidden duplicate tab, a fallback selection overriding the click, or the panel area not rendered) or verifier drift (selector or text the arrangement changed)? Reproduce in the real app at `9f6e1a865` and compare with `973d60b27`.
+* **Spotted outside diff:** yes, while proving the f-20261125-22/-13 harness fix.
+
+Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up). Related: f-20261125-22, f-20261125-13.
