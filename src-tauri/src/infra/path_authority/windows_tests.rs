@@ -764,10 +764,8 @@ fn default_root_whose_kind_folder_exists_in_another_case_activates_and_resolves_
         .unwrap();
 }
 
-#[tokio::test]
-async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety() {
-    use tokio_util::sync::CancellationToken;
-
+#[test]
+fn windows_collision_folding_matches_rtl_upcase() {
     // 1. Production RtlUpcaseUnicodeChar collision folding. Greek σ folds to Σ; the final
     // sigma ς is left unchanged by RtlUpcaseUnicodeChar (observed in rust-windows-test,
     // Test run 45780981166), so the collision check treats ς and Σ as distinct names.
@@ -783,6 +781,11 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
         folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03C2}.db3")),
         folder_switch::fold_leaf_name_for_collision(OsStr::new("\u{03A3}.db3"))
     );
+}
+
+#[tokio::test]
+async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename() {
+    use tokio_util::sync::CancellationToken;
 
     // 2. Drain a real open SQLite pool AND a real mmapped .ecsi in SearchCache via quiesce_root
     //    before renaming both files on Windows.
@@ -916,6 +919,19 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
         .expect("unrelated tombstone in another existing directory must not block quiesce_root")
         .lift();
     repo.remove_tombstone_for_test(&dst.join("unrelated.db3"));
+}
+
+#[tokio::test]
+async fn windows_engine_quiesce_releases_actor_handles_before_rename() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("SrcEngines");
+    let dst = dir.path().join("DstEngines");
+    fs::create_dir(&src).unwrap();
+    fs::create_dir(&dst).unwrap();
+    let src_id = opened_file_identity(&open_windows_nofollow(&src, false).unwrap()).unwrap();
+    let dst_id = opened_file_identity(&open_windows_nofollow(&dst, false).unwrap()).unwrap();
+    let src_dir = crate::infra::fs::open_verified_directory(&src, src_id).unwrap();
+    let dst_dir = crate::infra::fs::open_verified_directory(&dst, dst_id).unwrap();
 
     // 3. Drain a published engine actor holding a real OS file handle without FILE_SHARE_DELETE
     //    via EngineSupervisor::quiesce_executables before renaming the engine file on Windows.
@@ -962,10 +978,13 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
     );
     let mut execs = std::collections::HashSet::new();
     execs.insert(exec_ref);
-    let sup_guard = supervisor
-        .quiesce_executables(execs, std::collections::HashSet::new())
-        .await
-        .unwrap();
+    let sup_guard = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        supervisor.quiesce_executables(execs, std::collections::HashSet::new()),
+    )
+    .await
+    .expect("quiesce_executables did not return within 60 s on Windows")
+    .unwrap();
     assert_eq!(supervisor.actor_count_for_test(), 0);
     let _ = crate::infra::fs::rename_entry_at(
         src_dir.as_file(),
@@ -979,7 +998,10 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
     assert!(dst.join("engine.exe").exists());
     assert!(!src.join("engine.exe").exists());
     sup_guard.lift();
+}
 
+#[test]
+fn windows_move_backstop_panic_during_unwind_does_not_abort() {
     // 4. Actually construct and drop MoveBackstopGuard with PanicInBackstop during unwinding:
     //    must catch the panic internally and never abort!
     let _fault = folder_switch::install_folder_switch_fault(
