@@ -15060,3 +15060,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Feature growth ordered by Felix (folder settings: show folder, restore default, move dialog, home-folder defaults; 2026-11-25), measured with the procedure of d-20261125-50. Reversal path: tighten the ceilings against a future smaller production build.
 * **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-25/26 for folder-settings (full auto) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"6720000734e498c5ce3397d0260d51a0112ee7382ba459ed503339ad983117fc","input_sha256":"f6f2d62239c45f102f75651d5503ac7c9cabeb3cb7ffec36e3a4b2256b3cca6e","kind":"mutation-receipt","operation":"452ed02c19980e94589c1a56875945f8b4844a35e10abf534c65a374d5232041","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261126-09 — How are pulled-out engines stored in the analysis-board arrangement?
+
+* **Question:** Felix ordered (2026-11-26) that any engine can be pulled out of the Engines panel as its own window, several at once. How is an engine window identified, bounded and kept consistent with engines that are unloaded or deleted?
+* **Governs:** -
+* **Chosen:** A leaf `engine:<engine id>` (immutable id, never name or path) in `analysis-board-layout`, at most 4 engine leaves; the shown arrangement hides leaves of engines that are not loaded and the stored tree prunes a leaf only when a loaded engine list lacks its id. Portals receive element targets, never `#id` selectors, because engine ids may contain `:`.
+* **Rejected:** A separate per-engine placement store beside the arrangement (two sources of truth for one layout); keying by engine name (collides on renamed duplicates).
+* **Reason:** One arrangement owns every area; engine-lifecycle rule requires id keys; the cap bounds the tree. Reversal path: drop the `engine:` leaf type in `src/state/boardArrangement.ts`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for engine-card-pullout (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+
+### d-20261126-10 — What does a pinned engine bar become after the update, and how is it carried over?
+
+* **Question:** The pinned engine bar is removed (Felix 2026-11-26). How is a user's currently pinned engine carried over without losing their layout?
+* **Governs:** -
+* **Chosen:** On reading the layout, while any of `detached-engine`, `detached-engine-placement`, `detached-engine-lines` exists, a non-empty engine id inserts `engine:<id>` at the pinned place (above tabs, above or below notation, below board; 30 % share) unless already present, over the cap or invalid; the layout is written first, then all three keys are removed; failures keep the keys for the next start.
+* **Rejected:** Dropping the pinned engine silently (Felix asked that it starts as a window in the same spot).
+* **Reason:** Idempotent one-time migration under the persisted-state rule. Reversal path: remove the retired-key branch in `src/state/layoutStorage.ts`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for engine-card-pullout (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+
+### d-20261126-11 — How does a pulled-out engine window get its header and how does it go back?
+
+* **Question:** An engine window needs the same grip and × as other panels, and the Engines panel's cards need reorder plus pull-out from one grip. Which component owns the header and the drop zone back?
+* **Governs:** -
+* **Chosen:** The compact engine card's own top row is the window header (no `PanelArea` header bar, so exactly one grip and one ×). The grip drives the existing `useBoardArranging` drag, extended with reorder targets; `@hello-pangea/dnd` leaves the Engines panel. Back: × or dropping on the tab list (Analysis in the strip) or on the Analysis area's header (Analysis as its own area). Keyboard: grip menu Move up / Move down / Show as its own area.
+* **Rejected:** Wrapping the card in `PanelArea` (two headers); a second drag library gesture for reorder (two drag engines).
+* **Reason:** Plan review P-2, P-6. Reversal path: render engine leaves through `PanelArea` in `BoardAnalysis.tsx`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for engine-card-pullout (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+
+### d-20261126-12 — Which share does a newly placed engine window take, and where does Report live?
+
+* **Question:** A pulled-out engine window placed beside an area took 50 % of it like every panel, which halved the board for three engine lines (WebKit check, 2026-11-26). Felix also decided Report becomes its own panel; how is it modelled?
+* **Governs:** -
+* **Chosen:** An engine leaf placed beside a target gets 30 % (the carry-over share, one constant used by the split and the drag preview); panels keep 50 %. `report` is a panel area and joins the always-present set, so stored layouts without it stay valid with Report in the strip.
+* **Rejected:** Sizing engine windows to their content (Mosaic splits are percentages; would need a second sizing mechanism).
+* **Reason:** Keeps the board large while the divider stays draggable. Reversal path: return 50 from `areaSplitShare` in `src/state/boardArrangement.ts`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for engine-card-pullout (full auto) · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"22145a6cfabf18bc5f15bd2d2d364edbf83aa6daf6d2967dd60d930c3f7161ae","input_sha256":"d90baaa031d9772ee4f7c67b9072159007fbfa8d97fb860a11f471d0b7a6c989","kind":"mutation-receipt","operation":"caffef74181ebabe279dc0223556e5d318f94ba997bf127c7d8223d8fde5cd18","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-09","d-20261126-10","d-20261126-11","d-20261126-12"],"target":"decisions-ledger","v":1} -->
