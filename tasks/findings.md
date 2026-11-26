@@ -29626,3 +29626,22 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Handled (2026-11-26, Claude Code (Opus 5.5), folder-settings build):** commit `5edb13a13`. All 20 survivors of run 45806767175 (from its `mutation.json` artifacts) are handled: the two `cloneNode` mutants and the `offset === 0` ternary were equivalent branches and are removed; the rest are pinned by a deep strict-equal `stripUnsureMarks` test, a marked root that `getMainLineUnsurePaths` never reports, `toStrictEqual` remaining-token shapes plus an empty-token stop, `workspace-session-unavailable` in the reserved-key test, no own `unsure` key after validation, all four `inspectRawTreeForRestore` verdicts, and committed-write listeners until they unsubscribe.
   * **Proof:** Stryker on `tree-path` restricted to `treeReducer.ts:590-670`: score 100.00 (75 killed, 1 timeout: the emptied `while` body never terminates); on `workspace-storage` restricted to the changed `tabStorage.ts` ranges: 100.00 (47 killed, 1 timeout: `index--` → `index++`); each survivor also applied by hand turns its test file red; `tree.test.ts` + `tabStorage.test.ts` 411 passed.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"bb87c58c18a5cf58d042b7ae3b4aa36f602b40f00eaa7e60667021ce0c9ddf8e","header_sha256":"93fe1bf091db694f379fefc8b480ea5d08072fee5d50217683156f03ba4c23c4","header_status":"handled","input_sha256":"24dbc1440dcd15f75afa88726268af854630e31098416e983cdf500b4a8df47b","kind":"mutation-receipt","operation":"fac450835beb096ba04c73d23d5abd203a3a3aa1e519678e1e37def3a5773252","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-08"],"target":"f-20261126-08","v":1} -->
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The folder-settings build-ledger row fails the ledger format check
+
+* **ID:** f-20261126-09 · **Status:** open · **Area:** docs-agent-config · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45828605741
+* **First red:** `dd8835ec2` (the push that added the row; its Test run 45828427723 was still in progress when filed; the previous Test run 45823513947 on `bca9c4500` was green); run 45828605741 on `f5f360ef7` inherits it
+* **Repair owner:** fd03f841-bbc1-46d4-876c-b7206fbf1d7d on tuxedo-atlas, 2026-11-26T13:50:00Z
+* **Spotted outside diff:** yes
+* **Where:** `tasks/build-ledger.md:387`, column `plan_adopted_per_round`
+* **Defect:** the row recorded by `dd8835ec2` writes `r1=27 r2=24 r3=8 r4=4 r5=0 (+1 carried)` in `plan_adopted_per_round`; the build-ledger check accepts only labelled counts or the literal `not-recorded`.
+* **Failure scenario:** job `frontend` of Test run 45828605741 fails in the contract gate with "tasks/build-ledger.md:387: plan_adopted_per_round cell 'r1=27 r2=24 r3=8 r4=4 r5=0 (+1 carried)' is not well-formed — expected 'r1=6 r2=2 r3=0' (labelled counts) or 'not-recorded'". The red Test run blocks the install of the engine-card build and refuses later code pushes.
+* **Fix:** drop ` (+1 carried)` from that cell and note the carried issue in the row's notes column.
+* **Proof:** `pnpm gates:contract:check` green; the next Test run's `frontend` job succeeds.
+* **Found by:** Claude Code (Opus 5.5), engine-card pull-out push, 2026-11-26
