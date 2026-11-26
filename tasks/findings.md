@@ -29485,13 +29485,17 @@ Verifier drift, not a product regression: the emoji pass `4aee1135b` gave the Li
 
 ### Default `pnpm verify:app` stops at "the Practice tab to show Start Practice" on master after the board-arranging build
 
-* **ID:** f-20261126-02 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-02 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Failure scenario:** default `pnpm verify:app` against a release build of master `f4a9edb0f` (2026-11-26, tuxedo-atlas, with the staged f-20261125-22/-13 harness fix) aborts after 57 ok lines with `verify:app could not run: timed out waiting for the Practice tab to show Start Practice` (`scripts/verify-app.mjs` `selectPracticeTab`, ~line 3326): the Practice tab is found and clicked, but `document.body.innerText` never contains "Start Practice". The same harness against a release build of `06720f913` reaches its end (191 ok; AO1, AO2, the Repertoire filter, RF0–RF8 pass), so the cause lies in `06720f913..f4a9edb0f`, whose only renderer change of the board panels is the board-arranging build `fb5738944..9f6e1a865` (arrangement model, panel areas, tab-strip fallback that skips Practice).
 * **Open question:** product regression (Practice panel not showing its Start Practice control after a tab click in the new arrangement, e.g. a hidden duplicate tab, a fallback selection overriding the click, or the panel area not rendered) or verifier drift (selector or text the arrangement changed)? Reproduce in the real app at `9f6e1a865` and compare with `973d60b27`.
 * **Spotted outside diff:** yes, while proving the f-20261125-22/-13 harness fix.
 
 Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up). Related: f-20261125-22, f-20261125-13.
+
+* **Handled (2026-11-26, Claude Code (Opus 5.5), folder-settings build):** the Practice-tab timeout is the remount race filed as f-20261125-23: reopening a file that a restored tab already shows remounts the board about 300 ms after the click, so the click lands on the panel that is being replaced and "Start Practice" never appears. It is not verifier drift from the board arranging. The folder-settings commit `cf29ef082` makes `selectPracticeTab` wait until the Practice tab's element id is stable for one second (a remount restarts the wait), then click once, with no click retries; the wait is removed when f-20261125-23 is fixed.
+  * **Proof:** default `pnpm verify:app` against a release build of `f2804beb7` (folder-settings rebased onto `984fd378b`, which contains the board-arranging build), loadavg 7.35: 196 ok, every Practice step passes, ending "all checks passed".
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"54afc5479304c27201cb682aecddff777b2076b5550a80b369f221f31e27e195","header_sha256":"ec06cf6c2f328fab27e858b871249f33d73acdc0114b286f4d815ed1d2fd2ac8","header_status":"handled","input_sha256":"29434dd96080ee4f1219949853e424fd99ee6f592d91200e3b14ef7d4ee8da02","kind":"mutation-receipt","operation":"1368358ba476ec02e7aad3c8ddc575f00d0ba399bd3eb0f3f7fd4240c9749893","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-02"],"target":"f-20261126-02","v":1} -->
 
 ---
 
