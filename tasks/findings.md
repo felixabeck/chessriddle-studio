@@ -29672,3 +29672,22 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** find what renders differently in CI after the View-menu toggle (diff image in the run's `frontend-browser-audit` artifact) and make the spec settle it before the screenshot, or correct the snapshot if the committed one is the outlier.
 * **Proof:** the next Test run's `e2e` job succeeds.
 * **Found by:** Claude Code (Opus 5.5), notation-toolbar build push, 2026-11-26
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The focus-mode board snapshot is stale after the rebase onto the notation toolbar
+
+* **ID:** f-20261126-12 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45870461446
+* **First red:** `b16a0b3e2` (Test run 45870461446, job e2e; the previous Test run on `136849c62` was green)
+* **Repair owner:** 1baab115-8b24-4522-bccf-bf77c2d0c994 on tuxedo-atlas, 2026-11-26T18:06:20Z
+* **Spotted outside diff:** no
+* **Where:** `e2e/focus-mode.spec.ts:35`, snapshot `e2e/focus-mode.spec.ts-snapshots/focus-mode-board-focus-mode.png`
+* **Defect:** the baseline was recorded before the notation toolbar build (`e273f1c46`) moved the board actions into the board bar; the focus-mode spec was not rerun in the container after the rebase onto it.
+* **Failure scenario:** job e2e of Test run 45870461446 fails with "3131 pixels (ratio 0.01 of all image pixels) are different" for "focus mode: the shortcut hides the header, the board takes its height, the top edge shows it again"; the red refuses later code pushes and the install of `b16a0b3e2`.
+* **Fix:** re-record the snapshot in the container on the rebased tree after checking the new image shows the intended layout.
+* **Proof:** the next Test run's e2e job succeeds.
+* **Found by:** Claude Code (Opus 5.5), focus-mode build push, 2026-11-26
