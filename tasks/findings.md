@@ -29603,3 +29603,16 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Failure scenario:** job rust-windows-test of Test run 45802684322 ran 30 min into its job timeout and was cancelled while `infra::path_authority::windows_tests::windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety` was running; every other test finished. Its later sections (engine actor drain via `EngineSupervisor::quiesce_executables`, case folding, backstop unwind) had never run on Windows before, because the test failed earlier in run 45794137032. Linux and macOS jobs are green.
 * **Open question:** does `quiesce_executables` (actor drain or process termination wait) never return on Windows for a test actor holding a file lease, or is the hang in another section?
 * **Spotted outside diff:** no, folder-settings build (2026-11-26), which owns the test.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### Scheduled frontend mutation sweep red on master: survivors in the scoresheet unsure marks and the workspace-restore write listeners
+
+* **ID:** f-20261126-08 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **CI run:** 45806767175
+* **First red:** scheduled Mutation run 45806767175 on `99500cdae` (2026-11-26), jobs `frontend-mutation (tree-path)` and `frontend-mutation (workspace-storage)`; f-20261125-16 handled the previous red of this workflow.
+* **Failure scenario:** `frontend-mutation (tree-path)`: "Final mutation score 96.94 under breaking threshold 100", 11 survivors in `src/utils/treeReducer.ts` lines 628-661 (unsure-mark handling from `e9cff82f3`, scoresheet review state: e.g. `position.length > 0` → `true`, `node.unsure === undefined` → `false`, the clone stack initialiser). `frontend-mutation (workspace-storage)`: "Final mutation score 99.61", 6 survivors in `src/state/store/tabStorage.ts`: 34:5, 511:28 (`node.unsure !== true` → `false`), 635:12 (`"clean"` → `""`), 1151/1153/1158 (`subscribeCommittedWrite` and `notifyCommittedWrite` bodies emptied, from `61c4b3954` workspace restore). Either the tests miss behaviour these lines own or the conditions are redundant. `pnpm ci:remote:check` refuses every code push while the jobs stay red.
+* **Spotted outside diff:** yes, by `pnpm ci:remote:check` while pushing the folder-settings Windows test fix (2026-11-26).
