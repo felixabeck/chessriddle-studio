@@ -19,6 +19,12 @@
   border-bottom: 1px solid var(--cf-border);
 }
 
+/* Mantine drops the body's top padding when a header precedes it, because its stock header has
+   no divider. Ours draws one, so without this the first content sits flush against the line. */
+.body:not(:only-child) {
+  padding-top: var(--mantine-spacing-md);
+}
+
 .title {
   font-size: var(--mantine-font-size-lg);
   font-weight: 600;

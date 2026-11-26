@@ -462,8 +462,8 @@ export default function ImportModal({
       title={t("Home.Card.ImportGame.Title")}
       pending={loading || photoReading}
     >
-      <CardGroupFieldset disabled={loading}>
-        <Group grow mb="sm">
+      <CardGroupFieldset disabled={loading || photoReading}>
+        <Group grow align="stretch" mb="sm">
           {(
             [
               { id: "PGN", label: "PGN" },
@@ -477,7 +477,7 @@ export default function ImportModal({
               id={mode.id}
               isSelected={importType === mode.id}
               setSelected={(value) => {
-                if (!loading) setImportType(value);
+                if (!loading && !photoReading) setImportType(value);
               }}
               Header={<Text ta="center">{mode.label}</Text>}
             />

@@ -1274,6 +1274,30 @@ test("From photo card is shown only while the Coach switch is on and mounts Impo
   expect(modalElement().dataset.pending).toBe("true");
 });
 
+test("mode cards cannot switch away from Photo while a reading runs", async () => {
+  fixtures.coachEnabled = true;
+  await renderModal();
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-Photo"]')!.click();
+  });
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="import-photo-pane"]')).not.toBeNull(),
+  );
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-testid="toggle-photo-reading"]')!.click();
+  });
+
+  const pgnCard = host.querySelector<HTMLButtonElement>('[data-testid="mode-PGN"]')!;
+  expect(pgnCard.closest("fieldset")?.disabled).toBe(true);
+  // Even a click that reaches the card (the fieldset is the first guard) keeps the pane mounted,
+  // so the running reading is neither aborted nor its photos dropped.
+  await act(async () => {
+    pgnCard.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(host.querySelector('[data-testid="import-photo-pane"]')).not.toBeNull();
+  expect(submitButton()).toBeUndefined();
+});
+
 test("turning the Coach switch off while Photo is selected falls back and unmounts ImportPhotoPane", async () => {
   fixtures.coachEnabled = true;
   await renderModal();

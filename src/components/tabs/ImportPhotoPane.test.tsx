@@ -184,6 +184,7 @@ vi.mock("@mantine/core", () => ({
     </button>
   ),
   Group: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  Loader: () => <span data-mock-loader />,
   Modal: ({ opened, children }: any) => (opened ? <div data-mock-modal>{children}</div> : null),
   Text: ({ children, ...props }: any) => <div {...props}>{children}</div>,
 }));
@@ -599,16 +600,26 @@ test("cancel, owner tab close, and unmount abort the read signal and a cancelled
   await act(async () => {
     buttonByText("Scoresheet.Read.Button").click();
   });
-  expect(host.querySelector("[data-scoresheet-reading]")?.textContent).toContain(
-    "Scoresheet.Read.PendingHint",
-  );
+  const readingState = host.querySelector("[data-scoresheet-reading]");
+  expect(readingState?.getAttribute("role")).toBe("status");
+  expect(readingState?.textContent).toContain("Scoresheet.Read.TakesAMinute");
+  // The progress button keeps a visible label beside its spinner and does nothing when clicked.
+  const progressButton = buttonByText("Scoresheet.Read.Reading");
+  expect(progressButton.querySelector("[data-mock-loader]")).not.toBeNull();
+  expect(progressButton.getAttribute("aria-disabled")).toBe("true");
+  expect(progressButton.getAttribute("aria-busy")).toBe("true");
+  await act(async () => {
+    progressButton.click();
+  });
+  expect(mocks.scoresheetRead).toHaveBeenCalledTimes(1);
   expect(onReadingChange).toHaveBeenCalledWith(true);
 
-  // Cancel aborts signal and shows nothing.
+  // Cancel aborts signal, shows nothing and releases the dialog's mode cards.
   await act(async () => {
     buttonByText("Common.Cancel").click();
   });
   expect(capturedSignal?.aborted).toBe(true);
+  expect(onReadingChange).toHaveBeenLastCalledWith(false);
   expect(host.querySelector("[data-scoresheet-read-error]")).toBeNull();
 
   // Start Read 2 while Read 1 is still pending (overlapping superseded read).
@@ -643,6 +654,8 @@ test("cancel, owner tab close, and unmount abort the read signal and a cancelled
     await Promise.resolve();
   });
   expect(replaceImportedTab).toHaveBeenCalledTimes(1);
+  // A finished reading releases the dialog's mode cards.
+  expect(onReadingChange).toHaveBeenLastCalledWith(false);
 
   // Closing the owner tab aborts an in-flight read.
   let secondSignal: AbortSignal | undefined;
@@ -687,10 +700,12 @@ test("cancel, owner tab close, and unmount abort the read signal and a cancelled
 test("provider failure, parse mismatch, and non-committed tab result show the right message and keep photos", async () => {
   const onClose = vi.fn();
   const replaceImportedTab = vi.fn(() => ({ kind: "superseded" as const }));
+  const onReadingChange = vi.fn();
   await renderPane({
     hasConnection: true,
     onClose,
     replaceImportedTab,
+    onReadingChange,
     noticeAccepted: [CONNECTION.handle],
   });
   await addOnePhoto();
@@ -704,6 +719,8 @@ test("provider failure, parse mismatch, and non-committed tab result show the ri
     "Coach.Error.ImagesUnsupported",
   );
   expect(host.querySelectorAll("img")).toHaveLength(1);
+  // A failed reading releases the dialog's mode cards too.
+  expect(onReadingChange).toHaveBeenLastCalledWith(false);
 
   // Parse/length mismatch shows pane's own "could not open" message, never a provider error.
   mocks.scoresheetRead.mockResolvedValueOnce(SAMPLE_GAME);
@@ -939,7 +956,8 @@ test.each(Object.entries(catalogues))(
       ["Scoresheet.Intake.Failed", { count: 1 }],
       ["Scoresheet.Intake.Failed", { count: 2 }],
       ["Scoresheet.Read.Button", undefined],
-      ["Scoresheet.Read.PendingHint", undefined],
+      ["Scoresheet.Read.Reading", undefined],
+      ["Scoresheet.Read.TakesAMinute", undefined],
       ["Scoresheet.Read.CouldNotOpen", undefined],
       ["Scoresheet.Notice.Title", undefined],
       ["Scoresheet.Notice.Body", { provider: "Local model" }],

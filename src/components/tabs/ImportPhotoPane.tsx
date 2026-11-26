@@ -1,4 +1,4 @@
-import { Button, Group, Text } from "@mantine/core";
+import { Button, Group, Loader, Text } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Clipboard, ImagePlus, X } from "lucide-react";
@@ -466,13 +466,24 @@ function ImportPhotoPane({
       )}
 
       {reading ? (
-        <div className={classes.actionRow} data-scoresheet-reading>
-          <Text size="xs" c="dimmed" role="status">
-            {t("Scoresheet.Read.PendingHint")}
-          </Text>
-          <Button size="xs" variant="default" onClick={handleCancelRead}>
+        <div className={classes.readingState} data-scoresheet-reading role="status">
+          {/* Not Mantine's `loading` prop: it hides the label behind the loader. */}
+          <Button
+            fullWidth
+            radius="md"
+            aria-disabled
+            aria-busy
+            className={classes.readingButton}
+            leftSection={<Loader size="xs" color="currentColor" aria-hidden />}
+          >
+            {t("Scoresheet.Read.Reading")}
+          </Button>
+          <Button fullWidth radius="md" variant="default" onClick={handleCancelRead}>
             {t("Common.Cancel")}
           </Button>
+          <Text size="xs" c="dimmed" ta="center">
+            {t("Scoresheet.Read.TakesAMinute")}
+          </Text>
         </div>
       ) : (
         <Button fullWidth radius="md" disabled={!canRead} onClick={handleReadClick}>

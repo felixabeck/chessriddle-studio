@@ -82,7 +82,7 @@ test("import from photo shows hint without a connection", async ({ page, mockSce
     await page.goto("/");
     await page.getByRole("button", { name: "Import", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Import Game" });
-    await dialog.getByText("From photo", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Photo", exact: true }).click();
     await expect(
         dialog.getByText("Reading a scoresheet photo requires an AI connection."),
     ).toBeVisible();
@@ -115,7 +115,7 @@ test("import from photo reads stubbed game and opens review tab with Photo panel
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     const dialog = page.getByRole("dialog", { name: "Import Game" });
-    await dialog.getByText("From photo", { exact: true }).click();
+    await dialog.getByRole("button", { name: "Photo", exact: true }).click();
     await dialog.getByRole("button", { name: "Choose photos" }).click();
     await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
 
@@ -145,4 +145,94 @@ test("import from photo reads stubbed game and opens review tab with Photo panel
     await expect(page.locator("[data-notation-unsure]")).toHaveCount(1);
     await waitForTransitionsSettled(page);
     await expect(page).toHaveScreenshot("import-photo-review-tab.png");
+});
+
+test("import from photo keeps the mode cards even below the header and shows reading progress", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: {
+            coach_available: { result: true },
+            coach_has_connection: { result: true },
+            coach_connections: { result: [connection] },
+            coach_models: { result: models },
+            scoresheet_pick_photos: {
+                result: { photos: [{ dataUrl: PHOTO_DATA_URL }], skipped: 0, failed: 0 },
+            },
+            // Held long enough that the whole progress state can be inspected.
+            scoresheet_read: { result: stubGame, delay: 600_000 },
+        },
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Import", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Import Game" });
+    const photoCard = dialog.getByRole("button", { name: "Photo", exact: true });
+    await photoCard.click();
+
+    // A label that wraps must make every card taller together, and the row keeps a gap under the
+    // header's divider instead of touching it.
+    // The card's accessible name changes with its label, so keep a handle to the same element.
+    const photoCardHandle = await photoCard.elementHandle();
+    const singleLineHeight = (await photoCard.boundingBox())!.height;
+    const relabelled = await photoCardHandle!.evaluate((card) => {
+        const label = card.querySelector("p");
+        if (!label) return false;
+        label.textContent = "A much longer label that has to wrap onto two lines";
+        return true;
+    });
+    expect(relabelled).toBe(true);
+    expect((await photoCardHandle!.boundingBox())!.height).toBeGreaterThan(singleLineHeight);
+    const header = dialog.locator(".mantine-Modal-header");
+    const cards = dialog.locator("fieldset").first().getByRole("button");
+    await expect(cards).toHaveCount(4);
+    const headerBox = await header.boundingBox();
+    const boxes = await Promise.all(
+        Array.from({ length: 4 }, (_, index) => cards.nth(index).boundingBox()),
+    );
+    expect(headerBox).not.toBeNull();
+    const heights = boxes.map((box) => Math.round(box!.height));
+    expect(new Set(heights).size).toBe(1);
+    for (const box of boxes) {
+        expect(box!.y - (headerBox!.y + headerBox!.height)).toBeGreaterThanOrEqual(8);
+    }
+    await photoCardHandle!.evaluate((card) => {
+        const label = card.querySelector("p");
+        if (label) label.textContent = "Photo";
+    });
+
+    await dialog.getByRole("button", { name: "Choose photos" }).click();
+    await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
+    await dialog.getByRole("button", { name: /^AI model: / }).click();
+    await page.getByRole("textbox", { name: "Model" }).click();
+    await page.getByRole("option", { name: "Vision Model" }).click();
+    await dialog.getByText("Import Game", { exact: true }).click();
+
+    await dialog.getByRole("button", { name: "Read game" }).click();
+    await page
+        .getByRole("dialog", { name: "Before you send photos" })
+        .getByRole("button", { name: "Send photos", exact: true })
+        .click();
+
+    const progress = dialog.getByRole("button", { name: "Reading the scoresheet…" });
+    await expect(progress).toBeVisible();
+    await expect(progress).toHaveAttribute("aria-busy", "true");
+    await expect(progress.locator(".mantine-Loader-root")).toBeVisible();
+    const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+    await expect(cancel).toBeVisible();
+    await expect(dialog.getByText("This can take a minute.", { exact: true })).toBeVisible();
+    // The progress button spans the pane, like the button it replaces.
+    const progressBox = await progress.boundingBox();
+    const cancelBox = await cancel.boundingBox();
+    expect(Math.round(progressBox!.width)).toBe(Math.round(cancelBox!.width));
+    expect(cancelBox!.y).toBeGreaterThan(progressBox!.y);
+    // Switching mode is blocked while the reading runs.
+    await expect(dialog.getByRole("button", { name: "PGN", exact: true })).toBeDisabled();
+    await waitForTransitionsSettled(page);
+    await expect(dialog).toHaveScreenshot("import-photo-reading.png");
+
+    await cancel.click();
+    await expect(dialog.getByRole("button", { name: "Read game" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "PGN", exact: true })).toBeEnabled();
+    await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
 });
