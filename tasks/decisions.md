@@ -15157,3 +15157,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Defect repair ordered by Felix on 2026-11-26 ("do this full auto on a separate work tree"), measured with the procedure of d-20261125-50. Reversal path: tighten the ceiling against a future smaller production build.
 * **Decided by:** Claude Code (Opus 5.5) session of 2026-11-26 for the keyring retry fix (full auto) · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"902ec316907495d3bb5da96f6707e86e3a6cb92139e3f86e0c937cdb1b4b18e3","input_sha256":"31a9e8535303acedefdd65730cecb1a000d8c0c4cadcfed0d6bfd61539f3b7c5","kind":"mutation-receipt","operation":"58aca4f7af88527fc7926b10c71fc1835ffe60eddabc85f1dce0e08acf9688f7","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-23"],"target":"decisions-ledger","v":1} -->
+
+### d-20261126-19 — How are imported PGN lines merged into a repertoire tree?
+
+* **Question:** Felix ordered (2026-11-26) that a PGN is merged into one repertoire tree, conflicting user-side replies are kept as variations and marked, and comments are kept. Merge by move sequence or by position identity, and where does a game that starts from another position go?
+* **Governs:** src/utils/repertoireImport.ts (mergeIntoRepertoire)
+* **Chosen:** Merge by move sequence from the first target node whose `getBoardState` equals the game's start position; new moves are appended after existing children and replayed from the parent's FEN; an empty target takes the first usable game's start FEN; a game whose start position is nowhere in the target is counted as not placed.
+* **Rejected:** Collapsing transpositions into one node by position identity.
+* **Reason:** Keeps the user's own tree shape and main line; transpositions are already shown by the existing transposition marker. Reversal path: a position-keyed graft in `mergeIntoRepertoire`.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
+
+### d-20261126-20 — How is an imported move that differs from the repertoire marked for review?
+
+* **Question:** Felix ordered (2026-11-26) that the imported conflicting reply is "marked for review". Where does that mark live?
+* **Governs:** src/utils/pgnComment.ts, src/utils/chess.ts, src/state/store/tabStorage.ts (reviewMark)
+* **Chosen:** A persisted `TreeNode.reviewMark`, written as the Studio-owned comment command `[%crreview]` (like `[%gameend]`), cleared by "Mark as reviewed" as one undo step.
+* **Rejected:** A prose comment (pollutes the user's comments, no one-action clear); a session-only mark (lost on reopen).
+* **Reason:** The user reviews later, possibly after a restart, so the mark must survive save and reopen; other programs ignore an unknown command. Reversal path: drop the command from the writer and parser; existing files keep an inert command.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
+
+### d-20261126-16 — How are pasted multi-game PGNs split, and what bounds a repertoire import?
+
+* **Question:** `lex_pgn` refuses text with more than one game. How does a pasted multi-game repertoire get read, and what limits apply?
+* **Governs:** src-tauri/src/lexer.rs (lex_pgn_games), src/utils/repertoireImport.ts
+* **Chosen:** A Rust command `lex_pgn_games(pgn, max_games, ticket)` that splits with the existing `scan_game_ranges` and lexes each range alone; at most 2,000 games per import; the merged tree is bounded by the existing tab-storage limits (`MAX_TREE_NODES`, `MAX_TREE_DEPTH`) and the 10 MiB file limit.
+* **Rejected:** Splitting text in the renderer (a second boundary rule); a new node limit.
+* **Reason:** One game-boundary rule (`pgn-scanning.md`), existing limits instead of new numbers. Reversal path: change `MAX_REPERTOIRE_IMPORT_GAMES` or remove the command.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
+
+### d-20261126-17 — How does a large repertoire stay readable after saving?
+
+* **Question:** `writePGN` writes all movetext on one line and the scanner refuses lines over 1 MiB, so a large merged repertoire would save and then fail to open. Wrap at 80 columns or only long lines?
+* **Governs:** src/utils/chess.ts (writePGN)
+* **Chosen:** Break the movetext between tokens, outside comments, once a line reaches a 64 KiB soft limit.
+* **Rejected:** 80-column export wrapping (changes every saved file and every PGN fixture).
+* **Reason:** Removes the unreadable-file failure while ordinary games keep byte-identical output. Reversal path: change or remove the soft-limit constant.
+* **Decided by:** Claude Code plan (agy-reviewed), adopted by Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"a3d1b5aa54e8b9e18c7589e3f97c25076120d1b681bfa48055c1692b5fb61e03","input_sha256":"142d6869ad8a8ee8a03e3e41dc56f52235d9517abd5a60044f514750107bc490","kind":"mutation-receipt","operation":"56370a39bc66c3045662dca5f8850633a6d2b991f409e4b69e59da33bc050635","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-19","d-20261126-20","d-20261126-16","d-20261126-17"],"target":"decisions-ledger","v":1} -->
