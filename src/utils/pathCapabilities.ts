@@ -38,7 +38,7 @@ export const databaseHandleSchema: z.ZodType<DatabaseHandle> = z.object({
     kind: z.literal("database"),
 });
 
-/** A Lichess source stored as the board explorer's app-wide second column. */
+/** A Lichess explorer source, used for a tab's first source, further columns, and the app-wide second column. */
 export const explorerOnlineSourceSchema = z.enum(["lch_all", "lch_master"]);
 
 /**

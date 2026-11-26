@@ -1,5 +1,7 @@
 /** The board explorer's per-tab sources and its stored options. */
-import { atom } from "jotai";
+import type { SetStateAction } from "react";
+import equal from "fast-deep-equal";
+import { atom, type PrimitiveAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { z } from "zod";
 import type { DatabaseHandle } from "@/bindings";
@@ -11,33 +13,134 @@ import {
     masterOptionsSchema,
 } from "@/utils/lichess/explorer";
 import { createZodStorage } from "../utils";
+import { canonicalTabExplorerOptions, type Tab, type TabExplorer } from "../workspaceTypes";
 import { documentPreferences } from "./rendererState";
 import { tabAtomFamily } from "./tabFamilies";
+import { tabsAtom, updateTabById } from "./tabs";
 
-export const localOptionsFamily = tabAtomFamily((_tab: string) =>
-    atom<LocalOptions>({
-        path: null,
-        type: "exact",
-        fen: "",
-        player: null,
-        color: "white",
-        result: "any",
+const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
+    path: null,
+    type: "exact",
+    fen: "",
+    player: null,
+    color: "white",
+    result: "any",
+};
+
+const EMPTY_FURTHER_COLUMNS: ExplorerFurtherColumn[] = [];
+
+function withTabExplorerField<K extends keyof TabExplorer>(
+    tab: Tab,
+    field: K,
+    value: TabExplorer[K],
+): Tab {
+    const next: TabExplorer = { ...tab.explorer };
+    if (value === undefined) {
+        delete next[field];
+    } else {
+        next[field] = value;
+    }
+    if (Object.keys(next).length === 0) {
+        if (tab.explorer === undefined) return tab;
+        const { explorer: _removed, ...rest } = tab;
+        return rest;
+    }
+    return { ...tab, explorer: next };
+}
+
+type TabExplorerAtomConfig<Value, K extends keyof TabExplorer> = {
+    tabId: string;
+    field: K;
+    fallback: Value;
+    toRecord: (value: Value) => TabExplorer[K];
+} & (NonNullable<TabExplorer[K]> extends Value
+    ? { fromRecord?: (stored: NonNullable<TabExplorer[K]>) => Value }
+    : { fromRecord: (stored: NonNullable<TabExplorer[K]>) => Value });
+
+/**
+ * Per-tab explorer atom backed by the owning tab's `explorer` record in `tabsAtom`.
+ * Reads the tab record until its first write, keeps in-memory edits even if a commit fails,
+ * and writes through only when the tab exists and the canonical persisted member changed.
+ */
+function tabExplorerAtom<Value, K extends keyof TabExplorer>({
+    tabId,
+    field,
+    fallback,
+    fromRecord,
+    toRecord,
+}: TabExplorerAtomConfig<Value, K>): PrimitiveAtom<Value> {
+    const stateAtom = atom<{ hasValue: false } | { hasValue: true; value: Value }>({
+        hasValue: false,
+    });
+    const project =
+        fromRecord ?? ((stored: NonNullable<TabExplorer[K]>) => stored as unknown as Value);
+    let cachedStored: NonNullable<TabExplorer[K]> | undefined;
+    let cachedValue: Value | undefined;
+    const entryAtom: PrimitiveAtom<Value> = atom(
+        (get) => {
+            const state = get(stateAtom);
+            if (state.hasValue) return state.value;
+            const tab = get(tabsAtom).find((entry) => entry.value === tabId);
+            const stored = tab?.explorer?.[field];
+            if (stored === undefined) return fallback;
+            if (stored === cachedStored && cachedValue !== undefined) return cachedValue;
+            cachedStored = stored;
+            cachedValue = project(stored);
+            return cachedValue;
+        },
+        (get, set, update: SetStateAction<Value>) => {
+            const current = get(entryAtom);
+            const next =
+                typeof update === "function" ? (update as (prev: Value) => Value)(current) : update;
+            set(stateAtom, { hasValue: true, value: next });
+            const tab = get(tabsAtom).find((entry) => entry.value === tabId);
+            if (!tab) return;
+            const nextStored = toRecord(next);
+            const prevStored = tab.explorer?.[field];
+            if (equal(prevStored, nextStored)) return;
+            updateTabById(
+                (tabsUpdate, activeTab, onSaved) => set(tabsAtom, tabsUpdate, activeTab, onSaved),
+                tabId,
+                (latest) => withTabExplorerField(latest, field, nextStored),
+            );
+        },
+    );
+    return entryAtom;
+}
+
+export const localOptionsFamily = tabAtomFamily((tab: string) =>
+    tabExplorerAtom<LocalOptions, "options">({
+        tabId: tab,
+        field: "options",
+        fallback: DEFAULT_LOCAL_OPTIONS,
+        fromRecord: (stored) => ({ ...DEFAULT_LOCAL_OPTIONS, ...stored }),
+        toRecord: canonicalTabExplorerOptions,
     }),
 );
 
-export const pinnedExplorerDatabaseFamily = tabAtomFamily((_tab: string) =>
-    atom<DatabaseHandle | null>(null),
+export const pinnedExplorerDatabaseFamily = tabAtomFamily((tab: string) =>
+    tabExplorerAtom<DatabaseHandle | null, "pinned">({
+        tabId: tab,
+        field: "pinned",
+        fallback: null,
+        toRecord: (value) => value ?? undefined,
+    }),
 );
 
 /** A second database with its own player, shown beside a tab's pinned database. */
 export type PinnedExplorerComparison = { database: DatabaseHandle; player: number };
 
 /**
- * The second column of a tab pinned to a database. It lives and ends with the pin: it is the
- * tab's own, never stored, and apart from the app-wide `comparisonDbAtom`.
+ * The second column of a tab pinned to a database. It lives and ends with the pin and the tab,
+ * stored on the tab record and apart from the app-wide `comparisonDbAtom`.
  */
-export const pinnedExplorerComparisonFamily = tabAtomFamily((_tab: string) =>
-    atom<PinnedExplorerComparison | null>(null),
+export const pinnedExplorerComparisonFamily = tabAtomFamily((tab: string) =>
+    tabExplorerAtom<PinnedExplorerComparison | null, "comparison">({
+        tabId: tab,
+        field: "comparison",
+        fallback: null,
+        toRecord: (value) => value ?? undefined,
+    }),
 );
 
 /** A Lichess explorer source, stored or chosen as a column of the board's Database panel. */
@@ -48,7 +151,7 @@ export type ExplorerFirstSource = "local" | ExplorerOnlineSource;
 
 /**
  * A further column of a preparation board: the reference database and each Lichess source.
- * The list lives and ends with the tab; it is never stored.
+ * The list lives and ends with the tab on its workspace record.
  */
 export type ExplorerFurtherColumn = "reference" | ExplorerOnlineSource;
 
@@ -62,8 +165,13 @@ export type ExplorerColumnId = "primary" | "comparison" | ExplorerFurtherColumn;
  * Further columns of a tab pinned to a database, in the order they were added. "Prepare on board"
  * starts it with the reference database; disposed with the tab.
  */
-export const pinnedExplorerFurtherColumnsFamily = tabAtomFamily((_tab: string) =>
-    atom<ExplorerFurtherColumn[]>([]),
+export const pinnedExplorerFurtherColumnsFamily = tabAtomFamily((tab: string) =>
+    tabExplorerAtom<ExplorerFurtherColumn[], "further">({
+        tabId: tab,
+        field: "further",
+        fallback: EMPTY_FURTHER_COLUMNS,
+        toRecord: (value) => (value.length === 0 ? undefined : [...value]),
+    }),
 );
 
 export type ExplorerGamesSourceRole = "primary" | "comparison";
@@ -111,6 +219,13 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
     createZodStorage(z.boolean(), localStorage),
 );
 
-export const dbTypeFamily = tabAtomFamily((_tab: string) => atom<ExplorerFirstSource>("local"));
+export const dbTypeFamily = tabAtomFamily((tab: string) =>
+    tabExplorerAtom<ExplorerFirstSource, "firstSource">({
+        tabId: tab,
+        field: "firstSource",
+        fallback: "local",
+        toRecord: (value) => (value === "local" ? undefined : value),
+    }),
+);
 
 export const dbTabFamily = tabAtomFamily((_tab: string) => atom("stats"));

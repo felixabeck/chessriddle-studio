@@ -457,7 +457,7 @@ test("Since keeps one rolling cutoff for the search and Prepare, retains moves a
   expect(store.get(localOptionsFamily(id))).toMatchObject({
     start_date: "2025.11.08",
     color: "black",
-    fen: e4Fen,
+    fen: "",
   });
   await since("5");
   expect(mocks.searchPosition.mock.lastCall?.[1].startDate).toBe("2021.11.09");
@@ -704,14 +704,25 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
   await click(row("e5"));
   await black();
   mocks.navigate.mockImplementation(() => {
-    const id = store.get(tabsAtom).at(-1)!.value;
+    const tab = store.get(tabsAtom).at(-1)!;
+    const id = tab.value;
+    expect(tab.explorer).toEqual({
+      pinned: file,
+      further: ["reference"],
+      options: {
+        player: 42,
+        player_database: databaseHandleKey(file),
+        color: "black",
+        result: "any",
+      },
+    });
     expect(store.get(pinnedExplorerDatabaseFamily(id))).toEqual(file);
     expect(store.get(localOptionsFamily(id))).toEqual({
-      path: file,
+      path: null,
       player: 42,
       player_database: databaseHandleKey(file),
       color: "black",
-      fen: endFen,
+      fen: "",
       type: "exact",
       result: "any",
     });
@@ -820,7 +831,24 @@ test("Prepare pins the player's downloaded online games as the board's second co
   expect(mocks.onlinePlayers).toHaveBeenCalledExactlyOnceWith(online, [...onlineAccounts]);
   expect(mocks.navigate).toHaveBeenCalledOnce();
   expect(mocks.showNotification).not.toHaveBeenCalled();
+  const expectedExplorer = {
+    pinned: file,
+    comparison: { database: online, player: 5 },
+    further: ["reference"],
+    options: {
+      player: 42,
+      player_database: databaseHandleKey(file),
+      color: "white",
+      result: "any",
+    },
+  };
+  expect(mocks.createTab).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tab: expect.objectContaining({ explorer: expectedExplorer }),
+    }),
+  );
   const tab = store.get(tabsAtom).at(-1)!;
+  expect(tab.explorer).toEqual(expectedExplorer);
   expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(file);
   expect(store.get(pinnedExplorerFurtherColumnsFamily(tab.value))).toEqual(["reference"]);
   // Usernames that stayed separate players: the board follows the first one.
@@ -1406,11 +1434,11 @@ test("a time-control filter reaches the search, stays off the board and clears t
   expect(store.get(pinnedExplorerDatabaseFamily(id))).toEqual(file);
   expect(store.get(pinnedExplorerFurtherColumnsFamily(id))).toEqual([]);
   expect(store.get(localOptionsFamily(id))).toEqual({
-    path: file,
+    path: null,
     player: 42,
     player_database: databaseHandleKey(file),
     color: "white",
-    fen: INITIAL_FEN,
+    fen: "",
     type: "exact",
     result: "any",
   });

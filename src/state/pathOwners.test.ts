@@ -281,6 +281,62 @@ describe("collectOriginalPathOwners", () => {
         expect(owners.retainedIds).not.toContainEqual({ id: "expanded" });
     });
 
+    test("retains tab explorer database handles with trusted sessionWorkspace and withholds trust on invalid explorer", () => {
+        const id = crypto.randomUUID();
+        sessionStorage.setItem(
+            "workspace",
+            serializeStorageValue({
+                version: 1,
+                tabs: [
+                    {
+                        name: "Prep",
+                        value: id,
+                        type: "analysis",
+                        gameOrigin: { kind: "none" },
+                        explorer: {
+                            pinned: databaseHandle("tab-pinned-db"),
+                            comparison: {
+                                database: databaseHandle("tab-comparison-db"),
+                                player: 5,
+                            },
+                            further: ["reference"],
+                        },
+                    },
+                ],
+                activeTab: id,
+            }),
+        );
+
+        const valid = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(valid.trustedFamilies).toContain("sessionWorkspace");
+        expect(valid.retainedIds).toEqual(
+            expect.arrayContaining([path("tab-pinned-db"), path("tab-comparison-db")]),
+        );
+
+        sessionStorage.setItem(
+            "workspace",
+            serializeStorageValue({
+                version: 1,
+                tabs: [
+                    {
+                        name: "Prep",
+                        value: id,
+                        type: "analysis",
+                        gameOrigin: { kind: "none" },
+                        explorer: {
+                            pinned: databaseHandle("tab-pinned-db"),
+                            firstSource: "invalid-source",
+                        },
+                    },
+                ],
+                activeTab: id,
+            }),
+        );
+
+        const invalid = collectOriginalPathOwners(localStorage, sessionStorage);
+        expect(invalid.trustedFamilies).not.toContain("sessionWorkspace");
+    });
+
     test("trusts and bounds a valid oversized directory record without rewriting the snapshot", () => {
         const ids = Array.from(
             { length: MAX_EXPANDED_DIRECTORY_IDS + 5 },

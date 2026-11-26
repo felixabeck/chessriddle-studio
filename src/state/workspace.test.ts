@@ -13,6 +13,7 @@ import {
     defaultWorkspace,
     LEGACY_WORKSPACE_VERSION,
     loadWorkspace,
+    parseStoredWorkspaceForRestore,
     readStoredWorkspaceValue,
     saveWorkspace,
     sweepOrphanedTreeKeys,
@@ -3345,4 +3346,64 @@ test("reports an envelope failure before a denied staged-clone rollback", () => 
         refused.mockRestore();
         setItem.mockRestore();
     }
+});
+
+test("tab explorer state round-trips on live writes, rejects invalid live writes, and drops only invalid explorer on load and restore", () => {
+    sessionStorage.clear();
+    persistError.reportPersistError.mockClear();
+    const id = crypto.randomUUID();
+    const validTab: Tab = {
+        name: "Prep",
+        value: id,
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+        explorer: {
+            firstSource: "lch_master",
+            pinned: { kind: "database", id: { id: "db-main" } },
+            comparison: {
+                database: { kind: "database", id: { id: "db-online" } },
+                player: 11,
+            },
+            further: ["reference", "lch_all"],
+            options: {
+                player: 42,
+                player_database: "db-main",
+                color: "black",
+                result: "any",
+                exclude_fast_events: true,
+            },
+        },
+    };
+    const validWorkspace = { version: 1 as const, tabs: [validTab], activeTab: id };
+    expect(saveWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY, validWorkspace)).toEqual(
+        validWorkspace,
+    );
+    const savedRaw = sessionStorage.getItem(WORKSPACE_STORAGE_KEY)!;
+    expect(parseStoredWorkspaceForRestore(savedRaw)).toEqual(validWorkspace);
+    expect(loadStoredWorkspace()).toEqual(validWorkspace);
+
+    const invalidLive = {
+        version: 1,
+        tabs: [{ ...validTab, explorer: { firstSource: "bogus" } }],
+        activeTab: id,
+    };
+    expect(saveWorkspace(sessionStorage, WORKSPACE_STORAGE_KEY, invalidLive)).toBeNull();
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+    expect(readStoredWorkspaceValue(sessionStorage, WORKSPACE_STORAGE_KEY)).toEqual(validWorkspace);
+
+    const corruptStoredRaw = serializeStorageValue(invalidLive);
+    const restored = parseStoredWorkspaceForRestore(corruptStoredRaw);
+    expect(restored).toEqual({
+        version: 1,
+        tabs: [{ name: "Prep", value: id, type: "analysis", gameOrigin: { kind: "none" } }],
+        activeTab: id,
+    });
+    expect("explorer" in restored!.tabs[0]!).toBe(false);
+
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, corruptStoredRaw);
+    const loaded = loadStoredWorkspace();
+    expect(loaded.tabs).toEqual([
+        { name: "Prep", value: id, type: "analysis", gameOrigin: { kind: "none" } },
+    ]);
+    expect("explorer" in loaded.tabs[0]!).toBe(false);
 });

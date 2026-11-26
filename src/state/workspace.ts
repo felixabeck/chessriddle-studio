@@ -6,7 +6,13 @@ import { decodeCompressedOrJson, serializeStorageValue } from "./store/debounced
 import { persistStorageWriteError } from "./storageWriteError";
 import { createTabIdSchema, tabStorage } from "./store/tabStorage";
 import { reportPersistError } from "./persistError";
-import { getTabTreeKey, newWorkspaceId, tabSchema, type Tab } from "./workspaceTypes";
+import {
+    getTabTreeKey,
+    newWorkspaceId,
+    storedTabSchema,
+    tabSchema,
+    type Tab,
+} from "./workspaceTypes";
 import {
     LEGACY_PUZZLE_SUFFIX,
     legacyPuzzleKey,
@@ -40,11 +46,11 @@ export const MAX_PENDING_PUZZLE_REMOVALS = 100;
 const MAX_LEGACY_PUZZLE_REMOVAL_KEY_LENGTH = 256;
 const MAX_ACTIVE_TAB_ID_LENGTH = 128;
 
-function createLiveWorkspaceSchema() {
+function createWorkspaceSchema(tabEntrySchema: z.ZodType<Tab, z.ZodTypeDef, unknown>) {
     return z.object({
         version: z.literal(WORKSPACE_VERSION),
         tabs: z
-            .array(tabSchema)
+            .array(tabEntrySchema)
             .max(MAX_WORKSPACE_TABS)
             .refine(
                 (tabs) =>
@@ -77,21 +83,26 @@ function createLiveWorkspaceSchema() {
     });
 }
 
+function createLiveWorkspaceSchema() {
+    return createWorkspaceSchema(tabSchema);
+}
+
 function createWorkspaceLoadSchemas() {
     const workspaceLiveSchema = createLiveWorkspaceSchema();
+    const workspaceRestoreSchema = createWorkspaceSchema(storedTabSchema);
     const workspaceInputSchema = z.object({
         version: z.number().int().nonnegative().optional().catch(undefined),
         // Scrub individual legacy/corrupt tabs while keeping every independently
         // valid tab recoverable. A corrupt entry must not erase its neighbours.
         tabs: z
-            .array(tabSchema.nullable().catch(null))
+            .array(storedTabSchema.nullable().catch(null))
             .max(MAX_WORKSPACE_TABS)
             .transform((tabs) => tabs.filter((tab): tab is Tab => tab !== null)),
         activeTab: workspaceLiveSchema.shape.activeTab.catch(null),
     });
     const legacyWorkspaceSchema = workspaceInputSchema.extend({
         version: z.literal(LEGACY_WORKSPACE_VERSION).optional(),
-        tabs: z.array(tabSchema).max(MAX_WORKSPACE_TABS),
+        tabs: z.array(storedTabSchema).max(MAX_WORKSPACE_TABS),
     });
     const uncertainOwnershipSchema = workspaceLiveSchema
         .pick({ treeOwnershipUncertain: true })
@@ -99,6 +110,7 @@ function createWorkspaceLoadSchemas() {
     return {
         workspaceInputSchema,
         workspaceLiveSchema,
+        workspaceRestoreSchema,
         legacyWorkspaceSchema,
         uncertainOwnershipSchema,
         uuidSchema: createTabIdSchema(),
@@ -118,14 +130,15 @@ export function defaultWorkspace(): Workspace {
 }
 
 /**
- * Validates a durable workspace leaf using the live workspace schema before seeding it into
- * `sessionStorage`. Returns `null` when the payload cannot be decoded or is not a valid workspace.
+ * Validates a durable workspace leaf before seeding it into `sessionStorage`. Drops only an
+ * invalid tab `explorer` field, never the tab or workspace; returns `null` when the payload
+ * cannot be decoded or is not a valid workspace.
  */
 export function parseStoredWorkspaceForRestore(raw: string): Workspace | null {
     const decoded = decodeCompressedOrJson(raw);
     if (decoded === null) return null;
-    const { workspaceLiveSchema } = createWorkspaceLoadSchemas();
-    const parsed = workspaceLiveSchema.safeParse(decoded);
+    const { workspaceRestoreSchema } = createWorkspaceLoadSchemas();
+    const parsed = workspaceRestoreSchema.safeParse(decoded);
     return parsed.success ? parsed.data : null;
 }
 

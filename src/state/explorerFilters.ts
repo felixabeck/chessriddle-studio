@@ -1,5 +1,15 @@
 import { z } from "zod";
-import { type LocalOptions, normalizeRange } from "@/utils/db";
+import type { LocalOptions } from "@/utils/db";
+
+export const ELO_FILTER_MAX = 3000;
+
+/** A full `[0, ELO_FILTER_MAX]` band means no Elo filter. */
+export function normalizeRange(range?: [number, number] | null): [number, number] | undefined {
+    if (!range || (range[0] === 0 && range[1] === ELO_FILTER_MAX)) {
+        return undefined;
+    }
+    return range;
+}
 
 /** The board explorer's filters of one local database: every field its filter form can edit. */
 export type ExplorerFilters = Pick<
@@ -13,11 +23,11 @@ export type ExplorerFilterEntry = { database: string; filters: ExplorerFilters }
 export const MAX_EXPLORER_FILTER_DATABASES = 64;
 
 /** An opaque database capability id; far longer than any id the native side issues. */
-const MAX_DATABASE_KEY_LENGTH = 512;
+export const MAX_DATABASE_KEY_LENGTH = 512;
 
 const PGN_DATE = /^\d{4}\.\d{2}\.\d{2}$/;
 
-const filtersSchema = z
+export const explorerFiltersSchema = z
     .object({
         player: z.number().int().nullable(),
         color: z.enum(["white", "black"]),
@@ -30,7 +40,10 @@ const filtersSchema = z
     .strict();
 
 const entrySchema = z
-    .object({ database: z.string().min(1).max(MAX_DATABASE_KEY_LENGTH), filters: filtersSchema })
+    .object({
+        database: z.string().min(1).max(MAX_DATABASE_KEY_LENGTH),
+        filters: explorerFiltersSchema,
+    })
     .strict();
 
 /**

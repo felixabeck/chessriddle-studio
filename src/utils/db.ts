@@ -25,6 +25,9 @@ import { logFailureSafely, normalizeError, safeFailureContext } from "@/platform
 import i18n from "i18next";
 import { getDefaultStore } from "jotai";
 import { fileWorkspaceAtom } from "@/state/atoms";
+import { ELO_FILTER_MAX, normalizeRange } from "@/state/explorerFilters";
+
+export { ELO_FILTER_MAX, normalizeRange };
 
 export const NAME_SEARCH_DEBOUNCE_MS = 250;
 
@@ -240,16 +243,6 @@ export function manifestPuzzleDatabaseInstallCard(
 }
 
 export type Sides = "WhiteBlack" | "BlackWhite" | "Any";
-
-export const ELO_FILTER_MAX = 3000;
-
-/** A full `[0, ELO_FILTER_MAX]` band means no Elo filter. */
-export function normalizeRange(range?: [number, number] | null): [number, number] | undefined {
-    if (!range || (range[0] === 0 && range[1] === ELO_FILTER_MAX)) {
-        return undefined;
-    }
-    return range;
-}
 
 export async function query_games(
     db: DatabaseHandle,

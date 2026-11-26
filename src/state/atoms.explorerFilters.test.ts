@@ -232,16 +232,20 @@ test.each(["lch_all", "lch_master"] as const)(
     },
 );
 
-test("a tab's first source and further columns write no storage key", () => {
+test("a tab's first source and further columns write no storage key besides workspace, and only for a workspace tab", () => {
     const localKeys = () =>
         Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
     const sessionKeys = () =>
         Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
     const beforeLocal = localKeys();
-    const beforeSession = sessionKeys();
     const store = createStore();
+    // Initialize workspace once as bootstrap does; a non-workspace tab id must not trigger a write.
+    store.get(dbTypeFamily("tab-1"));
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
     store.set(dbTypeFamily("tab-1"), "lch_all");
     store.set(pinnedExplorerFurtherColumnsFamily("tab-1"), ["reference", "lch_master"]);
+    expect(setItem).not.toHaveBeenCalled();
     expect(localKeys()).toEqual(beforeLocal);
-    expect(sessionKeys()).toEqual(beforeSession);
+    expect(sessionKeys().every((key) => key === "workspace")).toBe(true);
+    setItem.mockRestore();
 });

@@ -32,15 +32,8 @@ import {
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
 import { failureUnlessCancelled } from "@/platform/errors";
-import {
-  dbTabFamily,
-  dbTypeFamily,
-  localOptionsFamily,
-  pinnedExplorerComparisonFamily,
-  pinnedExplorerDatabaseFamily,
-  pinnedExplorerFurtherColumnsFamily,
-  tabsAtom,
-} from "@/state/atoms";
+import { dbTabFamily, tabsAtom } from "@/state/atoms";
+import { canonicalTabExplorerOptions, type TabExplorer } from "@/state/workspaceTypes";
 import { selectStripTab } from "@/state/stripTab";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
@@ -317,29 +310,28 @@ function OpeningTree({
           });
         }
       }
+      let explorer: TabExplorer | undefined;
+      if (pinned) {
+        // The board has no time-control control, so that filter stays behind.
+        const options = canonicalTabExplorerOptions(pinned.options);
+        explorer = {
+          pinned: pinned.source.file,
+          ...(online && onlinePlayer !== undefined
+            ? { comparison: { database: online.file, player: onlinePlayer } }
+            : {}),
+          ...(variant === "database" ? { further: ["reference"] } : {}),
+          ...(options ? { options } : {}),
+        };
+      }
       await runTabCreation({
         create: () =>
           createTab({
-            tab: { type: "analysis", name: tabName },
+            tab: { type: "analysis", name: tabName, ...(explorer ? { explorer } : {}) },
             setTabs,
             initialTree: line.tree,
           }),
         onSuccess: (id) => {
           if (pinned) {
-            // The board has no time-control control, so that filter stays behind.
-            const { time_controls: _searchOnly, ...options } = pinned.options;
-            atoms.set(localOptionsFamily(id), options);
-            atoms.set(pinnedExplorerDatabaseFamily(id), pinned.source.file);
-            if (online && onlinePlayer !== undefined) {
-              atoms.set(pinnedExplorerComparisonFamily(id), {
-                database: online.file,
-                player: onlinePlayer,
-              });
-            }
-            if (variant === "database") {
-              atoms.set(pinnedExplorerFurtherColumnsFamily(id), ["reference"]);
-            }
-            atoms.set(dbTypeFamily(id), "local");
             atoms.set(dbTabFamily(id), "stats");
             selectStripTab(atoms, id, "database");
           }

@@ -178,6 +178,12 @@ function collectOriginalSnapshots(local?: Storage, session?: Storage): OriginalO
             ) {
                 ids.add(pathRefKey(tab.gameOrigin.database.id));
             }
+            if (tab.explorer?.pinned) {
+                ids.add(pathRefKey(tab.explorer.pinned.id));
+            }
+            if (tab.explorer?.comparison) {
+                ids.add(pathRefKey(tab.explorer.comparison.database.id));
+            }
         }
     };
     let workspaceTrusted = collectOne(
