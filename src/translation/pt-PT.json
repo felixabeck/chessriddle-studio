@@ -1572,7 +1572,6 @@
     "Scoresheet.Error.InvalidInput": "Não foi possível enviar as fotos selecionadas. Adicione entre uma e quatro fotos e tente novamente.",
     "Scoresheet.Error.LimitExceeded": "A leitura da folha de jogo demorou demasiado tempo. Tente novamente com uma foto mais nítida.",
     "Scoresheet.Error.Unavailable": "A importação de fotos de folhas de jogo não está disponível nesta versão.",
-    "Scoresheet.FinishReview": "Concluir revisão",
     "Scoresheet.FitToPanel": "Ajustar ao painel",
     "Scoresheet.FullSize": "Tamanho real",
     "Scoresheet.Intake.ChoosePhotos": "Escolher fotos ou PDF",

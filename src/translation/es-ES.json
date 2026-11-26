@@ -1572,7 +1572,6 @@
     "Scoresheet.Error.InvalidInput": "No se pudieron enviar las fotos seleccionadas. Añade entre una y cuatro fotos e inténtalo de nuevo.",
     "Scoresheet.Error.LimitExceeded": "La lectura de la planilla tardó demasiado. Inténtalo de nuevo con una foto más nítida.",
     "Scoresheet.Error.Unavailable": "La importación de fotos de planillas no está disponible en esta versión.",
-    "Scoresheet.FinishReview": "Finalizar revisión",
     "Scoresheet.FitToPanel": "Ajustar al panel",
     "Scoresheet.FullSize": "Tamaño real",
     "Scoresheet.Intake.ChoosePhotos": "Elegir fotos o PDF",

@@ -1516,7 +1516,6 @@
     "Scoresheet.Error.InvalidInput": "無法傳送所選照片。請新增 1 至 4 張照片後重試。",
     "Scoresheet.Error.LimitExceeded": "讀取記譜紙耗時過長。請換一張更清晰的照片重試。",
     "Scoresheet.Error.Unavailable": "此版本不支援記譜紙照片匯入。",
-    "Scoresheet.FinishReview": "完成檢查",
     "Scoresheet.FitToPanel": "符合面板",
     "Scoresheet.FullSize": "原始大小",
     "Scoresheet.Intake.ChoosePhotos": "選擇照片或 PDF",

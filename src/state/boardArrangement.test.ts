@@ -148,18 +148,6 @@ describe("validateMosaicTree and isValidBoardArrangement", () => {
             },
         ],
         [
-            "unknown leaf photo",
-            {
-                direction: "row",
-                first: "left",
-                second: {
-                    direction: "column",
-                    first: "topRight",
-                    second: { direction: "row", first: "bottomRight", second: "photo" },
-                },
-            },
-        ],
-        [
             "strip rule violated (all five always-present panels)",
             {
                 direction: "row",
@@ -400,6 +388,12 @@ describe("placeArea, returnPanelArea and canTakeOutPanel", () => {
         const withCoach = placeArea(fourOut, "coach", "topRight", "right");
         expect(withCoach).not.toBe(fourOut);
         expect(isValidBoardArrangement(withCoach)).toBe(true);
+
+        expect(canTakeOutPanel(withCoach, "photo")).toBe(true);
+        const withPhoto = placeArea(withCoach, "photo", "left", "right");
+        expect(withPhoto).not.toBe(withCoach);
+        expect(isValidBoardArrangement(withPhoto)).toBe(true);
+        expect(boardArrangementSchema.safeParse(withPhoto).success).toBe(true);
 
         const movedExisting = placeArea(fourOut, "database", "left", "right");
         expect(movedExisting).not.toBe(fourOut);
@@ -643,6 +637,74 @@ describe("shownArrangement and applyShownSplits", () => {
             "database",
             "bottomRight",
         ]);
+    });
+
+    test("accepts arrangements naming photo and keeps legacy arrangements valid; photo can be hidden and keeps splits", () => {
+        const legacyWithoutPhoto: BoardArrangement = {
+            direction: "row",
+            first: "left",
+            second: {
+                direction: "column",
+                first: "coach",
+                second: { direction: "column", first: "topRight", second: "bottomRight" },
+            },
+        };
+        expect(isValidBoardArrangement(legacyWithoutPhoto)).toBe(true);
+
+        const storedWithPhoto: BoardArrangement = {
+            direction: "row",
+            splitPercentage: 48,
+            first: "left",
+            second: {
+                direction: "column",
+                splitPercentage: 35,
+                first: "photo",
+                second: {
+                    direction: "column",
+                    splitPercentage: 40,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        };
+        expect(isValidBoardArrangement(storedWithPhoto)).toBe(true);
+        expect(boardArrangementSchema.safeParse(storedWithPhoto).success).toBe(true);
+
+        const hidden = new Set<PanelAreaId>(["photo"]);
+        const shown = shownArrangement(storedWithPhoto, hidden);
+        expect(arrangementLeaves(shown)).toEqual(["left", "topRight", "bottomRight"]);
+        const dragged = applyShownSplits(
+            storedWithPhoto,
+            {
+                direction: "row",
+                splitPercentage: 60,
+                first: "left",
+                second: {
+                    direction: "column",
+                    splitPercentage: 55,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+            hidden,
+        );
+        expect(dragged).toEqual({
+            direction: "row",
+            splitPercentage: 60,
+            first: "left",
+            second: {
+                direction: "column",
+                splitPercentage: 35,
+                first: "photo",
+                second: {
+                    direction: "column",
+                    splitPercentage: 55,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        });
+        expect(shownArrangement(dragged, new Set())).toBe(dragged);
     });
 
     test("returns stored unchanged when no hidden panel is present or structure mismatches", () => {

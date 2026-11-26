@@ -1600,7 +1600,6 @@
     "Scoresheet.Error.InvalidInput": "Не вдалося надіслати вибрані фото. Додайте від одного до чотирьох фото і спробуйте знову.",
     "Scoresheet.Error.LimitExceeded": "Читання бланка тривало занадто довго. Спробуйте знову з чіткішим фото.",
     "Scoresheet.Error.Unavailable": "Імпорт фото бланків недоступний у цій збірці.",
-    "Scoresheet.FinishReview": "Завершити перевірку",
     "Scoresheet.FitToPanel": "За розміром панелі",
     "Scoresheet.FullSize": "Повний розмір",
     "Scoresheet.Intake.ChoosePhotos": "Вибрати фото або PDF",

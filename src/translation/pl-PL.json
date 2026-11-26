@@ -1600,7 +1600,6 @@
     "Scoresheet.Error.InvalidInput": "Nie udało się wysłać wybranych zdjęć. Dodaj od jednego do czterech zdjęć i spróbuj ponownie.",
     "Scoresheet.Error.LimitExceeded": "Odczytywanie blankietu trwało zbyt długo. Spróbuj ponownie z wyraźniejszym zdjęciem.",
     "Scoresheet.Error.Unavailable": "Import zdjęć blankietów nie jest dostępny w tej wersji.",
-    "Scoresheet.FinishReview": "Zakończ sprawdzanie",
     "Scoresheet.FitToPanel": "Dopasuj do panelu",
     "Scoresheet.FullSize": "Pełny rozmiar",
     "Scoresheet.Intake.ChoosePhotos": "Wybierz zdjęcia lub PDF",

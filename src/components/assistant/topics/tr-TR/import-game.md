@@ -2,7 +2,7 @@
 id: import-game
 title: Oyun içe aktarma
 summary: PGN dosyasından, yapıştırılan PGN metninden, Lichess veya Chess.com bağlantısından, FEN konumundan ya da el yazısı notasyon kağıdının fotoğraflarından veya PDF taramalarından oyun içe aktarın.
-source: 2a3b47d982e0f514
+source: 85ee9b055c7abe34
 ---
 
 Bir oyunu veya konumu içe aktarmak için [[page:new-tab]] sayfasını açın ve {{label:Home.Card.ImportGame.Title}} iletişim kutusunu açmak üzere {{label:Home.Card.ImportGame.Button}} düğmesine tıklayın. Ayrıca {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} yolunu (veya {{label:Settings.Keybinds.Actions.OPEN_FILE}} kısayolunu) kullanarak doğrudan bir PGN dosyası açabilirsiniz.
@@ -20,6 +20,6 @@ PGN, {{label:Import.Online}} ve FEN için oyunu geçerli sekmeye yüklemek üzer
 - Model düğmesinden veya [[setting:coach-model]] ({{label:Settings.Coach.Model}}) içinden yapay zeka bağlantısını ve görsel destekleyen modeli seçin.
 - Başlatmak için {{label:Scoresheet.Read.Button}} düğmesine tıklayın. Bir bağlantıda ilk okumadan önce {{label:Scoresheet.Notice.Title}} seçilen fotoğrafların (oyuncu adları ve kağıtta yazılı diğer her şey dahil) o sağlayıcıya gönderildiğini, kamera konumu gibi üst verilerin önce temizlendiğini ve başka hiçbir verinin gönderilmediğini açıklar.
 - Studio her hamleyi başlangıç konumundan standart satranç kurallarına göre kontrol eder ve oyunu tahtanın yanında {{label:Board.Tabs.Photo}} panelinin açık olduğu kaydedilmemiş yeni bir analiz sekmesinde açar.
-- Şüpheli veya düzeltilen hamleler notasyonda belirsiz olarak işaretlenir. {{label:Board.Tabs.Photo}} panelinde bunlar arasında gezinin ve her hamleyi doğruladıkça {{label:Scoresheet.MarkAsChecked}} düğmesine tıklayın. Ortada bir hamleyi düzeltir veya durma noktasının ardından devam ederseniz kağıttaki sonraki yasal hamleleri oynatmak için {{label:Scoresheet.ContinueWithSheet}} düğmesine tıklayın. İşiniz bittiğinde kalan işaretleri temizlemek için {{label:Scoresheet.FinishReview}} düğmesine tıklayın.
+- Şüpheli veya düzeltilen hamleler notasyonda belirsiz olarak işaretlenir. {{label:Board.Tabs.Photo}} panelinde bunlar arasında gezinin ve her hamleyi doğruladıkça {{label:Scoresheet.MarkAsChecked}} düğmesine tıklayın. Ortada bir hamleyi düzeltir veya durma noktasının ardından devam ederseniz kağıttaki sonraki yasal hamleleri oynatmak için {{label:Scoresheet.ContinueWithSheet}} düğmesine tıklayın. İşaretler her hamle düzeltilene veya doğrulandı olarak işaretlenene kadar kalır ve {{label:Board.Tabs.Photo}} paneli sekmelerden sürüklenip diğer paneller gibi yerleştirilebilir.
 - Oyunu normal kaydetme akışıyla ({{label:Menu.File}} -> {{label:Common.Save}}, kaydet düğmesi veya {{label:Board.Database.Save}}) bir dosyaya veya veritabanına kaydedin.
 - Fotoğraflar yalnızca bellekte tutulur (en fazla 4 açık sekme için) ve diske kaydedilmez; yeniden yükleme veya yeniden başlatma sonrasında oyun ile inceleme işaretleri kalır ve {{label:Board.Tabs.Photo}} panelindeki {{label:Scoresheet.LoadPhotoAgain}} seçeneğiyle fotoğrafı göndermeden yeniden görüntüleyebilirsiniz.

@@ -12,6 +12,7 @@ export const PANEL_AREA_IDS = [
     "database",
     "annotate",
     "coach",
+    "photo",
     "info",
 ] as const;
 export type PanelAreaId = (typeof PANEL_AREA_IDS)[number];

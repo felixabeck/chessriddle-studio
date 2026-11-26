@@ -74,7 +74,7 @@ test("notifies subscribers on set and clear, and removes photos on tab close", (
     unsubscribe();
 });
 
-test("removes photos when another game is installed, start FEN changes, review finishes, or store closes", () => {
+test("removes photos when another game is installed, start FEN changes, or store closes", () => {
     const id = crypto.randomUUID();
     const store = createTreeStore(id, { ...defaultTree(), scoresheetReview: {} });
 
@@ -95,10 +95,6 @@ test("removes photos when another game is installed, start FEN changes, review f
         ...store.getState().headers,
         fen: "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1",
     });
-    expect(getScoresheetPhotos(id)).toEqual([]);
-
-    setScoresheetPhotos(id, [PHOTO_A]);
-    store.getState().finishScoresheetReview();
     expect(getScoresheetPhotos(id)).toEqual([]);
 
     setScoresheetPhotos(id, [PHOTO_A]);

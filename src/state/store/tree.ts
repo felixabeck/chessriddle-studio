@@ -201,8 +201,6 @@ export interface TreeStoreState extends TreeState {
         expectedHeaders: GameHeaders,
         merged: Extract<RepertoireMergeResult, { ok: true }>,
     ) => boolean;
-    /** Ends the scoresheet review: clears every unsure mark, `scoresheetReview` and in-memory photos. Not undoable, leaves `dirty` unchanged. */
-    finishScoresheetReview: () => void;
     /** Replays remaining moves from the scoresheet after a stop or a mid-game correction. One undo step. */
     continueScoresheet: () => void;
 
@@ -530,7 +528,6 @@ type TreeMarkupActions = Pick<
     | "clearShapes"
     | "clearUnsureMark"
     | "clearReviewMark"
-    | "finishScoresheetReview"
 >;
 
 /**
@@ -1186,18 +1183,6 @@ function treeMarkupActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMark
                     state.dirty = true;
                 }),
             ),
-
-        finishScoresheetReview: () => {
-            set(
-                produce((state) => {
-                    for (const { node } of treeIterator(state.root)) {
-                        if (node.unsure !== undefined) delete node.unsure;
-                    }
-                    state.scoresheetReview = undefined;
-                }),
-            );
-            if (tabId) notifyScoresheetReviewEnded(tabId);
-        },
     };
 }
 
@@ -1241,7 +1226,6 @@ const NOT_UNDOABLE = [
     "setReportInProgress",
     "setReportOperationId",
     "clearUnsureMark",
-    "finishScoresheetReview",
 ] as const;
 
 type UndoableEdit = (typeof UNDOABLE_EDITS)[number];

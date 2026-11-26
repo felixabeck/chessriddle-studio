@@ -63,6 +63,9 @@ vi.mock("react-mosaic-component", () => {
   return { Mosaic };
 });
 
+import { createStore as createZustandStore } from "zustand";
+import { TreeStateContext } from "@/components/common/TreeStateContext";
+import type { TreeStore, TreeStoreState } from "@/state/store/tree";
 import BoardTabLayout, { BoardArrangementContext, boardAreaTargetId } from "./BoardTabLayout";
 import { fontSizeAtom } from "@/state/atoms";
 import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
@@ -2005,4 +2008,100 @@ test("engine rules 1-4: drives engines from undefined to [] to disabled+enabled 
   );
   expect(arrangementEngineAreas(getGameArrangement())).toEqual([disabledArea]);
   expect(latestContext!.shownEngineAreas.size).toBe(0);
+test("hidden photo panel area is omitted without a review, kept across divider drags, and returns in the same spot for a review tab", async () => {
+  const withPhoto: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: {
+      direction: "column",
+      first: "photo",
+      splitPercentage: 35,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 50,
+      },
+    },
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withPhoto));
+  const treeStore = createZustandStore<Pick<TreeStoreState, "scoresheetReview">>(() => ({
+    scoresheetReview: undefined,
+  })) as unknown as TreeStore;
+
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <TreeStateContext.Provider value={treeStore}>
+            <BoardTabLayout arrangeable>
+              <ArrangementProbe />
+            </BoardTabLayout>
+          </TreeStateContext.Provider>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+
+  expect(mosaicTree()).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 45,
+    second: { direction: "column", first: "topRight", second: "bottomRight", splitPercentage: 50 },
+  });
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+
+  // Dragging a divider on a non-review tab preserves photo and its 35 % split in storage.
+  await act(async () =>
+    dividers.get("left+topRight+bottomRight")!({
+      direction: "row",
+      first: "left",
+      splitPercentage: 55,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 65,
+      },
+    }),
+  );
+  const expectedStored: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    splitPercentage: 55,
+    second: {
+      direction: "column",
+      first: "photo",
+      splitPercentage: 35,
+      second: {
+        direction: "column",
+        first: "topRight",
+        second: "bottomRight",
+        splitPercentage: 65,
+      },
+    },
+  };
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(expectedStored);
+
+  // Activating a scoresheet review reveals photo in its remembered spot.
+  await act(async () => treeStore.setState({ scoresheetReview: {} }));
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["photo"]);
+  expect(mosaicTree()).toEqual(expectedStored);
+
+  // Returning photo removes it from the stored arrangement.
+  await act(async () => latestContext!.returnPanel("photo"));
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(store.get(boardArrangementAtom)).toEqual({
+    direction: "row",
+    first: "left",
+    splitPercentage: 55,
+    second: {
+      direction: "column",
+      first: "topRight",
+      splitPercentage: 65,
+      second: "bottomRight",
+    },
+  });
 });

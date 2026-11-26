@@ -1516,7 +1516,6 @@
     "Scoresheet.Error.InvalidInput": "선택한 사진을 보낼 수 없습니다. 사진을 1~4장 추가한 뒤 다시 시도하세요.",
     "Scoresheet.Error.LimitExceeded": "기보 용지를 읽는 데 시간이 너무 오래 걸렸습니다. 더 선명한 사진으로 다시 시도하세요.",
     "Scoresheet.Error.Unavailable": "이 빌드에서는 기보 사진 가져오기를 사용할 수 없습니다.",
-    "Scoresheet.FinishReview": "검토 완료",
     "Scoresheet.FitToPanel": "패널에 맞추기",
     "Scoresheet.FullSize": "원본 크기",
     "Scoresheet.Intake.ChoosePhotos": "사진 또는 PDF 선택",

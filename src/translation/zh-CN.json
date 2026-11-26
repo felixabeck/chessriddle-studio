@@ -1516,7 +1516,6 @@
     "Scoresheet.Error.InvalidInput": "无法发送所选照片。请添加 1 至 4 张照片后重试。",
     "Scoresheet.Error.LimitExceeded": "读取记谱纸耗时过长。请换一张更清晰的照片重试。",
     "Scoresheet.Error.Unavailable": "此版本不支持记谱纸照片导入。",
-    "Scoresheet.FinishReview": "完成检查",
     "Scoresheet.FitToPanel": "适应面板",
     "Scoresheet.FullSize": "原始大小",
     "Scoresheet.Intake.ChoosePhotos": "选择照片或 PDF",

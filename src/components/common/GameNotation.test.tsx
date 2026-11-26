@@ -1934,11 +1934,11 @@ describe("scoresheet unsure marks in notation", () => {
     // Variations never draw unsure marks.
     expect(host.querySelector('[data-node="c5"]')?.getAttribute("data-unsure")).toBe("false");
 
-    // Make an edit, finish review, then undo: node still has unsure in memory, but review is gone.
+    // Make an edit, clear review, then undo: node still has unsure in memory, but review is gone.
     await act(async () => {
       reviewStore.getState().goToMove([0, 0]);
       reviewStore.getState().makeMove({ payload: parseUci("g1f3")! });
-      reviewStore.getState().finishScoresheetReview();
+      reviewStore.setState({ scoresheetReview: undefined });
       reviewStore.getState().undo();
     });
     expect(reviewStore.getState().root.children[0].unsure).toBe(true);

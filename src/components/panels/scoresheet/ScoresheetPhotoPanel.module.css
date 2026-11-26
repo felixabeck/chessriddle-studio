@@ -15,29 +15,54 @@
   gap: var(--mantine-spacing-xs);
 }
 
-.photoToolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mantine-spacing-xs);
-  flex-shrink: 0;
-}
-
-.viewport {
+.viewportFrame {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   overflow: hidden;
   background-color: var(--cf-surface-inset);
   border: 1px solid var(--cf-border-strong);
   border-radius: var(--cf-radius-sm);
 }
 
+.viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
 .viewport[data-scoresheet-photo-size="full"] {
   display: block;
   overflow: auto;
+}
+
+.enlargeOverlay {
+  position: absolute;
+  top: var(--mantine-spacing-xs);
+  right: calc(var(--mantine-spacing-xs) + var(--scoresheet-scrollbar-right, 0px));
+  z-index: 1;
+  border-radius: var(--cf-radius-sm);
+  box-shadow: var(--cf-shadow-elevated);
+}
+
+.pageOverlay {
+  position: absolute;
+  bottom: calc(var(--mantine-spacing-xs) + var(--scoresheet-scrollbar-bottom, 0px));
+  left: calc((100% - var(--scoresheet-scrollbar-right, 0px)) / 2);
+  transform: translateX(-50%);
+  max-width: calc(100% - 2 * var(--mantine-spacing-xs) - var(--scoresheet-scrollbar-right, 0px));
+  z-index: 1;
+  padding: 2px 6px;
+  background-color: var(--cf-card);
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-full);
+  box-shadow: var(--cf-shadow-elevated);
 }
 
 .imageFit {

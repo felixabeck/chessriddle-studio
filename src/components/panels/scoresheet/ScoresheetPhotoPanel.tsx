@@ -1,6 +1,14 @@
 import { Button, Group, Text } from "@mantine/core";
 import { Check, ChevronLeft, ChevronRight, ImagePlus, Maximize2, Minimize2 } from "lucide-react";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import IconAction from "@/components/common/IconAction";
@@ -77,18 +85,30 @@ function ScoresheetPhotoPanel() {
   const review = useStore(store, (s) => s.scoresheetReview);
   const goToMove = useStore(store, (s) => s.goToMove);
   const clearUnsureMark = useStore(store, (s) => s.clearUnsureMark);
-  const finishScoresheetReview = useStore(store, (s) => s.finishScoresheetReview);
   const continueScoresheet = useStore(store, (s) => s.continueScoresheet);
 
   const [fullSize, setFullSize] = useState(false);
   const [page, setPage] = useState(0);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [intakeStatus, setIntakeStatus] = useState<string | null>(null);
+  const [scrollbarInsets, setScrollbarInsets] = useState({ right: 0, bottom: 0 });
   const errorMessages = useScoresheetErrorMessages();
   const mountedRef = useRef(true);
   const tabIdRef = useRef(tabId);
   tabIdRef.current = tabId;
   const pickRequestRef = useRef(0);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  const measureScrollbarInsets = useCallback(() => {
+    const el = viewportRef.current;
+    const nextRight = el ? Math.max(0, el.offsetWidth - el.clientWidth) : 0;
+    const nextBottom = el ? Math.max(0, el.offsetHeight - el.clientHeight) : 0;
+    setScrollbarInsets((prev) =>
+      prev.right === nextRight && prev.bottom === nextBottom
+        ? prev
+        : { right: nextRight, bottom: nextBottom },
+    );
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -133,6 +153,15 @@ function ScoresheetPhotoPanel() {
 
   const safePage = photos.length > 0 ? Math.min(page, photos.length - 1) : 0;
 
+  useEffect(() => {
+    measureScrollbarInsets();
+    const el = viewportRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureScrollbarInsets);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [measureScrollbarInsets, fullSize, safePage, photos.length]);
+
   const unsurePaths = useMemo(() => (review ? getMainLineUnsurePaths(root) : []), [review, root]);
   const onMainLine = position.length > 0 && position.every((index) => index === 0);
   const currentIsUnsure =
@@ -162,47 +191,18 @@ function ScoresheetPhotoPanel() {
     if (target) goToMove(target);
   };
 
+  const viewportStyle = {
+    "--scoresheet-scrollbar-right": `${scrollbarInsets.right}px`,
+    "--scoresheet-scrollbar-bottom": `${scrollbarInsets.bottom}px`,
+  } as CSSProperties;
+
   return (
     <div className={classes.panel}>
       <div className={classes.photoSection}>
         {photos.length > 0 ? (
-          <>
-            <div className={classes.photoToolbar}>
-              {photos.length > 1 ? (
-                <Group gap="xs">
-                  <IconAction
-                    label={t("Scoresheet.PreviousPage")}
-                    size="sm"
-                    disabled={safePage === 0}
-                    onClick={() => setPage(Math.max(0, safePage - 1))}
-                  >
-                    <ChevronLeft size="1rem" />
-                  </IconAction>
-                  <Text size="xs" c="dimmed" data-scoresheet-page>
-                    {t("Scoresheet.PageOf", { current: safePage + 1, total: photos.length })}
-                  </Text>
-                  <IconAction
-                    label={t("Scoresheet.NextPage")}
-                    size="sm"
-                    disabled={safePage >= photos.length - 1}
-                    onClick={() => setPage(Math.min(photos.length - 1, safePage + 1))}
-                  >
-                    <ChevronRight size="1rem" />
-                  </IconAction>
-                </Group>
-              ) : (
-                <span />
-              )}
-              <IconAction
-                label={fullSize ? t("Scoresheet.FitToPanel") : t("Scoresheet.FullSize")}
-                size="sm"
-                pressed={fullSize}
-                onClick={() => setFullSize((value) => !value)}
-              >
-                {fullSize ? <Minimize2 size="1rem" /> : <Maximize2 size="1rem" />}
-              </IconAction>
-            </div>
+          <div className={classes.viewportFrame} style={viewportStyle}>
             <div
+              ref={viewportRef}
               className={classes.viewport}
               data-scoresheet-photo-size={fullSize ? "full" : "fit"}
             >
@@ -210,9 +210,48 @@ function ScoresheetPhotoPanel() {
                 src={photos[safePage]}
                 alt={t("Scoresheet.PhotoAlt", { number: safePage + 1 })}
                 className={fullSize ? classes.imageFull : classes.imageFit}
+                onLoad={measureScrollbarInsets}
               />
             </div>
-          </>
+            <div className={classes.enlargeOverlay} data-scoresheet-enlarge-overlay>
+              <IconAction
+                label={fullSize ? t("Scoresheet.FitToPanel") : t("Scoresheet.FullSize")}
+                size="sm"
+                variant="default"
+                pressed={fullSize}
+                onClick={() => setFullSize((value) => !value)}
+              >
+                {fullSize ? <Minimize2 size="1rem" /> : <Maximize2 size="1rem" />}
+              </IconAction>
+            </div>
+            {photos.length > 1 && (
+              <div className={classes.pageOverlay} data-scoresheet-page-overlay>
+                <Group gap={4} wrap="nowrap">
+                  <IconAction
+                    label={t("Scoresheet.PreviousPage")}
+                    size="sm"
+                    variant="subtle"
+                    disabled={safePage === 0}
+                    onClick={() => setPage(Math.max(0, safePage - 1))}
+                  >
+                    <ChevronLeft size="1rem" />
+                  </IconAction>
+                  <Text size="xs" fw={500} data-scoresheet-page>
+                    {t("Scoresheet.PageOf", { current: safePage + 1, total: photos.length })}
+                  </Text>
+                  <IconAction
+                    label={t("Scoresheet.NextPage")}
+                    size="sm"
+                    variant="subtle"
+                    disabled={safePage >= photos.length - 1}
+                    onClick={() => setPage(Math.min(photos.length - 1, safePage + 1))}
+                  >
+                    <ChevronRight size="1rem" />
+                  </IconAction>
+                </Group>
+              </div>
+            )}
+          </div>
         ) : (
           <div className={classes.emptyPhoto} data-scoresheet-no-photo>
             <Text size="sm" c="dimmed">
@@ -236,86 +275,84 @@ function ScoresheetPhotoPanel() {
         )}
       </div>
 
-      <div className={classes.controls}>
-        <Group justify="space-between" wrap="wrap" gap="xs">
-          <Group gap="xs">
-            <Text size="xs" fw={500} data-scoresheet-unsure-count>
-              {unsurePaths.length === 0
-                ? t("Scoresheet.AllMovesChecked")
-                : t("Scoresheet.MovesToCheck", { count: unsurePaths.length })}
-            </Text>
-            <IconAction
-              label={t("Scoresheet.PreviousUnsure")}
-              size="sm"
-              disabled={unsurePaths.length === 0}
-              onClick={() => jumpUnsure("previous")}
-            >
-              <ChevronLeft size="1rem" />
-            </IconAction>
-            <IconAction
-              label={t("Scoresheet.NextUnsure")}
-              size="sm"
-              disabled={unsurePaths.length === 0}
-              onClick={() => jumpUnsure("next")}
-            >
-              <ChevronRight size="1rem" />
-            </IconAction>
-          </Group>
-          <Button
-            size="xs"
-            variant="default"
-            leftSection={<Check size="0.875rem" />}
-            disabled={!currentIsUnsure}
-            onClick={() => clearUnsureMark()}
-          >
-            {t("Scoresheet.MarkAsChecked")}
-          </Button>
-        </Group>
-
-        {remaining && (
-          <div className={classes.stopNotice} data-scoresheet-stop-notice>
-            <Text size="xs" fw={600}>
-              {remaining.failedToken !== undefined
-                ? remaining.color === "white"
-                  ? t("Scoresheet.StoppedAtWhite", { move: remaining.moveNumber })
-                  : t("Scoresheet.StoppedAtBlack", { move: remaining.moveNumber })
-                : remaining.color === "white"
-                  ? t("Scoresheet.NextOnSheetWhite", { move: remaining.moveNumber })
-                  : t("Scoresheet.NextOnSheetBlack", { move: remaining.moveNumber })}
-            </Text>
-            {remaining.failedToken !== undefined && (
-              <Text size="xs" c="dimmed" data-scoresheet-failed-token>
-                {t("Scoresheet.CouldNotPlay", { token: remaining.failedToken })}
+      {review !== undefined && (
+        <div className={classes.controls}>
+          <Group justify="space-between" wrap="wrap" gap="xs" data-scoresheet-review-row>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="xs" fw={500} data-scoresheet-unsure-count>
+                {unsurePaths.length === 0
+                  ? t("Scoresheet.AllMovesChecked")
+                  : t("Scoresheet.MovesToCheck", { count: unsurePaths.length })}
               </Text>
+              <IconAction
+                label={t("Scoresheet.PreviousUnsure")}
+                size="sm"
+                disabled={unsurePaths.length === 0}
+                onClick={() => jumpUnsure("previous")}
+              >
+                <ChevronLeft size="1rem" />
+              </IconAction>
+              <IconAction
+                label={t("Scoresheet.NextUnsure")}
+                size="sm"
+                disabled={unsurePaths.length === 0}
+                onClick={() => jumpUnsure("next")}
+              >
+                <ChevronRight size="1rem" />
+              </IconAction>
+            </Group>
+            {unsurePaths.length > 0 && (
+              <Button
+                size="xs"
+                variant="default"
+                leftSection={<Check size="0.875rem" />}
+                disabled={!currentIsUnsure}
+                onClick={() => clearUnsureMark()}
+              >
+                {t("Scoresheet.MarkAsChecked")}
+              </Button>
             )}
-            <Text className={classes.remainingTokens} data-scoresheet-remaining-tokens>
-              {remainingText}
-            </Text>
-          </div>
-        )}
+          </Group>
 
-        {continuationPlan && (
-          <div className={classes.continueBox} data-scoresheet-continue>
-            <Text size="xs" c="dimmed">
-              {t("Scoresheet.ContinueHint")}
-            </Text>
-            <Button
-              size="xs"
-              variant="default"
-              onClick={continueScoresheet}
-              data-scoresheet-continue-button
-            >
-              {t("Scoresheet.ContinueWithSheet")}
-            </Button>
-          </div>
-        )}
+          {remaining && (
+            <div className={classes.stopNotice} data-scoresheet-stop-notice>
+              <Text size="xs" fw={600}>
+                {remaining.failedToken !== undefined
+                  ? remaining.color === "white"
+                    ? t("Scoresheet.StoppedAtWhite", { move: remaining.moveNumber })
+                    : t("Scoresheet.StoppedAtBlack", { move: remaining.moveNumber })
+                  : remaining.color === "white"
+                    ? t("Scoresheet.NextOnSheetWhite", { move: remaining.moveNumber })
+                    : t("Scoresheet.NextOnSheetBlack", { move: remaining.moveNumber })}
+              </Text>
+              {remaining.failedToken !== undefined && (
+                <Text size="xs" c="dimmed" data-scoresheet-failed-token>
+                  {t("Scoresheet.CouldNotPlay", { token: remaining.failedToken })}
+                </Text>
+              )}
+              <Text className={classes.remainingTokens} data-scoresheet-remaining-tokens>
+                {remainingText}
+              </Text>
+            </div>
+          )}
 
-        <Group justify="flex-end">
-          <Button size="xs" variant="light" onClick={finishScoresheetReview}>
-            {t("Scoresheet.FinishReview")}
-          </Button>
-        </Group>
-      </div>
+          {continuationPlan && (
+            <div className={classes.continueBox} data-scoresheet-continue>
+              <Text size="xs" c="dimmed">
+                {t("Scoresheet.ContinueHint")}
+              </Text>
+              <Button
+                size="xs"
+                variant="default"
+                onClick={continueScoresheet}
+                data-scoresheet-continue-button
+              >
+                {t("Scoresheet.ContinueWithSheet")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

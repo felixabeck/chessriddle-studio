@@ -82,10 +82,20 @@ describe("validArrangeTargets", () => {
                 rootFont: 16,
             }),
         ).toEqual([]);
-        // Coach is not an always-present panel and can still be taken out.
+        // Coach and Photo are not always-present panels and can still be taken out.
         expect(
             validArrangeTargets({
                 area: "coach",
+                stored: fourTakenOut,
+                displayed: fourTakenOut,
+                hiddenAreas: EMPTY_SET,
+                width: 1440,
+                rootFont: 16,
+            }).length,
+        ).toBeGreaterThan(0);
+        expect(
+            validArrangeTargets({
+                area: "photo",
                 stored: fourTakenOut,
                 displayed: fourTakenOut,
                 hiddenAreas: EMPTY_SET,
@@ -318,6 +328,9 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
         );
         expect(arrangeTargetLabel(t, { kind: "place", target: "database", side: "right" })).toBe(
             "Board.Arrange.RightOf(Board.Tabs.Database)",
+        );
+        expect(arrangeTargetLabel(t, { kind: "place", target: "photo", side: "right" })).toBe(
+            "Board.Arrange.RightOf(Board.Tabs.Photo)",
         );
         expect(arrangeTargetLabel(t, { kind: "return" })).toBe("Board.Arrange.BackIntoTabs");
     });

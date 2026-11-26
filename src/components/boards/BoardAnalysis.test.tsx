@@ -907,14 +907,15 @@ describe("BoardAnalysis", () => {
     expect(board.mock.lastCall?.[0].practiceMove).toBe(practiceController);
   });
 
-  test("Photo tab stays in the strip, never becomes a fallback, and falls back past Practice/Photo when the review ends", async () => {
+  test("Photo is a conditional panel area: draggable and in the menu while review is active, never a fallback, and returns to the strip on ×", async () => {
     await act(async () => {
       treeStore.setState({
         scoresheetReview: {},
       });
       jotaiStore.set(tabFamily(tabId), "photo");
     });
-    await renderWithArrangement(["annotate"]);
+    const returnPanel = vi.fn();
+    await renderWithArrangement(["annotate"], returnPanel);
     const selected = () =>
       container.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
     // With a review and Annotate taken out, stored `photo` shows Photo.
@@ -925,6 +926,15 @@ describe("BoardAnalysis", () => {
     expect(selected()).toBe("Board.Tabs.Analysis");
     expect(jotaiStore.get(tabFamily(tabId))).toBe("photo");
 
+    // Without a review, Photo is absent from the menu and from detached panel areas even if listed in shownPanelAreas.
+    await renderWithArrangement(["photo"], returnPanel);
+    expect(container.querySelector('[data-panel-area="photo"]')).toBeNull();
+    await renderWithArrangement(["analysis", "report", "database", "annotate"], returnPanel);
+    const noReviewMenuItems = [...container.querySelectorAll('[role="menuitem"]')].map(
+      (el) => el.textContent,
+    );
+    expect(noReviewMenuItems).toEqual(["Board.Arrange.MoveTabs"]);
+
     // With Analysis, Report, Database and Annotate taken out and a review present, fallback shows Info, never Photo.
     await act(async () => {
       treeStore.setState({
@@ -932,20 +942,37 @@ describe("BoardAnalysis", () => {
       });
       jotaiStore.set(tabFamily(tabId), "database");
     });
-    await renderWithArrangement(["analysis", "report", "database", "annotate"]);
+    await renderWithArrangement(["analysis", "report", "database", "annotate"], returnPanel);
     expect(selected()).toBe("Board.Tabs.Info");
     expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
-    // Photo has no drag start and no placing entry; Info cannot be taken out (strip rule).
-    const photoTab = [...container.querySelectorAll('[role="tab"]')].find(
-      (tab) => tab.textContent === "Board.Tabs.Photo",
-    )!;
-    expect(photoTab.getAttribute("data-draggable-tab")).toBeNull();
+    // Photo IS draggable (`data-panel-tab="photo"`) and listed in the grip menu even when 4 always-present panels are out; Info is still locked by the strip rule.
+    const photoTab = container.querySelector('[data-panel-tab="photo"]')!;
+    expect(photoTab).not.toBeNull();
+    expect(photoTab.getAttribute("data-draggable-tab")).toBe("true");
     const infoTab = container.querySelector('[data-panel-tab="info"]')!;
     expect(infoTab.getAttribute("data-draggable-tab")).toBeNull();
     const menuItems = [...container.querySelectorAll('[role="menuitem"]')].map(
       (el) => el.textContent,
     );
-    expect(menuItems).toEqual(["Board.Arrange.MoveTabs"]);
+    expect(menuItems).toEqual(["Board.Arrange.MoveTabs", "Board.Arrange.ShowAsArea"]);
+
+    // Pulling Photo out renders it once in its own PanelArea portal with title, grip and ×; × returns it to the strip and selects it.
+    await act(async () => jotaiStore.set(tabFamily(tabId), "photo"));
+    await renderWithArrangement(["photo"], returnPanel);
+    const photoArea = container.querySelector(
+      '[data-portal-target="photo"] [data-panel-area="photo"]',
+    )!;
+    expect(photoArea).not.toBeNull();
+    expect(photoArea.textContent).toContain("Board.Tabs.Photo");
+    expect(photoArea.querySelector('[data-arrange-grip="photo"]')).not.toBeNull();
+    expect(container.querySelector('[data-panel-tab="photo"]')).toBeNull();
+    expect(selected()).toBe("Board.Tabs.Annotate");
+    const returnButton = photoArea.querySelector<HTMLButtonElement>(
+      'button[aria-label="Board.Area.ReturnToTabs"]',
+    )!;
+    await act(async () => returnButton.click());
+    expect(returnPanel).toHaveBeenCalledExactlyOnceWith("photo");
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("photo");
   });
 
   test("arranging grips and entry points wire through the real DOM, Return selects via listener, and notation grip hides in editing mode", async () => {

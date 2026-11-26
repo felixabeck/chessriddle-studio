@@ -1572,7 +1572,6 @@
     "Scoresheet.Error.InvalidInput": "Impossibile inviare le foto selezionate. Aggiungi da una a quattro foto e riprova.",
     "Scoresheet.Error.LimitExceeded": "La lettura del formulario ha richiesto troppo tempo. Riprova con una foto più nitida.",
     "Scoresheet.Error.Unavailable": "L’importazione da foto del formulario non è disponibile in questa versione.",
-    "Scoresheet.FinishReview": "Termina controllo",
     "Scoresheet.FitToPanel": "Adatta al pannello",
     "Scoresheet.FullSize": "Dimensione reale",
     "Scoresheet.Intake.ChoosePhotos": "Scegli foto o PDF",

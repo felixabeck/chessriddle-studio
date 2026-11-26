@@ -2,7 +2,7 @@
 id: import-game
 title: 대국 불러오기
 summary: PGN 파일, 붙여넣은 PGN 텍스트, Lichess 또는 Chess.com URL, FEN 포지션, 또는 손글씨 기보 사진이나 PDF 스캔에서 대국 불러오기.
-source: 2a3b47d982e0f514
+source: 85ee9b055c7abe34
 ---
 
 대국이나 포지션을 불러오려면 [[page:new-tab]]을 열고 {{label:Home.Card.ImportGame.Button}}을(를) 클릭하여 {{label:Home.Card.ImportGame.Title}} 대화상자를 여세요. {{label:Menu.File}} -> {{label:Menu.File.OpenFile}}(또는 {{label:Settings.Keybinds.Actions.OPEN_FILE}} 단축키)로 PGN 파일을 직접 열 수도 있습니다.
@@ -20,6 +20,6 @@ PGN, {{label:Import.Online}}, FEN에서는 {{label:Home.Card.ImportGame.Button}}
 - 모델 버튼이나 [[setting:coach-model]] ({{label:Settings.Coach.Model}})에서 AI 연결과 이미지 인식 모델을 선택하세요.
 - {{label:Scoresheet.Read.Button}}을(를) 클릭해 시작합니다. 연결당 처음 읽기 전에 {{label:Scoresheet.Notice.Title}} 안내가 표시되어 선택한 사진(선수 이름과 기보에 적힌 기타 내용 포함)이 해당 제공업체로 전송되며, 카메라 위치 같은 메타데이터는 먼저 제거되고 다른 데이터는 전송되지 않음을 설명합니다.
 - 스튜디오는 시작 포지션부터 표준 체스 규칙에 따라 모든 수를 확인하고, 보드 옆에 {{label:Board.Tabs.Photo}} 패널이 열린 새 미저장 분석 탭으로 대국을 엽니다.
-- 불확실하거나 수정된 수는 기보에 불확실 표시로 나타납니다. {{label:Board.Tabs.Photo}} 패널에서 이동하며 확인한 뒤 {{label:Scoresheet.MarkAsChecked}}를 클릭하세요. 중간 수를 고쳤거나 중단 지점 이후를 이어가려면 {{label:Scoresheet.ContinueWithSheet}}를 클릭해 기보의 남은 합법 수를 한 번에 재생할 수 있습니다. 마치면 {{label:Scoresheet.FinishReview}}를 클릭해 남은 표시를 지우세요.
+- 불확실하거나 수정된 수는 기보에 불확실 표시로 나타납니다. {{label:Board.Tabs.Photo}} 패널에서 이동하며 확인한 뒤 {{label:Scoresheet.MarkAsChecked}}를 클릭하세요. 중간 수를 고쳤거나 중단 지점 이후를 이어가려면 {{label:Scoresheet.ContinueWithSheet}}를 클릭해 기보의 남은 합법 수를 한 번에 재생할 수 있습니다. 각 수를 고치거나 확인 완료로 표시할 때까지 표시는 유지되며, {{label:Board.Tabs.Photo}} 패널은 탭에서 끌어내어 다른 패널처럼 배치할 수 있습니다.
 - 일반 저장 흐름({{label:Menu.File}} -> {{label:Common.Save}}, 저장 버튼 또는 {{label:Board.Database.Save}})으로 검토한 대국을 파일이나 데이터베이스에 저장하세요.
 - 사진은 메모리에만 보관되며(최대 4개의 열린 탭) 디스크에 저장되지 않습니다. 다시 불러오거나 재시작한 뒤에도 대국과 검토 표시는 유지되며, {{label:Board.Tabs.Photo}} 패널의 {{label:Scoresheet.LoadPhotoAgain}}으로 전송 없이 사진을 다시 볼 수 있습니다.

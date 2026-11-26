@@ -2,7 +2,7 @@
 id: import-game
 title: Importowanie partii
 summary: Importuj partię z pliku PGN, wklejonego tekstu PGN, adresu URL z Lichess lub Chess.com, pozycji FEN albo zdjęć lub skanów PDF ręcznie zapisanego blankietu partii.
-source: 2a3b47d982e0f514
+source: 85ee9b055c7abe34
 ---
 
 Aby zaimportować partię lub pozycję, otwórz [[page:new-tab]] i kliknij {{label:Home.Card.ImportGame.Button}}, aby otworzyć okno {{label:Home.Card.ImportGame.Title}}. Możesz też otworzyć plik PGN bezpośrednio przez {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (lub skrót {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -20,6 +20,6 @@ Aby zaimportować za pomocą **{{label:Import.FromPhoto}}**:
 - Wybierz połączenie AI oraz model obsługujący obrazy za pomocą przycisku modelu lub w [[setting:coach-model]] ({{label:Settings.Coach.Model}}).
 - Kliknij {{label:Scoresheet.Read.Button}}, aby rozpocząć. Przed pierwszym odczytem na danym połączeniu komunikat {{label:Scoresheet.Notice.Title}} wyjaśnia, że wybrane zdjęcia (w tym nazwiska graczy i wszystko inne zapisane na blankiecie) są wysyłane do tego dostawcy, metadane takie jak lokalizacja aparatu są najpierw usuwane, a żadne inne dane nie są wysyłane.
 - Studio sprawdza każde posunięcie zgodnie ze standardowymi zasadami szachów od pozycji początkowej i otwiera partię w nowej niezapisanej karcie analizy z panelem {{label:Board.Tabs.Photo}} obok szachownicy.
-- Wątpliwe lub poprawione posunięcia są oznaczone w zapisie jako niepewne. Przejdź przez nie w panelu {{label:Board.Tabs.Photo}} i klikaj {{label:Scoresheet.MarkAsChecked}} po sprawdzeniu każdego posunięcia. Jeśli poprawisz posunięcie w środku partii lub wznowisz po zatrzymaniu, kliknij {{label:Scoresheet.ContinueWithSheet}}, aby odtworzyć kolejne legalne posunięcia z blankietu. Po zakończeniu kliknij {{label:Scoresheet.FinishReview}}, aby usunąć pozostałe oznaczenia.
+- Wątpliwe lub poprawione posunięcia są oznaczone w zapisie jako niepewne. Przejdź przez nie w panelu {{label:Board.Tabs.Photo}} i klikaj {{label:Scoresheet.MarkAsChecked}} po sprawdzeniu każdego posunięcia. Jeśli poprawisz posunięcie w środku partii lub wznowisz po zatrzymaniu, kliknij {{label:Scoresheet.ContinueWithSheet}}, aby odtworzyć kolejne legalne posunięcia z blankietu. Oznaczenia pozostają, dopóki każde posunięcie nie zostanie poprawione lub oznaczone jako sprawdzone, a panel {{label:Board.Tabs.Photo}} można wyciągnąć z kart i umieścić jak pozostałe panele.
 - Zapisz partię do pliku lub bazy danych zwykłą metodą zapisu ({{label:Menu.File}} -> {{label:Common.Save}}, przycisk zapisu lub {{label:Board.Database.Save}}).
 - Zdjęcia są przechowywane wyłącznie w pamięci (dla maksymalnie 4 otwartych kart) i nie trafiają na dysk; po przeładowaniu lub ponownym uruchomieniu partia i oznaczenia weryfikacji pozostają, a zdjęcie możesz ponownie wyświetlić bez wysyłania przyciskiem {{label:Scoresheet.LoadPhotoAgain}} w panelu {{label:Board.Tabs.Photo}}.

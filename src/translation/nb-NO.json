@@ -1544,7 +1544,6 @@
     "Scoresheet.Error.InvalidInput": "De valgte bildene kunne ikke sendes. Legg til mellom ett og fire bilder og prøv igjen.",
     "Scoresheet.Error.LimitExceeded": "Lesingen av noteringsskjemaet tok for lang tid. Prøv igjen med et skarpere bilde.",
     "Scoresheet.Error.Unavailable": "Import fra bilde av noteringsskjema er ikke tilgjengelig i denne versjonen.",
-    "Scoresheet.FinishReview": "Fullfør kontroll",
     "Scoresheet.FitToPanel": "Tilpass til panelet",
     "Scoresheet.FullSize": "Full størrelse",
     "Scoresheet.Intake.ChoosePhotos": "Velg bilder eller PDF",

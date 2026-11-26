@@ -318,6 +318,8 @@ export function areaDisplayName(
             return t("Board.Tabs.Annotate");
         case "coach":
             return t("Board.Tabs.Coach");
+        case "photo":
+            return t("Board.Tabs.Photo");
         case "info":
             return t("Board.Tabs.Info");
     }

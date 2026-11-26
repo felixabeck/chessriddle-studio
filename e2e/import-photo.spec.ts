@@ -1,75 +1,5 @@
-import type {
-    ConnectionSummary,
-    ModelList,
-    ScoresheetGame,
-    Token,
-} from "../src/bindings/generated";
-import { expect, test, waitForTransitionsSettled, type MockScenario } from "./fixtures";
-
-// Valid 1x1 JPEG data URL so Chromium decodes and paints it in both thumbnail and Photo panel.
-const PHOTO_DATA_URL =
-    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==";
-
-const connection: ConnectionSummary = {
-    handle: "scoresheet-connection",
-    kind: "api",
-    label: "Local vision",
-    address: "http://localhost:11434/v1",
-    hasKey: false,
-    account: null,
-    status: "ready",
-};
-
-const models: ModelList = {
-    models: [
-        {
-            id: "vision-model",
-            name: "Vision Model",
-            effortLevels: [],
-            defaultEffort: null,
-            supportsTools: false,
-        },
-    ],
-    truncated: false,
-};
-
-const stubGame: ScoresheetGame = {
-    headers: {
-        white: "Alice",
-        black: "Bob",
-        event: "Club Open",
-        site: "Berlin",
-        date: "2026.11.24",
-        round: "3",
-        result: "1-0",
-        whiteElo: "1850",
-        blackElo: "1790",
-    },
-    moves: [
-        { san: "e4", unsure: false },
-        { san: "e5", unsure: true },
-        { san: "Nf3", unsure: false },
-        { san: "Nc6", unsure: false },
-    ],
-    stopped: null,
-};
-
-const stubPgnTokens: Token[] = [
-    { type: "Header", value: { tag: "Event", value: "Club Open" } },
-    { type: "Header", value: { tag: "Site", value: "Berlin" } },
-    { type: "Header", value: { tag: "Date", value: "2026.11.24" } },
-    { type: "Header", value: { tag: "Round", value: "3" } },
-    { type: "Header", value: { tag: "White", value: "Alice" } },
-    { type: "Header", value: { tag: "Black", value: "Bob" } },
-    { type: "Header", value: { tag: "Result", value: "1-0" } },
-    { type: "Header", value: { tag: "WhiteElo", value: "1850" } },
-    { type: "Header", value: { tag: "BlackElo", value: "1790" } },
-    { type: "San", value: "e4" },
-    { type: "San", value: "e5" },
-    { type: "San", value: "Nf3" },
-    { type: "San", value: "Nc6" },
-    { type: "Outcome", value: "1-0" },
-];
+import { expect, test, waitForTransitionsSettled } from "./fixtures";
+import { importFromPhoto, scoresheetPhotoCommands } from "./scoresheetPhotoImport";
 
 test("import from photo shows hint without a connection", async ({ page, mockScenario }) => {
     await mockScenario({
@@ -95,56 +25,145 @@ test("import from photo reads stubbed game and opens review tab with Photo panel
     page,
     mockScenario,
 }) => {
-    const commands: NonNullable<MockScenario["commands"]> = {
-        coach_available: { result: true },
-        coach_has_connection: { result: true },
-        coach_connections: { result: [connection] },
-        coach_models: { result: models },
-        scoresheet_pick_photos: {
-            result: {
-                photos: [{ dataUrl: PHOTO_DATA_URL }],
-                skipped: 0,
-                failed: 0,
-            },
-        },
-        scoresheet_read: { result: stubGame },
-        lex_pgn: { result: stubPgnTokens },
-    };
-    await mockScenario({ commands });
+    await mockScenario({ commands: scoresheetPhotoCommands() });
     await page.goto("/");
-    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await importFromPhoto(page, {
+        onBeforeRead: async (dialog) => {
+            await waitForTransitionsSettled(page);
+            await expect(dialog).toHaveScreenshot("import-photo-with-connection.png");
+        },
+    });
 
-    const dialog = page.getByRole("dialog", { name: "Import Game" });
-    await dialog.getByRole("button", { name: "Photo", exact: true }).click();
-    await dialog.getByRole("button", { name: "Choose photos or PDF", exact: true }).click();
-    await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
-
-    // Choose the model through the shared model popover.
-    await dialog.getByRole("button", { name: /^AI model: / }).click();
-    await page.getByRole("textbox", { name: "Model" }).click();
-    await page.getByRole("option", { name: "Vision Model" }).click();
-    // Close popover by clicking inside the dialog header.
-    await dialog.getByText("Import Game", { exact: true }).click();
-
-    await waitForTransitionsSettled(page);
-    await expect(dialog).toHaveScreenshot("import-photo-with-connection.png");
-
-    // Click Read game -> first-use notice -> accept -> opens review tab with Photo panel.
-    await dialog.getByRole("button", { name: "Read game" }).click();
-    const notice = page.getByRole("dialog", { name: "Before you send photos" });
-    await expect(notice).toContainText("Local vision");
-    await notice.getByRole("button", { name: "Send photos", exact: true }).click();
-
-    // Dialog closes and the new analysis tab opens with the Photo panel active and `e5` marked unsure.
-    await expect(dialog).toHaveCount(0);
+    // The new analysis tab opens with the Photo panel active and `e5` marked unsure.
     await expect(page.getByRole("tab", { name: "Photo", exact: true })).toHaveAttribute(
         "aria-selected",
         "true",
     );
     await expect(page.getByText("1 move to check")).toBeVisible();
     await expect(page.locator("[data-notation-unsure]")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Finish review" })).toHaveCount(0);
+    await expect(page.locator("[data-scoresheet-page-overlay]")).toHaveCount(0);
+    await expect(page.locator("[data-scoresheet-enlarge-overlay]")).toBeVisible();
+
+    // Controls sit on one row at normal width.
+    const rowGeometry = await page.locator("[data-scoresheet-review-row]").evaluate((row) => {
+        const count = row.querySelector("[data-scoresheet-unsure-count]")!.getBoundingClientRect();
+        const mark = Array.from(row.querySelectorAll("button"))
+            .find((b) => b.textContent?.includes("Mark as checked"))!
+            .getBoundingClientRect();
+        return {
+            sameRow: mark.top < count.bottom && count.top < mark.bottom,
+        };
+    });
+    expect(rowGeometry.sameRow).toBe(true);
+
     await waitForTransitionsSettled(page);
     await expect(page).toHaveScreenshot("import-photo-review-tab.png");
+
+    // Checking the only unsure move removes "Mark as checked" and shows "All moves checked".
+    await page.getByRole("button", { name: "Next move to check", exact: true }).click();
+    const markBtn = page.getByRole("button", { name: "Mark as checked", exact: true });
+    await expect(markBtn).toBeEnabled();
+    await markBtn.click();
+    await expect(page.getByText("All moves checked")).toBeVisible();
+    await expect(markBtn).toHaveCount(0);
+});
+
+test("Photo panel overlays work in full-size mode without covering scrollbars", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({ commands: scoresheetPhotoCommands() });
+    await page.goto("/");
+
+    // Return two large (1000x1000) valid JPEGs so full-size mode produces real scrollbars.
+    await page.evaluate(() => {
+        const internals = (
+            window as unknown as {
+                __TAURI_INTERNALS__: {
+                    invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+                };
+            }
+        ).__TAURI_INTERNALS__;
+        const origInvoke = internals.invoke.bind(internals);
+        const makeLargeJpeg = (fill: string) => {
+            const canvas = document.createElement("canvas");
+            canvas.width = 1000;
+            canvas.height = 1000;
+            const ctx = canvas.getContext("2d")!;
+            ctx.fillStyle = fill;
+            ctx.fillRect(0, 0, 1000, 1000);
+            return canvas.toDataURL("image/jpeg", 0.5);
+        };
+        const large1 = makeLargeJpeg("#f5f0e6");
+        const large2 = makeLargeJpeg("#e6f0f5");
+        internals.invoke = async (cmd: string, args?: unknown) => {
+            if (cmd === "scoresheet_pick_photos") {
+                return {
+                    photos: [{ dataUrl: large1 }, { dataUrl: large2 }],
+                    skipped: 0,
+                    failed: 0,
+                };
+            }
+            return origInvoke(cmd, args);
+        };
+    });
+
+    await importFromPhoto(page, { expectedPhotoCount: 2 });
+
+    const viewport = page.locator("[data-scoresheet-photo-size]");
+    const enlargeOverlay = page.locator("[data-scoresheet-enlarge-overlay]");
+    const pageOverlay = page.locator("[data-scoresheet-page-overlay]");
+    await expect(viewport).toHaveAttribute("data-scoresheet-photo-size", "fit");
+    await expect(enlargeOverlay).toBeVisible();
+    await expect(pageOverlay).toBeVisible();
+    await expect(pageOverlay.locator("[data-scoresheet-page]")).toHaveText("Page 1 of 2");
+
+    // Switch to full-size mode and verify overflow + overlay geometry stays inside client area (not over scrollbars).
+    await page.getByRole("button", { name: "Full size", exact: true }).click();
+    await expect(viewport).toHaveAttribute("data-scoresheet-photo-size", "full");
+
+    await expect
+        .poll(async () =>
+            viewport.evaluate(
+                (el) => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight,
+            ),
+        )
+        .toBe(true);
+
+    const geometry = await page.evaluate(() => {
+        const vp = document.querySelector<HTMLElement>("[data-scoresheet-photo-size]")!;
+        const enlarge = document.querySelector<HTMLElement>("[data-scoresheet-enlarge-overlay]")!;
+        const pager = document.querySelector<HTMLElement>("[data-scoresheet-page-overlay]")!;
+        const vpRect = vp.getBoundingClientRect();
+        const enlargeRect = enlarge.getBoundingClientRect();
+        const pagerRect = pager.getBoundingClientRect();
+        const clientRight = vpRect.left + vp.clientWidth;
+        const clientBottom = vpRect.top + vp.clientHeight;
+        return {
+            enlargeTopOk:
+                enlargeRect.top >= vpRect.top && enlargeRect.top < vpRect.top + vp.clientHeight / 2,
+            enlargeRightOk:
+                enlargeRect.right <= clientRight &&
+                enlargeRect.left >= vpRect.left + vp.clientWidth / 2,
+            pagerBottomOk:
+                pagerRect.bottom <= clientBottom &&
+                pagerRect.bottom > vpRect.top + vp.clientHeight / 2,
+            pagerHorizOk: pagerRect.left >= vpRect.left && pagerRect.right <= clientRight,
+        };
+    });
+    expect(geometry).toEqual({
+        enlargeTopOk: true,
+        enlargeRightOk: true,
+        pagerBottomOk: true,
+        pagerHorizOk: true,
+    });
+
+    // Both overlays remain clickable in full-size mode.
+    await page.getByRole("button", { name: "Next page", exact: true }).click();
+    await expect(pageOverlay.locator("[data-scoresheet-page]")).toHaveText("Page 2 of 2");
+    await page.getByRole("button", { name: "Fit to panel", exact: true }).click();
+    await expect(viewport).toHaveAttribute("data-scoresheet-photo-size", "fit");
 });
 
 test("import from photo keeps the mode cards even below the header and shows reading progress", async ({

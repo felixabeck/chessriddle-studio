@@ -1544,7 +1544,6 @@
     "Scoresheet.Error.InvalidInput": "The selected photos could not be sent. Add between one and four photos and try again.",
     "Scoresheet.Error.LimitExceeded": "Reading the scoresheet took too long. Try again with a clearer photo.",
     "Scoresheet.Error.Unavailable": "Scoresheet photo import is not available in this build.",
-    "Scoresheet.FinishReview": "Finish review",
     "Scoresheet.FitToPanel": "Fit to panel",
     "Scoresheet.FullSize": "Full size",
     "Scoresheet.Intake.ChoosePhotos": "Choose photos or PDF",

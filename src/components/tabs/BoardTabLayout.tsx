@@ -5,12 +5,15 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { Mosaic } from "react-mosaic-component";
+import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useElementWidth } from "@/hooks/useElementWidth";
 import {
@@ -161,6 +164,11 @@ export default function BoardTabLayout({
   const storedArrangement = kindLayout.arrangement;
   const tabsHiddenStored = kindLayout.tabsHidden;
   const coachEnabled = useAtomValue(coachEnabledAtom);
+  const treeStore = useContext(TreeStateContext);
+  const hasScoresheetReview = useSyncExternalStore(
+    useCallback((listener) => (treeStore ? treeStore.subscribe(listener) : () => {}), [treeStore]),
+    () => (treeStore ? treeStore.getState().scoresheetReview !== undefined : false),
+  );
   const engines = useAtomValue(enginesAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
@@ -200,12 +208,13 @@ export default function BoardTabLayout({
   const hiddenAreas = useMemo<ReadonlySet<HideableAreaId>>(() => {
     const next = new Set<HideableAreaId>();
     if (!coachEnabled) next.add("coach");
+    if (!hasScoresheetReview) next.add("photo");
     if (tabsHiddenHere) next.add("topRight");
     for (const area of hiddenEngineAreas(storedArrangement, engines)) {
       next.add(area);
     }
     return next;
-  }, [coachEnabled, tabsHiddenHere, storedArrangement, engines]);
+  }, [coachEnabled, hasScoresheetReview, tabsHiddenHere, storedArrangement, engines]);
   const displayedArrangement = useMemo(
     () => shownArrangement(storedArrangement, hiddenAreas),
     [storedArrangement, hiddenAreas],

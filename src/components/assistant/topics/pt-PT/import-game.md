@@ -2,7 +2,7 @@
 id: import-game
 title: Importar uma partida
 summary: Importe uma partida a partir de um ficheiro PGN, texto PGN colado, um URL do Lichess ou Chess.com, uma posição FEN ou fotografias ou digitalizações PDF de uma folha de partida manuscrita.
-source: 2a3b47d982e0f514
+source: 85ee9b055c7abe34
 ---
 
 Para importar uma partida ou posição, abra [[page:new-tab]] e clique em {{label:Home.Card.ImportGame.Button}} para abrir a janela {{label:Home.Card.ImportGame.Title}}. Também pode abrir um ficheiro PGN diretamente através de {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (ou do atalho {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -20,6 +20,6 @@ Para importar com **{{label:Import.FromPhoto}}**:
 - Escolha a ligação de IA e um modelo compatível com imagens no botão do modelo ou em [[setting:coach-model]] ({{label:Settings.Coach.Model}}).
 - Clique em {{label:Scoresheet.Read.Button}} para iniciar. Antes da primeira leitura numa ligação, {{label:Scoresheet.Notice.Title}} explica que as fotografias selecionadas (incluindo os nomes dos jogadores e tudo o que estiver escrito na folha) são enviadas para esse fornecedor, os metadados como a localização da câmara são removidos primeiro e nenhuns outros dados são enviados.
 - O Studio verifica cada lance segundo as regras padrão do xadrez a partir da posição inicial e abre a partida num novo separador de análise não guardado com o painel {{label:Board.Tabs.Photo}} ao lado do tabuleiro.
-- Os lances duvidosos ou corrigidos ficam marcados como incertos na notação. Percorra-os no painel {{label:Board.Tabs.Photo}} e clique em {{label:Scoresheet.MarkAsChecked}} à medida que confirma cada lance. Se corrigir um lance a meio ou prosseguir após uma paragem, clique em {{label:Scoresheet.ContinueWithSheet}} para reproduzir os lances legais seguintes da folha. Quando terminar, clique em {{label:Scoresheet.FinishReview}} para limpar as marcas restantes.
+- Os lances duvidosos ou corrigidos ficam marcados como incertos na notação. Percorra-os no painel {{label:Board.Tabs.Photo}} e clique em {{label:Scoresheet.MarkAsChecked}} à medida que confirma cada lance. Se corrigir um lance a meio ou prosseguir após uma paragem, clique em {{label:Scoresheet.ContinueWithSheet}} para reproduzir os lances legais seguintes da folha. As marcas mantêm-se até cada lance ser corrigido ou marcado como verificado, e o painel {{label:Board.Tabs.Photo}} pode ser arrastado para fora dos separadores e colocado como os outros painéis.
 - Guarde a partida num ficheiro ou base de dados através do fluxo normal ({{label:Menu.File}} -> {{label:Common.Save}}, o botão guardar ou {{label:Board.Database.Save}}).
 - As fotografias ficam apenas em memória (até 4 separadores abertos) e não são guardadas em disco; após recarregar ou reiniciar, a partida e as marcas de revisão mantêm-se e pode usar {{label:Scoresheet.LoadPhotoAgain}} no painel {{label:Board.Tabs.Photo}} para voltar a ver a fotografia sem a enviar.

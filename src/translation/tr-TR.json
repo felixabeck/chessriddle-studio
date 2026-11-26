@@ -1544,7 +1544,6 @@
     "Scoresheet.Error.InvalidInput": "Seçilen fotoğraflar gönderilemedi. Bir ila dört fotoğraf ekleyip tekrar deneyin.",
     "Scoresheet.Error.LimitExceeded": "Notasyon kağıdını okumak çok uzun sürdü. Daha net bir fotoğrafla tekrar deneyin.",
     "Scoresheet.Error.Unavailable": "Notasyon fotoğrafı içe aktarma bu sürümde kullanılamıyor.",
-    "Scoresheet.FinishReview": "İncelemeyi bitir",
     "Scoresheet.FitToPanel": "Panele sığdır",
     "Scoresheet.FullSize": "Tam boyut",
     "Scoresheet.Intake.ChoosePhotos": "Fotoğraf veya PDF seç",

@@ -1572,7 +1572,6 @@
     "Scoresheet.Error.InvalidInput": "Les photos sélectionnées n’ont pas pu être envoyées. Ajoutez entre une et quatre photos et réessayez.",
     "Scoresheet.Error.LimitExceeded": "La lecture de la feuille de partie a pris trop de temps. Réessayez avec une photo plus nette.",
     "Scoresheet.Error.Unavailable": "L’importation de photos de feuilles de partie n’est pas disponible dans cette version.",
-    "Scoresheet.FinishReview": "Terminer la vérification",
     "Scoresheet.FitToPanel": "Ajuster au panneau",
     "Scoresheet.FullSize": "Taille réelle",
     "Scoresheet.Intake.ChoosePhotos": "Choisir des photos ou un PDF",

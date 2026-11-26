@@ -152,8 +152,8 @@ async function renderPanel(store: TreeStore, tabId = "tab-1") {
   });
 }
 
-test("shows the photo fitted with a toggle to full size and switches between multiple pages", async () => {
-  setScoresheetPhotos("tab-1", [PHOTO_1, PHOTO_2]);
+test("shows the photo with overlay controls (enlarge top-right, page overlay only for multiple photos) and no toolbar row above", async () => {
+  setScoresheetPhotos("tab-1", [PHOTO_1]);
   const store = buildReviewStore("tab-1", { unsurePlies: [1] });
   await renderPanel(store, "tab-1");
 
@@ -162,6 +162,14 @@ test("shows the photo fitted with a toggle to full size and switches between mul
   expect(
     host.querySelector("[data-scoresheet-photo-size]")?.getAttribute("data-scoresheet-photo-size"),
   ).toBe("fit");
+  expect(host.querySelector("[data-scoresheet-enlarge-overlay]")).not.toBeNull();
+  // Single photo hides the bottom page overlay.
+  expect(host.querySelector("[data-scoresheet-page-overlay]")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-page]")).toBeNull();
+
+  // Multiple photos show the page overlay and switch pages; clicking enlarge toggles full size.
+  await act(async () => setScoresheetPhotos("tab-1", [PHOTO_1, PHOTO_2]));
+  expect(host.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
   expect(host.querySelector("[data-scoresheet-page]")?.textContent).toBe(
     "Scoresheet.PageOf(current=1,total=2)",
   );
@@ -181,9 +189,12 @@ test("shows the photo fitted with a toggle to full size and switches between mul
     host.querySelector("[data-scoresheet-photo-size]")?.getAttribute("data-scoresheet-photo-size"),
   ).toBe("full");
   expect(host.querySelector('[aria-label="Scoresheet.FitToPanel"]')).not.toBeNull();
+  // Enlarge and page overlays stay present in full-size mode.
+  expect(host.querySelector("[data-scoresheet-enlarge-overlay]")).not.toBeNull();
+  expect(host.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
 });
 
-test("shows a no-photo-in-memory state with Load photo again when no photo is loaded", async () => {
+test("shows a no-photo-in-memory state with Load photo again when no photo is loaded, and omits Mark as checked at zero marks", async () => {
   const store = buildReviewStore("tab-empty");
   await renderPanel(store, "tab-empty");
 
@@ -191,8 +202,10 @@ test("shows a no-photo-in-memory state with Load photo again when no photo is lo
   expect(empty?.textContent).toContain("Scoresheet.NoPhotoInMemory");
   expect(empty?.querySelector("button")?.textContent).toContain("Scoresheet.LoadPhotoAgain");
   expect(host.querySelector("img")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-enlarge-overlay]")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-page-overlay]")).toBeNull();
 
-  // Zero unsure marks: AllMovesChecked shown and prev/next buttons disabled.
+  // Zero unsure marks: AllMovesChecked shown, prev/next buttons disabled, Mark as checked absent, no Finish review.
   expect(host.querySelector("[data-scoresheet-unsure-count]")?.textContent).toBe(
     "Scoresheet.AllMovesChecked",
   );
@@ -202,9 +215,15 @@ test("shows a no-photo-in-memory state with Load photo again when no photo is lo
   expect(
     host.querySelector<HTMLButtonElement>('[aria-label="Scoresheet.NextUnsure"]')!.disabled,
   ).toBe(true);
+  expect(
+    Array.from(host.querySelectorAll("button")).some((b) =>
+      b.textContent?.includes("Scoresheet.MarkAsChecked"),
+    ),
+  ).toBe(false);
+  expect(host.textContent).not.toContain("Scoresheet.FinishReview");
 });
 
-test("counts and navigates only main-line unsure marks with wrap-around, marks one checked, and finishes the review", async () => {
+test("counts and navigates only main-line unsure marks with wrap-around and removes Mark as checked once all are checked", async () => {
   setScoresheetPhotos("tab-1", [PHOTO_1]);
   const store = buildReviewStore("tab-1", { unsurePlies: [2, 4], variationUnsure: true });
   await renderPanel(store, "tab-1");
@@ -213,6 +232,7 @@ test("counts and navigates only main-line unsure marks with wrap-around, marks o
   expect(host.querySelector("[data-scoresheet-unsure-count]")?.textContent).toBe(
     "Scoresheet.MovesToCheck(count=2)",
   );
+  expect(host.textContent).not.toContain("Scoresheet.FinishReview");
 
   const nextBtn = () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Scoresheet.NextUnsure"]')!;
@@ -221,17 +241,13 @@ test("counts and navigates only main-line unsure marks with wrap-around, marks o
   const markBtn = () =>
     Array.from(host.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("Scoresheet.MarkAsChecked"),
-    )!;
-  const finishBtn = () =>
-    Array.from(host.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Scoresheet.FinishReview"),
-    )!;
+    );
 
-  expect(markBtn().disabled).toBe(true);
+  expect(markBtn()?.disabled).toBe(true);
 
   await act(async () => nextBtn().click());
   expect(store.getState().position).toEqual([0, 0]);
-  expect(markBtn().disabled).toBe(false);
+  expect(markBtn()?.disabled).toBe(false);
 
   // Previous from first mark wraps to last mark.
   await act(async () => prevBtn().click());
@@ -241,7 +257,7 @@ test("counts and navigates only main-line unsure marks with wrap-around, marks o
   await act(async () => nextBtn().click());
   expect(store.getState().position).toEqual([0, 0]);
 
-  await act(async () => markBtn().click());
+  await act(async () => markBtn()!.click());
   expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBeUndefined();
   expect(store.getState().dirty).toBe(false);
   expect(store.getState().history.past).toHaveLength(0);
@@ -249,13 +265,32 @@ test("counts and navigates only main-line unsure marks with wrap-around, marks o
     "Scoresheet.MovesToCheck(count=1)",
   );
 
-  await act(async () => finishBtn().click());
-  expect(store.getState().scoresheetReview).toBeUndefined();
-  expect(getNodeAtPath(store.getState().root, [0, 0, 0, 0]).unsure).toBeUndefined();
-  expect(getNodeAtPath(store.getState().root, [0, 1]).unsure).toBeUndefined();
-  expect(store.getState().dirty).toBe(false);
-  expect(store.getState().history.past).toHaveLength(0);
-  expect(getScoresheetPhotos("tab-1")).toEqual([]);
+  // Clearing the final unsure mark removes Mark as checked and shows AllMovesChecked.
+  await act(async () => nextBtn().click());
+  expect(store.getState().position).toEqual([0, 0, 0, 0]);
+  await act(async () => markBtn()!.click());
+  expect(host.querySelector("[data-scoresheet-unsure-count]")?.textContent).toBe(
+    "Scoresheet.AllMovesChecked",
+  );
+  expect(markBtn()).toBeUndefined();
+});
+
+test("hides the review controls row when no scoresheet review is active (reopened saved game)", async () => {
+  setScoresheetPhotos("tab-reopened", [PHOTO_1, PHOTO_2]);
+  createdTabs.push("tab-reopened");
+  const store = createTreeStore("tab-reopened", {
+    ...defaultTree(),
+    scoresheetReview: undefined,
+  });
+  await renderPanel(store, "tab-reopened");
+
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+  expect(host.querySelector("[data-scoresheet-enlarge-overlay]")).not.toBeNull();
+  expect(host.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
+  expect(host.querySelector("[data-scoresheet-review-row]")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-unsure-count]")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-stop-notice]")).toBeNull();
+  expect(host.querySelector("[data-scoresheet-continue]")).toBeNull();
 });
 
 test("renders the stop notice for L < ply, L = ply, L > ply (White and Black) and hides it when nothing remains", async () => {
@@ -565,7 +600,6 @@ test.each(Object.entries(catalogues))(
       ["Scoresheet.ContinueHint", undefined],
       ["Scoresheet.ContinueWithSheet", undefined],
       ["Scoresheet.CouldNotPlay", { token: "Nxe5" }],
-      ["Scoresheet.FinishReview", undefined],
       ["Scoresheet.FitToPanel", undefined],
       ["Scoresheet.FullSize", undefined],
       ["Scoresheet.LoadFailed", undefined],

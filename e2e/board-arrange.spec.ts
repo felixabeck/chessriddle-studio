@@ -9,6 +9,7 @@ import {
     seedBoardLayouts,
     test,
 } from "./fixtures";
+import { importFromPhoto, scoresheetPhotoCommands } from "./scoresheetPhotoImport";
 
 async function openAnalysisBoard(page: Page) {
     await page.goto("/");
@@ -654,4 +655,75 @@ test("board-arrange: Report tab lives in the strip and pulls out as its own area
 
     await expect(engineWindow).toHaveCount(0);
     await expect(analysisArea.locator('[data-engine-card-id="arrange-engine-1"]')).toBeVisible();
+});
+
+test("board-arrange: Photo panel pulls out, hides on non-review tabs while keeping its place, and returns on ×", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({ commands: scoresheetPhotoCommands() });
+    await page.goto("/");
+    await importFromPhoto(page);
+
+    const photoTab = page.locator('[data-panel-tab="photo"]');
+    await expect(photoTab).toBeVisible();
+    await expect(photoTab).toHaveAttribute("data-draggable-tab", "true");
+
+    // Grip menu lists "Show Photo as its own area".
+    await page.locator('[data-arrange-grip="topRight"]').click();
+    const showPhoto = page.getByRole("menuitem", {
+        name: "Show Photo as its own area",
+        exact: true,
+    });
+    await expect(showPhoto).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Drag the Photo strip tab below the board to pull it out.
+    const tabBox = (await photoTab.boundingBox())!;
+    const boardBox = (await page.locator("#left").boundingBox())!;
+    await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boardBox.x + boardBox.width / 2, boardBox.y + boardBox.height - 24, {
+        steps: 8,
+    });
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveAttribute("data-arrange-target", "left");
+    await expect(preview).toHaveAttribute("data-arrange-side", "bottom");
+    await page.mouse.up();
+    await expect(preview).toHaveCount(0);
+
+    const photoArea = page.locator('[data-panel-area="photo"]');
+    await expect(photoArea).toBeVisible();
+    await expect(photoArea.locator('[data-panel-header="photo"]')).toContainText("Photo");
+    await expect(photoTab).toHaveCount(0);
+    const storedAfterPullOut = await page.evaluate(() =>
+        localStorage.getItem("analysis-board-layout"),
+    );
+    expect(storedAfterPullOut).toContain('"photo"');
+
+    // Open a non-review analysis tab: Photo tile hides while the stored arrangement keeps `"photo"`.
+    await page.getByRole("button", { name: "New Tab", exact: true }).click();
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+    await expect(photoArea).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("analysis-board-layout"))).toBe(
+        storedAfterPullOut,
+    );
+
+    // Switching back to the review tab shows Photo in the exact same place (below the board `#left`).
+    await page.getByRole("tab", { name: /Alice/ }).click();
+    await expect(photoArea).toBeVisible();
+    const restoredBoardBox = (await page.locator("#left").boundingBox())!;
+    const restoredPhotoBox = (await photoArea.boundingBox())!;
+    expect(restoredPhotoBox.y).toBeGreaterThanOrEqual(
+        restoredBoardBox.y + restoredBoardBox.height - 1,
+    );
+    expect(Math.abs(restoredPhotoBox.x - restoredBoardBox.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(restoredPhotoBox.width - restoredBoardBox.width)).toBeLessThanOrEqual(2);
+
+    // Clicking × returns Photo to the tab strip and selects it.
+    await photoArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
+    await expect(photoArea).toHaveCount(0);
+    await expect(photoTab).toBeVisible();
+    await expect(photoTab).toHaveAttribute("aria-selected", "true");
 });

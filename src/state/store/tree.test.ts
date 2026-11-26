@@ -2529,7 +2529,7 @@ test("getMainLineUnsurePaths never reports the root, even when it carries a mark
     expect(getMainLineUnsurePaths(root)).toEqual([[0]]);
 });
 
-test("scoresheet review marks travel with undo, clear/finish are not undoable, and no mark is stored without a review on either write route", () => {
+test("scoresheet review marks travel with undo, clear is not undoable, and no mark is stored without a review on either write route", () => {
     const id = crypto.randomUUID();
     persistedIds.push(id);
     const initial = defaultTree();
@@ -2560,11 +2560,10 @@ test("scoresheet review marks travel with undo, clear/finish are not undoable, a
     store.getState().makeMove({ payload: "Nf3" });
     expect(store.getState().history.past).toHaveLength(1);
 
-    // Finish review clears marks and review without recording an undo step or changing dirty.
+    // Without an active review, undo restores the root with unsure in memory while review stays absent.
     store.getState().save();
-    store.getState().finishScoresheetReview();
+    store.setState({ scoresheetReview: undefined });
     expect(store.getState().scoresheetReview).toBeUndefined();
-    expect(getNodeAtPath(store.getState().root, [0, 0]).unsure).toBeUndefined();
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().history.past).toHaveLength(1);
 
@@ -2632,8 +2631,8 @@ test("partialize keeps unsure marks while scoresheetReview is active and strips 
     expect(duringReview.state.scoresheetReview).toEqual({ stopped: { ply: 1, tokens: ["e5"] } });
     expect(getNodeAtPath(duringReview.state.root, [0]).unsure).toBe(true);
 
-    // Finish review, then undo so the node carries unsure in memory without scoresheetReview.
-    store.getState().finishScoresheetReview();
+    // Clear review, then undo so the node carries unsure in memory without scoresheetReview.
+    store.setState({ scoresheetReview: undefined });
     store.getState().undo();
     expect(getNodeAtPath(store.getState().root, [0]).unsure).toBe(true);
     expect(store.getState().scoresheetReview).toBeUndefined();

@@ -409,17 +409,20 @@ function BoardAnalysis() {
   const keyMap = useAtomValue(keyMapAtom);
 
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
-  // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab exists only while a
-  // scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
+  // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab/panel exists only
+  // while a scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const hasScoresheetReview = useStore(store, (s) => s.scoresheetReview !== undefined);
   const isRepertoire = isRepertoireTab(currentTab);
+  const isPanelAvailable = (panel: PanelAreaId) =>
+    (panel !== "coach" || coachEnabled) && (panel !== "photo" || hasScoresheetReview);
   const panelMeta: Record<PanelAreaId, { title: string; Icon: typeof AnalysisIcon }> = {
     analysis: { title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
     report: { title: t("Board.Analysis.Report"), Icon: ReportIcon },
     database: { title: t("Board.Tabs.Database"), Icon: DatabaseIcon },
     annotate: { title: t("Board.Tabs.Annotate"), Icon: NotebookPen },
     coach: { title: t("Board.Tabs.Coach"), Icon: AiChatIcon },
+    photo: { title: t("Board.Tabs.Photo"), Icon: ScoresheetPhotoIcon },
     info: { title: t("Board.Tabs.Info"), Icon: GameInfoIcon },
   };
   const stripTabs = [
@@ -433,8 +436,8 @@ function BoardAnalysis() {
     ...(coachEnabled && !shownPanelAreas.has("coach")
       ? [{ value: "coach", ...panelMeta.coach }]
       : []),
-    ...(hasScoresheetReview
-      ? [{ value: "photo", title: t("Board.Tabs.Photo"), Icon: ScoresheetPhotoIcon }]
+    ...(hasScoresheetReview && !shownPanelAreas.has("photo")
+      ? [{ value: "photo", ...panelMeta.photo }]
       : []),
     ...(!shownPanelAreas.has("info") ? [{ value: "info", ...panelMeta.info }] : []),
   ];
@@ -625,12 +628,21 @@ function BoardAnalysis() {
     database: () => <DatabasePanel />,
     annotate: () => <AnnotationPanel />,
     coach: () => <CoachPanel />,
+    photo: () => (
+      <RetryableLazyPanel
+        load={() => scoresheetPhotoPanelLoader.load()}
+        panelProps={{}}
+        operation="scoresheet-photo-panel-load"
+        logLabel="Scoresheet photo panel failed to load"
+        loadFailedText={t("Scoresheet.LoadFailed")}
+        retryLabel={t("Common.Retry")}
+      />
+    ),
     info: () => <InfoPanel addGame={addGame} />,
   };
 
   const takeOutPanels = PANEL_AREA_IDS.filter(
-    (panel) =>
-      !shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled) && canTakeOut(panel),
+    (panel) => !shownPanelAreas.has(panel) && isPanelAvailable(panel) && canTakeOut(panel),
   );
   const tabList = (
     <Tabs.List grow={!compactTabs}>
@@ -845,20 +857,8 @@ function BoardAnalysis() {
                   <PracticePanel />
                 </Tabs.Panel>
               )}
-              {hasScoresheetReview && (
-                <Tabs.Panel value="photo">
-                  <RetryableLazyPanel
-                    load={() => scoresheetPhotoPanelLoader.load()}
-                    panelProps={{}}
-                    operation="scoresheet-photo-panel-load"
-                    logLabel="Scoresheet photo panel failed to load"
-                    loadFailedText={t("Scoresheet.LoadFailed")}
-                    retryLabel={t("Common.Retry")}
-                  />
-                </Tabs.Panel>
-              )}
               {PANEL_AREA_IDS.filter(
-                (panel) => !shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled),
+                (panel) => !shownPanelAreas.has(panel) && isPanelAvailable(panel),
               ).map((panel) => (
                 <Tabs.Panel key={panel} value={panel}>
                   {panelContent[panel]()}
@@ -868,26 +868,26 @@ function BoardAnalysis() {
           </Paper>
         </Stack>
       </Portal>
-      {PANEL_AREA_IDS.filter(
-        (panel) => shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled),
-      ).map((panel) => {
-        const { title, Icon } = panelMeta[panel];
-        return (
-          <Portal key={panel} target={getAreaTarget(panel)} style={{ height: "100%" }}>
-            <PanelArea
-              panel={panel}
-              title={title}
-              icon={<Icon size="1rem" />}
-              onReturn={() => returnPanel(panel)}
-              onDragStart={(e) => beginDrag(panel, e)}
-              onSuppressClick={consumeSuppressedClick}
-              onStartPlacing={() => startPlacing(panel)}
-            >
-              {panelContent[panel]()}
-            </PanelArea>
-          </Portal>
-        );
-      })}
+      {PANEL_AREA_IDS.filter((panel) => shownPanelAreas.has(panel) && isPanelAvailable(panel)).map(
+        (panel) => {
+          const { title, Icon } = panelMeta[panel];
+          return (
+            <Portal key={panel} target={getAreaTarget(panel)} style={{ height: "100%" }}>
+              <PanelArea
+                panel={panel}
+                title={title}
+                icon={<Icon size="1rem" />}
+                onReturn={() => returnPanel(panel)}
+                onDragStart={(e) => beginDrag(panel, e)}
+                onSuppressClick={consumeSuppressedClick}
+                onStartPlacing={() => startPlacing(panel)}
+              >
+                {panelContent[panel]()}
+              </PanelArea>
+            </Portal>
+          );
+        },
+      )}
       {[...shownEngineAreas].map((engineArea) => {
         const engineId = engineIdFromArea(engineArea);
         const colorIndex = loadedEngines.findIndex((e) => e.id === engineId);

@@ -1544,7 +1544,6 @@
     "Scoresheet.Error.InvalidInput": "Die gewählten Fotos konnten nicht gesendet werden. Füge ein bis vier Fotos hinzu und versuche es erneut.",
     "Scoresheet.Error.LimitExceeded": "Das Einlesen des Partieformulars hat zu lange gedauert. Versuche es mit einem schärferen Foto erneut.",
     "Scoresheet.Error.Unavailable": "Der Foto-Import für Partieformulare ist in dieser Version nicht verfügbar.",
-    "Scoresheet.FinishReview": "Prüfung abschließen",
     "Scoresheet.FitToPanel": "An Bereich anpassen",
     "Scoresheet.FullSize": "Originalgröße",
     "Scoresheet.Intake.ChoosePhotos": "Fotos oder PDF auswählen",
