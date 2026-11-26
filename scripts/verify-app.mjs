@@ -3350,33 +3350,6 @@ async function openFilesEntry(session, name, timeoutMs = FILES_PROBE_TIMEOUT_MS)
 }
 
 async function selectPracticeTab(session, timeoutMs = FILES_PROBE_TIMEOUT_MS) {
-  // Workaround for f-20261125-23 (remount on reopening a restored file); remove this settle wait when fixed.
-  let stableId = null;
-  let stableSince = 0;
-  await waitFor(
-    "the Practice tab to settle",
-    async () => {
-      const id = await session
-        .execute(
-          `const tab = [...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent.trim() === 'Practice');
-           return tab?.id || null;`,
-        )
-        .catch(() => null);
-      if (!id) {
-        stableId = null;
-        stableSince = 0;
-        return false;
-      }
-      const now = Date.now();
-      if (id !== stableId) {
-        stableId = id;
-        stableSince = now;
-        return false;
-      }
-      return now - stableSince >= 1000;
-    },
-    { timeoutMs },
-  );
   const tab = await reachableStableCoordinates(
     session,
     "the Practice tab",
