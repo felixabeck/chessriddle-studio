@@ -13,5 +13,6 @@ Common default shortcuts (using Ctrl on Windows/Linux and Cmd on macOS):
 - Analysis and panels: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), plus panel keys `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}), and `I` ({{label:Board.Tabs.Info}}).
 - Annotations: `1` through `6` toggle `!!`, `!`, `!?`, `?!`, `?`, and `??`. Inside the comment editor, `Tab` and `Shift+Tab` move to the next or previous move.
 - Fullscreen: `F11` on Windows/Linux, `Ctrl+Cmd+F` on macOS.
+- Focus mode: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) hides the header with the tabs and window buttons. Move the pointer to the top edge of the window to show it again for a moment.
 
 The bottom of [[settings-category:keybinds]] also lists the {{label:Settings.Drawing}} mouse modifiers for drawing colored arrows and circles on the board.

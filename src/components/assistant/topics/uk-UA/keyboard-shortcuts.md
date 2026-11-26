@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Сполучення клавіш і модифікатори малювання
 summary: Переглядайте, налаштовуйте та скидайте сполучення клавіш у згрупованих таблицях і дізнайтеся модифікатори миші для малювання стрілок.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Переглядайте й налаштовуйте всі сполучення клавіш у [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) на [[page:settings]]. Сполучення перелічені в групах із заголовками. Клацніть будь-яке сполучення в групі, щоб записати нову комбінацію, або клацніть {{label:Common.Reset}} біля заголовка, щоб відновити всі типові значення.
@@ -14,5 +14,6 @@ source: e93f0bf257f24ae7
 - Аналіз і панелі: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), а також клавіші панелей `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) та `I` ({{label:Board.Tabs.Info}}).
 - Анотації: клавіші від `1` до `6` перемикають `!!`, `!`, `!?`, `?!`, `?` і `??`. У редакторі коментарів `Tab` і `Shift+Tab` переходять до наступного або попереднього ходу.
 - Повноекранний режим: `F11` у Windows/Linux, `Ctrl+Cmd+F` у macOS.
+- Режим фокусу: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) ховає заголовок із вкладками та кнопками вікна. Наведіть вказівник на верхній край вікна, щоб ненадовго показати його знову.
 
 У нижній частині [[settings-category:keybinds]] також наведено модифікатори миші {{label:Settings.Drawing}} для малювання кольорових стрілок і кіл на дошці.

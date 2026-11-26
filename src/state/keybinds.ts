@@ -19,6 +19,17 @@ function replaceKeyToken(keys: string, from: string, to: string): string {
         .join("+");
 }
 
+/**
+ * Whether a binding holds Ctrl, Cmd or Alt, so pressing it can never be typing. Only such a
+ * binding may act while a text field or editor has focus.
+ */
+export function hasCommandModifier(keys: string): boolean {
+    return keys
+        .toLowerCase()
+        .split("+")
+        .some((key) => ["ctrl", "control", "meta", "cmd", "mod", "alt", "option"].includes(key));
+}
+
 /** A stored binding as a native menu accelerator, whose parser accepts "cmd" but not "meta". */
 export function nativeMenuAccelerator(keys: string): string {
     return replaceKeyToken(keys, "meta", "cmd");
@@ -185,6 +196,11 @@ const definitions = {
         name: "Cycle tabs",
         keys: "ctrl+tab",
     },
+    TOGGLE_FOCUS_MODE: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE"),
+        name: "Toggle focus mode",
+        keys: `${meta}+shift+f`,
+    },
     REVERSE_CYCLE_TABS: {
         labelKey: i18nKey("Settings.Keybinds.Actions.REVERSE_CYCLE_TABS"),
         name: "Reverse cycle tabs",
@@ -300,6 +316,7 @@ const NATIVE_MENU_ACTIONS: ReadonlySet<KeybindActionId> = new Set([
     "NEW_TAB",
     "OPEN_FILE",
     "SAVE_FILE",
+    "TOGGLE_FOCUS_MODE",
 ]);
 
 /**

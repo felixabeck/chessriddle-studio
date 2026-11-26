@@ -4,7 +4,7 @@ vi.mock("@/components/files/notifyError", () => ({ notifyListenerError: vi.fn() 
 import { notifyListenerError } from "@/components/files/notifyError";
 import { createKeybindStorage } from "./keybinds";
 import { createStore } from "jotai";
-import { firedByNativeMenu, keybindLabel, keyMapAtom } from "./keybinds";
+import { firedByNativeMenu, hasCommandModifier, keybindLabel, keyMapAtom } from "./keybinds";
 import type { TFunction } from "i18next";
 
 const defaults = {
@@ -199,5 +199,14 @@ test("edit-position, snapshot, and save-to-database defaults collide with no exi
             .filter(([, binding]) => binding.keys === current[id].keys)
             .map(([actionId]) => actionId);
         expect(sharing).toEqual([id]);
+    }
+});
+
+test("only a binding with Ctrl, Cmd or Alt counts as a command that may act while typing", () => {
+    for (const keys of ["ctrl+shift+f", "meta+shift+f", "Ctrl+K", "alt+h", "mod+s", "cmd+q"]) {
+        expect({ keys, command: hasCommandModifier(keys) }).toEqual({ keys, command: true });
+    }
+    for (const keys of ["h", "shift+h", "f11", "shift+arrowup", "space"]) {
+        expect({ keys, command: hasCommandModifier(keys) }).toEqual({ keys, command: false });
     }
 });

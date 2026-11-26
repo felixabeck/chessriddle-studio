@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Raccourcis clavier et modificateurs de dessin
 summary: Consulter, personnaliser et réinitialiser les raccourcis clavier dans des tableaux groupés, et apprendre les modificateurs de souris pour dessiner des flèches.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Consultez et personnalisez tous les raccourcis clavier dans [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) sur [[page:settings]]. Les raccourcis sont listés dans des groupes titrés. Cliquez sur un raccourci d’un groupe pour enregistrer une nouvelle combinaison, ou cliquez sur {{label:Common.Reset}} à côté du titre pour restaurer toutes les valeurs par défaut.
@@ -14,5 +14,6 @@ Raccourcis par défaut courants (Ctrl sous Windows/Linux et Cmd sur macOS) :
 - Analyse et panneaux : {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), ainsi que les touches de panneau `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) et `I` ({{label:Board.Tabs.Info}}).
 - Annotations : `1` à `6` basculent `!!`, `!`, `!?`, `?!`, `?` et `??`. Dans l’éditeur de commentaires, `Tab` et `Shift+Tab` passent au coup suivant ou précédent.
 - Plein écran : `F11` sous Windows/Linux, `Ctrl+Cmd+F` sur macOS.
+- Mode concentration : {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) masque l’en-tête avec les onglets et les boutons de la fenêtre. Placez le pointeur sur le bord supérieur de la fenêtre pour l’afficher de nouveau un instant.
 
 Le bas de [[settings-category:keybinds]] répertorie également les modificateurs de souris de {{label:Settings.Drawing}} pour tracer des flèches et des cercles colorés sur l’échiquier.

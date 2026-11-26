@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Klavye kısayolları ve çizim değiştiricileri
 summary: Gruplu tablolarda klavye kısayollarını görüntüleyin, özelleştirin ve sıfırlayın; ok çizmek için fare değiştiricilerini öğrenin.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Tüm klavye kısayollarını [[page:settings]] üzerindeki [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) içinde görüntüleyin ve özelleştirin. Kısayollar başlıklı gruplarda listelenir. Yeni bir tuş kombinasyonu kaydetmek için bir gruptaki herhangi bir kısayola tıklayın veya tüm varsayılanları geri yüklemek için başlığın yanındaki {{label:Common.Reset}} öğesine tıklayın.
@@ -14,5 +14,6 @@ Yaygın varsayılan kısayollar (Windows/Linux'ta Ctrl ve macOS'ta Cmd kullanıl
 - Analiz ve paneller: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`) ile panel tuşları `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) ve `I` ({{label:Board.Tabs.Info}}).
 - Açıklamalar: `1` ile `6` arasındaki tuşlar `!!`, `!`, `!?`, `?!`, `?` ve `??` işaretlerini açıp kapatır. Yorum düzenleyicisinin içinde `Tab` ve `Shift+Tab` sonraki veya önceki hamleye geçer.
 - Tam ekran: Windows/Linux'ta `F11`, macOS'ta `Ctrl+Cmd+F`.
+- Odak modu: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`), sekmeleri ve pencere düğmelerini içeren üst çubuğu gizler. Kısa süreliğine yeniden görmek için işaretçiyi pencerenin üst kenarına götürün.
 
 [[settings-category:keybinds]] bölümünün alt kısmında tahta üzerinde renkli oklar ve daireler çizmek için {{label:Settings.Drawing}} fare değiştiricileri de listelenir.

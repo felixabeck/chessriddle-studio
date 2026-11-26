@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Tastatursnarveier og tegnemodifikatorer
 summary: Se, tilpass og tilbakestill tastatursnarveier i grupperte tabeller, og lær musemodifikatorene for å tegne piler.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Se og tilpass alle tastatursnarveier i [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) på [[page:settings]]. Snarveiene står i grupper med overskrift. Klikk på en snarvei i en gruppe for å ta opp en ny tastekombinasjon, eller klikk {{label:Common.Reset}} ved overskriften for å gjenopprette alle standardverdier.
@@ -14,5 +14,6 @@ Vanlige standardsnarveier (med Ctrl på Windows/Linux og Cmd på macOS):
 - Analyse og paneler: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), samt paneltastene `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) og `I` ({{label:Board.Tabs.Info}}).
 - Annotasjoner: `1` til `6` slår `!!`, `!`, `!?`, `?!`, `?` og `??` av/på. Inne i kommentarredigeringen flytter `Tab` og `Shift+Tab` til neste eller forrige trekk.
 - Fullskjerm: `F11` på Windows/Linux, `Ctrl+Cmd+F` på macOS.
+- Fokusmodus: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) skjuler toppfeltet med fanene og vindusknappene. Flytt pekeren til øvre kant av vinduet for å vise det igjen en liten stund.
 
 Nederst i [[settings-category:keybinds]] står også musmodifikatorene for {{label:Settings.Drawing}} til å tegne fargede piler og sirkler på brettet.

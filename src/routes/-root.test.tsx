@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   ask: vi.fn(),
   useIncomingGameLinks: vi.fn(),
   navigate: vi.fn(),
+  firedByNativeMenu: vi.fn((_action: string) => false),
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
   requestBoardCommand: mocks.requestBoardCommand,
@@ -41,15 +42,18 @@ vi.mock("@/state/atoms", async () => {
     workspaceStartedFresh: () => false,
   };
 });
-vi.mock("@/state/keybinds", async () => {
+vi.mock("@/state/keybinds", async (importOriginal) => {
   const { atom } = await import("jotai");
+  const { hasCommandModifier } = await importOriginal<typeof import("@/state/keybinds")>();
   return {
-    firedByNativeMenu: () => false,
+    firedByNativeMenu: mocks.firedByNativeMenu,
+    hasCommandModifier,
     nativeMenuAccelerator: (keys: string) => keys,
     keyMapAtom: atom({
       NEW_TAB: { keys: "Ctrl+T" },
       OPEN_FILE: { keys: "Ctrl+O" },
       SAVE_FILE: { keys: "Ctrl+S" },
+      TOGGLE_FOCUS_MODE: { keys: "ctrl+shift+f" },
     }),
   };
 });
@@ -139,10 +143,38 @@ vi.mock("@/utils/tabs", async (importOriginal) => ({
   createTab: mocks.createTab,
 }));
 vi.mock("@mantine/core", () => {
-  function AppShell({ children }: { children: React.ReactNode }) {
-    return <div>{children}</div>;
+  function AppShell({
+    children,
+    header,
+    styles,
+  }: {
+    children: React.ReactNode;
+    header?: { collapsed?: boolean };
+    styles?: { main?: { paddingTop?: string | number } };
+  }) {
+    return (
+      <div
+        data-testid="app-shell"
+        data-header-collapsed={String(Boolean(header?.collapsed))}
+        data-main-padding-top={String(styles?.main?.paddingTop)}
+      >
+        {children}
+      </div>
+    );
   }
-  AppShell.Header = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
+  AppShell.Header = ({
+    children,
+    ref,
+    inert,
+  }: {
+    children: React.ReactNode;
+    ref?: React.Ref<HTMLDivElement>;
+    inert?: boolean;
+  }) => (
+    <div data-testid="app-header" ref={ref} inert={inert}>
+      {children}
+    </div>
+  );
   AppShell.Navbar = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
   AppShell.Main = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
   return { AppShell };
@@ -187,6 +219,7 @@ beforeEach(() => {
   mocks.pickPgnFile.mockReset().mockResolvedValue(null);
   mocks.ask.mockReset().mockResolvedValue(false);
   mocks.navigate.mockReset().mockResolvedValue(undefined);
+  mocks.firedByNativeMenu.mockReset().mockReturnValue(false);
 });
 
 test.each([{ name: "OPEN_FILE", key: "o", action: mocks.pickPgnFile }])(
@@ -627,4 +660,172 @@ test("the Help-menu Guide action navigates to /guide", async () => {
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/guide" });
   await act(async () => root.unmount());
   host.remove();
+});
+
+function pointerAt(clientY: number) {
+  act(() => {
+    document.dispatchEvent(new MouseEvent("pointermove", { clientY, bubbles: true }));
+  });
+}
+
+test("focus mode hides the header, gives its height to the content and starts off", async () => {
+  const { unmount } = await renderWithWindow(false);
+  const shell = () => document.querySelector<HTMLElement>('[data-testid="app-shell"]')!;
+  const header = () => document.querySelector<HTMLElement>('[data-testid="app-header"]')!;
+  try {
+    expect(shell().dataset.headerCollapsed).toBe("false");
+    expect(shell().dataset.mainPaddingTop).toBe("2.625rem");
+    expect(header().hasAttribute("inert")).toBe(false);
+
+    let keydown: KeyboardEvent | undefined;
+    await act(async () => {
+      keydown = press("F", { ctrlKey: true, shiftKey: true });
+    });
+    expect(keydown?.defaultPrevented).toBe(true);
+    expect(shell().dataset.headerCollapsed).toBe("true");
+    expect(shell().dataset.mainPaddingTop).toBe("0");
+    expect(header().hasAttribute("inert")).toBe(true);
+
+    await act(async () => {
+      mocks.lastCallbacks?.toggleFocusMode();
+    });
+    expect(shell().dataset.headerCollapsed).toBe("false");
+    expect(shell().dataset.mainPaddingTop).toBe("2.625rem");
+    expect(header().hasAttribute("inert")).toBe(false);
+  } finally {
+    await unmount();
+  }
+});
+
+test("in focus mode the top edge reveals the header until the pointer moves below it", async () => {
+  const { unmount } = await renderWithWindow(false);
+  const shell = () => document.querySelector<HTMLElement>('[data-testid="app-shell"]')!;
+  const header = () => document.querySelector<HTMLElement>('[data-testid="app-header"]')!;
+  try {
+    pointerAt(0);
+    expect(shell().dataset.headerCollapsed).toBe("false");
+
+    await act(async () => {
+      mocks.lastCallbacks?.toggleFocusMode();
+    });
+    expect(shell().dataset.headerCollapsed).toBe("true");
+
+    pointerAt(2);
+    expect(shell().dataset.headerCollapsed).toBe("false");
+    expect(header().hasAttribute("inert")).toBe(false);
+    // The content keeps the full height; the revealed header lies over it.
+    expect(shell().dataset.mainPaddingTop).toBe("0");
+
+    // A menu opened from the header keeps it shown.
+    const opened = document.createElement("button");
+    opened.setAttribute("aria-expanded", "true");
+    header().append(opened);
+    pointerAt(400);
+    expect(shell().dataset.headerCollapsed).toBe("false");
+    opened.remove();
+
+    pointerAt(400);
+    expect(shell().dataset.headerCollapsed).toBe("true");
+    expect(header().hasAttribute("inert")).toBe(true);
+
+    // Leaving and re-entering focus mode never starts with a stale reveal.
+    pointerAt(1);
+    await act(async () => {
+      mocks.lastCallbacks?.toggleFocusMode();
+    });
+    await act(async () => {
+      mocks.lastCallbacks?.toggleFocusMode();
+    });
+    expect(shell().dataset.headerCollapsed).toBe("true");
+  } finally {
+    await act(async () => {
+      const { focusModeAtom } = await import("@/state/focusMode");
+      getDefaultStore().set(focusModeAtom, false);
+    });
+    await unmount();
+  }
+});
+
+async function withFocusModeKeys(keys: string) {
+  const { keyMapAtom } = await import("@/state/keybinds");
+  const store = getDefaultStore();
+  const previous = store.get(keyMapAtom);
+  store.set(keyMapAtom, { ...previous, TOGGLE_FOCUS_MODE: { keys } } as never);
+  return () => store.set(keyMapAtom, previous);
+}
+
+async function resetFocusMode() {
+  const { focusModeAtom } = await import("@/state/focusMode");
+  await act(async () => getDefaultStore().set(focusModeAtom, false));
+}
+
+const headerCollapsed = () =>
+  document.querySelector<HTMLElement>('[data-testid="app-shell"]')!.dataset.headerCollapsed;
+
+test("the focus-mode shortcut toggles once when held and also from a text field", async () => {
+  const { unmount } = await renderWithWindow(false);
+  const input = document.createElement("input");
+  document.body.append(input);
+  try {
+    await act(async () => {
+      const options = { key: "F", code: "KeyF", ctrlKey: true, shiftKey: true, bubbles: true };
+      document.dispatchEvent(new KeyboardEvent("keydown", options));
+      for (let i = 0; i < 3; i++) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { ...options, repeat: true }));
+      }
+      document.dispatchEvent(new KeyboardEvent("keyup", options));
+    });
+    expect(headerCollapsed()).toBe("true");
+
+    input.focus();
+    await act(async () => {
+      expect(press("F", { target: input, ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(
+        true,
+      );
+    });
+    expect(headerCollapsed()).toBe("false");
+  } finally {
+    input.remove();
+    await resetFocusMode();
+    await unmount();
+  }
+});
+
+test("a focus-mode binding without Ctrl, Cmd or Alt never acts while typing", async () => {
+  const restore = await withFocusModeKeys("h");
+  const { unmount } = await renderWithWindow(false);
+  const input = document.createElement("input");
+  document.body.append(input);
+  try {
+    input.focus();
+    await act(async () => {
+      expect(press("h", { target: input }).defaultPrevented).toBe(false);
+    });
+    expect(headerCollapsed()).toBe("false");
+
+    input.blur();
+    await act(async () => {
+      press("h");
+    });
+    expect(headerCollapsed()).toBe("true");
+  } finally {
+    input.remove();
+    await resetFocusMode();
+    await unmount();
+    restore();
+  }
+});
+
+test("the focus-mode shortcut is left to the native menu when that menu carries it", async () => {
+  mocks.firedByNativeMenu.mockImplementation((action: string) => action === "TOGGLE_FOCUS_MODE");
+  const { unmount } = await renderWithWindow(false);
+  try {
+    await act(async () => {
+      expect(press("F", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(false);
+    });
+    expect(headerCollapsed()).toBe("false");
+  } finally {
+    await resetFocusMode();
+    await unmount();
+  }
 });

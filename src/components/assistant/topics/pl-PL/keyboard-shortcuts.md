@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Skróty klawiszowe i modyfikatory rysowania
 summary: Przeglądaj, dostosowuj i resetuj skróty klawiszowe w pogrupowanych tabelach oraz poznaj modyfikatory myszy do rysowania strzałek.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Przeglądaj i dostosowuj wszystkie skróty klawiszowe w [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) na [[page:settings]]. Skróty są wymienione w zatytułowanych grupach. Kliknij dowolny skrót w grupie, aby nagrać nową kombinację, albo kliknij {{label:Common.Reset}} obok nagłówka, aby przywrócić wszystkie wartości domyślne.
@@ -14,5 +14,6 @@ Popularne domyślne skróty (z Ctrl w Windows/Linux i Cmd na macOS):
 - Analiza i panele: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), a także klawisze paneli `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) i `I` ({{label:Board.Tabs.Info}}).
 - Adnotacje: klawisze od `1` do `6` przełączają `!!`, `!`, `!?`, `?!`, `?` i `??`. W edytorze komentarzy `Tab` i `Shift+Tab` przenoszą do następnego lub poprzedniego ruchu.
 - Pełny ekran: `F11` w Windows/Linux, `Ctrl+Cmd+F` na macOS.
+- Tryb skupienia: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) ukrywa nagłówek z kartami i przyciskami okna. Przesuń wskaźnik do górnej krawędzi okna, aby na chwilę go pokazać.
 
 Na dole [[settings-category:keybinds]] znajduje się też lista modyfikatorów myszy dla {{label:Settings.Drawing}}, służących do rysowania kolorowych strzałek i okręgów na szachownicy.

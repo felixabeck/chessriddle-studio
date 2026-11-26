@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Tastenkürzel und Zeichen-Modifikatoren
 summary: Tastenkürzel in gruppierten Tabellen ansehen, anpassen und zurücksetzen sowie die Maus-Modifikatoren zum Pfeilezeichnen kennenlernen.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Alle Tastenkürzel kannst du unter [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) auf [[page:settings]] einsehen und anpassen. Die Kürzel stehen in betitelten Gruppen. Klicke auf ein Kürzel in einer Gruppe, um eine neue Tastenkombination aufzunehmen, oder klicke auf {{label:Common.Reset}} neben der Überschrift, um alle Standardwerte wiederherzustellen.
@@ -14,5 +14,6 @@ Häufige Standardkürzel (Strg unter Windows/Linux und Cmd unter macOS):
 - Analyse und Panels: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), sowie die Panel-Tasten `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) und `I` ({{label:Board.Tabs.Info}}).
 - Annotationen: `1` bis `6` schalten `!!`, `!`, `!?`, `?!`, `?` und `??` um. Im Kommentareditor springst du mit `Tab` und `Shift+Tab` zum nächsten oder vorherigen Zug.
 - Vollbild: `F11` unter Windows/Linux, `Ctrl+Cmd+F` unter macOS.
+- Fokusmodus: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) blendet die Kopfzeile mit den Tabs und Fensterknöpfen aus. Bewege den Mauszeiger an den oberen Fensterrand, um sie kurz wieder einzublenden.
 
 Ganz unten unter [[settings-category:keybinds]] stehen außerdem die Maus-Modifikatoren für {{label:Settings.Drawing}} zum Zeichnen farbiger Pfeile und Kreise auf dem Brett.

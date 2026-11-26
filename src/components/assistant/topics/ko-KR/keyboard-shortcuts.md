@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: 키보드 단축키와 그리기 보조 키
 summary: 그룹 테이블에서 키보드 단축키를 보고, 사용자 지정하고, 초기화하며, 화살표를 그리는 마우스 보조 키를 배웁니다.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 [[page:settings]]의 [[settings-category:keybinds]] ({{label:Settings.Keybinds}})에서 모든 키보드 단축키를 보고 사용자 지정하세요. 단축키는 제목이 있는 그룹으로 나열됩니다. 그룹의 단축키를 클릭해 새 키 조합을 녹음하거나, 제목 옆의 {{label:Common.Reset}}을 클릭해 모든 기본값을 복원하세요.
@@ -14,5 +14,6 @@ source: e93f0bf257f24ae7
 - 분석 및 패널: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), 패널 키 `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}), `I` ({{label:Board.Tabs.Info}}).
 - 주석: `1`~`6` 키로 `!!`, `!`, `!?`, `?!`, `?`, `??`를 전환합니다. 코멘트 편집기 안에서는 `Tab`과 `Shift+Tab`으로 다음 수 또는 이전 수로 이동합니다.
 - 전체 화면: Windows/Linux에서는 `F11`, macOS에서는 `Ctrl+Cmd+F`.
+- 집중 모드: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`)는 탭과 창 버튼이 있는 헤더를 숨깁니다. 포인터를 창 위쪽 가장자리로 옮기면 잠시 다시 표시됩니다.
 
 [[settings-category:keybinds]] 하단에는 보드에 색상 화살표와 원을 그릴 때 사용하는 {{label:Settings.Drawing}} 마우스 보조 키도 나열되어 있습니다.

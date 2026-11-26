@@ -133,6 +133,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "focus-mode",
+            testMatch: /focus-mode\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "assistant",
             testMatch: /assistant\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },

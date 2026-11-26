@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Atajos de teclado y modificadores de dibujo
 summary: Consulta, personaliza y restablece los atajos de teclado en tablas agrupadas, y aprende los modificadores del ratón para dibujar flechas.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Consulta y personaliza todos los atajos de teclado en [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) de [[page:settings]]. Los atajos aparecen en grupos con título. Haz clic en cualquier atajo de un grupo para grabar una nueva combinación, o pulsa {{label:Common.Reset}} junto al encabezado para restaurar todos los valores predeterminados.
@@ -14,5 +14,6 @@ Atajos predeterminados habituales (con Ctrl en Windows/Linux y Cmd en macOS):
 - Análisis y paneles: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), además de las teclas de panel `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) e `I` ({{label:Board.Tabs.Info}}).
 - Anotaciones: del `1` al `6` alternan `!!`, `!`, `!?`, `?!`, `?` y `??`. Dentro del editor de comentarios, `Tab` y `Shift+Tab` pasan a la jugada siguiente o anterior.
 - Pantalla completa: `F11` en Windows/Linux, `Ctrl+Cmd+F` en macOS.
+- Modo concentración: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) oculta la cabecera con las pestañas y los botones de la ventana. Lleva el puntero al borde superior de la ventana para volver a verla un momento.
 
 La parte inferior de [[settings-category:keybinds]] también enumera los modificadores de ratón de {{label:Settings.Drawing}} para dibujar flechas y círculos de colores en el tablero.

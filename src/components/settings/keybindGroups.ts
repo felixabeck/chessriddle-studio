@@ -31,6 +31,7 @@ export const KEYBIND_GROUPS = [
             "COPY_PGN",
             "PREVIOUS_GAME",
             "NEXT_GAME",
+            "TOGGLE_FOCUS_MODE",
         ],
     },
     {

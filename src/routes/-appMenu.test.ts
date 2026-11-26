@@ -65,6 +65,7 @@ function callbacks(overrides: Partial<AppMenuCallbacks> = {}): AppMenuCallbacks 
         openSettings: () => undefined,
         exit: () => undefined,
         toggleFullscreen: () => undefined,
+        toggleFocusMode: () => undefined,
         ...overrides,
     };
 }
@@ -93,6 +94,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     expect(linux.map((option) => ("kind" in option ? "|" : option.id))).toEqual([
@@ -107,6 +109,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "settings",
         "|",
         "toggle_fullscreen",
+        "toggle_focus_mode",
         "|",
         "guide",
         "send_feedback",
@@ -123,6 +126,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "engines",
         "settings",
         "toggle_fullscreen",
+        "toggle_focus_mode",
         "guide",
         "send_feedback",
         "about",
@@ -150,6 +154,7 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         newTabShortcut: "Cmd+T",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     expect(idsOfItems(mac)).toEqual([
@@ -161,11 +166,41 @@ test("the in-app menu is flat, omits the Advanced entries, and drops Exit on mac
         "engines",
         "settings",
         "toggle_fullscreen",
+        "toggle_focus_mode",
         "guide",
         "send_feedback",
         "about",
     ]);
     expect(item(mac, "toggle_fullscreen").shortcut).toBe("Ctrl+Cmd+F");
+});
+
+test("the focus-mode entry names what choosing it does and carries the configured shortcut", () => {
+    const actions = callbacks();
+    const build = (on: boolean) =>
+        buildInAppMenuItems({
+            t,
+            isMacOS: false,
+            newTabShortcut: "Ctrl+T",
+            openFileShortcut: "Ctrl+O",
+            saveShortcut: "ctrl+s",
+            focusMode: { on, shortcut: "alt+h" },
+            callbacks: actions,
+        });
+    expect(item(build(false), "toggle_focus_mode").label).toBe("Menu.View.HideHeader");
+    expect(item(build(true), "toggle_focus_mode").label).toBe("Menu.View.ShowHeader");
+    expect(item(build(false), "toggle_focus_mode").shortcut).toBe("alt+h");
+    expect(item(build(true), "toggle_focus_mode").action).toBe(actions.toggleFocusMode);
+    const tree = buildAppMenuTree({
+        t,
+        isMacOS: true,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        focusMode: { on: true, shortcut: "meta+shift+f" },
+        callbacks: actions,
+    });
+    expect(option(tree, "Menu.View", "toggle_focus_mode").label).toBe("Menu.View.ShowHeader");
+    expect(option(tree, "Menu.View", "toggle_focus_mode").shortcut).toBe("meta+shift+f");
 });
 
 test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
@@ -176,6 +211,7 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
         newTabShortcut: "Cmd+T",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     expect(groups.map((group) => group.label)).toEqual([
@@ -187,7 +223,8 @@ test("macOS tree has Application/Edit, no File Exit, no Help About", () => {
     ]);
     expect(idsOf(groups, "Menu.File")).toEqual(["new_tab", "open_file", "save", "save_to"]);
     expect(option(groups, "Menu.File", "save").shortcut).toBe("meta+s");
-    expect(idsOf(groups, "Menu.View")).toEqual(["toggle_fullscreen"]);
+    expect(idsOf(groups, "Menu.View")).toEqual(["toggle_fullscreen", "toggle_focus_mode"]);
+    expect(option(groups, "Menu.View", "toggle_focus_mode").action).toBe(actions.toggleFocusMode);
     expect(idsOf(groups, "Menu.Help")).toEqual(["guide", "send_feedback"]);
     expect(option(groups, "Menu.Application.Menu", "about").action).toBe(actions.about);
     expect(option(groups, "Menu.Application.Menu", "settings").action).toBe(actions.openSettings);
@@ -237,6 +274,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         newTabShortcut: "Cmd+T",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     expect(idsOf(hiddenTree, "Menu.Help")).toEqual(["guide", "send_feedback"]);
@@ -251,6 +289,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         newTabShortcut: "Cmd+T",
         openFileShortcut: "Cmd+O",
         saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     expect(idsOf(shownTree, "Menu.Help")).toEqual(["guide", "assistant", "send_feedback"]);
@@ -265,6 +304,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     const hiddenHelpSlice = idsOfItems(hiddenItems).slice(idsOfItems(hiddenItems).indexOf("guide"));
@@ -278,6 +318,7 @@ test("Help menu and in-app menu always show Guide first and include Assistant on
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: actions,
     });
     const shownHelpSlice = idsOfItems(shownItems).slice(idsOfItems(shownItems).indexOf("guide"));
@@ -296,6 +337,7 @@ test("changing t changes labels", () => {
         newTabShortcut: "Ctrl+T",
         openFileShortcut: "Ctrl+O",
         saveShortcut: "ctrl+s",
+        focusMode: { on: false, shortcut: "ctrl+shift+f" },
         callbacks: callbacks(),
     });
     expect(item(items, "exit").label).toBe("Menu.File.Exit.fr");
@@ -425,6 +467,9 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         openSettings: async () => undefined,
         exit: async () => undefined,
         toggleFullscreen: async () => undefined,
+        toggleFocusMode: () => {
+            seen.push("focus-mode");
+        },
     });
 
     const pending = callbacks.createNewTab();
@@ -457,6 +502,7 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
 
     callbacks.about();
     callbacks.sendFeedback();
+    callbacks.toggleFocusMode();
     expect(seen).toEqual([
         expect.objectContaining({ message: "open failed" }),
         "accounts",
@@ -464,6 +510,7 @@ test("bindAppMenuCallbacks returns runMenu's promise for each wired command", as
         "guide",
         "about",
         "send-feedback",
+        "focus-mode",
     ]);
 });
 

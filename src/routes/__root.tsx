@@ -26,6 +26,8 @@ import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { FolderSwitchDialogHost } from "@/components/settings/FolderSwitchModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
 import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { focusModeAtom } from "@/state/focusMode";
+import { useHeaderReveal } from "@/hooks/useHeaderReveal";
 import {
   assistantAvailableAtom,
   assistantPanelOpenAtom,
@@ -45,7 +47,12 @@ import {
   type QuitGateHost,
 } from "@/state/quitGate";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
-import { firedByNativeMenu, keyMapAtom, nativeMenuAccelerator } from "@/state/keybinds";
+import {
+  firedByNativeMenu,
+  hasCommandModifier,
+  keyMapAtom,
+  nativeMenuAccelerator,
+} from "@/state/keybinds";
 import { pickPgnFile } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
@@ -236,6 +243,12 @@ function RootShell() {
     await currentWindow.setFullscreen(!isFullscreen);
   }, []);
 
+  const [focusMode, setFocusMode] = useAtom(focusModeAtom);
+  const toggleFocusMode = useCallback(() => setFocusMode((on) => !on), [setFocusMode]);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const headerRevealed = useHeaderReveal(focusMode, headerRef);
+  const headerHidden = focusMode && !headerRevealed;
+
   const [keyMap] = useAtom(keyMapAtom);
   const [aboutOpened, setAboutOpened] = useState(false);
   const [feedbackState, setFeedbackState] = useState<{
@@ -330,6 +343,7 @@ function RootShell() {
         openSettings,
         exit: () => requestQuit(),
         toggleFullscreen,
+        toggleFocusMode,
       }),
     [
       newTab,
@@ -343,6 +357,7 @@ function RootShell() {
       requestQuit,
       requestSave,
       runMenu,
+      toggleFocusMode,
       toggleFullscreen,
     ],
   );
@@ -355,6 +370,27 @@ function RootShell() {
     { ...backgroundHotkeyOptions, enabled: !firedByNativeMenu("OPEN_FILE") },
   );
 
+  // A window command like F11, and a held key toggles once. It also acts from a text field or
+  // editor, unless the user bound it to a key that could be typing.
+  const focusModeKeysAreCommand = hasCommandModifier(keyMap.TOGGLE_FOCUS_MODE.keys);
+  useHotkeys(
+    keyMap.TOGGLE_FOCUS_MODE.keys,
+    (event) => {
+      if (event.repeat) return;
+      toggleFocusMode();
+    },
+    {
+      enabled: !firedByNativeMenu("TOGGLE_FOCUS_MODE"),
+      enableOnFormTags: focusModeKeysAreCommand,
+      enableOnContentEditable: focusModeKeysAreCommand,
+      preventDefault: true,
+    },
+  );
+
+  const focusModeMenu = useMemo(
+    () => ({ on: focusMode, shortcut: keyMap.TOGGLE_FOCUS_MODE.keys }),
+    [focusMode, keyMap.TOGGLE_FOCUS_MODE.keys],
+  );
   const nativeMenuActions = useMemo(
     () =>
       isMacOS
@@ -365,11 +401,13 @@ function RootShell() {
             newTabShortcut: keyMap.NEW_TAB.keys,
             openFileShortcut: keyMap.OPEN_FILE.keys,
             saveShortcut: keyMap.SAVE_FILE.keys,
+            focusMode: focusModeMenu,
             callbacks: menuCallbacks,
           })
         : [],
     [
       assistantAvailable,
+      focusModeMenu,
       isMacOS,
       keyMap.NEW_TAB.keys,
       keyMap.OPEN_FILE.keys,
@@ -387,10 +425,12 @@ function RootShell() {
         newTabShortcut: keyMap.NEW_TAB.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
         saveShortcut: keyMap.SAVE_FILE.keys,
+        focusMode: focusModeMenu,
         callbacks: menuCallbacks,
       }),
     [
       assistantAvailable,
+      focusModeMenu,
       isMacOS,
       keyMap.NEW_TAB.keys,
       keyMap.OPEN_FILE.keys,
@@ -445,12 +485,13 @@ function RootShell() {
     <OpenFeedbackContext.Provider value={openFeedback}>
       <AppShell
         padding={0}
-        header={{ height: "2.625rem" }}
+        header={{ height: "2.625rem", collapsed: headerHidden }}
         styles={{
           main: {
             height: "100vh",
             minHeight: 0,
-            paddingTop: "2.625rem",
+            // In focus mode the content keeps the header's height; a revealed header overlays it.
+            paddingTop: focusMode ? 0 : "2.625rem",
             paddingBottom: 0,
             overflow: "hidden",
             userSelect: "none",
@@ -488,7 +529,7 @@ function RootShell() {
           onSaveAndQuit={saveAndQuit}
         />
         <FolderSwitchDialogHost />
-        <AppShell.Header>
+        <AppShell.Header ref={headerRef} inert={headerHidden}>
           <NavigationRow
             menuActions={inAppMenuActions}
             showWindowControls={showWindowControls}

@@ -35,7 +35,11 @@ export type AppMenuCallbacks = {
     openSettings: () => void | Promise<void>;
     exit: () => void | Promise<void>;
     toggleFullscreen: () => void | Promise<void>;
+    toggleFocusMode: () => void;
 };
+
+/** Focus mode hides the navigation row; the View entry's label says what choosing it does. */
+export type FocusModeMenuState = { on: boolean; shortcut: string };
 
 export type WindowPlatform = "win32" | "linux" | "other";
 
@@ -49,6 +53,29 @@ export function menuWindowPlatform(vitePlatform: string): WindowPlatform {
 /** Full-screen shortcut. The native macOS menu registers it as its accelerator; Linux and Windows bind F11 in the renderer. */
 export function fullscreenShortcut(isMacOS: boolean): string {
     return isMacOS ? "Ctrl+Cmd+F" : "F11";
+}
+
+/** The View entries, shared by the macOS View menu and the in-app menu. */
+function viewMenuOptions(
+    t: MenuTranslator,
+    isMacOS: boolean,
+    focusMode: FocusModeMenuState,
+    callbacks: AppMenuCallbacks,
+): MenuItemAction[] {
+    return [
+        {
+            label: t("Menu.View.Fullscreen"),
+            id: "toggle_fullscreen",
+            shortcut: fullscreenShortcut(isMacOS),
+            action: callbacks.toggleFullscreen,
+        },
+        {
+            label: t(focusMode.on ? "Menu.View.ShowHeader" : "Menu.View.HideHeader"),
+            id: "toggle_focus_mode",
+            shortcut: focusMode.shortcut,
+            action: callbacks.toggleFocusMode,
+        },
+    ];
 }
 
 export function wantNativeDecorations(isNative: boolean, windowPlatform: WindowPlatform): boolean {
@@ -75,6 +102,7 @@ export function buildAppMenuTree(args: {
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
+    focusMode: FocusModeMenuState;
     callbacks: AppMenuCallbacks;
 }): MenuGroup[] {
     const {
@@ -84,6 +112,7 @@ export function buildAppMenuTree(args: {
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
+        focusMode,
         callbacks,
     } = args;
 
@@ -184,14 +213,7 @@ export function buildAppMenuTree(args: {
         ...(!isMacOS ? [] : [macOSEditMenu]),
         {
             label: t("Menu.View"),
-            options: [
-                {
-                    label: t("Menu.View.Fullscreen"),
-                    id: "toggle_fullscreen",
-                    shortcut: fullscreenShortcut(isMacOS),
-                    action: callbacks.toggleFullscreen,
-                },
-            ],
+            options: viewMenuOptions(t, isMacOS, focusMode, callbacks),
         },
         {
             label: t("Menu.Help"),
@@ -228,6 +250,7 @@ export function buildInAppMenuItems(args: {
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
+    focusMode: FocusModeMenuState;
     callbacks: AppMenuCallbacks;
 }): MenuAction[] {
     const {
@@ -237,6 +260,7 @@ export function buildInAppMenuItems(args: {
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
+        focusMode,
         callbacks,
     } = args;
     return [
@@ -281,12 +305,7 @@ export function buildInAppMenuItems(args: {
             action: callbacks.openSettings,
         },
         { kind: "separator" },
-        {
-            label: t("Menu.View.Fullscreen"),
-            id: "toggle_fullscreen",
-            shortcut: fullscreenShortcut(isMacOS),
-            action: callbacks.toggleFullscreen,
-        },
+        ...viewMenuOptions(t, isMacOS, focusMode, callbacks),
         { kind: "separator" },
         {
             label: t("Menu.Help.Guide"),
@@ -382,6 +401,7 @@ export type AppMenuCommandBindings = {
     openSettings: () => Promise<unknown>;
     exit: () => Promise<unknown>;
     toggleFullscreen: () => Promise<unknown>;
+    toggleFocusMode: () => void;
 };
 
 export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuCallbacks {
@@ -399,6 +419,7 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         openSettings: () => bindings.runMenu(bindings.openSettings),
         exit: () => bindings.runMenu(bindings.exit),
         toggleFullscreen: () => bindings.runMenu(bindings.toggleFullscreen),
+        toggleFocusMode: bindings.toggleFocusMode,
     };
 }
 

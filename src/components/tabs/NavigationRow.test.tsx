@@ -953,6 +953,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     newTabShortcut: "Ctrl+T",
     openFileShortcut: "Ctrl+O",
     saveShortcut: "Ctrl+S",
+    focusMode: { on: false, shortcut: "Ctrl+Shift+F" },
     callbacks: {
       about: () => undefined,
       sendFeedback: () => undefined,
@@ -967,6 +968,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
       openSettings: () => undefined,
       exit: () => undefined,
       toggleFullscreen: () => undefined,
+      toggleFocusMode: () => undefined,
     },
   });
 
@@ -998,6 +1000,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     engines: "lucide-brain",
     settings: "lucide-settings",
     toggle_fullscreen: "lucide-maximize",
+    toggle_focus_mode: "lucide-panel-top-close",
     guide: "lucide-info",
     assistant: "lucide-messages-square",
     send_feedback: "lucide-message-square-plus",

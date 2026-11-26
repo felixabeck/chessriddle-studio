@@ -46,6 +46,9 @@ test("Help menu opens the Guide without an AI connection, switches topics, and f
     });
     await expect(firstTopicHeading).toBeVisible();
 
+    // The pointer still rests where the menu item was; move it off the topic list so the
+    // capture does not depend on the menu's length.
+    await page.mouse.move(900, 600);
     await waitForTransitionsSettled(page);
     await assertNoHorizontalOverflow();
     await assertAccessible();

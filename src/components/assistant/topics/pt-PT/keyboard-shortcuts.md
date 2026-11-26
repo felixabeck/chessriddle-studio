@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Atalhos de teclado e modificadores de desenho
 summary: Veja, personalize e reponha atalhos de teclado em tabelas agrupadas e aprenda os modificadores do rato para desenhar setas.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Veja e personalize todos os atalhos de teclado em [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) em [[page:settings]]. Os atalhos aparecem em grupos com título. Clique num atalho de um grupo para gravar uma nova combinação, ou clique em {{label:Common.Reset}} junto ao cabeçalho para restaurar todos os valores predefinidos.
@@ -14,5 +14,6 @@ Atalhos predefinidos comuns (usando Ctrl no Windows/Linux e Cmd no macOS):
 - Análise e painéis: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), além das teclas de painel `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) e `I` ({{label:Board.Tabs.Info}}).
 - Anotações: `1` a `6` alternam `!!`, `!`, `!?`, `?!`, `?` e `??`. Dentro do editor de comentários, `Tab` e `Shift+Tab` avançam ou recuam para o lance seguinte ou anterior.
 - Ecrã inteiro: `F11` no Windows/Linux, `Ctrl+Cmd+F` no macOS.
+- Modo de foco: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) oculta o cabeçalho com os separadores e os botões da janela. Leve o ponteiro à margem superior da janela para o voltar a ver por momentos.
 
 A parte inferior de [[settings-category:keybinds]] também lista os modificadores do rato para {{label:Settings.Drawing}} ao desenhar setas e círculos coloridos no tabuleiro.

@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: Scorciatoie da tastiera e modificatori di disegno
 summary: Visualizza, personalizza e ripristina le scorciatoie da tastiera in tabelle raggruppate e scopri i modificatori del mouse per disegnare frecce.
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 Visualizza e personalizza tutte le scorciatoie da tastiera in [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) su [[page:settings]]. Le scorciatoie sono elencate in gruppi con titolo. Fai clic su una scorciatoia in un gruppo per registrare una nuova combinazione, oppure fai clic su {{label:Common.Reset}} accanto all'intestazione per ripristinare tutti i valori predefiniti.
@@ -14,5 +14,6 @@ Scorciatoie predefinite comuni (con Ctrl su Windows/Linux e Cmd su macOS):
 - Analisi e pannelli: {{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`), {{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`), {{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`), {{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`), {{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`), oltre ai tasti pannello `P` ({{label:Board.Tabs.Practice}}), `A` ({{label:Board.Tabs.Analysis}}), `B` ({{label:Board.Tabs.Database}}), `D` ({{label:Board.Tabs.Annotate}}), `O` ({{label:Board.Tabs.Coach}}) e `I` ({{label:Board.Tabs.Info}}).
 - Annotazioni: i tasti da `1` a `6` attivano o disattivano `!!`, `!`, `!?`, `?!`, `?` e `??`. Dentro l’editor dei commenti, `Tab` e `Shift+Tab` passano alla mossa successiva o precedente.
 - Schermo intero: `F11` su Windows/Linux, `Ctrl+Cmd+F` su macOS.
+- Modalità concentrazione: {{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) nasconde l'intestazione con le schede e i pulsanti della finestra. Porta il puntatore sul bordo superiore della finestra per mostrarla di nuovo per un momento.
 
 In fondo a [[settings-category:keybinds]] trovi anche i modificatori del mouse per {{label:Settings.Drawing}} per tracciare frecce e cerchi colorati sulla scacchiera.

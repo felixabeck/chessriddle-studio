@@ -2,7 +2,7 @@
 id: keyboard-shortcuts
 title: 鍵盤快捷鍵與繪圖修飾鍵
 summary: 在分組表格中檢視、自訂並重設鍵盤快捷鍵，並了解繪製箭頭的滑鼠修飾鍵。
-source: e93f0bf257f24ae7
+source: 819be874852effdd
 ---
 
 在 [[page:settings]] 的 [[settings-category:keybinds]] ({{label:Settings.Keybinds}}) 中檢視並自訂所有鍵盤快捷鍵。快捷鍵依帶標題的分組列出。點選某組中的任一快捷鍵以錄製新組合，或點選標題旁的 {{label:Common.Reset}} 以還原全部預設值。
@@ -14,5 +14,6 @@ source: e93f0bf257f24ae7
 - 分析與面板：{{label:Settings.Keybinds.Actions.TOGGLE_EVAL_BAR}} (`Z`)、{{label:Settings.Keybinds.Actions.TOGGLE_ALL_ENGINES}} (`Ctrl+A`)、{{label:Settings.Keybinds.Actions.PLAY_BEST_ENGINE_MOVE}} (`Space`)、{{label:Settings.Keybinds.Actions.TOGGLE_THREAT_MODE}} (`X`)、{{label:Settings.Keybinds.Actions.GENERATE_REPORT}} (`F12`)，以及面板鍵 `P` ({{label:Board.Tabs.Practice}})、`A` ({{label:Board.Tabs.Analysis}})、`B` ({{label:Board.Tabs.Database}})、`D` ({{label:Board.Tabs.Annotate}})、`O` ({{label:Board.Tabs.Coach}}) 與 `I` ({{label:Board.Tabs.Info}})。
 - 評註：`1` 到 `6` 可切換 `!!`、`!`、`!?`、`?!`、`?` 與 `??`。在註解編輯器中，`Tab` 與 `Shift+Tab` 可移動至下一步或上一步。
 - 全螢幕：Windows/Linux 為 `F11`，macOS 為 `Ctrl+Cmd+F`。
+- 專注模式：{{label:Settings.Keybinds.Actions.TOGGLE_FOCUS_MODE}} (`Ctrl/Cmd+Shift+F`) 會隱藏包含分頁和視窗按鈕的頂欄。將指標移到視窗頂端邊緣即可暫時再次顯示。
 
 [[settings-category:keybinds]] 的底部也列出了在棋盤上繪製彩色箭頭與圓圈的 {{label:Settings.Drawing}} 滑鼠輔助鍵。
