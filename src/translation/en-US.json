@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "Left of the notation",
     "Board.Arrange.LeftOfTabs": "Left of the tabs",
     "Board.Arrange.MoveArea": "Move {{area}}",
-    "Board.Arrange.MoveNotation": "Move the notation",
     "Board.Arrange.MoveTabs": "Move the tabs",
     "Board.Arrange.NoTargets": "No targets fit the current window width.",
     "Board.Arrange.PlaceTitle": "Place {{area}}",

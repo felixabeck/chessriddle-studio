@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "在記譜左側",
     "Board.Arrange.LeftOfTabs": "在分頁左側",
     "Board.Arrange.MoveArea": "移動{{area}}",
-    "Board.Arrange.MoveNotation": "移動棋譜",
     "Board.Arrange.MoveTabs": "移動分頁",
     "Board.Arrange.NoTargets": "目前視窗寬度下沒有可放置的位置。",
     "Board.Arrange.PlaceTitle": "放置{{area}}",

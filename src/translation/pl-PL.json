@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "Po lewej od notacji",
     "Board.Arrange.LeftOfTabs": "Po lewej od kart",
     "Board.Arrange.MoveArea": "Przenieś {{area}}",
-    "Board.Arrange.MoveNotation": "Przenieś notację",
     "Board.Arrange.MoveTabs": "Przenieś karty",
     "Board.Arrange.NoTargets": "Żadne miejsce docelowe nie mieści się w bieżącej szerokości okna.",
     "Board.Arrange.PlaceTitle": "Umieść {{area}}",

@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "기보 왼쪽",
     "Board.Arrange.LeftOfTabs": "탭 왼쪽",
     "Board.Arrange.MoveArea": "{{area}} 이동",
-    "Board.Arrange.MoveNotation": "기보 이동",
     "Board.Arrange.MoveTabs": "탭 이동",
     "Board.Arrange.NoTargets": "현재 창 너비에 맞는 위치가 없습니다.",
     "Board.Arrange.PlaceTitle": "{{area}} 배치",

@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "Links von der Notation",
     "Board.Arrange.LeftOfTabs": "Links von den Tabs",
     "Board.Arrange.MoveArea": "{{area}} verschieben",
-    "Board.Arrange.MoveNotation": "Notation verschieben",
     "Board.Arrange.MoveTabs": "Tabs verschieben",
     "Board.Arrange.NoTargets": "Für die aktuelle Fensterbreite passt kein Ziel.",
     "Board.Arrange.PlaceTitle": "{{area}} platzieren",

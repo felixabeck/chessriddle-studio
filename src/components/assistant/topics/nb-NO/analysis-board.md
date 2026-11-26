@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, varianter, kommentarer og piler
 summary: Legg inn trekk, rediger stillinger, håndter varianter, skriv kommentarer, legg til annotasjoner og tegn piler på brettet.
-source: 958c8f05fc6ed494
+source: c4040958465a3812
 ---
 
 Åpne et analysebrett fra [[page:new-tab]] ved å klikke {{label:Home.Card.AnalysisBoard.Title}}, eller ved å åpne et lagret parti eller repertoar fra [[page:library]].
@@ -27,4 +27,4 @@ Fanen {{label:Board.Tabs.Info}} viser partihoder, FEN, PGN-tekst og trestatistik
 
 For å ordne analysebrettet drar du en panelfane ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} eller {{label:Board.Tabs.Info}}) eller bruker grepsknappene i fanelinjen, notasjonshodet eller topplinjen til et panelområde for å plassere områder ved siden av, over eller under et annet område med forhåndsvisning eller tastatur. For å la et panel strekke seg over to områder (for eksempel {{label:Board.Tabs.Database}} over både notasjonen og fanene) plasserer du først panelet over ett av dem og flytter deretter det andre ved siden av. Bruk {{label:Board.Area.ReturnToTabs}} eller dra et panelområde tilbake over fanelisten for å sende det tilbake til fanene, og bruk [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) for å gjenopprette standardoppsettet.
 
-For å skjule fanene, for eksempel når hvert panel du bruker vises som et eget område, klikker du {{label:Board.Area.HideTabs}} på slutten av fanelinjen; naboområdene tar plassen. Fanene beholder plassering og størrelse: vis dem igjen med {{label:Board.Arrange.ShowTabs}} i menyen til håndtaket i notasjonsoverskriften, med en fanesnarvei eller ved å lage rapporten. Et panel du returnerer mens fanene er skjult, havner i de skjulte fanene.
+For å skjule fanene, for eksempel når hvert panel du bruker vises som et eget område, klikker du {{label:Board.Area.HideTabs}} under håndtaket på slutten av fanelinjen; naboområdene tar plassen. Fanene beholder plassering og størrelse: vis dem igjen med knappen {{label:Board.Arrange.ShowTabs}} som vises i notasjonsoverskriften mens de er skjult, med en fanesnarvei eller ved å lage rapporten. Et panel du returnerer mens fanene er skjult, havner i de skjulte fanene.

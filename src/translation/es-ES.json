@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "A la izquierda de la notación",
     "Board.Arrange.LeftOfTabs": "A la izquierda de las pestañas",
     "Board.Arrange.MoveArea": "Mover {{area}}",
-    "Board.Arrange.MoveNotation": "Mover la notación",
     "Board.Arrange.MoveTabs": "Mover las pestañas",
     "Board.Arrange.NoTargets": "Ningún destino cabe en el ancho actual de la ventana.",
     "Board.Arrange.PlaceTitle": "Colocar {{area}}",

@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "Слева от нотации",
     "Board.Arrange.LeftOfTabs": "Слева от вкладок",
     "Board.Arrange.MoveArea": "Переместить «{{area}}»",
-    "Board.Arrange.MoveNotation": "Переместить нотацию",
     "Board.Arrange.MoveTabs": "Переместить вкладки",
     "Board.Arrange.NoTargets": "Для текущей ширины окна нет подходящих мест.",
     "Board.Arrange.PlaceTitle": "Разместить «{{area}}»",

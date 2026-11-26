@@ -2,7 +2,7 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: 958c8f05fc6ed494
+source: c4040958465a3812
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
@@ -27,4 +27,4 @@ L’onglet {{label:Board.Tabs.Info}} affiche les en-têtes de la partie, le FEN,
 
 Pour organiser l’échiquier d’analyse, faites glisser un onglet de panneau ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} ou {{label:Board.Tabs.Info}}) ou utilisez les poignées de la barre d’onglets, de l’en-tête de la notation ou de l’en-tête d’une zone de panneau afin de placer des zones à côté, au-dessus ou au-dessous d’une autre zone avec aperçu ou au clavier. Pour étendre un panneau au-dessus de deux zones (par exemple {{label:Board.Tabs.Database}} au-dessus de la notation et des onglets), placez d’abord le panneau au-dessus de l’une d’elles, puis déplacez l’autre à côté. Cliquez sur {{label:Board.Area.ReturnToTabs}} ou faites glisser une zone de panneau sur la barre d’onglets pour la remettre dans les onglets, et utilisez [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) pour rétablir la disposition par défaut.
 
-Pour masquer les onglets, par exemple lorsque chaque panneau utilisé est affiché comme une zone à part, cliquez sur {{label:Board.Area.HideTabs}} au bout de la barre d’onglets ; les zones voisines prennent leur place. Les onglets gardent leur position et leur taille : réaffichez-les avec {{label:Board.Arrange.ShowTabs}} dans le menu de la poignée de l’en-tête de la notation, avec un raccourci d’onglet ou avec la génération du rapport. Un panneau remis dans les onglets pendant qu’ils sont masqués rejoint les onglets masqués.
+Pour masquer les onglets, par exemple lorsque chaque panneau utilisé est affiché comme une zone à part, cliquez sur {{label:Board.Area.HideTabs}} sous la poignée au bout de la barre d’onglets ; les zones voisines prennent leur place. Les onglets gardent leur position et leur taille : réaffichez-les avec le bouton {{label:Board.Arrange.ShowTabs}} qui apparaît dans l’en-tête de la notation tant qu’ils sont masqués, avec un raccourci d’onglet ou avec la génération du rapport. Un panneau remis dans les onglets pendant qu’ils sont masqués rejoint les onglets masqués.

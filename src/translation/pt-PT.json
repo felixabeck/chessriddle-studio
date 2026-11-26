@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "À esquerda da notação",
     "Board.Arrange.LeftOfTabs": "À esquerda dos separadores",
     "Board.Arrange.MoveArea": "Mover {{area}}",
-    "Board.Arrange.MoveNotation": "Mover a notação",
     "Board.Arrange.MoveTabs": "Mover os separadores",
     "Board.Arrange.NoTargets": "Nenhum destino cabe na largura atual da janela.",
     "Board.Arrange.PlaceTitle": "Colocar {{area}}",

@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "À gauche de la notation",
     "Board.Arrange.LeftOfTabs": "À gauche des onglets",
     "Board.Arrange.MoveArea": "Déplacer {{area}}",
-    "Board.Arrange.MoveNotation": "Déplacer la notation",
     "Board.Arrange.MoveTabs": "Déplacer les onglets",
     "Board.Arrange.NoTargets": "Aucune destination ne convient à la largeur actuelle de la fenêtre.",
     "Board.Arrange.PlaceTitle": "Placer {{area}}",

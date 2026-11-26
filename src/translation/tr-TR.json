@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "Notasyonun soluna",
     "Board.Arrange.LeftOfTabs": "Sekmelerin soluna",
     "Board.Arrange.MoveArea": "{{area}} alanını taşı",
-    "Board.Arrange.MoveNotation": "Notasyonu taşı",
     "Board.Arrange.MoveTabs": "Sekmeleri taşı",
     "Board.Arrange.NoTargets": "Mevcut pencere genişliğine sığan hedef yok.",
     "Board.Arrange.PlaceTitle": "{{area}} konumlandır",

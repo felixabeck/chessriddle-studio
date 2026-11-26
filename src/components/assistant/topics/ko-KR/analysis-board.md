@@ -2,7 +2,7 @@
 id: analysis-board
 title: 분석 보드, 변형 수순, 코멘트 및 화살표
 summary: 수 입력, 포지션 편집, 변형 수순 관리, 코멘트 작성, 주석 추가 및 보드에 화살표 그리기.
-source: 958c8f05fc6ed494
+source: c4040958465a3812
 ---
 
 [[page:new-tab]]에서 {{label:Home.Card.AnalysisBoard.Title}}을(를) 클릭하거나 [[page:library]]에서 저장된 대국이나 레퍼토리를 열어 분석 보드를 시작하세요.
@@ -27,4 +27,4 @@ source: 958c8f05fc6ed494
 
 분석 보드의 영역을 배치하려면 패널 탭({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} 또는 {{label:Board.Tabs.Info}})을 드래그하거나 탭 막대, 기보 헤더, 패널 영역 헤더의 이동 손잡이 버튼을 사용해 미리보기 또는 키보드로 다른 영역의 옆, 위, 아래에 배치할 수 있습니다. 하나의 패널을 두 영역 위에 걸쳐 놓으려면(예: 기보와 탭 위에 {{label:Board.Tabs.Database}} 배치) 먼저 한 영역 위에 패널을 놓은 다음 다른 영역을 그 옆으로 옮기세요. 패널 영역을 탭으로 되돌리려면 {{label:Board.Area.ReturnToTabs}}를 누르거나 탭 목록 위로 드래그하고, 기본 배치로 복원하려면 [[setting:board-layout]]({{label:Settings.BoardLayout.Reset}})을 사용하세요.
 
-탭을 숨기려면(예: 사용하는 모든 패널을 별도 영역으로 표시할 때) 탭 표시줄 끝의 {{label:Board.Area.HideTabs}}을(를) 클릭하세요. 이웃한 영역이 그 자리를 차지합니다. 탭은 위치와 크기를 유지하며, 기보 머리글 핸들 메뉴의 {{label:Board.Arrange.ShowTabs}}, 탭 단축키 또는 보고서 생성으로 다시 표시할 수 있습니다. 탭이 숨겨진 동안 되돌린 패널은 숨겨진 탭으로 들어갑니다.
+탭을 숨기려면(예: 사용하는 모든 패널을 별도 영역으로 표시할 때) 탭 표시줄 끝 핸들 아래의 {{label:Board.Area.HideTabs}}을(를) 클릭하세요. 이웃한 영역이 그 자리를 차지합니다. 탭은 위치와 크기를 유지하며, 탭이 숨겨진 동안 기보 머리글에 나타나는 {{label:Board.Arrange.ShowTabs}} 버튼, 탭 단축키 또는 보고서 생성으로 다시 표시할 수 있습니다. 탭이 숨겨진 동안 되돌린 패널은 숨겨진 탭으로 들어갑니다.

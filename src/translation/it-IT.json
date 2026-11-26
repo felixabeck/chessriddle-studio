@@ -192,7 +192,6 @@
     "Board.Arrange.LeftOfNotation": "A sinistra della notazione",
     "Board.Arrange.LeftOfTabs": "A sinistra delle schede",
     "Board.Arrange.MoveArea": "Sposta {{area}}",
-    "Board.Arrange.MoveNotation": "Sposta la notazione",
     "Board.Arrange.MoveTabs": "Sposta le schede",
     "Board.Arrange.NoTargets": "Nessuna destinazione rientra nella larghezza attuale della finestra.",
     "Board.Arrange.PlaceTitle": "Posiziona {{area}}",

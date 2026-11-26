@@ -162,7 +162,7 @@ function GameNotation({
 }: {
   topBar?: boolean;
   controls?: React.ReactNode;
-  /** Optional arranging grip rendered in the notation header row on arrangeable boards. */
+  /** Optional arranging controls (the grip, and Show the tabs while they are hidden) at the end of the notation header row. */
   headerGrip?: React.ReactNode;
   moveActions?: NotationMoveActions;
   /**

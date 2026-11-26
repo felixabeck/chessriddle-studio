@@ -4,7 +4,7 @@ import { errorUnlessCancelled } from "@/platform/errors";
 import { Menu, Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
-import { GripVertical, NotebookPen, X } from "lucide-react";
+import { GripVertical, NotebookPen, PanelTop, X } from "lucide-react";
 import {
   AiChatIcon,
   AnalysisIcon,
@@ -465,7 +465,6 @@ function BoardAnalysis() {
     ]),
   );
 
-  // While the tabs are hidden the notation grip opens a menu that can show them again.
   const notationGrip = arrangingAvailable ? (
     <IconAction
       label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Notation") })}
@@ -475,7 +474,7 @@ function BoardAnalysis() {
       data-arrange-grip="bottomRight"
       onPointerDown={(e) => beginDrag("bottomRight", e)}
       onClickCapture={consumeSuppressedClick}
-      onClick={tabsHidden ? undefined : () => startPlacing("bottomRight")}
+      onClick={() => startPlacing("bottomRight")}
     >
       <GripVertical size="0.875rem" />
     </IconAction>
@@ -670,15 +669,18 @@ function BoardAnalysis() {
                         })}
                       </Menu.Dropdown>
                     </Menu>
-                    <IconAction
-                      label={t("Board.Area.HideTabs")}
-                      size="xs"
-                      variant="subtle"
-                      data-hide-tabs="true"
-                      onClick={() => setTabsHidden(true)}
-                    >
-                      <X size="0.875rem" />
-                    </IconAction>
+                    {/* Unmounted while hidden: its open tooltip must not outlive the hidden strip. */}
+                    {!tabsHidden && (
+                      <IconAction
+                        label={t("Board.Area.HideTabs")}
+                        size="xs"
+                        variant="subtle"
+                        data-hide-tabs="true"
+                        onClick={() => setTabsHidden(true)}
+                      >
+                        <X size="0.875rem" />
+                      </IconAction>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -749,20 +751,19 @@ function BoardAnalysis() {
               topBar
               markOpenVariations
               headerGrip={
-                !notationGrip ? undefined : tabsHidden ? (
-                  <Menu position="bottom-end" shadow="md" withinPortal>
-                    <Menu.Target>{notationGrip}</Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item onClick={() => startPlacing("bottomRight")}>
-                        {t("Board.Arrange.MoveNotation")}
-                      </Menu.Item>
-                      <Menu.Item onClick={() => setTabsHidden(false)}>
-                        {t("Board.Arrange.ShowTabs")}
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
-                ) : (
-                  notationGrip
+                notationGrip && (
+                  <>
+                    {tabsHidden && (
+                      <IconAction
+                        label={t("Board.Arrange.ShowTabs")}
+                        data-show-tabs="true"
+                        onClick={() => setTabsHidden(false)}
+                      >
+                        <PanelTop size="1rem" />
+                      </IconAction>
+                    )}
+                    {notationGrip}
+                  </>
                 )
               }
               controls={

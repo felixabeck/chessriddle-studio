@@ -867,12 +867,12 @@ describe("BoardAnalysis", () => {
     expect(container.querySelector('[data-arrange-grip="bottomRight"]')).toBeNull();
   });
 
-  test("the tab strip hides with its × and shows again from the notation grip menu, which otherwise stays a plain grip", async () => {
+  test("the tab strip hides with its × and shows again from a button in the notation header", async () => {
     const setTabsHidden = vi.fn();
     const startPlacing = vi.fn();
     await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing });
 
-    // Shown: the strip offers Hide, the notation grip places directly, the engine bar slot sits in the strip.
+    // Shown: the strip offers Hide, the notation header has no Show button, the engine bar slot sits in the strip.
     const hide = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Board.Area.HideTabs"]',
     )!;
@@ -881,34 +881,27 @@ describe("BoardAnalysis", () => {
     expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(true);
     const notationPortal = () => container.querySelector('[data-portal-target="#bottomRight"]')!;
     const stripPortal = () => container.querySelector('[data-portal-target="#topRight"]')!;
+    const showButton = () =>
+      notationPortal().querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Arrange.ShowTabs"]',
+      );
     expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
     expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
-    const plainGrip = container.querySelector<HTMLButtonElement>(
-      '[data-arrange-grip="bottomRight"]',
-    )!;
-    await act(async () => plainGrip.click());
-    expect(startPlacing).toHaveBeenCalledExactlyOnceWith("bottomRight");
-    const menuText = () =>
-      [...container.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent);
-    expect(menuText()).not.toContain("Board.Arrange.ShowTabs");
+    expect(showButton()).toBeNull();
 
-    // Hidden: the notation grip opens a menu with Move and Show; the engine bar pinned above the
-    // tabs moves above the notation.
-    startPlacing.mockClear();
+    // Hidden: the notation header shows the button, the grip still places directly, and the engine
+    // bar pinned above the tabs moves above the notation.
     setTabsHidden.mockClear();
     await renderWithArrangement([], vi.fn(), { setTabsHidden, startPlacing, tabsHidden: true });
     expect(stripPortal().querySelector('[data-engine-slot="tabs"]')).toBeNull();
     expect(notationPortal().querySelector('[data-engine-slot="tabs"]')).not.toBeNull();
-    expect(menuText()).toEqual(
-      expect.arrayContaining(["Board.Arrange.MoveNotation", "Board.Arrange.ShowTabs"]),
-    );
-    const item = (text: string) =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-        (el) => el.textContent === text,
-      )!;
-    await act(async () => item("Board.Arrange.MoveNotation").click());
+    const grip = container.querySelector<HTMLButtonElement>('[data-arrange-grip="bottomRight"]')!;
+    // The × leaves the page while hidden, so its open tooltip cannot outlive the strip.
+    expect(container.querySelector('button[aria-label="Board.Area.HideTabs"]')).toBeNull();
+    await act(async () => grip.click());
     expect(startPlacing).toHaveBeenCalledExactlyOnceWith("bottomRight");
-    await act(async () => item("Board.Arrange.ShowTabs").click());
+    expect(showButton()).not.toBeNull();
+    await act(async () => showButton()!.click());
     expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(false);
   });
 

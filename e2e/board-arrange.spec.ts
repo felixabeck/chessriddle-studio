@@ -434,6 +434,7 @@ test("board-arrange: keyboard placing, aria-modal hotkey suppression, fit rule, 
 test("board-arrange: hiding the tabs keeps their place and size, survives reload, and Show tabs restores them", async ({
     page,
     mockScenario,
+    assertNoHorizontalOverflow,
 }) => {
     await mockScenario({});
     const stored = {
@@ -461,9 +462,15 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
 
     const tabList = page.locator("[data-board-tab-list]");
     await expect(tabList).toBeVisible();
-    await page.getByRole("button", { name: "Hide the tabs" }).click();
+    const hide = page.getByRole("button", { name: "Hide the tabs" });
+    await hide.hover();
+    await expect(page.getByRole("tooltip", { name: "Hide the tabs" })).toBeVisible();
+    await hide.click();
     await expect(tabList).toBeHidden();
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
+    // The hovered button's tooltip does not stay behind (the stuck tooltip showed only in WebKit;
+    // BoardAnalysis.test.tsx guards the mechanism: the × is unmounted while hidden).
+    await expect(page.getByRole("tooltip", { name: "Hide the tabs" })).toHaveCount(0);
 
     // Returning the Database area while hidden keeps the tabs hidden.
     await page
@@ -483,10 +490,26 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
         "true",
     );
 
-    // The notation grip offers Show tabs while they are hidden.
+    // While hidden, the notation grip still starts placing the notation directly.
     await page.locator('[data-arrange-grip="bottomRight"]').click();
-    await page.getByRole("menuitem", { name: "Show the tabs" }).click();
+    await expect(page.getByTestId("board-arrange-placing")).toBeVisible();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("board-arrange-placing")).toHaveCount(0);
+
+    // The notation header shows a Show the tabs button while they are hidden.
+    const showTabs = page
+        .locator("#bottomRight")
+        .getByRole("button", { name: "Show the tabs", exact: true });
+    await expect(showTabs).toBeVisible();
+    await assertNoHorizontalOverflow("tabs-hidden-notation-header");
+    const buttonBox = (await showTabs.boundingBox())!;
+    const tileBox = (await page.locator("#bottomRight").boundingBox())!;
+    expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width);
+    expect(buttonBox.y).toBeGreaterThanOrEqual(tileBox.y);
+    await showTabs.click();
     await expect(tabList).toBeVisible();
+    await expect(showTabs).toHaveCount(0);
     expect(
         await page.evaluate(() => JSON.parse(localStorage.getItem("analysis-board-layout")!)),
     ).toEqual({
