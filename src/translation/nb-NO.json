@@ -732,6 +732,7 @@
     "Databases.OpeningTree.Recent.Tooltip_one": "{{percent}}% av det siste {{count}} partiet her",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% av de siste {{count}} partiene her",
     "Databases.OpeningTree.Reset": "Tilbakestill til start",
+    "Databases.OpeningTree.ResizeBoard": "Endre størrelse på brettet",
     "Databases.OpeningTree.Score": "Poengandel",
     "Databases.OpeningTree.Searching": "Søker i partiene til {{name}}…",
     "Databases.OpeningTree.Since": "Siden",

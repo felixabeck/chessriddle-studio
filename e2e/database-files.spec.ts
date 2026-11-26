@@ -27,6 +27,7 @@ import {
     libraryLink,
     goToLibrary,
     waitForFontsSettled,
+    playBoardMove,
 } from "./fixtures";
 import { serializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Locator, Page } from "@playwright/test";
@@ -511,6 +512,44 @@ for (const width of [1920, 320]) {
         await tree.locator("[data-opening-moves] tbody tr").filter({ hasText: "e5" }).click();
         await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4 e5");
         await expect(tree.locator("[data-opening-moves]")).toContainText("Game ended here");
+        // A move played on the board advances the line like a table row, also off the table.
+        const openingBoard = tree.locator("[data-opening-board]");
+        const boardBox = (await openingBoard.boundingBox())!;
+        // Inside the card's own scroll area the board must be in view before it is clicked.
+        await openingBoard.evaluate((element) => element.scrollIntoView({ block: "center" }));
+        await playBoardMove(page, openingBoard.locator("cg-board"), "d2", "d4");
+        await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4 e5 2. d4");
+        await tree.getByRole("button", { name: "Previous move", exact: true }).click();
+        await expect(tree.locator("[data-opening-sequence]")).toHaveText("1. e4 e5");
+        // Stacked above the table the board has no edge to drag.
+        if (width === 320)
+            await expect(
+                tree.getByRole("separator", { name: "Resize board", exact: true }),
+            ).toBeHidden();
+        if (width === 1920) {
+            // Dragging the edge handle grows the board without pushing the card sideways.
+            const handle = tree.getByRole("separator", { name: "Resize board", exact: true });
+            const before = Number(await handle.getAttribute("aria-valuenow"));
+            const max = Number(await handle.getAttribute("aria-valuemax"));
+            const grip = (await handle.boundingBox())!;
+            await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(grip.x + grip.width / 2 + 48, grip.y + grip.height / 2, {
+                steps: 4,
+            });
+            await page.mouse.up();
+            const after = Number(await handle.getAttribute("aria-valuenow"));
+            expect(after).toBe(Math.min(max, before + 3));
+            const grown = (await tree.locator("[data-opening-board]").boundingBox())!;
+            expect(grown.width).toBeGreaterThan(boardBox.width + 40);
+            await expect(tree.locator("[data-opening-board] cg-board")).toHaveCSS(
+                "width",
+                `${Math.round(grown.width)}px`,
+            );
+            await assertNoHorizontalOverflow();
+            await handle.dblclick();
+            await expect(handle).toHaveAttribute("aria-valuenow", "20");
+        }
         const prepare = tree.getByRole("button", { name: "Prepare on board", exact: true });
         await assertButtonGlyphsUnclipped(prepare);
         await prepare.click();

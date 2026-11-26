@@ -37,14 +37,43 @@
 
 .board {
   position: relative;
-  width: min(100%, 16rem);
+  width: min(100%, var(--opening-board-size, 20rem));
   aspect-ratio: 1;
   justify-self: center;
 }
 
+/* Keep in step with BESIDE_TABLE_MIN_WIDTH_REM in useOpeningBoardSize.ts. */
 @container (min-width: 36rem) {
   .body {
-    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, var(--opening-board-size, 20rem)) minmax(0, 1fr);
+  }
+}
+
+/* The resize handle runs along the board's right edge, inside the gap to the table. Stacked
+   above the table the board fills the width it may, so there is no edge to drag. */
+.boardHandle {
+  composes: vertical from "../../styles/ResizeHandle.module.css";
+  display: none;
+  right: -6px;
+  z-index: 2;
+}
+
+/* A short pill in the middle shows that the edge can be dragged. */
+.boardHandle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 4px;
+  height: 2rem;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--cf-border);
+}
+
+@container (min-width: 36rem) {
+  .boardHandle {
+    display: block;
   }
 }
 

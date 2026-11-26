@@ -741,6 +741,7 @@
     "Databases.OpeningTree.Recent.Tooltip_many": "{{percent}}% de las últimas {{count}} partidas aquí",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% de las últimas {{count}} partidas aquí",
     "Databases.OpeningTree.Reset": "Volver al inicio",
+    "Databases.OpeningTree.ResizeBoard": "Cambiar tamaño del tablero",
     "Databases.OpeningTree.Score": "Puntuación",
     "Databases.OpeningTree.Searching": "Buscando partidas de {{name}}…",
     "Databases.OpeningTree.Since": "Desde",

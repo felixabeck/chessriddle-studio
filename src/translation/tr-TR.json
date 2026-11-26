@@ -732,6 +732,7 @@
     "Databases.OpeningTree.Recent.Tooltip_one": "Buradaki son {{count}} oyunun %{{percent}} kadarı",
     "Databases.OpeningTree.Recent.Tooltip_other": "Buradaki son {{count}} oyunun %{{percent}} kadarı",
     "Databases.OpeningTree.Reset": "Başlangıca dön",
+    "Databases.OpeningTree.ResizeBoard": "Tahta boyutunu değiştir",
     "Databases.OpeningTree.Score": "Puan oranı",
     "Databases.OpeningTree.Searching": "{{name}} adlı oyuncunun oyunları aranıyor…",
     "Databases.OpeningTree.Since": "Dönem",

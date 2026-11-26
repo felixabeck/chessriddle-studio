@@ -732,6 +732,7 @@
     "Databases.OpeningTree.Recent.Tooltip_one": "{{percent}}% der letzten {{count}} Partie hier",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% der letzten {{count}} Partien hier",
     "Databases.OpeningTree.Reset": "Zurück zur Startstellung",
+    "Databases.OpeningTree.ResizeBoard": "Größe des Bretts ändern",
     "Databases.OpeningTree.Score": "Punktequote",
     "Databases.OpeningTree.Searching": "Partien von {{name}} werden durchsucht…",
     "Databases.OpeningTree.Since": "Seit",

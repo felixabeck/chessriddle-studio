@@ -25,5 +25,10 @@ export function playerOpeningLine(moves: string[], color: Color) {
         node = getNodeAtPath(tree.root, tree.position);
         notation.push(getMoveText(node, { glyphs: false, comments: false, extraMarkups: false }));
     }
-    return { tree, fen: node.fen, notation: notation.join("").trim() };
+    return {
+        tree,
+        fen: node.fen,
+        lastMove: node.move ?? undefined,
+        notation: notation.join("").trim(),
+    };
 }

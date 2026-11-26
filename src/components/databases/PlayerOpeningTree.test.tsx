@@ -1,3 +1,4 @@
+import type { Config } from "@lichess-org/chessground/config";
 import { MantineProvider, type SelectProps } from "@mantine/core";
 import { INITIAL_FEN } from "chessops/fen";
 import { createStore, Provider } from "jotai";
@@ -27,6 +28,7 @@ import {
   tabFamily,
   tabsAtom,
 } from "@/state/atoms";
+import { OPENING_BOARD_SIZE_KEY } from "@/state/openingBoardSize";
 import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
@@ -128,14 +130,23 @@ vi.mock("@/hooks/useDatabaseList", () => ({
     },
   }),
 }));
+const boardMock = vi.hoisted(() => ({ config: null as Config | null }));
+// jsdom lays nothing out; a test sets the card's measured width to reach the board's size limits.
+const cardWidth = vi.hoisted(() => ({ px: 0 }));
+vi.mock("@/hooks/useElementWidth", () => ({
+  useElementWidth: () => ({ ref: { current: null }, width: cardWidth.px }),
+}));
 vi.mock("@/chessground/Chessground", () => ({
-  Chessground: (props: { fen: string; orientation: string; viewOnly: boolean }) => (
-    <div
-      data-board-fen={props.fen}
-      data-orientation={props.orientation}
-      data-readonly={props.viewOnly}
-    />
-  ),
+  Chessground: (props: Config) => {
+    boardMock.config = props;
+    return (
+      <div
+        data-board-fen={props.fen}
+        data-orientation={props.orientation}
+        data-readonly={props.viewOnly}
+      />
+    );
+  },
 }));
 vi.mock("./GamePreview", () => ({
   default: ({ pgn }: { pgn: string }) => <div data-game-preview>{pgn}</div>,
@@ -230,6 +241,7 @@ globalThis.ResizeObserver = class {
 };
 
 beforeEach(async () => {
+  cardWidth.px = 0;
   vi.clearAllMocks();
   mocks.navigate.mockReset();
   const actual = await vi.importActual<typeof import("@/utils/tabs")>("@/utils/tabs");
@@ -519,6 +531,111 @@ test("native query, scores, terminal row and navigation follow the player's exac
     ),
   ).toBe(true);
   expect(row("e4").cells[1].lastChild?.textContent).toBe("6");
+});
+
+test("a move played on the board advances the line like a table move, also off the table", async () => {
+  await render();
+  const play = async (orig: string, dest: string) =>
+    act(async () => {
+      boardMock.config!.movable!.events!.after!(orig as never, dest as never, { premove: false });
+    });
+  expect(boardMock.config?.viewOnly).toBeFalsy();
+  expect(boardMock.config?.movable?.color).toBe("white");
+  await play("e2", "e5");
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("Start position");
+  await play("e2", "e4");
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("1. e4");
+  expect(container.querySelector("[data-opening-board]")?.getAttribute("data-fen")).toBe(e4Fen);
+  expect(mocks.searchPosition.mock.lastCall?.[1].position.fen).toBe(e4Fen);
+  expect(boardMock.config?.lastMove).toEqual(["e2", "e4"]);
+  // A reply that the table does not list is still played and searched.
+  await play("a7", "a6");
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("1. e4 a6");
+  expect(mocks.searchPosition.mock.lastCall?.[1].position.fen).toBe(
+    "rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+  );
+  await click(button("Previous move"));
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe("1. e4");
+  // A finished game takes no further move.
+  await click(button("Reset to start"));
+  for (const [orig, dest] of [
+    ["f2", "f3"],
+    ["e7", "e5"],
+    ["g2", "g4"],
+    ["d8", "h4"],
+  ])
+    await play(orig, dest);
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe(
+    "1. f3 e5 2. g4 Qh4#",
+  );
+  expect(boardMock.config?.movable?.color).toBeUndefined();
+});
+
+test("the board resize handle steps, resets and is remembered", async () => {
+  await render();
+  const handle = () =>
+    container.querySelector<HTMLElement>('[data-opening-board-resize][role="separator"]')!;
+  expect(handle().getAttribute("aria-valuenow")).toBe("20");
+  await act(async () =>
+    handle().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(localStorage.getItem(OPENING_BOARD_SIZE_KEY)).toBe("21");
+  expect(handle().getAttribute("aria-valuenow")).toBe("21");
+  await act(async () => handle().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(localStorage.getItem(OPENING_BOARD_SIZE_KEY)).toBe("20");
+});
+
+test("a pawn promoted on the board joins the line with the chosen piece", async () => {
+  await render();
+  const play = async (orig: string, dest: string) =>
+    act(async () => {
+      boardMock.config!.movable!.events!.after!(orig as never, dest as never, { premove: false });
+    });
+  for (const [orig, dest] of [
+    ["h2", "h4"],
+    ["g7", "g5"],
+    ["h4", "g5"],
+    ["h7", "h6"],
+    ["g5", "h6"],
+    ["f8", "g7"],
+    ["h6", "g7"],
+    ["g8", "f6"],
+    ["g7", "h8"],
+  ])
+    await play(orig, dest);
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe(
+    "1. h4 g5 2. hxg5 h6 3. gxh6 Bg7 4. hxg7 Nf6",
+  );
+  await click(
+    container.querySelector<HTMLElement>('[role="dialog"] [aria-label="Promote to queen"]')!,
+  );
+  expect(container.querySelector("[data-opening-sequence]")?.textContent).toBe(
+    "1. h4 g5 2. hxg5 h6 3. gxh6 Bg7 4. hxg7 Nf6 5. gxh8=Q+",
+  );
+});
+
+test("the remembered board size is read on mount and clamped beside the table without rewriting it", async () => {
+  localStorage.setItem(OPENING_BOARD_SIZE_KEY, "30");
+  // 640px is 40rem: beside the table the board may take 40 - 24 - 0.75 = 15.25rem.
+  cardWidth.px = 640;
+  await render();
+  const handle = container.querySelector<HTMLElement>("[data-opening-board-resize]")!;
+  expect(handle.getAttribute("aria-valuenow")).toBe("15.25");
+  expect(handle.getAttribute("aria-valuemax")).toBe("15.25");
+  expect(
+    container
+      .querySelector<HTMLElement>("[data-opening-body]")!
+      .style.getPropertyValue("--opening-board-size"),
+  ).toBe("15.25rem");
+  expect(localStorage.getItem(OPENING_BOARD_SIZE_KEY)).toBe("30");
+});
+
+test("an unmeasured card applies the remembered board size unclamped", async () => {
+  localStorage.setItem(OPENING_BOARD_SIZE_KEY, "30");
+  await render();
+  const handle = container.querySelector<HTMLElement>("[data-opening-board-resize]")!;
+  expect(handle.getAttribute("aria-valuenow")).toBe("30");
+  expect(handle.hasAttribute("aria-valuemax")).toBe(false);
 });
 
 test("game selection previews within the card, Open and double-click use the established opening flow", async () => {

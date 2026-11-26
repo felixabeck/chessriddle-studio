@@ -723,6 +723,7 @@
     "Databases.OpeningTree.Recent.SummaryTie": "<move>{{move}}</move> (各 {{total}} 盘中 {{played}} 盘)",
     "Databases.OpeningTree.Recent.Tooltip_other": "此处最近 {{count}} 盘中的 {{percent}}%",
     "Databases.OpeningTree.Reset": "重置到初始局面",
+    "Databases.OpeningTree.ResizeBoard": "调整棋盘大小",
     "Databases.OpeningTree.Score": "得分率",
     "Databases.OpeningTree.Searching": "正在搜索{{name}}的对局…",
     "Databases.OpeningTree.Since": "时间范围",

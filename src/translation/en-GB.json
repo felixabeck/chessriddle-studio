@@ -732,6 +732,7 @@
     "Databases.OpeningTree.Recent.Tooltip_one": "{{percent}}% of the last {{count}} game here",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% of the last {{count}} games here",
     "Databases.OpeningTree.Reset": "Reset to start",
+    "Databases.OpeningTree.ResizeBoard": "Resize board",
     "Databases.OpeningTree.Score": "Score",
     "Databases.OpeningTree.Searching": "Searching {{name}}'s games…",
     "Databases.OpeningTree.Since": "Since",

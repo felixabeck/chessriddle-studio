@@ -3,11 +3,11 @@ import type { SyncStringStorage } from "jotai/vanilla/utils/atomWithStorage";
 import {
     ASSISTANT_DOCK_WIDTH_KEY,
     clampAssistantDockWidthRem,
-    createAssistantDockWidthStorage,
     DEFAULT_ASSISTANT_DOCK_WIDTH_REM,
     maxAssistantDockWidthRem,
     MIN_ASSISTANT_DOCK_WIDTH_REM,
 } from "./assistantWidth";
+import { createPositiveRemStorage } from "./remPreference";
 
 vi.mock("@/platform/native", () => ({
     warn: vi.fn(() => Promise.resolve()),
@@ -30,7 +30,7 @@ function memoryStorage(initial: Record<string, string> = {}) {
 
 test("absent key returns the 24rem default without writing", () => {
     const { map, setItem, storage } = memoryStorage();
-    const store = createAssistantDockWidthStorage(storage);
+    const store = createPositiveRemStorage(storage);
 
     expect(store.getItem(ASSISTANT_DOCK_WIDTH_KEY, DEFAULT_ASSISTANT_DOCK_WIDTH_REM)).toBe(24);
     expect(setItem).not.toHaveBeenCalled();
@@ -41,7 +41,7 @@ test.each(['"wide"', "null", "0", "-5", "{}", "not-json"])(
     "invalid stored value %s falls back to 24rem",
     (raw) => {
         const { storage } = memoryStorage({ [ASSISTANT_DOCK_WIDTH_KEY]: raw });
-        const store = createAssistantDockWidthStorage(storage);
+        const store = createPositiveRemStorage(storage);
 
         expect(store.getItem(ASSISTANT_DOCK_WIDTH_KEY, DEFAULT_ASSISTANT_DOCK_WIDTH_REM)).toBe(24);
     },
@@ -50,7 +50,7 @@ test.each(['"wide"', "null", "0", "-5", "{}", "not-json"])(
 test("stored values below 20rem or above 42vw remain valid in storage without rewriting", () => {
     for (const stored of ["12", "80"]) {
         const { map, setItem, storage } = memoryStorage({ [ASSISTANT_DOCK_WIDTH_KEY]: stored });
-        const store = createAssistantDockWidthStorage(storage);
+        const store = createPositiveRemStorage(storage);
 
         expect(store.getItem(ASSISTANT_DOCK_WIDTH_KEY, DEFAULT_ASSISTANT_DOCK_WIDTH_REM)).toBe(
             Number(stored),

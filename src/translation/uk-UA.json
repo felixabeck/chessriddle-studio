@@ -750,6 +750,7 @@
     "Databases.OpeningTree.Recent.Tooltip_many": "{{percent}}% з останніх {{count}} партій тут",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% з останніх {{count}} партій тут",
     "Databases.OpeningTree.Reset": "Повернутися до початкової позиції",
+    "Databases.OpeningTree.ResizeBoard": "Змінити розмір дошки",
     "Databases.OpeningTree.Score": "Відсоток очок",
     "Databases.OpeningTree.Searching": "Пошук партій гравця {{name}}…",
     "Databases.OpeningTree.Since": "За період",

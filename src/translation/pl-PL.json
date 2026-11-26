@@ -750,6 +750,7 @@
     "Databases.OpeningTree.Recent.Tooltip_many": "{{percent}}% z ostatnich {{count}} partii tutaj",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% z ostatnich {{count}} partii tutaj",
     "Databases.OpeningTree.Reset": "Wróć do pozycji początkowej",
+    "Databases.OpeningTree.ResizeBoard": "Zmień rozmiar szachownicy",
     "Databases.OpeningTree.Score": "Wynik punktowy",
     "Databases.OpeningTree.Searching": "Wyszukiwanie partii gracza {{name}}…",
     "Databases.OpeningTree.Since": "Z ostatnich",

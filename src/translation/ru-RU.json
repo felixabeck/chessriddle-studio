@@ -750,6 +750,7 @@
     "Databases.OpeningTree.Recent.Tooltip_many": "{{percent}}% из последних {{count}} партий здесь",
     "Databases.OpeningTree.Recent.Tooltip_other": "{{percent}}% из последних {{count}} партий здесь",
     "Databases.OpeningTree.Reset": "Вернуться к начальной позиции",
+    "Databases.OpeningTree.ResizeBoard": "Изменить размер доски",
     "Databases.OpeningTree.Score": "Процент очков",
     "Databases.OpeningTree.Searching": "Поиск партий игрока {{name}}…",
     "Databases.OpeningTree.Since": "За период",

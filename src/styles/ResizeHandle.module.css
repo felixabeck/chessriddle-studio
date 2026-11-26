@@ -1,0 +1,29 @@
+/* A vertical drag handle on a panel edge: a 6px hit strip whose centre line lights up on hover,
+   while dragging, and on keyboard focus. Callers place it on their edge and stack it. */
+.vertical {
+  position: absolute;
+  inset-block: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.vertical::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.vertical:hover::after,
+.vertical[data-dragging="true"]::after {
+  background: var(--mantine-primary-color-filled);
+}
+
+.vertical:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -1px;
+}

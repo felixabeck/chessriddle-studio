@@ -11,17 +11,18 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useNavigate } from "@tanstack/react-router";
-import type { Color } from "chessops";
+import type { Color, Move } from "chessops";
+import { makeSan } from "chessops/san";
 import dayjs from "dayjs";
 import { useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame, Player, PositionStats } from "@/bindings";
-import { Chessground } from "@/chessground/Chessground";
 import { fitSelectProps } from "@/components/common/fitSelectProps";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
+import PuzzleBoardSurface from "@/components/puzzles/PuzzleBoardSurface";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import ResultsChart from "@/components/home/PersonalCardPanels/ResultsChart";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
@@ -43,6 +44,7 @@ import {
 import { selectStripTab } from "@/state/stripTab";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
+import { MIN_OPENING_BOARD_SIZE_REM } from "@/state/openingBoardSize";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { formatPgnYearMonth } from "@/utils/pgnDate";
 import { createTab, runTabCreation } from "@/utils/tabs";
@@ -52,6 +54,7 @@ import { opponentPlayers } from "./opponentLookup";
 import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
+import { useOpeningBoardSize } from "./useOpeningBoardSize";
 import classes from "./PlayerOpeningTree.module.css";
 
 /** One player in one database; `label` names the database when several are merged. */
@@ -204,6 +207,8 @@ function OpeningTree({
   const [since, setSince] = useState({ preset: "all", startDate: undefined as string | undefined });
   const [moves, setMoves] = useState<string[]>([]);
   const line = useMemo(() => playerOpeningLine(moves, color), [moves, color]);
+  const [position] = useMemo(() => positionFromFen(line.fen), [line.fen]);
+  const board = useOpeningBoardSize();
   const colorLabel = t("Databases.OpeningTree.PlayerPlays", {
     defaultValue: "{{name}} plays:",
     name,
@@ -276,8 +281,10 @@ function OpeningTree({
     setSelected(null);
     setMoves(next);
   };
+  const playOnBoard = (move: Move) => {
+    if (position) advance(makeSan(position, move));
+  };
   const advance = (san: string) => {
-    const [position] = positionFromFen(line.fen);
     if (position && parseSanOrUci(position, san)) changeMoves([...moves, san]);
   };
   const prepare = async () => {
@@ -346,7 +353,7 @@ function OpeningTree({
   };
 
   return (
-    <Stack className={classes.root} gap="sm" data-player-opening-tree>
+    <Stack className={classes.root} gap="sm" ref={board.rootRef} data-player-opening-tree>
       <div className={classes.toolbar} data-opening-toolbar>
         <Text size="sm" className="wrap-anywhere">
           {colorLabel}
@@ -496,14 +503,35 @@ function OpeningTree({
                   ))}
                 </Alert>
               )}
-              <div className={classes.body} data-opening-body>
-                <div className={classes.board} data-opening-board data-fen={line.fen}>
-                  <Chessground
-                    fen={line.fen}
+              <div className={classes.body} style={board.bodyStyle} data-opening-body>
+                <div
+                  className={classes.board}
+                  ref={board.boardRef}
+                  data-opening-board
+                  data-fen={line.fen}
+                >
+                  <PuzzleBoardSurface
+                    position={position}
                     orientation={color}
-                    coordinates={false}
-                    viewOnly
+                    lastMove={line.lastMove}
+                    canPlay={position !== null && !position.isEnd()}
+                    onMove={playOnBoard}
                     drawable={{ enabled: false }}
+                  />
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={t("Databases.OpeningTree.ResizeBoard", {
+                      defaultValue: "Resize board",
+                    })}
+                    aria-valuemin={MIN_OPENING_BOARD_SIZE_REM}
+                    aria-valuemax={board.maxRem}
+                    aria-valuenow={board.sizeRem}
+                    tabIndex={0}
+                    className={classes.boardHandle}
+                    data-dragging={board.dragging ? "true" : undefined}
+                    data-opening-board-resize
+                    {...board.handleProps}
                   />
                 </div>
                 <Stack gap="sm" miw={0}>
