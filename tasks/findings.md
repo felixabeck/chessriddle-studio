@@ -29456,3 +29456,17 @@ Filed from the build of the scoresheet photo import (session c4fe3a7e-d00d-4487-
 * **Spotted outside diff:** `scripts/verify-app.mjs` Files metadata-edit block and the RF2 Puzzles root-permission step.
 
 Filed from the scoresheet photo import build (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: f-20261125-13 (AO1/AO2 in the same runs), f-20261008-01, f-20261117-04.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### `rust-windows-test` hit its 30-minute timeout inside "Run Rust tests" on a ledger-only master commit whose tree had just passed
+
+* **ID:** f-20261126-01 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45742639135
+* **Repair owner:** Claude Code session 7b18c127-0935-4310-982e-227e5e055400 on tuxedo-atlas, 2026-11-26T03:04:53Z
+* **Failure scenario:** `Test` run 45742639135 on master `01ca41f11` (a records-only commit: one `tasks/build-ledger.md` row on top of `9f6e1a865`), job `rust-windows-test` (job id 139651131493) started 02:28:23Z and was cancelled at 03:03:25Z by `timeout-minutes: 30` while the step "Run Rust tests" was still running; every other job of the run passed. The same job on `9f6e1a865` (run 45742430192, identical source tree) passed in 13 minutes. The job log was not retained (`gh api …/jobs/139651131493/logs` answered 404 BlobNotFound), so the hanging test is unknown. Master's `Test` status is red on a commit that changed no code, which blocks the installer for that SHA.
+* **Open question:** which Windows Rust test (or the runner's test process) hangs intermittently, and does the job need a per-test timeout (e.g. nextest's slow-timeout) so a hang names the test instead of eating the job budget?
+* **Spotted outside diff:** the board-layout-arrange build (frontend-only change) after its ledger push.
