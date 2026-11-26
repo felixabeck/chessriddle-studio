@@ -20,8 +20,7 @@
   left: 0;
 }
 
-/* The library paints a hovered split black outside its themed root; dividers outside the mosaic
-   (the pinned explorer strip in the stacked layout) use the themed look too. */
+/* Override the library's default dark hover highlight on pane dividers with the themed accent. */
 .mosaic-split:hover {
   background: none;
 }

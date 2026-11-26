@@ -30,6 +30,14 @@
   min-height: 0;
 }
 
+/* In mosaic mode, Mosaic owns the `#left` tile's height, so size containment lets `Board.tsx` cap
+   its square width synchronously from its own tile's height (`100cqh`) without a layout loop.
+   Adding 8px restores `.mosaic-tile`'s 4px top/bottom margin so full-height boards stay identical. */
+[data-board-layout="mosaic"] .portalTarget[data-board-area="left"] {
+  container-type: size;
+  --board-area-height: calc(100cqh + 8px);
+}
+
 .boardStack {
   height: 100%;
   overflow-y: auto;

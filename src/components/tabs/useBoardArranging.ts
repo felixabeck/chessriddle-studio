@@ -219,7 +219,7 @@ export function useBoardArranging({
         [endDragSession, clearPendingReleaseSuppression],
     );
 
-    // Leaving case 2 (narrow window / stacked) or unmounting tears down every active resource.
+    // Turning arranging off (`enabled` -> false) or unmounting tears down every active resource.
     useEffect(() => {
         if (!enabled) cancelArranging(false);
     }, [enabled, cancelArranging]);

@@ -163,7 +163,30 @@ test("board-arrange: database area below the board renders cleanly and 200% font
 
     const layout = page.locator("[data-board-layout]");
     const dbArea = page.locator('[data-panel-area="database"]');
+    const boardTile = page.locator("#left");
+    const cgBoard = boardTile.locator("cg-board");
     await expect(dbArea).toBeVisible();
+    await expect(cgBoard).toBeVisible();
+
+    const assertBoardInsideTile = async () => {
+        const tileBox = (await boardTile.boundingBox())!;
+        const boardBox = (await cgBoard.boundingBox())!;
+        expect(boardBox.y).toBeGreaterThanOrEqual(tileBox.y - 1);
+        expect(boardBox.y + boardBox.height).toBeLessThanOrEqual(tileBox.y + tileBox.height + 1);
+        expect(boardBox.x).toBeGreaterThanOrEqual(tileBox.x - 1);
+        expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width + 1);
+    };
+
+    // At 1440x900 and 800x720 (both 2 panes -> mosaic) with Database below the board, the board
+    // must shrink to stay fully inside its tile.
+    await assertBoardInsideTile();
+    await page.setViewportSize({ width: 800, height: 720 });
+    await expect(dbArea).toBeVisible();
+    await assertBoardInsideTile();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(dbArea).toBeVisible();
+    await assertBoardInsideTile();
+
     await expect(layout).toHaveScreenshot("board-arrange-database-below-board.png");
 
     // At 200% font scale, a 3-pane arrangement needs >= 1932px, so 1440px falls back to shared layout;

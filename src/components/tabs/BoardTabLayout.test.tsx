@@ -1,7 +1,7 @@
 import { act, useContext, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MantineProvider, Portal } from "@mantine/core";
-import { createStore, Provider } from "jotai";
+import { createStore, Provider, type PrimitiveAtom } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { MosaicNode } from "react-mosaic-component";
 import { installMatchMediaStub } from "@/tests/matchMedia";
@@ -20,7 +20,7 @@ vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
   return { fontSizeAtom: atom(100) };
 });
-const coachMock = vi.hoisted(() => ({ atom: null as any }));
+const coachMock = vi.hoisted(() => ({ atom: null as PrimitiveAtom<boolean> | null }));
 vi.mock("@/state/coach", async () => {
   const { atom } = await import("jotai");
   coachMock.atom = atom(false);
@@ -429,7 +429,7 @@ test("hidden coach panel area is omitted while Coach is off and kept across divi
   });
 
   // Turning Coach on reveals the coach area in its preserved position.
-  await act(async () => store.set(coachMock.atom, true));
+  await act(async () => store.set(coachMock.atom!, true));
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["coach"]);
 });
 

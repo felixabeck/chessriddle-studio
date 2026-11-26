@@ -556,11 +556,12 @@ function Board({
             overflow: "hidden",
             maxWidth:
               // The board is square, so its width is capped by the height left for it. Terms in order:
-              // navigation row (2.625rem); the panel's bottom padding (sm); the player bars and
-              // their gutters; the eval bar beside the board (1.563rem, i.e. its 25px); md spacing
-              // and a 0.2rem fudge, both empirical upstream constants (`git log -S` finds their
-              // origin); the focus-ring extent; the height reserved below the board.
-              `var(--board-max-width, calc(100vh - 2.625rem - var(--mantine-spacing-sm) - ${barsHeight} + 1.563rem + var(--mantine-spacing-md) - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
+              // the board area's height (defaulting to the viewport minus navigation row 2.625rem and
+              // the panel's bottom padding sm); the player bars and their gutters; the eval bar beside
+              // the board (1.563rem, i.e. its 25px); md spacing and a 0.2rem fudge, both empirical
+              // upstream constants (`git log -S` finds their origin); the focus-ring extent; the
+              // height reserved below the board.
+              `var(--board-max-width, calc(var(--board-area-height, calc(100vh - 2.625rem - var(--mantine-spacing-sm))) - ${barsHeight} + 1.563rem + var(--mantine-spacing-md) - 0.2rem + ${FOCUS_RING_EXTENT} - var(--board-below-height, 0px)))`,
           }}
         >
           <BoardBar

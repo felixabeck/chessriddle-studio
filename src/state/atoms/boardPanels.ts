@@ -1,4 +1,4 @@
-/** Per-tab board view and panel state, and where pinned panels sit. */
+/** Per-tab board view and panel state, and where the pinned engine bar sits. */
 import { atom, getDefaultStore } from "jotai";
 import { defaultPanelTabAtom, hidePreviewMovesAtom } from "./preferences";
 import { tabAtomFamily } from "./tabFamilies";

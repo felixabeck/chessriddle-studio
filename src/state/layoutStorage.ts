@@ -74,7 +74,8 @@ export function createBoardArrangementStorage(
     storage: SyncStringStorage = localStorage,
 ): SyncStorage<BoardArrangement> {
     // Jotai with `getOnInit` calls `getItem` at atom creation and again at first mount; memoize a
-    // failed read or failed carry-over write for this session until a subsequent `setItem` succeeds.
+    // throwing read, a failed carry-over write, or a failed repair write of an invalid value for
+    // this session until a subsequent `setItem` or `removeItem` clears it.
     const sessionFallback = new Map<string, BoardArrangement>();
 
     return {
@@ -101,6 +102,7 @@ export function createBoardArrangementStorage(
                     storedValue,
                     boardArrangementSchema,
                     initialValue,
+                    (fallback) => sessionFallback.set(key, fallback),
                 );
             }
 

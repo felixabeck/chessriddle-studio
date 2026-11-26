@@ -766,3 +766,13 @@ test.each([
   expect(storeMove).not.toHaveBeenCalled();
   expect(input.value).toBe("");
 });
+
+test("board width cap uses --board-area-height with viewport fallback and preserves --board-below-height", async () => {
+  await render();
+  const surface = host.querySelector<HTMLElement>("[data-board-surface]")!;
+  const maxWidth = surface.parentElement!.style.maxWidth;
+  expect(maxWidth).toContain(
+    "var(--board-area-height, calc(100vh - 2.625rem - var(--mantine-spacing-sm)))",
+  );
+  expect(maxWidth).toContain("var(--board-below-height, 0px)");
+});

@@ -85,12 +85,14 @@ export function parseAndRepairStoredValue<Value>(
     storedValue: string,
     schema: z.ZodType<Value, z.ZodTypeDef, unknown>,
     initialValue: Value,
+    onRepairFailed?: (value: Value) => void,
 ): Value {
     const repair = (value: Value) => {
         try {
             storage.setItem(key, JSON.stringify(value));
         } catch (error) {
             reportPreferenceStorageFailure("repair", error);
+            onRepairFailed?.(value);
         }
     };
     try {

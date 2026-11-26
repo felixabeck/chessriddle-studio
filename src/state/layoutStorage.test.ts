@@ -536,6 +536,58 @@ test("invalid stored analysis-board-layout yields default and repairs storage", 
     expect(native.warn).toHaveBeenCalledWith(
         `Invalid persisted value for ${ANALYSIS_BOARD_LAYOUT_KEY}`,
     );
+
+    // When the repair write succeeds, the fallback is not memoized: a subsequent read sees storage again.
+    const updated = {
+        direction: "row" as const,
+        first: "left" as const,
+        second: {
+            direction: "row" as const,
+            first: "bottomRight" as const,
+            second: "topRight" as const,
+        },
+    };
+    double.map.set(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(updated));
+    expect(storage.getItem(ANALYSIS_BOARD_LAYOUT_KEY, defaultBoardArrangement())).toEqual(updated);
+});
+
+test("invalid stored analysis-board-layout with throwing setItem memoizes the default and reports once across repeated reads", () => {
+    let failWrites = true;
+    const double = memoryStorage(
+        {
+            [ANALYSIS_BOARD_LAYOUT_KEY]: "{not-valid-json",
+        },
+        {
+            set: (key) =>
+                failWrites && key === ANALYSIS_BOARD_LAYOUT_KEY
+                    ? new DOMException("quota", "QuotaExceededError")
+                    : null,
+        },
+    );
+    const storage = createBoardArrangementStorage(double.storage);
+
+    expect(storage.getItem(ANALYSIS_BOARD_LAYOUT_KEY, defaultBoardArrangement())).toEqual(
+        defaultBoardArrangement(),
+    );
+    // Second getItem in the same session returns the memoized default without reporting again.
+    expect(storage.getItem(ANALYSIS_BOARD_LAYOUT_KEY, defaultBoardArrangement())).toEqual(
+        defaultBoardArrangement(),
+    );
+    expect(persistError.reportPersistError).toHaveBeenCalledOnce();
+
+    // A subsequent successful setItem clears the session memo.
+    failWrites = false;
+    const custom = {
+        direction: "row" as const,
+        first: "left" as const,
+        second: {
+            direction: "row" as const,
+            first: "bottomRight" as const,
+            second: "topRight" as const,
+        },
+    };
+    storage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, custom);
+    expect(storage.getItem(ANALYSIS_BOARD_LAYOUT_KEY, defaultBoardArrangement())).toEqual(custom);
 });
 
 test("Reset as the first action on a profile with legacy keys leaves none of them", async () => {

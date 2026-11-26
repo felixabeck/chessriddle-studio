@@ -103,7 +103,7 @@ export const windowsStateSchema = z
 /** A divider position in percent; anything else is dropped on its own. */
 const splitPercentageSchema = z.number().finite().min(0).max(100).optional().catch(undefined);
 
-export const besideSplitsSchema = z.object({
+const besideSplitsSchema = z.object({
     board: splitPercentageSchema,
     notation: splitPercentageSchema,
 });
