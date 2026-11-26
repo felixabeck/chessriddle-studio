@@ -628,6 +628,103 @@ test("owned index verification scrolls to the updated target after a row is meas
   }
 });
 
+test("owned index verification follows a row measured after its first check", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    const initialTarget = virtualizer.getOffsetForIndex(2, "center")![0];
+    const cancel = scrollNotationToIndex(virtualizer, 2, "center");
+    // The first check finds the target reached before any row is measured (a slow machine).
+    queue.flushOne();
+    queue.flushOne();
+    expect(offsets).toEqual([initialTarget]);
+
+    // The row is measured taller only now, as after a switch to table view.
+    const measuredSize = virtualizer.getVirtualItems().find((item) => item.index === 2)!.size;
+    virtualizer.resizeItem(2, measuredSize + 40);
+    // No render refreshes the virtualizer's measurements here: the very next check must read the
+    // new height itself and scroll in the same check.
+    queue.flushOne();
+    queue.flushOne();
+    const updatedTarget = virtualizer.getOffsetForIndex(2, "center")![0];
+    expect(updatedTarget).not.toBe(initialTarget);
+    expect(offsets).toEqual([initialTarget, updatedTarget]);
+    expect(virtualizer.scrollOffset).toBe(updatedTarget);
+
+    cancel();
+    expect(queue.frames.size).toBe(0);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
+test("owned index verification settles once the list height holds still", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    scrollNotationToIndex(virtualizer, 2, "center");
+    // Each check takes two frames; the target matches from the start, so only the three checks
+    // with an unchanged list height run.
+    for (let frame = 0; frame < 5; frame++) queue.flushOne();
+    expect(queue.frames.size).toBe(1);
+    queue.flushOne();
+    expect(queue.frames.size).toBe(0);
+    expect(offsets).toHaveLength(1);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
+test("owned index verification restarts the settle count when the height changes", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    scrollNotationToIndex(virtualizer, 50, "start");
+    const lastItem = 99;
+    // Two settled checks, then a row far below the target grows: the count starts over.
+    for (let frame = 0; frame < 4; frame++) queue.flushOne();
+    const size = virtualizer.getVirtualItems().at(-1)?.size ?? 32;
+    virtualizer.resizeItem(lastItem, size + 40);
+    for (let frame = 0; frame < 5; frame++) queue.flushOne();
+    expect(queue.frames.size).toBe(1);
+    queue.flushOne();
+    queue.flushOne();
+    expect(queue.frames.size).toBe(1);
+    // The third check after the change finds the height settled and schedules nothing more.
+    queue.flushOne();
+    expect(queue.frames.size).toBe(0);
+    expect(offsets).toHaveLength(1);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
+test("owned index verification stops re-checking a growing list after ten attempts", () => {
+  const queue = queueAnimationFrames();
+  const { virtualizer, offsets, cleanup } = mountRealVirtualizer();
+  try {
+    scrollNotationToIndex(virtualizer, 2, "start");
+    let checks = 0;
+    while (queue.frames.size) {
+      queue.flushOne();
+      if (queue.frames.size) queue.flushOne();
+      checks++;
+      // A row below the target grows before every check, so the height never holds still.
+      virtualizer.resizeItem(99, 32 + checks * 8);
+      expect(checks).toBeLessThanOrEqual(10);
+    }
+    // The tenth check finds the attempt budget spent and schedules nothing more.
+    expect(checks).toBe(10);
+    expect(offsets).toHaveLength(1);
+  } finally {
+    cleanup();
+    queue.restore();
+  }
+});
+
 test("owned index verification bounds unsuccessful scrolling to ten attempts", () => {
   const queue = queueAnimationFrames();
   const { virtualizer, offsets, cleanup } = mountRealVirtualizer();

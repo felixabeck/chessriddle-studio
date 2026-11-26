@@ -98,6 +98,8 @@ const HIDDEN_NOTATION_FILTER = "blur(8px)";
 // Bound the frames spent waiting for React to mount a row after its offset scroll.
 const NOTATION_REVEAL_MAX_ATTEMPTS = 10;
 const NOTATION_INDEX_SCROLL_MAX_ATTEMPTS = 10;
+// Consecutive checks with an unchanged list height before a matching target counts as settled.
+const NOTATION_INDEX_SCROLL_STABLE_CHECKS = 3;
 // Sub-pixel differences come from fractional layout and need no further scroll.
 const NOTATION_INDEX_SCROLL_TOLERANCE_PX = 1;
 
@@ -112,17 +114,29 @@ export function scrollNotationToIndex(
   let cancelled = false;
   let frame: number;
   let attempts = 1;
+  let measuredSize = virtualizer.getTotalSize();
+  let stableChecks = 0;
 
   const verify = () => {
     if (cancelled) return;
+    if (attempts >= NOTATION_INDEX_SCROLL_MAX_ATTEMPTS) return;
+    // getTotalSize refreshes the virtualizer's measurements, which getOffsetForIndex reads as is.
+    const totalSize = virtualizer.getTotalSize();
     const target = virtualizer.getOffsetForIndex(index, resolvedAlign);
+    stableChecks = totalSize === measuredSize ? stableChecks + 1 : 0;
+    measuredSize = totalSize;
     if (
       target &&
-      Math.abs(target[0] - (virtualizer.scrollOffset ?? 0)) >= NOTATION_INDEX_SCROLL_TOLERANCE_PX &&
-      attempts < NOTATION_INDEX_SCROLL_MAX_ATTEMPTS
+      Math.abs(target[0] - (virtualizer.scrollOffset ?? 0)) >= NOTATION_INDEX_SCROLL_TOLERANCE_PX
     ) {
       attempts++;
       virtualizer.scrollToOffset(target[0]);
+      scheduleVerification();
+    } else if (stableChecks < NOTATION_INDEX_SCROLL_STABLE_CHECKS) {
+      // Rows can still be measured after the first check (a view switch makes them taller over
+      // several frames on a slow machine), which moves a target that matches now. Keep checking
+      // until the list's height has held still for a few checks.
+      attempts++;
       scheduleVerification();
     }
   };
