@@ -866,19 +866,9 @@ fn windows_quiesce_drains_sqlite_and_ecsi_before_rename() {
     )
     .unwrap();
 
-    // Before quiesce, mmapped .ecsi blocks rename on Windows.
-    assert!(
-        crate::infra::fs::rename_entry_at(
-            src_dir.as_file(),
-            OsStr::new("pooled.db3.ecsi"),
-            ecsi_id,
-            false,
-            dst_dir.as_file(),
-            OsStr::new("pooled.db3.ecsi"),
-        )
-        .is_err(),
-        "mmapped .ecsi must block rename before SearchCache::quiesce_root"
-    );
+    // No "rename is blocked before quiesce" premise: the index is opened with FILE_SHARE_DELETE,
+    // and NTFS renames a mapped file opened that way (CI run 45820095311). Quiesce is what keeps
+    // the cache from serving the moved file; the eviction count below proves it.
 
     let db_guard = repo
         .quiesce_root(src_id, &src, &CancellationToken::new())
