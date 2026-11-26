@@ -29817,3 +29817,18 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Failure scenario:** the CI e2e job (and any local full e2e run) turns red on unchanged product code about one run in three, which blocks or confuses a push.
 * **Fix direction:** after `resize(50)`, poll until the panel's bottom matches the restored layout (as the test already does after `resize(80)`) before asserting; product code stays unchanged. Prove with `--repeat-each=30`.
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The engine reorder-by-drag e2e test fails under machine load: the drag preview is gone before the test checks it
+
+* **ID:** f-20261127-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `e2e/engine-gap.spec.ts:595` ("engine-gap: engines reorder by drag and by the grip menu"), lines 616-630.
+* **Defect:** the test measures the grip and the second card, drags with `page.mouse` in 8 steps and then expects `board-arrange-preview` with `data-arrange-kind="reorder"`; under load the preview is not found (at failure the cards already show the dragged order), so the assertion races the board-arrange drag.
+* **Observed:** 2026-11-27 on a detached `origin/master` (`c1a26a5c8`) checkout with a fresh `pnpm install`: `pnpm test:e2e:container -- --project=engine-gap --grep "engines reorder by drag" --repeat-each=5` passed 5/5 twice, then failed 3 of 5 a few minutes later (load average about 10); on the `build/scoresheet-pdf-import-20261126` branch the same command failed 4/5, 5/5 and 1/5 in different runs, and with that branch's `src` changes partly or fully reverted it still failed (2/5–5/5), so the rate follows machine load, not the code. It also failed in two full e2e runs that day. `Error: expect(locator).toHaveAttribute(expected) failed … getByTestId('board-arrange-preview') … element(s) not found`.
+* **Failure scenario:** a local full e2e run (and CI on a busy runner) turns red on unchanged code, which blocks or confuses a push.
+* **Fix direction:** make the drag deterministic: wait for the drag to start (pointer capture or the preview) before moving to the target, re-measure the target after the drag starts, and assert the outcome instead of the transient preview where the preview is not the subject; prove with `--repeat-each=30` while another heavy gate runs.
+* **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
