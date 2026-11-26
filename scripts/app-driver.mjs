@@ -20,6 +20,11 @@
 //   sudo apt install kwin-wayland
 //   sudo apt install wl-clipboard          (provides wl-copy for --scoresheet-paste)
 //   sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-tools  (provides fakeaudiosink)
+//
+// Additional prerequisites for `--scoresheet-paste` only (private Secret Service):
+//   sudo apt install dbus-daemon
+//   sudo apt install gnome-keyring
+//   busctl                                 (provided by systemd)
 
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -133,22 +138,36 @@ export async function waitFor(label, probe, { timeoutMs = 45_000, everyMs = 200 
   }
 }
 
-export function requirePrerequisites(application = APP_BINARY) {
+export function missingCommands(commands) {
   const missing = [];
-  if (!existsSync("/usr/bin/WebKitWebDriver")) {
-    missing.push("WebKitWebDriver — install with: sudo apt install webkit2gtk-driver");
-  }
-  for (const [binary, hint] of [
-    ["tauri-driver", "cargo install tauri-driver --locked"],
-    ["kwin_wayland", "sudo apt install kwin-wayland"],
-    ["wl-copy", "sudo apt install wl-clipboard"],
-  ]) {
+  for (const [binary, hint] of commands) {
     try {
       execFileSync("sh", ["-c", `command -v ${binary}`], { stdio: "ignore" });
     } catch {
       missing.push(`${binary} — install with: ${hint}`);
     }
   }
+  return missing;
+}
+
+export function throwIfMissingPrerequisites(missing) {
+  if (missing.length > 0) {
+    throw new Error(`missing prerequisites:\n  - ${missing.join("\n  - ")}`);
+  }
+}
+
+export function requirePrerequisites(application = APP_BINARY) {
+  const missing = [];
+  if (!existsSync("/usr/bin/WebKitWebDriver")) {
+    missing.push("WebKitWebDriver — install with: sudo apt install webkit2gtk-driver");
+  }
+  missing.push(
+    ...missingCommands([
+      ["tauri-driver", "cargo install tauri-driver --locked"],
+      ["kwin_wayland", "sudo apt install kwin-wayland"],
+      ["wl-copy", "sudo apt install wl-clipboard"],
+    ]),
+  );
   // `startDriver` silences the app by ranking `fakeaudiosink` first; without the element that
   // ranking is a no-op and `autoaudiosink` falls back to the real output, so its absence is a
   // missing prerequisite, not a degraded run. `--exists` exits 0/1 (measured 2026-09-23).
@@ -162,9 +181,7 @@ export function requirePrerequisites(application = APP_BINARY) {
   if (!existsSync(application)) {
     missing.push(`${application} — build it with: agent-gate pnpm build`);
   }
-  if (missing.length > 0) {
-    throw new Error(`missing prerequisites:\n  - ${missing.join("\n  - ")}`);
-  }
+  throwIfMissingPrerequisites(missing);
 }
 
 /** An off-screen Wayland compositor. The window never appears on, or takes focus from, the desktop. */

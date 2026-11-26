@@ -207,6 +207,7 @@
 // cleanup.json records profile removal and closed driver ports 4444/4445 after child exit.
 // Staging covers these two changed predicates only, with no fresh staging claim for inherited
 // assertions or error exits. Root owns ordinary restored native verification after review.
+import { execFile as execFileCallback } from "node:child_process";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import {
   appendFile,
@@ -221,8 +222,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { crc32, deflateSync } from "node:zlib";
 import { Chess, makeSquare } from "chessops";
@@ -244,6 +246,7 @@ import {
   appProcesses,
   driverDiagnostics,
   launch,
+  missingCommands,
   outputBuffer,
   processExists,
   registerTemporaryProfile,
@@ -253,6 +256,7 @@ import {
   startCompositor,
   startDriver,
   stopLaunchedChild,
+  throwIfMissingPrerequisites,
   waitFor,
 } from "./app-driver.mjs";
 
@@ -8976,41 +8980,343 @@ export function createScoresheetTestPng(width = 64, height = 64) {
 // `wl-copy --foreground` publishes its Wayland selection asynchronously after reading stdin EOF
 // and prints no readiness signal; pause briefly so it registers the offer or exits on failure.
 const WL_COPY_READY_SETTLE_MS = 200;
-
-export const SCORESHEET_PASTE_PARTIAL_EXIT_CODE = 3;
+const PRIVATE_SECRET_SERVICE_TIMEOUT_MS = 20_000;
+const COACH_KEYRING_SERVICE = "com.chessriddle.studio.coach";
+const execFile = promisify(execFileCallback);
 
 export function invokeJsonFailure(outcome) {
   return outcome?.error ?? outcome?.result?.rejected ?? outcome?.result?.error ?? null;
 }
 
-export function classifyScoresheetConnectionCheck(outcome) {
-  const failure =
-    invokeJsonFailure(outcome) ??
-    (outcome?.value === undefined ? "coach_has_connection returned no value" : null);
-  if (failure) {
-    return { status: "failed", detail: String(failure) };
-  }
-  if (outcome.value === true) {
-    return { status: "connected", detail: null };
-  }
-  if (outcome.value === false) {
-    return { status: "not-connected", detail: null };
-  }
-  return {
-    status: "failed",
-    detail: `expected boolean from coach_has_connection, got ${JSON.stringify(outcome.value)}`,
-  };
+function isPathInsideDirectory(parentDirectory, candidatePath) {
+  if (typeof parentDirectory !== "string" || typeof candidatePath !== "string") return false;
+  if (!parentDirectory || !candidatePath) return false;
+  const resolvedParent = resolve(parentDirectory);
+  const resolvedCandidate = resolve(candidatePath);
+  const rel = relative(resolvedParent, resolvedCandidate);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-export function scoresheetPasteExitOutcome({ failuresCount, spNPassed, spPStatus }) {
-  if (failuresCount > 0) return { exitCode: 1, partial: false };
-  if (spNPassed && spPStatus === "not-proven") {
-    return { exitCode: SCORESHEET_PASTE_PARTIAL_EXIT_CODE, partial: true };
+export function generatePrivateDbusConfig({
+  profileDirectory,
+  listenDirectory = join(profileDirectory, "dbus"),
+}) {
+  if (!isPathInsideDirectory(profileDirectory, listenDirectory)) {
+    throw new Error(
+      `private D-Bus listen directory ${listenDirectory} must be inside profile ${profileDirectory}`,
+    );
   }
-  if (spNPassed && spPStatus === "passed") {
-    return { exitCode: 0, partial: false };
+  const escapedListenDir = resolve(listenDirectory)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+  return [
+    "<busconfig>",
+    "  <type>session</type>",
+    `  <listen>unix:dir=${escapedListenDir}</listen>`,
+    "  <auth>EXTERNAL</auth>",
+    '  <policy context="default">',
+    '    <allow send_destination="*" eavesdrop="true"/>',
+    '    <allow eavesdrop="true"/>',
+    '    <allow own="*"/>',
+    "  </policy>",
+    "</busconfig>",
+    "",
+  ].join("\n");
+}
+
+export function assertPrivateSecretServiceIsolation({
+  profileDirectory,
+  privateAddress,
+  inheritedAddress,
+  listenDirectory,
+  controlDirectory,
+}) {
+  if (typeof privateAddress !== "string" || !privateAddress.startsWith("unix:")) {
+    throw new Error(
+      `private D-Bus address must start with "unix:", got ${JSON.stringify(privateAddress)}`,
+    );
   }
-  return { exitCode: 1, partial: false };
+  if (typeof inheritedAddress === "string" && inheritedAddress.length > 0) {
+    if (privateAddress === inheritedAddress || privateAddress === inheritedAddress.trim()) {
+      throw new Error(
+        "refusing private Secret Service: DBUS_SESSION_BUS_ADDRESS matches the inherited session bus",
+      );
+    }
+  }
+  if (!isPathInsideDirectory(profileDirectory, listenDirectory)) {
+    throw new Error(
+      `refusing private Secret Service: listen directory ${listenDirectory} is outside profile ${profileDirectory}`,
+    );
+  }
+  if (!isPathInsideDirectory(profileDirectory, controlDirectory)) {
+    throw new Error(
+      `refusing private Secret Service: keyring control directory ${controlDirectory} is outside profile ${profileDirectory}`,
+    );
+  }
+}
+
+export function requirePrivateSecretServicePrerequisites() {
+  throwIfMissingPrerequisites(
+    missingCommands([
+      ["dbus-daemon", "sudo apt install dbus-daemon"],
+      ["gnome-keyring-daemon", "sudo apt install gnome-keyring"],
+      ["busctl", "systemd (provides busctl)"],
+    ]),
+  );
+}
+
+function parseBusctlJson(stdout, method) {
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`malformed busctl ${method} JSON output: ${String(stdout).trim()}`, {
+      cause: error,
+    });
+  }
+}
+
+export function parseBusctlReadAliasOutput(stdout) {
+  const parsed = parseBusctlJson(stdout, "ReadAlias");
+  const aliasPath = Array.isArray(parsed?.data) ? parsed.data[0] : null;
+  if (typeof aliasPath !== "string" || !aliasPath.startsWith("/")) {
+    throw new Error(`unexpected busctl ReadAlias payload: ${String(stdout).trim()}`);
+  }
+  return aliasPath === "/" ? null : aliasPath;
+}
+
+export function hasSecretServiceSearchItemsMatch(stdout) {
+  const parsed = parseBusctlJson(stdout, "SearchItems");
+  const data = parsed?.data;
+  if (
+    !Array.isArray(data) ||
+    data.length < 2 ||
+    !Array.isArray(data[0]) ||
+    !Array.isArray(data[1])
+  ) {
+    throw new Error(`unexpected busctl SearchItems payload: ${String(stdout).trim()}`);
+  }
+  return [...data[0], ...data[1]].some(
+    (itemPath) => typeof itemPath === "string" && itemPath.startsWith("/") && itemPath !== "/",
+  );
+}
+
+async function runPrivateBusctl(privateAddress, args, env) {
+  if (typeof privateAddress !== "string" || !privateAddress.startsWith("unix:")) {
+    throw new Error(
+      `refusing busctl call without a private unix: bus address: ${JSON.stringify(privateAddress)}`,
+    );
+  }
+  try {
+    const { stdout } = await execFile(
+      "busctl",
+      [`--address=${privateAddress}`, "--json=short", ...args],
+      { env, timeout: 2_000 },
+    );
+    return stdout;
+  } catch (error) {
+    const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(stderr ? `${message}: ${stderr}` : message, { cause: error });
+  }
+}
+
+function assertDaemonAlive(name, child, { spawnError = null, stdinError = null, output = "" }) {
+  if (spawnError) {
+    throw new Error(`${name} failed to start: ${spawnError.message}`, {
+      cause: spawnError,
+    });
+  }
+  if (stdinError) {
+    throw new Error(`${name} stdin failed: ${stdinError.message}`, {
+      cause: stdinError,
+    });
+  }
+  if (child.exitCode !== null || child.signalCode !== null) {
+    throw new Error(
+      `${name} exited prematurely (exit ${child.exitCode ?? "none"}, signal ${child.signalCode ?? "none"}): ${output}`,
+    );
+  }
+}
+
+async function startPrivateSecretService(profileDirectory, baseEnv) {
+  requirePrivateSecretServicePrerequisites();
+
+  const listenDirectory = join(profileDirectory, "dbus");
+  const controlDirectory = join(profileDirectory, "keyring-control");
+  const configPath = join(profileDirectory, "dbus-session.conf");
+  await mkdir(listenDirectory, { recursive: true, mode: 0o700 });
+  await mkdir(controlDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(configPath, generatePrivateDbusConfig({ profileDirectory, listenDirectory }), {
+    mode: 0o600,
+  });
+
+  const dbusStdout = outputBuffer();
+  const dbusStderr = outputBuffer();
+  let dbusSpawnError = null;
+  const dbusChild = launch(
+    "dbus-daemon",
+    [`--config-file=${configPath}`, "--nofork", "--print-address=1"],
+    {
+      env: { ...baseEnv, HOME: profileDirectory },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  dbusChild.on("error", (error) => {
+    dbusSpawnError = error;
+  });
+  dbusChild.stdout?.on("data", (chunk) => dbusStdout.push(chunk));
+  dbusChild.stderr?.on("data", (chunk) => dbusStderr.push(chunk));
+
+  const privateAddress = await waitFor(
+    "private dbus-daemon address",
+    () => {
+      assertDaemonAlive("dbus-daemon", dbusChild, {
+        spawnError: dbusSpawnError,
+        output: dbusStderr.text() || dbusStdout.text(),
+      });
+      const lineMatch = dbusStdout.text().match(/^([^\r\n]+)\r?\n/);
+      if (lineMatch) {
+        const address = lineMatch[1].trim();
+        if (!address.startsWith("unix:")) {
+          throw new Error(
+            `dbus-daemon printed invalid private bus address ${JSON.stringify(address)}${
+              dbusStderr.text() ? `: ${dbusStderr.text()}` : ""
+            }`,
+          );
+        }
+        return address;
+      }
+      return false;
+    },
+    { timeoutMs: PRIVATE_SECRET_SERVICE_TIMEOUT_MS, everyMs: 50 },
+  );
+
+  assertPrivateSecretServiceIsolation({
+    profileDirectory,
+    privateAddress,
+    inheritedAddress: baseEnv.DBUS_SESSION_BUS_ADDRESS,
+    listenDirectory,
+    controlDirectory,
+  });
+
+  const privateBusEnv = {
+    ...baseEnv,
+    HOME: profileDirectory,
+    DBUS_SESSION_BUS_ADDRESS: privateAddress,
+  };
+  const keyringOutput = outputBuffer();
+  let keyringSpawnError = null;
+  let keyringStdinError = null;
+  const keyringChild = launch(
+    "gnome-keyring-daemon",
+    ["--unlock", "--foreground", "--components=secrets", `--control-directory=${controlDirectory}`],
+    {
+      env: privateBusEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  keyringChild.on("error", (error) => {
+    keyringSpawnError = error;
+  });
+  keyringChild.stdin.on("error", (error) => {
+    keyringStdinError = error;
+  });
+  keyringChild.stdout?.on("data", (chunk) => keyringOutput.push(chunk));
+  keyringChild.stderr?.on("data", (chunk) => keyringOutput.push(chunk));
+
+  await new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      if (error) rejectPromise(error);
+      else resolvePromise();
+    };
+    if (keyringSpawnError) {
+      settle(
+        new Error(`gnome-keyring-daemon failed to start: ${keyringSpawnError.message}`, {
+          cause: keyringSpawnError,
+        }),
+      );
+      return;
+    }
+    const onChildError = (error) =>
+      settle(new Error(`gnome-keyring-daemon failed to start: ${error.message}`, { cause: error }));
+    const onStdinError = (error) =>
+      settle(
+        new Error(
+          `failed to write unlock password to gnome-keyring-daemon stdin: ${error.message}`,
+          { cause: error },
+        ),
+      );
+    keyringChild.once("error", onChildError);
+    keyringChild.stdin.once("error", onStdinError);
+    keyringChild.stdin.end("verify-throwaway-secret\n", () => {
+      keyringChild.off("error", onChildError);
+      keyringChild.stdin.off("error", onStdinError);
+      settle();
+    });
+  });
+
+  let lastBusctlError = null;
+  try {
+    await waitFor(
+      "private Secret Service default collection",
+      async () => {
+        assertDaemonAlive("dbus-daemon", dbusChild, {
+          spawnError: dbusSpawnError,
+          output: dbusStderr.text() || dbusStdout.text(),
+        });
+        assertDaemonAlive("gnome-keyring-daemon", keyringChild, {
+          spawnError: keyringSpawnError,
+          stdinError: keyringStdinError,
+          output: keyringOutput.text(),
+        });
+        try {
+          const stdout = await runPrivateBusctl(
+            privateAddress,
+            [
+              "call",
+              "org.freedesktop.secrets",
+              "/org/freedesktop/secrets",
+              "org.freedesktop.Secret.Service",
+              "ReadAlias",
+              "s",
+              "default",
+            ],
+            privateBusEnv,
+          );
+          const defaultCollection = parseBusctlReadAliasOutput(stdout);
+          if (defaultCollection) return defaultCollection;
+          lastBusctlError = 'ReadAlias("default") returned "/"';
+          return false;
+        } catch (error) {
+          lastBusctlError = error instanceof Error ? error.message : String(error);
+          return false;
+        }
+      },
+      { timeoutMs: PRIVATE_SECRET_SERVICE_TIMEOUT_MS, everyMs: 100 },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("timed out waiting for ")) {
+      const details = [
+        lastBusctlError ? `last busctl error: ${lastBusctlError}` : null,
+        keyringOutput.text().trim()
+          ? `gnome-keyring-daemon output: ${keyringOutput.text().trim()}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("; ");
+      throw new Error(details ? `${message} (${details})` : message, { cause: error });
+    }
+    throw error;
+  }
+
+  return { DBUS_SESSION_BUS_ADDRESS: privateAddress };
 }
 
 async function waitForDialogShown(session, label = "the fully shown dialog") {
@@ -9050,52 +9356,28 @@ async function startWaylandClipboardPng(pngBuffer, appEnvironment) {
   return clipboardOwner;
 }
 
-async function verifyScoresheetPaste(profileDirectory, appEnvironment, screenshotDirectory) {
-  // Seed one Active registry entry for SP-P. CredentialManager::initialize -> reconcile() currently
-  // drops Active entries that have no OS keyring secret, and this flow never touches the keyring;
-  // SP-P is therefore currently unreachable on a clean throwaway profile and runs automatically once
-  // a connection can persist without a keyring secret.
-  const credentialsDirectory = join(
-    profileDirectory,
-    ".local/share/com.chessriddle.studio/credentials",
+async function waitForScoresheetRendererReady(session, label) {
+  await waitFor(`${label} renderer startup`, () => session.execute(closeControlProbe));
+  await waitFor(`${label} Tauri IPC bridge`, () =>
+    session.execute("return typeof window.__TAURI_INTERNALS__?.invoke === 'function'"),
   );
-  await mkdir(credentialsDirectory, { recursive: true, mode: 0o700 });
-  chmodSync(credentialsDirectory, 0o700);
-  const connectionHandle = randomUUID();
-  const coachConnectionsFile = join(credentialsDirectory, "coach-connections.json");
-  await writeFile(
-    coachConnectionsFile,
-    JSON.stringify({
-      version: 2,
-      accounts: {
-        [connectionHandle]: {
-          state: "active",
-          account: {
-            handle: connectionHandle,
-            username: "Verify Scoresheet Connection",
-          },
-        },
-      },
-    }),
-    { mode: 0o600 },
-  );
-  chmodSync(coachConnectionsFile, 0o600);
+}
 
+async function verifyScoresheetPaste(profileDirectory, appEnvironment, screenshotDirectory) {
   const clipboardOwner = await startWaylandClipboardPng(
     createScoresheetTestPng(64, 64),
     appEnvironment,
   );
-  const session = await Session.open(APP_BINARY);
-  let spNPassed = false;
-  let spPStatus = "failed";
+  let session = null;
   try {
+    session = await Session.open(APP_BINARY);
     const startupOk = await assertion(
-      "SP0 scoresheet-paste renderer starts on the seeded profile",
-      () => waitFor("scoresheet-paste renderer startup", () => session.execute(closeControlProbe)),
+      "SP0 scoresheet-paste renderer starts on the isolated profile",
+      () => waitForScoresheetRendererReady(session, "scoresheet-paste"),
     );
 
     // SP-N: native clipboard route (always runs on startup success, independent of SP-P).
-    spNPassed = await assertion(
+    await assertion(
       "SP-N native scoresheet_paste_photo returns a JPEG data URL that renders under the real CSP",
       async () => {
         if (!startupOk) throw new Error("SP0 renderer startup failed");
@@ -9169,42 +9451,137 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
       },
     );
 
-    // SP-P: "From photo" pane route (requires coach_has_connection === true).
     if (startupOk) {
-      const available = await invokeJsonAndWait(
-        session,
-        "coach_available",
-        "__verifyScoresheetCoachAvailable",
-        'window.__TAURI_INTERNALS__.invoke("coach_available")',
-      );
-      const hasConnection = await invokeJsonAndWait(
-        session,
-        "coach_has_connection",
-        "__verifyScoresheetCoachHasConnection",
-        'window.__TAURI_INTERNALS__.invoke("coach_has_connection")',
-      );
-      const availableFailure = invokeJsonFailure(available);
-      const connectionCheck = classifyScoresheetConnectionCheck(hasConnection);
-      if (availableFailure || available.value !== true) {
-        await assertion("SP-P Coach availability check succeeded", () => {
-          throw new Error(
-            availableFailure
-              ? `coach_available failed: ${availableFailure}`
-              : `coach_available was ${JSON.stringify(available.value)}`,
+      // Save is non-idempotent (each call allocates a new handle), so invoke it exactly once.
+      const saveOk = await assertion(
+        "SP-Save coach_save_api_connection persists a local connection with durabilityUncertain === false",
+        async () => {
+          const saved = await invokeJsonAndWait(
+            session,
+            "coach_save_api_connection",
+            "__verifyScoresheetSaveConnection",
+            `window.__TAURI_INTERNALS__.invoke("coach_save_api_connection", ${JSON.stringify({
+              connection: {
+                label: "Verify Scoresheet Connection",
+                address: "http://127.0.0.1:11434/v1",
+                key: null,
+              },
+            })})`,
           );
-        });
-        spPStatus = "failed";
-      } else if (connectionCheck.status === "failed") {
-        await assertion("SP-P connection registry check succeeded", () => {
-          throw new Error(`coach_has_connection failed: ${connectionCheck.detail}`);
-        });
-        spPStatus = "failed";
-      } else if (connectionCheck.status === "not-connected") {
-        console.log(
-          "NOT PROVEN: From photo pane route — the profile cannot hold an AI connection without an OS keyring secret (credentials reconcile), and this flow never touches the keyring",
+          const savedFailure = invokeJsonFailure(saved);
+          if (savedFailure) {
+            throw new Error(`coach_save_api_connection failed: ${savedFailure}`);
+          }
+          if (
+            saved.value === null ||
+            typeof saved.value !== "object" ||
+            saved.value.durabilityUncertain !== false ||
+            typeof saved.value.connection?.handle !== "string" ||
+            saved.value.connection.handle.length === 0
+          ) {
+            throw new Error(
+              `expected ConnectionSaved with durabilityUncertain === false, got: ${JSON.stringify(saved.value)}`,
+            );
+          }
+        },
+      );
+
+      let privateItemOk = false;
+      if (saveOk) {
+        privateItemOk = await assertion(
+          "SP-Keyring private Secret Service holds an item for com.chessriddle.studio.coach",
+          async () => {
+            const privateAddress = appEnvironment?.DBUS_SESSION_BUS_ADDRESS;
+            const stdout = await runPrivateBusctl(
+              privateAddress,
+              [
+                "call",
+                "org.freedesktop.secrets",
+                "/org/freedesktop/secrets",
+                "org.freedesktop.Secret.Service",
+                "SearchItems",
+                "a{ss}",
+                "1",
+                "service",
+                COACH_KEYRING_SERVICE,
+              ],
+              appEnvironment,
+            );
+            if (!hasSecretServiceSearchItemsMatch(stdout)) {
+              throw new Error(
+                `private Secret Service returned no item for service ${COACH_KEYRING_SERVICE}: ${stdout.trim()}`,
+              );
+            }
+          },
         );
-        spPStatus = "not-proven";
-      } else {
+      }
+
+      let restartOk = false;
+      if (saveOk && privateItemOk) {
+        restartOk = await assertion(
+          "SP-Restart application closes cleanly and restarts on the same profile and private bus",
+          async () => {
+            const closed = await closeApplicationThroughTitlebar(
+              session,
+              "scoresheet-paste-pre-restart",
+            );
+            if (!closed.gone || closed.survivors.length > 0) {
+              throw new Error(
+                `scoresheet-paste session 1 survived close: ${closed.survivors.join(", ")}`,
+              );
+            }
+            // Session 1 has exited; no session is live until Session.open succeeds.
+            const firstSession = session;
+            session = null;
+            const released = await firstSession.quit();
+            if (!released.released) {
+              throw new Error(`could not release scoresheet-paste session 1: ${released.error}`);
+            }
+            session = await Session.open(APP_BINARY);
+            await waitForScoresheetRendererReady(session, "scoresheet-paste restarted");
+          },
+        );
+      }
+
+      let connectionOk = false;
+      if (restartOk) {
+        connectionOk = await assertion(
+          "SP-Connection coach_available and coach_has_connection are true after startup reconcile",
+          async () => {
+            const available = await invokeJsonAndWait(
+              session,
+              "coach_available",
+              "__verifyScoresheetCoachAvailable",
+              'window.__TAURI_INTERNALS__.invoke("coach_available")',
+            );
+            const availableFailure = invokeJsonFailure(available);
+            if (availableFailure || available.value !== true) {
+              throw new Error(
+                availableFailure
+                  ? `coach_available failed: ${availableFailure}`
+                  : `coach_available was ${JSON.stringify(available.value)}`,
+              );
+            }
+            const hasConnection = await invokeJsonAndWait(
+              session,
+              "coach_has_connection",
+              "__verifyScoresheetCoachHasConnection",
+              'window.__TAURI_INTERNALS__.invoke("coach_has_connection")',
+            );
+            const hasConnectionFailure = invokeJsonFailure(hasConnection);
+            if (hasConnectionFailure || hasConnection.value !== true) {
+              throw new Error(
+                hasConnectionFailure
+                  ? `coach_has_connection failed: ${hasConnectionFailure}`
+                  : `coach_has_connection was ${JSON.stringify(hasConnection.value)}`,
+              );
+            }
+          },
+        );
+      }
+
+      // SP-P: "From photo" pane route (only attempted when the saved connection survived restart).
+      if (connectionOk) {
         const spPOpened = await assertion(
           "SP-P1 Import dialog opens and selects From photo in the connected state",
           async () => {
@@ -9226,19 +9603,23 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
             );
             await clickAt(session, fromPhotoCard.x, fromPhotoCard.y);
 
-            const paneState = await waitFor("From photo pane to settle", () =>
-              session.execute(`
-                const dialog = document.querySelector('[role="dialog"]');
-                if (!dialog) return false;
-                if (dialog.querySelector('[data-scoresheet-no-connection]')) return "no-connection";
-                if (dialog.querySelector('[data-scoresheet-intake-pane]')) return "connected";
-                return false;
-              `),
-            );
-            if (paneState !== "connected") {
-              throw new Error(
-                `expected connected From photo pane when coach_has_connection was true (paneState=${paneState})`,
-              );
+            let lastPaneState = "not-rendered";
+            try {
+              await waitFor("From photo pane to settle in connected state", async () => {
+                const state = await session.execute(`
+                  const dialog = document.querySelector('[role="dialog"]');
+                  if (!dialog) return "no-dialog";
+                  if (dialog.querySelector('[data-scoresheet-intake-pane]')) return "connected";
+                  if (dialog.querySelector('[data-scoresheet-no-connection]')) return "no-connection";
+                  return "pending";
+                `);
+                lastPaneState = state;
+                return state === "connected";
+              });
+            } catch (error) {
+              throw new Error(`${error.message} (last observed pane state: ${lastPaneState})`, {
+                cause: error,
+              });
             }
           },
         );
@@ -9283,23 +9664,19 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
           },
         );
 
-        let spPScreenshot = true;
         if (screenshotDirectory) {
-          spPScreenshot = await assertion(
-            "SP-P3 scoresheet-paste screenshot is written",
-            async () => {
-              if (!spPPasted) throw new Error("SP-P2 thumbnail did not render");
-              await mkdir(screenshotDirectory, { recursive: true });
-              const path = join(screenshotDirectory, "scoresheet-paste.png");
-              await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
-              console.log(`  .. scoresheet-paste screenshot: ${path}`);
-            },
-          );
+          await assertion("SP-P3 scoresheet-paste screenshot is written", async () => {
+            if (!spPPasted) throw new Error("SP-P2 thumbnail did not render");
+            await mkdir(screenshotDirectory, { recursive: true });
+            const path = join(screenshotDirectory, "scoresheet-paste.png");
+            await writeFile(path, Buffer.from(await session.screenshot(), "base64"));
+            console.log(`  .. scoresheet-paste screenshot: ${path}`);
+          });
         }
-
-        spPStatus = spPOpened && spPPasted && spPScreenshot ? "passed" : "failed";
       }
+    }
 
+    if (session) {
       await assertion("SP-Close scoresheet-paste application exits cleanly", async () => {
         const closed = await closeApplicationThroughTitlebar(session, "scoresheet-paste");
         if (!closed.gone || closed.survivors.length > 0) {
@@ -9310,15 +9687,16 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
       });
     }
   } finally {
-    const quit = await session.quit();
-    if (!quit.released) {
-      console.log(`  .. scoresheet-paste WebDriver session release returned: ${quit.error}`);
+    if (session) {
+      const quit = await session.quit();
+      if (!quit.released) {
+        console.log(`  .. scoresheet-paste WebDriver session release returned: ${quit.error}`);
+      }
     }
     await stopLaunchedChild(clipboardOwner).catch((error) => {
       console.log(`  .. wl-copy cleanup returned: ${error.message}`);
     });
   }
-  return { spNPassed, spPStatus };
 }
 
 const XDG_OPEN_STUB_LOG_NAME = "xdg-open-calls.log";
@@ -9640,7 +10018,6 @@ async function main() {
     if (!cleanupSettled) console.error("cleanup did not finish before process exit");
   });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, handleSignal);
-  let scoresheetPasteResult = null;
   try {
     assertExclusiveFlowModes(process.argv);
     if (
@@ -9673,7 +10050,9 @@ async function main() {
       waylandDisplay: socket,
       env: externalLinkOnly
         ? ({ profileDirectory: home, env }) => installXdgOpenStub(home, env)
-        : undefined,
+        : scoresheetPasteOnly
+          ? ({ profileDirectory: home, env }) => startPrivateSecretService(home, env)
+          : undefined,
     });
     if (externalLinkOnly) {
       await verifyExternalLink(profileDirectory, appEnvironment);
@@ -9702,11 +10081,7 @@ async function main() {
         await fallbackSession.quit();
       }
     } else if (scoresheetPasteOnly) {
-      scoresheetPasteResult = await verifyScoresheetPaste(
-        profileDirectory,
-        appEnvironment,
-        screenshotDirectory,
-      );
+      await verifyScoresheetPaste(profileDirectory, appEnvironment, screenshotDirectory);
     } else if (timedRunOnly) {
       const timedRunScreenshotDirectory =
         screenshotDirectory ?? join(profileDirectory, "timed-run-screenshots");
@@ -9739,18 +10114,6 @@ async function main() {
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed`);
     process.exitCode = 1;
-  } else if (scoresheetPasteOnly && process.exitCode !== 1) {
-    const outcome = scoresheetPasteExitOutcome({
-      failuresCount: failures.length,
-      spNPassed: Boolean(scoresheetPasteResult?.spNPassed),
-      spPStatus: scoresheetPasteResult?.spPStatus ?? "failed",
-    });
-    if (outcome.partial) {
-      console.log("\nPARTIAL: native route proven, pane route NOT PROVEN");
-    } else if (outcome.exitCode === 0) {
-      console.log("\nall checks passed");
-    }
-    process.exitCode = outcome.exitCode;
   } else if (process.exitCode !== 1) {
     console.log("\nall checks passed");
   }

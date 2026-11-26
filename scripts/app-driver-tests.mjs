@@ -13,16 +13,18 @@ import {
   ASSERTION_SESSION_OPEN_PHRASE,
   BOARD_TAB_STOP_SELECTOR,
   EXCLUSIVE_FLOW_FLAGS,
-  SCORESHEET_PASTE_PARTIAL_EXIT_CODE,
   STARTUP_RECONCILIATION_LATENCY_PHRASE,
   assertExclusiveFlowModes,
-  classifyScoresheetConnectionCheck,
+  assertPrivateSecretServiceIsolation,
   createScoresheetTestPng,
   createSinceOpenLogReader,
   evaluateWorkspaceRestoreSnapshot,
+  generatePrivateDbusConfig,
+  hasSecretServiceSearchItemsMatch,
   mainlineMovesFromTree,
   openAssertionSession,
-  scoresheetPasteExitOutcome,
+  parseBusctlReadAliasOutput,
+  requirePrivateSecretServicePrerequisites,
   treeNodeAtPath,
   verifyConversionCancellationContract,
   waitForStartupReconciliation,
@@ -239,70 +241,198 @@ test("createScoresheetTestPng produces a valid 64x64 RGBA PNG with valid chunk C
   assert.equal(inflated.length, 64 * (1 + 64 * 4));
 });
 
-test("scoresheetPasteExitOutcome distinguishes pass, partial, and failure exit codes", () => {
-  assert.equal(SCORESHEET_PASTE_PARTIAL_EXIT_CODE, 3);
-  assert.deepEqual(
-    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: true, spPStatus: "passed" }),
-    { exitCode: 0, partial: false },
-  );
-  assert.deepEqual(
-    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: true, spPStatus: "not-proven" }),
-    { exitCode: 3, partial: true },
-  );
-  assert.deepEqual(
-    scoresheetPasteExitOutcome({ failuresCount: 1, spNPassed: true, spPStatus: "not-proven" }),
-    { exitCode: 1, partial: false },
-  );
-  assert.deepEqual(
-    scoresheetPasteExitOutcome({ failuresCount: 1, spNPassed: false, spPStatus: "not-proven" }),
-    { exitCode: 1, partial: false },
-  );
-  assert.deepEqual(
-    scoresheetPasteExitOutcome({ failuresCount: 0, spNPassed: false, spPStatus: "not-proven" }),
-    { exitCode: 1, partial: false },
+test("generatePrivateDbusConfig puts listen under the profile without any servicedir", () => {
+  const profile = join(tmpdir(), "verify-private-dbus-profile");
+  const config = generatePrivateDbusConfig({ profileDirectory: profile });
+  assert.match(config, /<type>session<\/type>/u);
+  assert.match(config, /<auth>EXTERNAL<\/auth>/u);
+  assert.match(config, new RegExp(`<listen>unix:dir=${join(profile, "dbus")}</listen>`, "u"));
+  assert.equal(config.includes("<servicedir"), false);
+  assert.equal(config.includes("<standard_session_servicedirs"), false);
+
+  assert.throws(
+    () =>
+      generatePrivateDbusConfig({
+        profileDirectory: profile,
+        listenDirectory: `${profile}-sibling/dbus`,
+      }),
+    /must be inside profile/u,
   );
 });
 
-test("classifyScoresheetConnectionCheck treats rejections, errors, timeouts, and non-booleans as failed, never not-connected", () => {
-  assert.deepEqual(classifyScoresheetConnectionCheck({ result: { json: "true" }, value: true }), {
-    status: "connected",
-    detail: null,
-  });
-  assert.deepEqual(classifyScoresheetConnectionCheck({ result: { json: "false" }, value: false }), {
-    status: "not-connected",
-    detail: null,
-  });
-  // Regression for invokeJsonAndWait storing IPC rejection / WebDriver timeout on result.{rejected,error}.
-  assert.deepEqual(
-    classifyScoresheetConnectionCheck({ result: { rejected: "Storage" }, value: undefined }),
-    { status: "failed", detail: "Storage" },
-  );
-  assert.deepEqual(
-    classifyScoresheetConnectionCheck({
-      result: { error: "timed out waiting for coach_has_connection" },
-      value: undefined,
+test("assertPrivateSecretServiceIsolation accepts private isolated dirs and rejects inherited or escaped inputs", () => {
+  const profile = join(tmpdir(), "verify-isolation-profile");
+  const listenDirectory = join(profile, "dbus");
+  const controlDirectory = join(profile, "keyring-control");
+  const privateAddress = `unix:path=${join(listenDirectory, "dbus-test")},guid=1234`;
+
+  assert.doesNotThrow(() =>
+    assertPrivateSecretServiceIsolation({
+      profileDirectory: profile,
+      privateAddress,
+      inheritedAddress: "unix:path=/run/user/1000/bus",
+      listenDirectory,
+      controlDirectory,
     }),
-    { status: "failed", detail: "timed out waiting for coach_has_connection" },
   );
-  assert.deepEqual(
-    classifyScoresheetConnectionCheck({
-      result: { json: "{" },
-      value: undefined,
-      error: "Unexpected end of JSON input",
-    }),
-    { status: "failed", detail: "Unexpected end of JSON input" },
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress,
+        inheritedAddress: privateAddress,
+        listenDirectory,
+        controlDirectory,
+      }),
+    /matches the inherited session bus/u,
   );
-  assert.deepEqual(classifyScoresheetConnectionCheck({ result: {}, value: undefined }), {
-    status: "failed",
-    detail: "coach_has_connection returned no value",
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress: "tcp:host=127.0.0.1,port=1234",
+        inheritedAddress: "unix:path=/run/user/1000/bus",
+        listenDirectory,
+        controlDirectory,
+      }),
+    /must start with "unix:"/u,
+  );
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress,
+        inheritedAddress: "unix:path=/run/user/1000/bus",
+        listenDirectory: `${profile}-sibling/dbus`,
+        controlDirectory,
+      }),
+    /listen directory .* outside profile/u,
+  );
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress,
+        inheritedAddress: "unix:path=/run/user/1000/bus",
+        listenDirectory: profile,
+        controlDirectory,
+      }),
+    /listen directory .* outside profile/u,
+  );
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress,
+        inheritedAddress: "unix:path=/run/user/1000/bus",
+        listenDirectory,
+        controlDirectory: profile,
+      }),
+    /keyring control directory .* outside profile/u,
+  );
+
+  assert.throws(
+    () =>
+      assertPrivateSecretServiceIsolation({
+        profileDirectory: profile,
+        privateAddress,
+        inheritedAddress: "unix:path=/run/user/1000/bus",
+        listenDirectory,
+        controlDirectory: "/run/user/1000/keyring",
+      }),
+    /keyring control directory .* outside profile/u,
+  );
+});
+
+test("requirePrivateSecretServicePrerequisites passes when tools exist and reports apt hint when gnome-keyring-daemon is missing", (t) => {
+  const execute = t.mock.method(childProcess, "execFileSync", () => Buffer.alloc(0));
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
   });
+
+  assert.doesNotThrow(() => requirePrivateSecretServicePrerequisites());
+  assert.deepEqual(
+    execute.mock.calls.map(({ arguments: [command, args] }) => [command, args]),
+    [
+      ["sh", ["-c", "command -v dbus-daemon"]],
+      ["sh", ["-c", "command -v gnome-keyring-daemon"]],
+      ["sh", ["-c", "command -v busctl"]],
+    ],
+  );
+
+  t.mock.restoreAll();
+  t.mock.method(childProcess, "execFileSync", (command, args) => {
+    if (command === "sh" && args[1] === "command -v gnome-keyring-daemon") {
+      throw new Error("gnome-keyring-daemon missing");
+    }
+    return Buffer.alloc(0);
+  });
+  syncBuiltinESMExports();
+
+  assert.throws(
+    () => requirePrivateSecretServicePrerequisites(),
+    (error) =>
+      error.message.startsWith("missing prerequisites:") &&
+      error.message.includes("gnome-keyring-daemon — install with: sudo apt install gnome-keyring"),
+  );
+});
+
+test("busctl JSON parsers handle valid payloads, root-only paths, malformed JSON, and unexpected payloads", () => {
+  assert.equal(parseBusctlReadAliasOutput(JSON.stringify({ type: "o", data: ["/"] })), null);
   assert.equal(
-    classifyScoresheetConnectionCheck({ result: { json: "null" }, value: null }).status,
-    "failed",
+    parseBusctlReadAliasOutput(
+      JSON.stringify({ type: "o", data: ["/org/freedesktop/secrets/collection/login"] }),
+    ),
+    "/org/freedesktop/secrets/collection/login",
+  );
+  assert.throws(() => parseBusctlReadAliasOutput("{not-json"), /malformed busctl ReadAlias JSON/u);
+  assert.throws(
+    () => parseBusctlReadAliasOutput(JSON.stringify({ type: "o", data: ["not-a-path"] })),
+    /unexpected busctl ReadAlias payload/u,
+  );
+  assert.throws(
+    () => parseBusctlReadAliasOutput(JSON.stringify({ type: "o", data: [] })),
+    /unexpected busctl ReadAlias payload/u,
+  );
+
+  assert.equal(
+    hasSecretServiceSearchItemsMatch(JSON.stringify({ type: "aoao", data: [[], []] })),
+    false,
   );
   assert.equal(
-    classifyScoresheetConnectionCheck({ result: { json: '"false"' }, value: "false" }).status,
-    "failed",
+    hasSecretServiceSearchItemsMatch(JSON.stringify({ type: "aoao", data: [["/"], ["/"]] })),
+    false,
+  );
+  assert.equal(
+    hasSecretServiceSearchItemsMatch(
+      JSON.stringify({ type: "aoao", data: [["/org/freedesktop/secrets/collection/login/1"], []] }),
+    ),
+    true,
+  );
+  assert.equal(
+    hasSecretServiceSearchItemsMatch(
+      JSON.stringify({ type: "aoao", data: [[], ["/org/freedesktop/secrets/collection/login/2"]] }),
+    ),
+    true,
+  );
+  assert.throws(
+    () => hasSecretServiceSearchItemsMatch("{not-json"),
+    /malformed busctl SearchItems JSON/u,
+  );
+  assert.throws(
+    () => hasSecretServiceSearchItemsMatch(JSON.stringify({ type: "aoao", data: [[]] })),
+    /unexpected busctl SearchItems payload/u,
+  );
+  assert.throws(
+    () => hasSecretServiceSearchItemsMatch(JSON.stringify({ type: "aoao", data: ["bad", []] })),
+    /unexpected busctl SearchItems payload/u,
   );
 });
 

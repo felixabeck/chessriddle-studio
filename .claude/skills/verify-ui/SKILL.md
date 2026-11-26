@@ -68,12 +68,16 @@ now does (proof 2 below).
    restore across titlebar close (with no quit dialog), SIGTERM, and SIGKILL
    (>= 2 s after the last edit) — same tabs, tab order, active tab, move list,
    and current move — plus "Close without saving" leaf removal. `pnpm verify:app --scoresheet-paste`
-   places a 64×64 PNG on the private compositor's clipboard (`wl-copy`) and proves the native
+   starts a private D-Bus session bus (`dbus-daemon`) with its own headless `gnome-keyring-daemon`
+   Secret Service inside the throwaway profile (never touching the user's real session bus or
+   keyring), places a 64×64 PNG on the private compositor's clipboard (`wl-copy`), proves the native
    clipboard route (`scoresheet_paste_photo` returning a `data:image/jpeg;base64,...` image rendered
-   in WebKitGTK under the real CSP); the "From photo" pane route remains NOT PROVEN without an OS
-   keyring secret (startup credential reconciliation removes an unbacked `coach-connections.json`
-   entry so `coach_has_connection` is `false`, and the mode exits `3` with `PARTIAL: native route
-   proven, pane route NOT PROVEN` when the native route passes and the pane route cannot run).
+   in WebKitGTK under the real CSP), creates a real Coach API connection via
+   `coach_save_api_connection`, verifies the private Secret Service item, restarts the app so
+   startup credential reconciliation keeps the connection (`coach_has_connection` is `true`), and
+   proves the "From photo" pane route (`SP-P1`–`SP-P3`, clicking "Paste from clipboard" and
+   rendering the thumbnail). It exits `0` only when all checks pass and `1` on any failure or
+   missing prerequisite.
 
    **What it cannot reach, permanently:** native GTK chrome. The menu bar, the
    window decorations and every file dialog are drawn by GTK, not by the page,
@@ -88,10 +92,12 @@ now does (proof 2 below).
 
    Prerequisites, both one-off and named in the failure message if missing:
    `sudo apt install webkit2gtk-driver` (must match the installed
-   `libwebkit2gtk-4.1-0`), `cargo install tauri-driver --locked`, and
+   `libwebkit2gtk-4.1-0`), `cargo install tauri-driver --locked`,
    GStreamer's `fakeaudiosink` (`sudo apt install gstreamer1.0-plugins-bad
    gstreamer1.0-tools`), which keeps the off-screen window's move sounds off
-   the desktop's audio output. It needs
+   the desktop's audio output, and for `--scoresheet-paste` only: `dbus-daemon`
+   (`sudo apt install dbus-daemon`), `gnome-keyring` (`sudo apt install gnome-keyring`),
+   and `busctl` (from `systemd`). It needs
    `agent-gate pnpm build` first, because it drives the release binary (the
    release `rustc` outgrows an agent session's 8 GiB scope, f-20261116-03). Not a push gate:
    CI has no compositor and it wants a release build.
