@@ -29544,3 +29544,19 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** identify the remount trigger and make opening an already-open file keep a stable board (or activate the existing tab), so the panel selection survives; then remove the settle wait the verify harness needs for this race.
 * **Proof:** a renderer test that opens a file already present in a restored tab, selects Practice, and still has Practice selected after the open completes; `pnpm verify:app` "large-deck extension" passes without a settle wait.
 * **Found by:** Claude Code (Opus 5.5), build run tasks/plans/2026-11-25-folder-settings.md, 2026-11-25
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The folder-switch Rust tests fail on Windows: 8.3 temp spellings and a wrong final-sigma expectation
+
+* **ID:** f-20261126-05 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45780981166
+* **First red:** run 45780981166 on `e520e02f1` (feat(settings) folder-settings push; previous Test run 45774896559 on `aa0df030f` was green), job rust-windows-test.
+* **Failure scenario:** job rust-windows-test of Test run 45780981166: 14 `folder_switch_tests` (every legacy-migration and gate test) panic at `set_active_database_root(..).unwrap()` with `Conflict("workspace is unavailable because its root changed")`, and `windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety` fails `assert_eq!` on the folded names of `ς.db3` and `Σ.db3` (left `[194, 3, ...]`, right `[163, 3, ...]`).
+* **Where:** `src-tauri/src/infra/path_authority/folder_switch_tests.rs` (the phase-4 tests from `legacy_default_migration_moves_content_keeps_ids_and_removes_legacy_dir` on) and `src-tauri/src/infra/path_authority/windows_tests.rs:712-720`.
+* **Defect:** the phase-4 tests register roots with `Some(VerifiedIdentity)`, for which `registration_target` stores the caller's spelling; their directories were built from `TempDir::path()`, which on Windows runners can be an 8.3 short spelling, unlike the canonical paths production registers. The final-sigma assertion assumed `RtlUpcaseUnicodeChar('ς') == 'Σ'`; the runner shows it leaves `ς` unchanged. Both are test defects; the phase-2 Windows tests for 8.3 and `\\?\` default registration pass in the same run.
+* **Fix:** build the phase-4 test directories under `fs::canonicalize(tmp.path())`; assert `σ`/`Σ` fold together and `ς`/`Σ` stay distinct.
+* **Found by:** Claude Code (Opus 5.5), folder-settings build, post-push CI wait, 2026-11-26.
