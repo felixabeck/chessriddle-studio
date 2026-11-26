@@ -29718,7 +29718,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The 1,500-game repertoire import test times out under CI coverage
 
-* **ID:** f-20261126-13 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-13 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45884131582
 * **First red:** 53b49d13a (Test run 45884131582, job frontend); 45884396140 on 26591c43a inherits it
@@ -29730,6 +29730,9 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
 
 The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geometry and wheel reachability") is not this change: run 45884131582 on the identical code (53b49d13a) passed e2e, and that spec family was already flaky on master (run 45865739811).
+
+2026-11-26, `238a1ebeb` keeps the 1,500-game test within its limit: the merger caches node positions, matches identical known moves without a full legality check (Chess960 and SAN-only keep the full path), skips empty annotation merges and anchors at the root without a tree walk, with a failing-when-broken test per fast path; the fixture reuses its token lists and uses the fewest games above the node limit, with a per-test timeout sized for instrumented CI. Proof: the file under `vitest run --coverage` runs 44 tests in 4.79 s (the test alone 3.1 s, was 6.4 s and timed out); `pnpm checks:pre-review` green; CI confirmation comes with the next Test run.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fe7cd60cd6ccfec694082696ff9754dc5cb1a69b2582f96eac196b060fab9fc8","header_sha256":"724618195634c1835051ca7cd5a4c17a4f096673011d50bfef0f06b59785e286","header_status":"handled","input_sha256":"77e9d9978c10e0a09591e80058e0d897239575bc19ca12f4d3f7bde29ea4dc99","kind":"mutation-receipt","operation":"5b20ed0730d938a7b0953ab0b62a42758becb073e6fb01e04f3e98f41aab3bba","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-13"],"target":"f-20261126-13","v":1} -->
 
 ### The stacked notation wheel-reachability e2e test timed out on CI on a docs-only commit
 
