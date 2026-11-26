@@ -29589,3 +29589,17 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Spotted outside diff:** yes, by `pnpm ci:remote:check` as an inherited red while pushing the Show the tabs button (2026-11-26).
 * **Closed as duplicate (2026-11-26, Claude Code (Opus 5.5), folder-settings build):** the same rust-windows-test red (first red run 45780981166 on `e520e02f1`) is f-20261126-05, filed and worked by the build that pushed it. Answer to the open question: both. The phase-4 tests handed raw 8.3 TempDir spellings to verified registrations and one test expected the wrong final-sigma folding (test defects), and the home default producer did not spell an existing case-variant studio or kind folder as it is on disk, which wedged every default under it on NTFS (product defect). Repaired by `8f47d2958`, `3869e1048`, `e4554d946`, `eb120b2ea`, `f2804beb7` and `804a77fb3` (named `acf458a55` in f-20261126-05's second correction before the rebase). Nothing left to do here; the next Test run of master is the Windows proof.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"f31940fb9eb101de15089194a837237c4788491ccd7a04c3143965ebbced95fc","header_sha256":"36b29f633f39e837c72efa54374aa5a2d9b85aa5c806dd4c61bddf074daa30da","header_status":"handled","input_sha256":"440c5da68089a17b394c4709fe8631c7d71b2467b4e0e103c4356c826d8fe723","kind":"mutation-receipt","operation":"e020aa5d37bd1b2ffc422caa4697ac0fcf0cb3093930b907f6e5f12ec596ea98","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-06"],"target":"f-20261126-06","v":1} -->
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### CI rust-windows-test hangs on master in the Windows folder-switch quiesce test
+
+* **ID:** f-20261126-07 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** behaviour
+* **CI run:** 45802684322
+* **First red:** run 45802684322 on `99500cdae`, job rust-windows-test (previous red 45794137032 failed, not hung).
+* **Failure scenario:** job rust-windows-test of Test run 45802684322 ran 30 min into its job timeout and was cancelled while `infra::path_authority::windows_tests::windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_unwind_safety` was running; every other test finished. Its later sections (engine actor drain via `EngineSupervisor::quiesce_executables`, case folding, backstop unwind) had never run on Windows before, because the test failed earlier in run 45794137032. Linux and macOS jobs are green.
+* **Open question:** does `quiesce_executables` (actor drain or process termination wait) never return on Windows for a test actor holding a file lease, or is the hang in another section?
+* **Spotted outside diff:** no, folder-settings build (2026-11-26), which owns the test.
