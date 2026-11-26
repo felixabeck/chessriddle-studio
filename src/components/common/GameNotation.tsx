@@ -154,6 +154,7 @@ type PreparationHeaderState = {
 function GameNotation({
   topBar,
   controls,
+  headerGrip,
   moveActions,
   markOpenVariations,
   hidden,
@@ -161,6 +162,8 @@ function GameNotation({
 }: {
   topBar?: boolean;
   controls?: React.ReactNode;
+  /** Optional arranging grip rendered in the notation header row on arrangeable boards. */
+  headerGrip?: React.ReactNode;
   moveActions?: NotationMoveActions;
   /**
    * Frame side lines that are one move long. Set where the tree is a file being built (the
@@ -431,7 +434,7 @@ function GameNotation({
           </Box>
         )}
         <Stack h="100%" gap={0} style={{ flex: 1, minWidth: 0 }}>
-          {topBar && <NotationHeader preparation={preparationHeader} />}
+          {topBar && <NotationHeader preparation={preparationHeader} grip={headerGrip} />}
           <ScrollArea
             flex={topBar ? "1 1 0px" : 1}
             mih={topBar ? NOTATION_MIN_HEIGHT_REM : undefined}
@@ -541,7 +544,13 @@ function GameNotation({
   );
 }
 
-function NotationHeader({ preparation }: { preparation: PreparationHeaderState | null }) {
+function NotationHeader({
+  preparation,
+  grip,
+}: {
+  preparation: PreparationHeaderState | null;
+  grip?: React.ReactNode;
+}) {
   const { t } = useTranslation();
   const [invisible, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const [showComments, setShowComments] = useAtom(useTabAtom(showCommentsFamily));
@@ -550,9 +559,14 @@ function NotationHeader({ preparation }: { preparation: PreparationHeaderState |
   const [tableView, setTableView] = useAtom(tableViewAtom);
   return (
     <Stack gap="xs" pt="xs">
-      <Group justify="space-between" px="sm">
+      <Group
+        justify="space-between"
+        px="sm"
+        wrap={grip ? "wrap" : undefined}
+        gap={grip ? "xs" : undefined}
+      >
         <OpeningName />
-        <Group gap="sm">
+        <Group gap="sm" wrap={grip ? "wrap" : undefined}>
           <IconAction
             label={invisible ? t("Notation.ShowMoves") : t("Notation.HideMoves")}
             onClick={() => setInvisible((value) => !value)}
@@ -588,6 +602,7 @@ function NotationHeader({ preparation }: { preparation: PreparationHeaderState |
           >
             {showVariations ? <Split size="1rem" /> : <ArrowRight size="1rem" />}
           </IconAction>
+          {grip}
         </Group>
       </Group>
       {preparation && (

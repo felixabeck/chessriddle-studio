@@ -7,7 +7,7 @@ import {
   BoardArrangementContext,
   type BoardArrangementContextValue,
 } from "@/components/tabs/BoardTabLayout";
-import type { PanelAreaId } from "@/state/boardArrangement";
+import { ALWAYS_PRESENT_PANEL_IDS, type PanelAreaId } from "@/state/boardArrangement";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
@@ -139,6 +139,25 @@ vi.mock("@mantine/core", async (importOriginal) => {
         mocks.realTabs ? <actual.Tabs.Tab {...props} /> : passthrough(props),
     },
   );
+  const Menu = Object.assign(
+    ({ children }: { children?: ReactNode }) => <div data-testid="mock-menu">{children}</div>,
+    {
+      Target: ({ children }: { children?: ReactNode }) => <>{children}</>,
+      Dropdown: ({ children }: { children?: ReactNode }) => <div role="menu">{children}</div>,
+      Item: ({
+        children,
+        onClick,
+      }: {
+        children?: ReactNode;
+        onClick?: () => void;
+        leftSection?: ReactNode;
+      }) => (
+        <button type="button" role="menuitem" onClick={onClick}>
+          {children}
+        </button>
+      ),
+    },
+  );
   return {
     MantineProvider: actual.MantineProvider,
     ActionIcon: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -146,6 +165,7 @@ vi.mock("@mantine/core", async (importOriginal) => {
         {children}
       </button>
     ),
+    Menu,
     Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
     Paper: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
       <div
@@ -165,7 +185,19 @@ vi.mock("@mantine/core", async (importOriginal) => {
     Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
       <button {...props}>{children}</button>
     ),
-    Group: passthrough,
+    Group: ({
+      children,
+      onPointerDown,
+      onClickCapture,
+    }: {
+      children?: ReactNode;
+      onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
+      onClickCapture?: React.MouseEventHandler<HTMLDivElement>;
+    }) => (
+      <div onPointerDown={onPointerDown} onClickCapture={onClickCapture}>
+        {children}
+      </div>
+    ),
     Loader: () => <span>loader</span>,
     Text: passthrough,
   };
@@ -265,14 +297,17 @@ vi.mock("./DetachedEval", () => ({
 vi.mock("../common/GameNotation", () => ({
   default: ({
     controls,
+    headerGrip,
     markOpenVariations,
   }: {
     controls?: ReactNode;
+    headerGrip?: ReactNode;
     markOpenVariations?: boolean;
   }) => {
     mocks.notationChapterSwitch = useFileChapterSwitch();
     return (
       <span data-game-notation data-mark-open-variations={markOpenVariations ? "true" : "false"}>
+        {headerGrip}
         {controls}
       </span>
     );
@@ -548,16 +583,35 @@ describe("BoardAnalysis", () => {
   async function renderWithArrangement(
     shownPanelAreas: readonly PanelAreaId[],
     returnPanel: (panel: PanelAreaId) => void = vi.fn(),
+    overrides: Partial<BoardArrangementContextValue> = {},
   ) {
     mocks.realTabs = true;
     vi.stubGlobal(
       "matchMedia",
       vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
     );
+    const shownSet = new Set(shownPanelAreas);
+    let registeredReturnListener: ((panel: PanelAreaId) => void) | null = null;
+    const wrappedReturnPanel = (panel: PanelAreaId) => {
+      registeredReturnListener?.(panel);
+      returnPanel(panel);
+    };
     const ctx: BoardArrangementContextValue = {
-      shownPanelAreas: new Set(shownPanelAreas),
+      shownPanelAreas: shownSet,
       arrangingAvailable: true,
-      returnPanel,
+      canTakeOut: (panel) => {
+        if (shownSet.has(panel)) return false;
+        const next = new Set([...shownSet, panel]);
+        return ALWAYS_PRESENT_PANEL_IDS.some((id) => !next.has(id));
+      },
+      returnPanel: wrappedReturnPanel,
+      registerReturnListener: vi.fn((listener) => {
+        registeredReturnListener = listener;
+      }),
+      beginDrag: vi.fn(),
+      consumeSuppressedClick: vi.fn(),
+      startPlacing: vi.fn(),
+      ...overrides,
     };
     await act(async () => {
       root.render(
@@ -572,7 +626,11 @@ describe("BoardAnalysis", () => {
         </MantineProvider>,
       );
     });
-    return { returnPanel };
+    return {
+      returnPanel,
+      ctx,
+      triggerReturn: (panel: PanelAreaId) => wrappedReturnPanel(panel),
+    };
   }
 
   test("a detached panel area renders once in its own portal with header and Return button, leaves the tab strip, and falls back to Annotate", async () => {
@@ -730,6 +788,80 @@ describe("BoardAnalysis", () => {
     await renderWithArrangement(["analysis", "database", "annotate"]);
     expect(selected()).toBe("Board.Tabs.Info");
     expect(container.querySelector('[data-testid="scoresheet-photo-panel"]')).toBeNull();
+    // Photo has no drag start and no placing entry; Info cannot be taken out (strip rule).
+    const photoTab = [...container.querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.textContent === "Board.Tabs.Photo",
+    )!;
+    expect(photoTab.getAttribute("data-draggable-tab")).toBeNull();
+    const infoTab = container.querySelector('[data-panel-tab="info"]')!;
+    expect(infoTab.getAttribute("data-draggable-tab")).toBeNull();
+    const menuItems = [...container.querySelectorAll('[role="menuitem"]')].map(
+      (el) => el.textContent,
+    );
+    expect(menuItems).toEqual(["Board.Arrange.MoveTabs"]);
+  });
+
+  test("arranging grips and entry points wire through the real DOM, Return selects via listener, and notation grip hides in editing mode", async () => {
+    const startPlacing = vi.fn();
+    const beginDrag = vi.fn();
+    const { triggerReturn } = await renderWithArrangement(["database"], vi.fn(), {
+      startPlacing,
+      beginDrag,
+    });
+
+    // Panel area grip starts placing database; notation grip starts placing bottomRight.
+    const dbArea = container.querySelector<HTMLElement>('[data-panel-area="database"]')!;
+    const dbGrip = dbArea.querySelector<HTMLButtonElement>('[data-arrange-grip="database"]')!;
+    const returnBtn = dbArea.querySelector<HTMLButtonElement>(
+      'button[aria-label="Board.Area.ReturnToTabs"]',
+    )!;
+    const notationGrip = container.querySelector<HTMLButtonElement>(
+      '[data-arrange-grip="bottomRight"]',
+    )!;
+    const stripGrip = container.querySelector<HTMLButtonElement>('[data-arrange-grip="topRight"]')!;
+    expect(dbGrip).not.toBeNull();
+    expect(notationGrip).not.toBeNull();
+    expect(stripGrip).not.toBeNull();
+    expect(returnBtn.getAttribute("data-no-drag")).toBe("true");
+
+    // PanelArea header pointerdown calls beginDrag("database", ...).
+    await act(async () => {
+      dbArea.firstElementChild!.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+    expect(beginDrag).toHaveBeenCalledWith("database", expect.anything());
+
+    // Tab strip grip pointerdown calls beginDrag("topRight", ...).
+    beginDrag.mockClear();
+    await act(async () => {
+      stripGrip.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
+      );
+    });
+    expect(beginDrag).toHaveBeenCalledWith("topRight", expect.anything());
+
+    // "Move the tabs" menu item starts placing "topRight" with origin "topRight".
+    const moveTabsItem = [
+      ...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ].find((el) => el.textContent === "Board.Arrange.MoveTabs")!;
+    await act(async () => moveTabsItem.click());
+    expect(startPlacing).toHaveBeenCalledWith("topRight", "topRight");
+
+    await act(async () => dbGrip.click());
+    expect(startPlacing).toHaveBeenCalledWith("database");
+    await act(async () => notationGrip.click());
+    expect(startPlacing).toHaveBeenCalledWith("bottomRight");
+
+    // Returning a panel via the layout's return listener selects its strip tab.
+    await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
+    await act(async () => triggerReturn("database"));
+    expect(jotaiStore.get(tabFamily(tabId))).toBe("database");
+
+    // In editing mode, EditingCard replaces GameNotation so the notation grip is absent.
+    mocks.editingMode = true;
+    await renderWithArrangement(["database"], vi.fn(), { startPlacing, beginDrag });
+    expect(container.querySelector('[data-arrange-grip="bottomRight"]')).toBeNull();
   });
 
   async function renderCoachChoice() {

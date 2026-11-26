@@ -61,6 +61,7 @@ vi.mock("react-mosaic-component", () => {
 
 import BoardTabLayout, { BoardArrangementContext, boardAreaTargetId } from "./BoardTabLayout";
 import { fontSizeAtom } from "@/state/atoms";
+import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import {
   ANALYSIS_BOARD_LAYOUT_KEY,
   boardArrangementAtom,
@@ -454,4 +455,665 @@ test("non-arrangeable boards (play, puzzles) ignore analysis-board-layout and st
   expect(latestContext?.arrangingAvailable).toBe(false);
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
   expect(mosaicTree()).toEqual(defaultBoardArrangement());
+});
+
+function rect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  };
+}
+
+function mockLayoutGeometry(layoutEl: HTMLElement) {
+  vi.spyOn(layoutEl, "getBoundingClientRect").mockReturnValue(rect(0, 0, 1400, 800));
+  const left = document.getElementById("left")!;
+  const topRight = document.getElementById("topRight")!;
+  const bottomRight = document.getElementById("bottomRight")!;
+  const db = document.getElementById(boardAreaTargetId("database"))!;
+  vi.spyOn(left, "getBoundingClientRect").mockReturnValue(rect(0, 0, 700, 800));
+  vi.spyOn(topRight, "getBoundingClientRect").mockReturnValue(rect(700, 0, 700, 400));
+  vi.spyOn(bottomRight, "getBoundingClientRect").mockReturnValue(rect(700, 400, 700, 400));
+  vi.spyOn(db, "getBoundingClientRect").mockReturnValue(rect(0, 560, 700, 240));
+}
+
+function makePointerEvent(
+  type: string,
+  init: { clientX?: number; clientY?: number; button?: number; pointerId?: number } = {},
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: init.clientX ?? 0,
+    clientY: init.clientY ?? 0,
+    button: init.button ?? 0,
+  });
+  Object.defineProperty(event, "pointerId", { value: init.pointerId ?? 1 });
+  return event;
+}
+
+test("pointer drag previews each side and applies placement; return over tab list notifies listener", async () => {
+  await renderAt(1400, true);
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  mockLayoutGeometry(layoutEl);
+
+  const tabList = document.createElement("div");
+  tabList.setAttribute("data-board-tab-list", "true");
+  vi.spyOn(tabList, "getBoundingClientRect").mockReturnValue(rect(704, 4, 692, 40));
+  const dbTab = document.createElement("button");
+  dbTab.setAttribute("role", "tab");
+  dbTab.setAttribute("data-panel-tab", "database");
+  tabList.appendChild(dbTab);
+  document.getElementById("topRight")!.appendChild(tabList);
+
+  const captureSpy = vi.fn();
+  const releaseSpy = vi.fn();
+  let captured = false;
+  dbTab.setPointerCapture = (id: number) => {
+    captured = true;
+    captureSpy(id);
+  };
+  dbTab.hasPointerCapture = () => captured;
+  dbTab.releasePointerCapture = (id: number) => {
+    captured = false;
+    releaseSpy(id);
+  };
+
+  // Drag database tab to the bottom edge of the board.
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 7,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: dbTab,
+      target: dbTab,
+    } as unknown as React.PointerEvent<HTMLElement>);
+  });
+
+  // Move over bottom edge of the board -> acquires pointer capture and shows bottom preview.
+  await act(async () => {
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 7, clientX: 350, clientY: 780 }),
+    );
+  });
+  expect(captureSpy).toHaveBeenCalledWith(7);
+  const preview = container.querySelector('[data-testid="board-arrange-preview"]');
+  expect(preview?.getAttribute("data-arrange-target")).toBe("left");
+  expect(preview?.getAttribute("data-arrange-side")).toBe("bottom");
+
+  // Release applies placement and releases pointer capture.
+  await act(async () => {
+    window.dispatchEvent(
+      makePointerEvent("pointerup", { pointerId: 7, clientX: 350, clientY: 780 }),
+    );
+  });
+  expect(releaseSpy).toHaveBeenCalledWith(7);
+  expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
+  expect(store.get(boardArrangementAtom)).toEqual({
+    direction: "row",
+    first: { direction: "column", first: "left", second: "database", splitPercentage: 50 },
+    second: { direction: "column", first: "topRight", second: "bottomRight" },
+  });
+
+  // Drag database area back over the tab list -> "return" preview, release returns and notifies listener.
+  const onReturned = vi.fn();
+  latestContext!.registerReturnListener(onReturned);
+  const dbHeader = document.createElement("div");
+  let headerCaptured = false;
+  dbHeader.setPointerCapture = () => {
+    headerCaptured = true;
+  };
+  dbHeader.hasPointerCapture = () => headerCaptured;
+  dbHeader.releasePointerCapture = () => {
+    headerCaptured = false;
+  };
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 8,
+      clientX: 200,
+      clientY: 600,
+      currentTarget: dbHeader,
+      target: dbHeader,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 8, clientX: 800, clientY: 24 }),
+    );
+  });
+  expect(
+    container
+      .querySelector('[data-testid="board-arrange-preview"]')
+      ?.getAttribute("data-arrange-kind"),
+  ).toBe("return");
+  await act(async () => {
+    window.dispatchEvent(
+      makePointerEvent("pointerup", { pointerId: 8, clientX: 800, clientY: 24 }),
+    );
+  });
+  expect(onReturned).toHaveBeenCalledExactlyOnceWith("database");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(headerCaptured).toBe(false);
+});
+
+test.each(["outside", "escape", "pointercancel", "lostcapture", "blur", "leave-case-2"] as const)(
+  "ending drag without a change (%s) cleans up preview, capture and leaves arrangement untouched",
+  async (ending) => {
+    await renderAt(1400, true);
+    const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+    mockLayoutGeometry(layoutEl);
+    const before = store.get(boardArrangementAtom);
+
+    const handle = document.createElement("button");
+    let captured = false;
+    handle.setPointerCapture = () => {
+      captured = true;
+    };
+    handle.hasPointerCapture = () => captured;
+    handle.releasePointerCapture = () => {
+      captured = false;
+    };
+
+    await act(async () => {
+      latestContext!.beginDrag("database", {
+        button: 0,
+        pointerId: 3,
+        clientX: 750,
+        clientY: 20,
+        currentTarget: handle,
+        target: handle,
+      } as unknown as React.PointerEvent<HTMLElement>);
+      window.dispatchEvent(
+        makePointerEvent("pointermove", { pointerId: 3, clientX: 350, clientY: 780 }),
+      );
+    });
+    expect(container.querySelector('[data-testid="board-arrange-preview"]')).not.toBeNull();
+
+    await act(async () => {
+      if (ending === "outside") {
+        window.dispatchEvent(
+          makePointerEvent("pointermove", { pointerId: 3, clientX: 2000, clientY: 2000 }),
+        );
+        window.dispatchEvent(
+          makePointerEvent("pointerup", { pointerId: 3, clientX: 2000, clientY: 2000 }),
+        );
+      } else if (ending === "escape") {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        );
+      } else if (ending === "pointercancel") {
+        window.dispatchEvent(makePointerEvent("pointercancel", { pointerId: 3 }));
+      } else if (ending === "lostcapture") {
+        captured = false;
+        handle.dispatchEvent(makePointerEvent("lostpointercapture", { pointerId: 3 }));
+      } else if (ending === "blur") {
+        window.dispatchEvent(new Event("blur"));
+      } else if (ending === "leave-case-2") {
+        await renderAt(500, true);
+      }
+    });
+
+    expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+    expect(captured).toBe(false);
+    expect(store.get(boardArrangementAtom)).toEqual(before);
+  },
+);
+
+test("keyboard placing uses an aria-modal dialog, suppresses board hotkeys, traps focus, respects fit rule and restores focus", async () => {
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  // 1100px fits 3 panes (972px) but not 4 (1298px).
+  await renderAt(1100, true);
+
+  // Add mock grips and a tab inside the layout so focus restoration can land on them.
+  const grip = document.createElement("button");
+  grip.setAttribute("data-arrange-grip", "database");
+  document.getElementById(boardAreaTargetId("database"))!.appendChild(grip);
+  const dbTab = document.createElement("button");
+  dbTab.setAttribute("role", "tab");
+  dbTab.setAttribute("data-panel-tab", "database");
+  document.getElementById("topRight")!.appendChild(dbTab);
+
+  // Start placing a panel from the strip ("analysis") at 3-pane width (1100px: 3 panes fit, 4 do not).
+  // Placing sideways next to left, bottomRight or topRight would need 4 panes and is omitted;
+  // only vertical targets (and sideways next to database, which spans 2 panes) fit in 3 panes.
+  await act(async () => latestContext!.startPlacing("analysis", "topRight"));
+  const dialog = container.querySelector<HTMLElement>('[data-testid="board-arrange-placing"]')!;
+  expect(dialog).not.toBeNull();
+  expect(dialog.getAttribute("role")).toBe("dialog");
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  const buttons = [...dialog.querySelectorAll("button")];
+  // First target button is focused (not the Cancel icon button).
+  expect(document.activeElement).toBe(buttons[1]);
+  // In a pure 3-column arrangement (no spanning database), NO LeftOf/RightOf target fits.
+  const pureThreeColumns: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    second: { direction: "row", first: "bottomRight", second: "topRight" },
+  };
+  await act(async () => store.set(boardArrangementAtom, pureThreeColumns));
+  const pureButtons = [...dialog.querySelectorAll("button")];
+  const pureLabels = pureButtons.slice(1).map((b) => b.textContent);
+  expect(pureLabels.some((label) => label?.includes("LeftOf") || label?.includes("RightOf"))).toBe(
+    false,
+  );
+  // Restore THREE_PANE_ARRANGEMENT for the return-to-tabs check below.
+  await act(async () => store.set(boardArrangementAtom, THREE_PANE_ARRANGEMENT));
+
+  // Board hotkeys are suppressed while placing is open.
+  const moveEvent = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true });
+  Object.defineProperty(moveEvent, "target", { value: document.activeElement });
+  expect(isHotkeySuppressed(moveEvent, null)).toBe(true);
+
+  // Escape cancels placing without changing the arrangement and restores focus to the origin grip.
+  const stripGrip = document.createElement("button");
+  stripGrip.setAttribute("data-arrange-grip", "topRight");
+  document.getElementById("topRight")!.appendChild(stripGrip);
+  await act(async () => {
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
+  expect(document.activeElement).toBe(stripGrip);
+
+  // Focus trap: Tab wraps from last button to first, Shift+Tab wraps from first to last.
+  await act(async () => latestContext!.startPlacing("database"));
+  const trapDialog = container.querySelector<HTMLElement>('[data-testid="board-arrange-placing"]')!;
+  const trapButtons = [...trapDialog.querySelectorAll<HTMLButtonElement>("button")];
+  expect(trapButtons.length).toBeGreaterThan(2);
+  const firstBtn = trapButtons[0];
+  const lastBtn = trapButtons[trapButtons.length - 1];
+  lastBtn.focus();
+  await act(async () => {
+    trapDialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(firstBtn);
+  await act(async () => {
+    trapDialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(lastBtn);
+
+  // Place "database" back into the tabs by keyboard: focuses returned panel's tab.
+  const returnButton = trapButtons.find((b) => b.textContent === "Board.Arrange.BackIntoTabs")!;
+  expect(returnButton).toBeDefined();
+  await act(async () => returnButton.click());
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
+  expect(document.activeElement).toBe(dbTab);
+});
+
+test("throwing setPointerCapture fails closed with no preview and no leaked listeners", async () => {
+  await renderAt(1400, true);
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  mockLayoutGeometry(layoutEl);
+
+  const addSpy = vi.spyOn(window, "addEventListener");
+  const removeSpy = vi.spyOn(window, "removeEventListener");
+  const before = store.get(boardArrangementAtom);
+
+  const handle = document.createElement("button");
+  handle.setPointerCapture = () => {
+    throw new DOMException("No active pointer", "NotFoundError");
+  };
+
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 11,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: handle,
+      target: handle,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 11, clientX: 350, clientY: 780 }),
+    );
+  });
+
+  expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+  expect(store.get(boardArrangementAtom)).toEqual(before);
+  const addedTypes = addSpy.mock.calls.map(([type]) => type);
+  const removedTypes = removeSpy.mock.calls.map(([type]) => type);
+  for (const type of ["pointermove", "pointerup", "pointercancel", "keydown", "blur"]) {
+    expect(addedTypes.filter((t) => t === type).length).toBe(
+      removedTypes.filter((t) => t === type).length,
+    );
+  }
+});
+
+test("threshold, click suppression on release and Escape, and data-no-drag guard", async () => {
+  await renderAt(1400, true);
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  mockLayoutGeometry(layoutEl);
+
+  const handle = document.createElement("button");
+  const captureSpy = vi.fn();
+  handle.setPointerCapture = captureSpy;
+  handle.hasPointerCapture = () => false;
+  handle.releasePointerCapture = vi.fn();
+
+  // Sub-threshold move (< 6px): does not start a drag and lets click through.
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 12,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: handle,
+      target: handle,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 12, clientX: 752, clientY: 22 }),
+    );
+    window.dispatchEvent(
+      makePointerEvent("pointerup", { pointerId: 12, clientX: 752, clientY: 22 }),
+    );
+  });
+  expect(captureSpy).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+  const subThresholdClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+  latestContext!.consumeSuppressedClick(subThresholdClick as unknown as React.MouseEvent);
+  expect(subThresholdClick.preventDefault).not.toHaveBeenCalled();
+
+  // Drag past threshold then release over origin: suppresses trailing click.
+  const afterDragClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 13,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: handle,
+      target: handle,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 13, clientX: 750, clientY: 40 }),
+    );
+    window.dispatchEvent(
+      makePointerEvent("pointerup", { pointerId: 13, clientX: 750, clientY: 20 }),
+    );
+    latestContext!.consumeSuppressedClick(afterDragClick as unknown as React.MouseEvent);
+  });
+  expect(afterDragClick.preventDefault).toHaveBeenCalledOnce();
+  expect(afterDragClick.stopPropagation).toHaveBeenCalledOnce();
+
+  // Escape during an active drag keeps click suppression armed past 50 ms until that pointer
+  // releases, then disarms via the short timer (even when released outside with no trailing click),
+  // ignores other pointers, clears on blur/pointercancel, and cleans up one-shot listeners on unmount.
+  vi.useFakeTimers();
+  try {
+    const startActiveDragThenEscape = async (pointerId: number) => {
+      await act(async () => {
+        latestContext!.beginDrag("database", {
+          button: 0,
+          pointerId,
+          clientX: 750,
+          clientY: 20,
+          currentTarget: handle,
+          target: handle,
+        } as unknown as React.PointerEvent<HTMLElement>);
+        window.dispatchEvent(
+          makePointerEvent("pointermove", { pointerId, clientX: 750, clientY: 40 }),
+        );
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        );
+      });
+    };
+
+    // 1. Release over origin after 50 ms: trailing click is suppressed; mismatched pointerId does not disarm early.
+    await startActiveDragThenEscape(14);
+    await act(async () => {
+      vi.advanceTimersByTime(50);
+      window.dispatchEvent(
+        makePointerEvent("pointerup", { pointerId: 999, clientX: 750, clientY: 20 }),
+      );
+      vi.advanceTimersByTime(10);
+    });
+    const afterEscReleaseClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    await act(async () => {
+      window.dispatchEvent(
+        makePointerEvent("pointerup", { pointerId: 14, clientX: 750, clientY: 20 }),
+      );
+      latestContext!.consumeSuppressedClick(afterEscReleaseClick as unknown as React.MouseEvent);
+    });
+    expect(afterEscReleaseClick.preventDefault).toHaveBeenCalledOnce();
+    expect(afterEscReleaseClick.stopPropagation).toHaveBeenCalledOnce();
+
+    // 2. Release outside the handle (no trailing click before the timer expires): onRelease arms the
+    //    short timer and disarms suppressClickRef so a later independent click goes through.
+    await startActiveDragThenEscape(16);
+    await act(async () => {
+      vi.advanceTimersByTime(50);
+      window.dispatchEvent(
+        makePointerEvent("pointerup", { pointerId: 16, clientX: 10, clientY: 10 }),
+      );
+      vi.advanceTimersByTime(10);
+    });
+    const laterClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    latestContext!.consumeSuppressedClick(laterClick as unknown as React.MouseEvent);
+    expect(laterClick.preventDefault).not.toHaveBeenCalled();
+
+    // 3. pointercancel for the same pointer disarms suppression via onRelease + timer.
+    await startActiveDragThenEscape(17);
+    await act(async () => {
+      window.dispatchEvent(makePointerEvent("pointercancel", { pointerId: 17 }));
+      vi.advanceTimersByTime(10);
+    });
+    const afterCancelClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    latestContext!.consumeSuppressedClick(afterCancelClick as unknown as React.MouseEvent);
+    expect(afterCancelClick.preventDefault).not.toHaveBeenCalled();
+
+    // 4. Window blur while awaiting post-Escape release immediately clears suppression and removes listeners.
+    await startActiveDragThenEscape(18);
+    const removeOnBlurSpy = vi.spyOn(window, "removeEventListener");
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    for (const type of ["pointerup", "pointercancel", "blur"]) {
+      expect(removeOnBlurSpy.mock.calls.filter(([t]) => t === type).length).toBe(1);
+    }
+    removeOnBlurSpy.mockRestore();
+    const afterBlurClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    latestContext!.consumeSuppressedClick(afterBlurClick as unknown as React.MouseEvent);
+    expect(afterBlurClick.preventDefault).not.toHaveBeenCalled();
+
+    // 5. Unmounting while waiting for the Escape-cancelled pointer's release removes the 3 post-Escape listeners.
+    await startActiveDragThenEscape(21);
+    const removeOnUnmountSpy = vi.spyOn(window, "removeEventListener");
+    await act(async () => root.unmount());
+    for (const type of ["pointerup", "pointercancel", "blur"]) {
+      expect(removeOnUnmountSpy.mock.calls.filter(([t]) => t === type).length).toBe(1);
+    }
+    removeOnUnmountSpy.mockRestore();
+    root = createRoot(container);
+    await renderAt(1400, true);
+    mockLayoutGeometry(container.querySelector<HTMLElement>("[data-board-layout]")!);
+  } finally {
+    vi.useRealTimers();
+  }
+
+  // Pointerdown originating inside [data-no-drag="true"] never starts a drag.
+  const noDragChild = document.createElement("button");
+  noDragChild.setAttribute("data-no-drag", "true");
+  handle.appendChild(noDragChild);
+  captureSpy.mockClear();
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 15,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: handle,
+      target: noDragChild,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 15, clientX: 350, clientY: 780 }),
+    );
+  });
+  expect(captureSpy).not.toHaveBeenCalled();
+  expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
+});
+
+test("unmount during active drag cleans up listeners and capture; placing ends on blur, leaving case 2 and unmount", async () => {
+  await renderAt(1400, true);
+  const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
+  mockLayoutGeometry(layoutEl);
+
+  // Placing closes on window blur and removes its blur listener.
+  const addSpy = vi.spyOn(window, "addEventListener");
+  const removeSpy = vi.spyOn(window, "removeEventListener");
+  await act(async () => latestContext!.startPlacing("database"));
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).not.toBeNull();
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
+  expect(addSpy.mock.calls.filter(([t]) => t === "blur").length).toBe(
+    removeSpy.mock.calls.filter(([t]) => t === "blur").length,
+  );
+
+  // Placing closes when leaving case 2 (narrowing to stacked).
+  await act(async () => latestContext!.startPlacing("database"));
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).not.toBeNull();
+  await renderAt(500, true);
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
+
+  // Unmount during active drag removes all window listeners and releases pointer capture.
+  await renderAt(1400, true);
+  mockLayoutGeometry(container.querySelector<HTMLElement>("[data-board-layout]")!);
+  addSpy.mockClear();
+  removeSpy.mockClear();
+  const handle = document.createElement("button");
+  let captured = false;
+  const releaseSpy = vi.fn(() => {
+    captured = false;
+  });
+  handle.setPointerCapture = () => {
+    captured = true;
+  };
+  handle.hasPointerCapture = () => captured;
+  handle.releasePointerCapture = releaseSpy;
+
+  await act(async () => {
+    latestContext!.beginDrag("database", {
+      button: 0,
+      pointerId: 19,
+      clientX: 750,
+      clientY: 20,
+      currentTarget: handle,
+      target: handle,
+    } as unknown as React.PointerEvent<HTMLElement>);
+    window.dispatchEvent(
+      makePointerEvent("pointermove", { pointerId: 19, clientX: 350, clientY: 780 }),
+    );
+  });
+  expect(captured).toBe(true);
+  await act(async () => root.unmount());
+  expect(releaseSpy).toHaveBeenCalledWith(19);
+  for (const type of ["pointermove", "pointerup", "pointercancel", "keydown", "blur"]) {
+    expect(addSpy.mock.calls.filter(([t]) => t === type).length).toBe(
+      removeSpy.mock.calls.filter(([t]) => t === type).length,
+    );
+  }
+  // Recreate root for afterEach cleanup.
+  root = createRoot(container);
+});
+
+test("pending focus whose target never mounts does not steal focus later; zero-targets renders Board.Arrange.NoTargets", async () => {
+  const threeTakenOut: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    second: {
+      direction: "column",
+      first: "analysis",
+      second: {
+        direction: "column",
+        first: "database",
+        second: {
+          direction: "column",
+          first: "annotate",
+          second: { direction: "column", first: "topRight", second: "bottomRight" },
+        },
+      },
+    },
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(threeTakenOut));
+  await renderAt(1400, true);
+
+  // Zero-targets branch: placing "info" violates the strip rule so 0 targets are offered.
+  await act(async () => latestContext!.startPlacing("info", "topRight"));
+  const dialog = container.querySelector('[data-testid="board-arrange-placing"]')!;
+  expect(dialog.textContent).toContain("Board.Arrange.NoTargets");
+
+  // Cancel when origin grip ("topRight") never mounts: after rAF retry, pending focus is cleared
+  // so mounting the grip later and changing displayedArrangement does NOT steal focus.
+  const rafQueue: FrameRequestCallback[] = [];
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+    rafQueue.push(cb);
+    return rafQueue.length;
+  });
+  const elsewhere = document.createElement("button");
+  container.appendChild(elsewhere);
+  elsewhere.focus();
+  await act(async () => {
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  // Flush the one rAF retry while grip is still absent.
+  await act(async () => {
+    for (const cb of rafQueue.splice(0)) cb(0);
+  });
+  // Now mount the grip and trigger a displayedArrangement change.
+  const lateGrip = document.createElement("button");
+  lateGrip.setAttribute("data-arrange-grip", "topRight");
+  document.getElementById("topRight")!.appendChild(lateGrip);
+  elsewhere.focus();
+  await act(async () => latestContext!.returnPanel("analysis"));
+  expect(document.activeElement).toBe(elsewhere);
+});
+
+test("placing Escape cancels when focus is on body, and does not steal Escape from a higher aria-modal dialog", async () => {
+  await renderAt(1400, true);
+  const stripGrip = document.createElement("button");
+  stripGrip.setAttribute("data-arrange-grip", "topRight");
+  document.getElementById("topRight")!.appendChild(stripGrip);
+
+  await act(async () => latestContext!.startPlacing("database", "topRight"));
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).not.toBeNull();
+
+  // Higher aria-modal dialog owning focus: Escape must NOT close placing.
+  const higherModal = document.createElement("div");
+  higherModal.setAttribute("role", "dialog");
+  higherModal.setAttribute("aria-modal", "true");
+  const higherBtn = document.createElement("button");
+  higherModal.appendChild(higherBtn);
+  document.body.appendChild(higherModal);
+  higherBtn.focus();
+  await act(async () => {
+    higherBtn.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).not.toBeNull();
+  higherModal.remove();
+
+  // Focus on body with placing topmost: bubble-phase Escape cancels placing and restores focus to origin grip.
+  document.body.focus();
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
+  expect(document.activeElement).toBe(stripGrip);
 });

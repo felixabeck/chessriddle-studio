@@ -186,3 +186,224 @@ test("board-arrange: database area below the board renders cleanly and 200% font
     await expect(dbArea).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Database", exact: true })).toBeVisible();
 });
+
+test("board-arrange: drag Database below board and reload, move notation beside tabs, return by button", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await mockScenario({});
+    await openAnalysisBoard(page);
+
+    const layout = page.locator("[data-board-layout]");
+    const dbTab = page.getByRole("tab", { name: "Database", exact: true });
+    const boardArea = page.locator("#left");
+    const tabsArea = page.locator("#topRight");
+    const dbArea = page.locator('[data-panel-area="database"]');
+
+    await expect(dbTab).toBeVisible();
+    const tabBox = (await dbTab.boundingBox())!;
+    const boardBox = (await boardArea.boundingBox())!;
+
+    // Press Database tab and drag to the bottom edge of the board; verify drag preview snapshot.
+    await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boardBox.x + boardBox.width / 2, boardBox.y + boardBox.height - 24, {
+        steps: 8,
+    });
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveAttribute("data-arrange-target", "left");
+    await expect(preview).toHaveAttribute("data-arrange-side", "bottom");
+    await expect(layout).toHaveScreenshot("board-arrange-drag-preview.png");
+
+    // Release to place Database below the board, then reload and verify persistence.
+    await page.mouse.up();
+    await expect(preview).toHaveCount(0);
+    await expect(dbArea).toBeVisible();
+    await expect(dbTab).toHaveCount(0);
+
+    await preserveStorageForReload(page);
+    await expect(dbArea).toBeVisible();
+    expect(
+        await page.evaluate(() => JSON.parse(localStorage.getItem("analysis-board-layout")!)),
+    ).toEqual({
+        direction: "row",
+        first: {
+            direction: "column",
+            first: "left",
+            second: "database",
+            splitPercentage: 50,
+        },
+        second: {
+            direction: "column",
+            first: "topRight",
+            second: "bottomRight",
+        },
+    });
+
+    // Drag notation grip to the left edge of the tab strip (notation beside tabs).
+    const notationGrip = page.locator('[data-arrange-grip="bottomRight"]');
+    const gripBox = (await notationGrip.boundingBox())!;
+    const tabsBox = (await tabsArea.boundingBox())!;
+    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(tabsBox.x + 24, tabsBox.y + tabsBox.height / 2, { steps: 8 });
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveAttribute("data-arrange-target", "topRight");
+    await expect(preview).toHaveAttribute("data-arrange-side", "left");
+    await page.mouse.up();
+    await expect(preview).toHaveCount(0);
+
+    const afterNotationMove = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem("analysis-board-layout")!),
+    );
+    expect(afterNotationMove.second).toEqual({
+        direction: "row",
+        first: "bottomRight",
+        second: "topRight",
+        splitPercentage: 50,
+    });
+    await assertNoHorizontalOverflow("dragged-database-and-notation");
+
+    // Return Database by button.
+    await dbArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
+    await expect(dbArea).toHaveCount(0);
+    await expect(dbTab).toHaveAttribute("aria-selected", "true");
+});
+
+test("board-arrange: keyboard placing, aria-modal hotkey suppression, fit rule, and 200% font scale targets", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({});
+    await openAnalysisBoard(page);
+
+    const layout = page.locator("[data-board-layout]");
+    const stripGrip = page.locator('[data-arrange-grip="topRight"]');
+    const placingDialog = page.getByTestId("board-arrange-placing");
+    const dbArea = page.locator('[data-panel-area="database"]');
+
+    // Open tab strip grip menu by keyboard and choose "Show Database as its own area".
+    await stripGrip.focus();
+    await page.keyboard.press("Enter");
+    const showDatabase = page.getByRole("menuitem", { name: "Show Database as its own area" });
+    await expect(showDatabase).toBeVisible();
+    await showDatabase.click();
+
+    await expect(placingDialog).toBeVisible();
+    await expect(placingDialog).toHaveAttribute("aria-modal", "true");
+    await expect(layout).toHaveScreenshot("board-arrange-placing-targets.png");
+
+    // Place Database below the board by keyboard activation, verify focus moves to Database's grip.
+    const belowBoardBtn = placingDialog.getByRole("button", {
+        name: "Below the board",
+        exact: true,
+    });
+    await belowBoardBtn.focus();
+    await page.keyboard.press("Enter");
+    await expect(placingDialog).toHaveCount(0);
+    await expect(dbArea).toBeVisible();
+    await expect(page.locator('[data-arrange-grip="database"]')).toBeFocused();
+
+    // Move notation beside tabs by keyboard via notation grip.
+    const notationGrip = page.locator('[data-arrange-grip="bottomRight"]');
+    await notationGrip.focus();
+    await page.keyboard.press("Enter");
+    await expect(placingDialog).toBeVisible();
+    await placingDialog.getByRole("button", { name: "Left of the tabs", exact: true }).click();
+    await expect(placingDialog).toHaveCount(0);
+    await expect(notationGrip).toBeFocused();
+
+    // Fit rule: at 1100px width, 3 panes (board | notation | tabs) fit, 4 panes do not.
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+    await stripGrip.click();
+    await page.getByRole("menuitem", { name: "Show Analysis as its own area" }).click();
+    await expect(placingDialog).toBeVisible();
+    const targetNames = await placingDialog.getByRole("button").allInnerTexts();
+    // Sideways placement beside board, notation or tabs would require 4 panes and must not be offered.
+    expect(targetNames).not.toContain("Left of the board");
+    expect(targetNames).not.toContain("Right of the board");
+    expect(targetNames).not.toContain("Left of the notation");
+    expect(targetNames).not.toContain("Right of the notation");
+    expect(targetNames).not.toContain("Left of the tabs");
+    expect(targetNames).not.toContain("Right of the tabs");
+    await page.keyboard.press("Escape");
+    await expect(placingDialog).toHaveCount(0);
+
+    // Return Database by keyboard ("Back into the tabs"), verify focus and selection on Database tab.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const dbGrip = page.locator('[data-arrange-grip="database"]');
+    await dbGrip.focus();
+    await page.keyboard.press("Enter");
+    await expect(placingDialog).toBeVisible();
+    await placingDialog.getByRole("button", { name: "Back into the tabs", exact: true }).click();
+    await expect(placingDialog).toHaveCount(0);
+    await expect(dbArea).toHaveCount(0);
+    const dbTab = page.getByRole("tab", { name: "Database", exact: true });
+    await expect(dbTab).toBeFocused();
+    await expect(dbTab).toHaveAttribute("aria-selected", "true");
+
+    // Board hotkeys (e.g. ArrowLeft move navigation) do nothing while placing is open.
+    const e2 = page.locator("cg-board").first();
+    const boardBox = (await e2.boundingBox())!;
+    // White e2 -> e4 (file 4 from 0..7, rank 6 -> 4 from top)
+    await page.mouse.click(
+        boardBox.x + boardBox.width * (4.5 / 8),
+        boardBox.y + boardBox.height * (6.5 / 8),
+    );
+    await page.mouse.click(
+        boardBox.x + boardBox.width * (4.5 / 8),
+        boardBox.y + boardBox.height * (4.5 / 8),
+    );
+    await expect(page.locator('[data-notation-current="true"]')).toContainText("e4");
+    await notationGrip.focus();
+    await page.keyboard.press("Enter");
+    await expect(placingDialog).toBeVisible();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator('[data-notation-current="true"]')).toContainText("e4");
+    await page.keyboard.press("Escape");
+    await expect(placingDialog).toHaveCount(0);
+
+    // 200% font scale: grips, panel area header and placing targets do not overflow or clip.
+    await page.evaluate(() => {
+        localStorage.setItem(
+            "analysis-board-layout",
+            JSON.stringify({
+                direction: "row",
+                first: {
+                    direction: "column",
+                    first: "left",
+                    second: "database",
+                    splitPercentage: 65,
+                },
+                second: { direction: "column", first: "topRight", second: "bottomRight" },
+            }),
+        );
+        localStorage.setItem("font-size", "200");
+        document.documentElement.style.fontSize = "32px";
+    });
+    await preserveStorageForReload(page);
+    await expect(dbArea).toBeVisible();
+    await expect(page.locator('[data-arrange-grip="database"]')).toBeVisible();
+    await expect(page.locator('[data-arrange-grip="bottomRight"]')).toBeVisible();
+    await expect(page.locator('[data-arrange-grip="topRight"]')).toBeVisible();
+
+    const headerFits = await dbArea.evaluate((area) => {
+        const header = area.firstElementChild as HTMLElement;
+        return header.scrollWidth <= header.clientWidth + 1;
+    });
+    expect(headerFits).toBe(true);
+
+    await page.locator('[data-arrange-grip="database"]').click();
+    await expect(placingDialog).toBeVisible();
+    const dialogFits = await placingDialog.evaluate((el) => {
+        const buttons = [...el.querySelectorAll("button")];
+        return (
+            el.scrollWidth <= el.clientWidth + 1 &&
+            buttons.every((button) => button.scrollWidth <= button.clientWidth + 1)
+        );
+    });
+    expect(dialogFits).toBe(true);
+});

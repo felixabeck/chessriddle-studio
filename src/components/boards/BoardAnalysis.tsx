@@ -1,10 +1,10 @@
 import { useTabAtom, useOwnerTab, useOwnerTabId } from "@/state/tabScope";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { errorUnlessCancelled } from "@/platform/errors";
-import { Paper, Portal, Stack, Tabs } from "@mantine/core";
+import { Menu, Paper, Portal, Stack, Tabs } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useElementSize, useHotkeys, useToggle, type HotkeyItem } from "@mantine/hooks";
-import { NotebookPen } from "lucide-react";
+import { GripVertical, NotebookPen } from "lucide-react";
 import {
   AiChatIcon,
   AnalysisIcon,
@@ -34,7 +34,7 @@ import {
   tabEngineSettingsFamily,
   tabPreparationViewFamily,
 } from "@/state/atoms";
-import { PANEL_AREA_IDS, type PanelAreaId } from "@/state/boardArrangement";
+import { isPanelArea, PANEL_AREA_IDS, type PanelAreaId } from "@/state/boardArrangement";
 import { getVariationLine } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { locateBoardState } from "@/utils/treeReducer";
@@ -59,6 +59,7 @@ import { useBoardCommands } from "./boardCommands";
 import SaveToTargetModal from "./SaveToTargetModal";
 import DetachedEval from "./DetachedEval";
 import GameNotation from "../common/GameNotation";
+import IconAction from "../common/IconAction";
 import MoveControls from "../common/MoveControls";
 import NotationColumn from "../common/NotationColumn";
 import PanelArea from "./PanelArea";
@@ -151,7 +152,16 @@ function PreparationLandingConsumer() {
 function BoardAnalysis() {
   const { t } = useTranslation();
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
-  const { shownPanelAreas, returnPanel } = useContext(BoardArrangementContext);
+  const {
+    shownPanelAreas,
+    arrangingAvailable,
+    canTakeOut,
+    returnPanel,
+    registerReturnListener,
+    beginDrag,
+    consumeSuppressedClick,
+    startPlacing,
+  } = useContext(BoardArrangementContext);
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
@@ -256,6 +266,10 @@ function BoardAnalysis() {
 
   const [, setAnalysisTab] = useAtom(useTabAtom(analysisTabFamily));
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
+  useEffect(() => {
+    registerReturnListener((panel) => setCurrentTabSelected(panel));
+    return () => registerReturnListener(null);
+  }, [registerReturnListener, setCurrentTabSelected]);
   // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab exists only while a
   // scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
   const coachEnabled = useAtomValue(coachEnabledAtom);
@@ -448,6 +462,33 @@ function BoardAnalysis() {
     info: () => <InfoPanel addGame={addGame} />,
   };
 
+  const takeOutPanels = PANEL_AREA_IDS.filter(
+    (panel) =>
+      !shownPanelAreas.has(panel) && (panel !== "coach" || coachEnabled) && canTakeOut(panel),
+  );
+  const tabList = (
+    <Tabs.List grow={!compactTabs}>
+      {stripTabs.map(({ value, title, Icon }) => {
+        const panelId = arrangingAvailable && isPanelArea(value) ? value : null;
+        const draggable = panelId !== null && canTakeOut(panelId);
+        return (
+          <Tabs.Tab
+            key={value}
+            value={value}
+            leftSection={<Icon size="1rem" />}
+            className={draggable ? classes.draggableTab : undefined}
+            data-panel-tab={panelId ?? undefined}
+            data-draggable-tab={draggable ? "true" : undefined}
+            onPointerDown={draggable ? (e) => beginDrag(panelId, e) : undefined}
+            onClickCapture={draggable ? consumeSuppressedClick : undefined}
+          >
+            {title}
+          </Tabs.Tab>
+        );
+      })}
+    </Tabs.List>
+  );
+
   return (
     <FileChapterSwitchProvider>
       {nameDialog && (
@@ -566,13 +607,45 @@ function BoardAnalysis() {
                 panel: { flex: 1, overflowY: "hidden" },
               }}
             >
-              <Tabs.List grow={!compactTabs}>
-                {stripTabs.map(({ value, title, Icon }) => (
-                  <Tabs.Tab key={value} value={value} leftSection={<Icon size="1rem" />}>
-                    {title}
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
+              {arrangingAvailable ? (
+                <div className={classes.tabStripRow} data-board-tab-list="true">
+                  {tabList}
+                  <Menu position="bottom-end" shadow="md" withinPortal>
+                    <Menu.Target>
+                      <IconAction
+                        label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Tabs") })}
+                        size="xs"
+                        variant="subtle"
+                        className={classes.grip}
+                        data-arrange-grip="topRight"
+                        onPointerDown={(e) => beginDrag("topRight", e)}
+                        onClickCapture={consumeSuppressedClick}
+                      >
+                        <GripVertical size="0.875rem" />
+                      </IconAction>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item onClick={() => startPlacing("topRight", "topRight")}>
+                        {t("Board.Arrange.MoveTabs")}
+                      </Menu.Item>
+                      {takeOutPanels.map((panel) => {
+                        const { title, Icon } = panelMeta[panel];
+                        return (
+                          <Menu.Item
+                            key={panel}
+                            leftSection={<Icon size="0.875rem" />}
+                            onClick={() => startPlacing(panel, "topRight")}
+                          >
+                            {t("Board.Arrange.ShowAsArea", { panel: title })}
+                          </Menu.Item>
+                        );
+                      })}
+                    </Menu.Dropdown>
+                  </Menu>
+                </div>
+              ) : (
+                tabList
+              )}
               {isRepertoire && (
                 <Tabs.Panel value="practice">
                   <PracticePanel />
@@ -611,10 +684,10 @@ function BoardAnalysis() {
               panel={panel}
               title={title}
               icon={<Icon size="1rem" />}
-              onReturn={() => {
-                setCurrentTabSelected(panel);
-                returnPanel(panel);
-              }}
+              onReturn={() => returnPanel(panel)}
+              onDragStart={(e) => beginDrag(panel, e)}
+              onSuppressClick={consumeSuppressedClick}
+              onStartPlacing={() => startPlacing(panel)}
             >
               {panelContent[panel]()}
             </PanelArea>
@@ -635,6 +708,22 @@ function BoardAnalysis() {
             <GameNotation
               topBar
               markOpenVariations
+              headerGrip={
+                arrangingAvailable ? (
+                  <IconAction
+                    label={t("Board.Arrange.MoveArea", { area: t("Board.Area.Notation") })}
+                    size="sm"
+                    variant="subtle"
+                    className={classes.grip}
+                    data-arrange-grip="bottomRight"
+                    onPointerDown={(e) => beginDrag("bottomRight", e)}
+                    onClickCapture={consumeSuppressedClick}
+                    onClick={() => startPlacing("bottomRight")}
+                  >
+                    <GripVertical size="0.875rem" />
+                  </IconAction>
+                ) : undefined
+              }
               controls={
                 <BoardControls
                   boardRef={boardRef}

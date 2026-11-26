@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, varianter, kommentarer og piler
 summary: Legg inn trekk, rediger stillinger, håndter varianter, skriv kommentarer, legg til annotasjoner og tegn piler på brettet.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 Åpne et analysebrett fra [[page:new-tab]] ved å klikke {{label:Home.Card.AnalysisBoard.Title}}, eller ved å åpne et lagret parti eller repertoar fra [[page:library]].
@@ -24,3 +24,5 @@ For å annotere trekk og skrive kommentarer åpner du fanen {{label:Board.Tabs.A
 For å tegne piler og markere felter holder du nede høyre museknapp og drar over brettet (eller høyreklikker på et felt for å tegne en sirkel). Hold nede modifikatortaster for ulike farger: Shift for {{label:Settings.Drawing.Red}}, Alt for {{label:Settings.Drawing.Blue}}, Shift+Alt for {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd på macOS) for {{label:Settings.Drawing.Orange}} og Ctrl+Alt (Cmd+Alt på macOS) for {{label:Settings.Drawing.Cyan}}. Se hele tegnelisten i [[settings-category:keybinds]].
 
 Fanen {{label:Board.Tabs.Info}} viser partihoder, FEN, PGN-tekst og trestatistikk, og lar deg bytte mellom partier i en PGN-fil med flere partier.
+
+For å ordne analysebrettet drar du en panelfane ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} eller {{label:Board.Tabs.Info}}) eller bruker grepsknappene i fanelinjen, notasjonshodet eller topplinjen til et panelområde for å plassere områder ved siden av, over eller under et annet område med forhåndsvisning eller tastatur. For å la et panel strekke seg over to områder (for eksempel {{label:Board.Tabs.Database}} over både notasjonen og fanene) plasserer du først panelet over ett av dem og flytter deretter det andre ved siden av. Bruk {{label:Board.Area.ReturnToTabs}} eller dra et panelområde tilbake over fanelisten for å sende det tilbake til fanene, og bruk [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) for å gjenopprette standardoppsettet.

@@ -2,7 +2,7 @@
 id: analysis-board
 title: 분석 보드, 변형 수순, 코멘트 및 화살표
 summary: 수 입력, 포지션 편집, 변형 수순 관리, 코멘트 작성, 주석 추가 및 보드에 화살표 그리기.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 [[page:new-tab]]에서 {{label:Home.Card.AnalysisBoard.Title}}을(를) 클릭하거나 [[page:library]]에서 저장된 대국이나 레퍼토리를 열어 분석 보드를 시작하세요.
@@ -24,3 +24,5 @@ source: 14ba83ba3068d6ed
 화살표를 그리거나 칸을 강조하려면 보드 위에서 마우스 오른쪽 버튼을 누른 채 드래그하세요(칸에 원을 그리려면 마우스 오른쪽 버튼으로 클릭). 보조 키를 누른 채 그리면 색상이 달라집니다: Shift는 {{label:Settings.Drawing.Red}}, Alt는 {{label:Settings.Drawing.Blue}}, Shift+Alt는 {{label:Settings.Drawing.Yellow}}, Ctrl(macOS에서는 Cmd)은 {{label:Settings.Drawing.Orange}}, Ctrl+Alt(macOS에서는 Cmd+Alt)는 {{label:Settings.Drawing.Cyan}}입니다. 전체 그리기 목록은 [[settings-category:keybinds]]에서 확인할 수 있습니다.
 
 {{label:Board.Tabs.Info}} 탭에는 대국 헤더, FEN, PGN 텍스트 및 트리 통계가 표시되며, 여러 대국이 담긴 PGN 파일에서 대국 간 전환도 할 수 있습니다.
+
+분석 보드의 영역을 배치하려면 패널 탭({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} 또는 {{label:Board.Tabs.Info}})을 드래그하거나 탭 막대, 기보 헤더, 패널 영역 헤더의 이동 손잡이 버튼을 사용해 미리보기 또는 키보드로 다른 영역의 옆, 위, 아래에 배치할 수 있습니다. 하나의 패널을 두 영역 위에 걸쳐 놓으려면(예: 기보와 탭 위에 {{label:Board.Tabs.Database}} 배치) 먼저 한 영역 위에 패널을 놓은 다음 다른 영역을 그 옆으로 옮기세요. 패널 영역을 탭으로 되돌리려면 {{label:Board.Area.ReturnToTabs}}를 누르거나 탭 목록 위로 드래그하고, 기본 배치로 복원하려면 [[setting:board-layout]]({{label:Settings.BoardLayout.Reset}})을 사용하세요.

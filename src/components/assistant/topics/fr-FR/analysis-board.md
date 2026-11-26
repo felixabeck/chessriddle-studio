@@ -2,7 +2,7 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
@@ -24,3 +24,5 @@ Pour annoter des coups et rédiger des commentaires, ouvrez l’onglet {{label:B
 Pour tracer des flèches et mettre des cases en évidence, faites un clic droit maintenu et glissez sur l’échiquier (ou faites un clic droit sur une case pour dessiner un cercle). Maintenez des touches modificatrices pour changer de couleur : Maj pour {{label:Settings.Drawing.Red}}, Alt pour {{label:Settings.Drawing.Blue}}, Maj+Alt pour {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd sur macOS) pour {{label:Settings.Drawing.Orange}} et Ctrl+Alt (Cmd+Alt sur macOS) pour {{label:Settings.Drawing.Cyan}}. Consultez la liste complète des commandes de dessin dans [[settings-category:keybinds]].
 
 L’onglet {{label:Board.Tabs.Info}} affiche les en-têtes de la partie, le FEN, le texte PGN et les statistiques d’arbre, et vous permet de passer d’une partie à l’autre dans un fichier PGN multi-parties.
+
+Pour organiser l’échiquier d’analyse, faites glisser un onglet de panneau ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} ou {{label:Board.Tabs.Info}}) ou utilisez les poignées de la barre d’onglets, de l’en-tête de la notation ou de l’en-tête d’une zone de panneau afin de placer des zones à côté, au-dessus ou au-dessous d’une autre zone avec aperçu ou au clavier. Pour étendre un panneau au-dessus de deux zones (par exemple {{label:Board.Tabs.Database}} au-dessus de la notation et des onglets), placez d’abord le panneau au-dessus de l’une d’elles, puis déplacez l’autre à côté. Cliquez sur {{label:Board.Area.ReturnToTabs}} ou faites glisser une zone de panneau sur la barre d’onglets pour la remettre dans les onglets, et utilisez [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) pour rétablir la disposition par défaut.

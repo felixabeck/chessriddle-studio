@@ -2,7 +2,7 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
@@ -24,3 +24,5 @@ Per annotare le mosse e scrivere commenti, apri la scheda {{label:Board.Tabs.Ann
 Per disegnare frecce ed evidenziare caselle, fai clic con il tasto destro e trascina sulla scacchiera (oppure fai clic destro su una casella per un cerchio). Tieni premuti i tasti modificatori per usare colori diversi: Maiusc per {{label:Settings.Drawing.Red}}, Alt per {{label:Settings.Drawing.Blue}}, Maiusc+Alt per {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd su macOS) per {{label:Settings.Drawing.Orange}} e Ctrl+Alt (Cmd+Alt su macOS) per {{label:Settings.Drawing.Cyan}}. Consulta l’elenco completo delle scorciatoie di disegno in [[settings-category:keybinds]].
 
 La scheda {{label:Board.Tabs.Info}} mostra le intestazioni della partita, la FEN, il testo PGN e le statistiche dell’albero, e ti consente di passare da una partita all’altra in un file PGN multi-partita.
+
+Per organizzare la scacchiera di analisi, trascina la scheda di un pannello ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} o {{label:Board.Tabs.Info}}) oppure usa le impugnature nella barra delle schede, nell’intestazione della notazione o nell’intestazione di un’area pannello per posizionare le aree accanto, sopra o sotto un’altra area con anteprima o da tastiera. Per estendere un pannello sopra due aree (ad esempio {{label:Board.Tabs.Database}} sopra notazione e schede), posiziona prima il pannello sopra una delle due e poi sposta l’altra accanto. Usa {{label:Board.Area.ReturnToTabs}} oppure trascina un’area pannello sopra la barra delle schede per riportarla nelle schede, e usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) per ripristinare la disposizione predefinita.

@@ -1,5 +1,14 @@
 import { useAtom, useAtomValue } from "jotai";
-import { createContext, type ReactNode, useCallback, useMemo, useState } from "react";
+import {
+  createContext,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Mosaic } from "react-mosaic-component";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useElementWidth } from "@/hooks/useElementWidth";
@@ -10,15 +19,20 @@ import {
   BASE_AREA_IDS,
   BOARD_AREA_IDS,
   type BoardAreaId,
+  canTakeOutPanel,
   isPanelArea,
   type PanelAreaId,
+  placeArea,
+  type PlacementSide,
   returnPanelArea,
   shownArrangement,
 } from "@/state/boardArrangement";
 import { coachEnabledAtom } from "@/state/coach";
 import { boardArrangementAtom, type ViewId, windowsStateAtom } from "@/state/layoutStorage";
 import { arrangementFitsWidth, needsTwoPaneStack } from "@/state/paneLayout";
+import BoardArrangeOverlay from "./BoardArrangeOverlay";
 import classes from "./BoardsPage.module.css";
+import { useBoardArranging } from "./useBoardArranging";
 
 const resize = { minimumPaneSizePercentage: 0 };
 const EMPTY_PANEL_SET: ReadonlySet<PanelAreaId> = new Set();
@@ -34,14 +48,29 @@ export interface BoardArrangementContextValue {
   shownPanelAreas: ReadonlySet<PanelAreaId>;
   /** Whether the analysis board's own arrangement is currently displayed and arrangeable. */
   arrangingAvailable: boolean;
+  /** Whether `panel` is in the strip and can be taken out without breaking the strip rule. */
+  canTakeOut: (panel: PanelAreaId) => boolean;
   /** Returns a panel area back to the tab strip. */
   returnPanel: (panel: PanelAreaId) => void;
+  /** Registers a listener invoked whenever a panel area returns to the tab strip. */
+  registerReturnListener: (listener: ((panel: PanelAreaId) => void) | null) => void;
+  /** Starts a pointer-capture drag for `area`. */
+  beginDrag: (area: BoardAreaId, event: ReactPointerEvent<HTMLElement>) => void;
+  /** Suppresses the trailing click after a drag gesture finishes. */
+  consumeSuppressedClick: (event: ReactMouseEvent) => void;
+  /** Starts keyboard/click placing for `area`, returning focus on cancel to `originArea`. */
+  startPlacing: (area: BoardAreaId, originArea?: BoardAreaId) => void;
 }
 
 export const BoardArrangementContext = createContext<BoardArrangementContextValue>({
   shownPanelAreas: EMPTY_PANEL_SET,
   arrangingAvailable: false,
+  canTakeOut: () => false,
   returnPanel: () => undefined,
+  registerReturnListener: () => undefined,
+  beginDrag: () => undefined,
+  consumeSuppressedClick: () => undefined,
+  startPlacing: () => undefined,
 });
 
 function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct?: boolean }) {
@@ -72,6 +101,7 @@ export default function BoardTabLayout({
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
+  const returnListenerRef = useRef<((panel: PanelAreaId) => void) | null>(null);
 
   const hiddenPanels = coachEnabled ? EMPTY_PANEL_SET : COACH_HIDDEN_SET;
   const displayedArrangement = useMemo(
@@ -101,12 +131,42 @@ export default function BoardTabLayout({
       ) as Record<BoardAreaId, HTMLDivElement>,
   );
 
+  const registerReturnListener = useCallback((listener: ((panel: PanelAreaId) => void) | null) => {
+    returnListenerRef.current = listener;
+  }, []);
+
   const returnPanel = useCallback(
     (panel: PanelAreaId) => {
+      returnListenerRef.current?.(panel);
       setStoredArrangement((stored) => returnPanelArea(stored, panel));
     },
     [setStoredArrangement],
   );
+
+  const handlePlace = useCallback(
+    (area: BoardAreaId, target: BoardAreaId, side: PlacementSide) => {
+      setStoredArrangement((stored) => placeArea(stored, area, target, side));
+    },
+    [setStoredArrangement],
+  );
+
+  const canTakeOut = useCallback(
+    (panel: PanelAreaId) => canTakeOutPanel(storedArrangement, panel),
+    [storedArrangement],
+  );
+
+  const arranging = useBoardArranging({
+    enabled: useArrangement,
+    layoutRef: ref,
+    targets,
+    storedArrangement,
+    displayedArrangement,
+    hiddenPanels,
+    width,
+    rootFont,
+    onPlace: handlePlace,
+    onReturn: returnPanel,
+  });
 
   const shownPanelAreas = useMemo<ReadonlySet<PanelAreaId>>(
     () => (useArrangement ? new Set(arrangementPanelAreas(displayedArrangement)) : EMPTY_PANEL_SET),
@@ -117,9 +177,23 @@ export default function BoardTabLayout({
     () => ({
       shownPanelAreas,
       arrangingAvailable: useArrangement,
+      canTakeOut,
       returnPanel,
+      registerReturnListener,
+      beginDrag: arranging.beginDrag,
+      consumeSuppressedClick: arranging.consumeSuppressedClick,
+      startPlacing: arranging.startPlacing,
     }),
-    [shownPanelAreas, useArrangement, returnPanel],
+    [
+      shownPanelAreas,
+      useArrangement,
+      canTakeOut,
+      returnPanel,
+      registerReturnListener,
+      arranging.beginDrag,
+      arranging.consumeSuppressedClick,
+      arranging.startPlacing,
+    ],
   );
 
   const shown: readonly BoardAreaId[] = stacked
@@ -164,6 +238,14 @@ export default function BoardTabLayout({
             <TargetHost key={id} target={targets[id]} />
           ))}
         </div>
+        {useArrangement && (
+          <BoardArrangeOverlay
+            dragPreview={arranging.dragPreview}
+            placing={arranging.placing}
+            onSelectTarget={arranging.applyPlacingTarget}
+            onCancelPlacing={arranging.cancelPlacing}
+          />
+        )}
       </div>
       <BoardArrangementContext.Provider value={arrangementContext}>
         {children}

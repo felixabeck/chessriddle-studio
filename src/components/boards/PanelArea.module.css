@@ -12,6 +12,14 @@
   min-width: 0;
   padding: 4px var(--mantine-spacing-xs);
   border-bottom: 1px solid var(--cf-border);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.grip {
+  flex-shrink: 0;
+  cursor: grab;
 }
 
 .titleGroup {

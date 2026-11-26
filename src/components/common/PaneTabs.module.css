@@ -32,20 +32,27 @@
   flex-direction: column;
 }
 
-.root[data-compact] > .list {
+.root[data-compact] > .list,
+.root[data-compact] > [data-board-tab-list="true"] {
   flex-wrap: wrap;
   max-height: 40%;
   overflow: auto;
 }
 
-.root[data-compact] > .list > .tab {
+.root[data-compact] > [data-board-tab-list="true"] > .list {
+  flex-wrap: wrap;
+}
+
+.root[data-compact] > .list > .tab,
+.root[data-compact] > [data-board-tab-list="true"] > .list > .tab {
   flex: 0 0 100%;
   flex-direction: column;
   min-width: 100%;
   max-width: 100%;
 }
 
-.root[data-compact] > .list .label {
+.root[data-compact] > .list .label,
+.root[data-compact] > [data-board-tab-list="true"] > .list .label {
   flex: 0 1 auto;
   min-width: 0;
   white-space: normal;

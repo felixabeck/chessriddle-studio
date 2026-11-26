@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盤、變例、註解與箭頭
 summary: 輸入著法、編輯局面、管理變例、撰寫註解、新增評註符號，以及在棋盤上繪製箭頭。
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 從 [[page:new-tab]] 點擊 {{label:Home.Card.AnalysisBoard.Title}}，或從 [[page:library]] 開啟已儲存的對局或開局庫，即可開啟分析棋盤。
@@ -24,3 +24,5 @@ source: 14ba83ba3068d6ed
 若要在棋盤上繪製箭頭與標記棋格，請按住滑鼠右鍵拖曳（或在棋格上按右鍵繪製圓圈）。按住輔助鍵可切換不同顏色：Shift 為 {{label:Settings.Drawing.Red}}、Alt 為 {{label:Settings.Drawing.Blue}}、Shift+Alt 為 {{label:Settings.Drawing.Yellow}}、Ctrl（macOS 為 Cmd）為 {{label:Settings.Drawing.Orange}}、Ctrl+Alt（macOS 為 Cmd+Alt）為 {{label:Settings.Drawing.Cyan}}。完整繪圖清單請參閱 [[settings-category:keybinds]]。
 
 {{label:Board.Tabs.Info}} 分頁會顯示對局標頭、FEN、PGN 文字與變化樹統計資料，並可讓您在多對局 PGN 檔案中切換對局。
+
+要調整分析棋盤的版面配置，可以拖曳面板分頁（{{label:Board.Tabs.Analysis}}、{{label:Board.Tabs.Database}}、{{label:Board.Tabs.Annotate}}、{{label:Board.Tabs.Coach}}或{{label:Board.Tabs.Info}}），或使用分頁列、記譜標題列或面板區域標題列上的拖曳手把按鈕，透過預覽或鍵盤將區域放置到其他區域的左側、右側、上方或下方。若要讓一個面板橫跨兩個區域（例如將{{label:Board.Tabs.Database}}放在記譜和分頁上方），請先將該面板放到其中一個區域上方，再把另一個區域移到它旁邊。點擊{{label:Board.Area.ReturnToTabs}}或將面板區域拖回分頁列即可放回分頁，使用[[setting:board-layout]]（{{label:Settings.BoardLayout.Reset}}）可還原預設版面。

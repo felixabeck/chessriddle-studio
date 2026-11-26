@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analiz tahtası, varyasyonlar, yorumlar ve oklar
 summary: Hamle girme, konum düzenleme, varyasyonları yönetme, yorum yazma, açıklama ekleme ve tahta üzerinde oklar çizme.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 [[page:new-tab]] üzerinden {{label:Home.Card.AnalysisBoard.Title}} öğesine tıklayarak veya [[page:library]] sayfasından kayıtlı bir oyun ya da repertuvar açarak bir analiz tahtası açın.
@@ -24,3 +24,5 @@ Hamlelere açıklama eklemek ve yorum yazmak için {{label:Board.Tabs.Annotate}}
 Ok çizmek ve kareleri vurgulamak için tahta üzerinde sağ tıklayıp sürükleyin (veya daire çizmek için bir kareye sağ tıklayın). Farklı renkler için değiştirici tuşları basılı tutun: {{label:Settings.Drawing.Red}} için Shift, {{label:Settings.Drawing.Blue}} için Alt, {{label:Settings.Drawing.Yellow}} için Shift+Alt, {{label:Settings.Drawing.Orange}} için Ctrl (macOS'ta Cmd) ve {{label:Settings.Drawing.Cyan}} için Ctrl+Alt (macOS'ta Cmd+Alt). Çizim listesinin tamamını [[settings-category:keybinds]] bölümünde görebilirsiniz.
 
 {{label:Board.Tabs.Info}} sekmesi oyun başlıklarını, FEN'i, PGN metnini ve ağaç istatistiklerini gösterir; ayrıca çok oyunlu bir PGN dosyasındaki oyunlar arasında geçiş yapmanızı sağlar.
+
+Analiz tahtasını düzenlemek için bir panel sekmesini ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} veya {{label:Board.Tabs.Info}}) sürükleyin ya da sekme çubuğu, notasyon başlığı veya bir panel alanının başlığındaki tutma düğmelerini kullanarak alanları önizlemeyle veya klavyeyle başka bir alanın yanına, üstüne veya altına yerleştirin. Bir paneli iki alanın üzerine yaymak için (örneğin {{label:Board.Tabs.Database}} panelini hem notasyonun hem sekmelerin üstüne yerleştirmek için) önce paneli bunlardan birinin üstüne koyun, ardından diğerini yanına taşıyın. Bir panel alanını sekmelere geri göndermek için {{label:Board.Area.ReturnToTabs}} düğmesini kullanın veya sekme listesinin üzerine sürükleyin; varsayılan düzeni geri yüklemek için [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) ayarını kullanın.

@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: 14ba83ba3068d6ed
+source: 9fead5328d0f7506
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
@@ -24,3 +24,5 @@ Aby oceniać ruchy i pisać komentarze, otwórz kartę {{label:Board.Tabs.Annota
 Aby rysować strzałki i wyróżniać pola, przytrzymaj prawy przycisk myszy i przeciągnij po szachownicy (lub kliknij pole prawym przyciskiem, aby narysować okrąg). Przytrzymaj klawisze modyfikujące, aby zmienić kolor: Shift dla {{label:Settings.Drawing.Red}}, Alt dla {{label:Settings.Drawing.Blue}}, Shift+Alt dla {{label:Settings.Drawing.Yellow}}, Ctrl (Cmd na macOS) dla {{label:Settings.Drawing.Orange}} i Ctrl+Alt (Cmd+Alt na macOS) dla {{label:Settings.Drawing.Cyan}}. Pełną listę rysowania znajdziesz w [[settings-category:keybinds]].
 
 Karta {{label:Board.Tabs.Info}} wyświetla nagłówki partii, FEN, tekst PGN oraz statystyki drzewa i pozwala przełączać się między partiami w pliku PGN zawierającym wiele partii.
+
+Aby ułożyć obszary szachownicy analizy, przeciągnij kartę panelu ({{label:Board.Tabs.Analysis}}, {{label:Board.Tabs.Database}}, {{label:Board.Tabs.Annotate}}, {{label:Board.Tabs.Coach}} lub {{label:Board.Tabs.Info}}) albo użyj uchwytów na pasku kart, w nagłówku notacji lub w nagłówku obszaru panelu, aby umieścić obszary obok, nad lub pod innym obszarem z podglądem albo za pomocą klawiatury. Aby rozciągnąć panel nad dwoma obszarami (na przykład {{label:Board.Tabs.Database}} nad notacją i kartami), najpierw umieść panel nad jednym z nich, a potem przenieś drugi obok. Użyj {{label:Board.Area.ReturnToTabs}} lub przeciągnij obszar panelu z powrotem na pasek kart, aby przywrócić go do kart, oraz użyj [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}), aby przywrócić domyślny układ.
