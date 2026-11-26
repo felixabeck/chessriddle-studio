@@ -4,7 +4,13 @@ import type {
     ConnectionSummary,
     ModelList,
 } from "../src/bindings/generated";
-import { expect, test, waitForTransitionsSettled, type MockScenario } from "./fixtures";
+import {
+    expect,
+    preserveStorageForReload,
+    test,
+    waitForTransitionsSettled,
+    type MockScenario,
+} from "./fixtures";
 
 const connection: ConnectionSummary = {
     handle: "assistant-connection",
@@ -176,4 +182,138 @@ test("ask the Assistant, follow a setting link, and open prefilled feedback", as
         await assertAccessible();
         await expect(feedbackDialog).toHaveScreenshot("assistant-feedback-prefilled.png");
     }
+});
+
+test("resize the Assistant dock by mouse and keyboard, clamp limits, reset, persist, and omit handle in overlay", async ({
+    page,
+    mockScenario,
+    assertAccessible,
+}, testInfo) => {
+    const isNarrow = testInfo.project.name === "assistant-narrow";
+
+    await mockScenario({ commands });
+
+    if (isNarrow) {
+        await page.addInitScript(() => {
+            window.localStorage.setItem("assistant-dock-width", "34");
+        });
+        await page.goto("/");
+
+        await page.getByRole("button", { name: "Assistant", exact: true }).click();
+        const panel = page.getByTestId("assistant-panel");
+        await expect(panel).toBeVisible();
+        await expect(panel).toHaveAttribute("data-overlay", "true");
+        await expect(panel.getByRole("separator")).toHaveCount(0);
+
+        const panelBox = await panel.boundingBox();
+        const viewport = page.viewportSize()!;
+        expect(panelBox).not.toBeNull();
+        expect(Math.abs(panelBox!.width - viewport.width)).toBeLessThanOrEqual(2);
+        expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+            "34",
+        );
+        return;
+    }
+
+    await page.goto("/");
+    const openAssistant = async () => {
+        await page.getByRole("button", { name: "Assistant", exact: true }).click();
+        const panel = page.getByTestId("assistant-panel");
+        await expect(panel).toBeVisible();
+        return panel;
+    };
+
+    const panel = await openAssistant();
+    const handle = panel.getByRole("separator", { name: "Resize Assistant" });
+    await expect(handle).toBeVisible();
+
+    const widthOf = async () => (await panel.boundingBox())!.width;
+    const viewportWidth = page.viewportSize()!.width;
+    const maxPx = viewportWidth * 0.42;
+    const minPx = 20 * 16;
+    const defaultPx = 24 * 16;
+
+    expect(Math.abs((await widthOf()) - defaultPx)).toBeLessThanOrEqual(2);
+
+    const dragBy = async (deltaX: number) => {
+        const box = (await handle.boundingBox())!;
+        const startX = box.x + box.width / 2;
+        const startY = box.y + box.height / 2;
+        await page.mouse.move(startX, startY);
+        await page.mouse.down();
+        await page.mouse.move(startX + deltaX, startY, { steps: 6 });
+        await page.mouse.up();
+    };
+
+    // Drag left by 160px (10rem) -> 34rem (544px).
+    await dragBy(-160);
+    const widened = await widthOf();
+    expect(Math.abs(widened - (defaultPx + 160))).toBeLessThanOrEqual(3);
+    const storedAfterDrag = Number(
+        await page.evaluate(() => window.localStorage.getItem("assistant-dock-width")),
+    );
+    expect(Math.abs(storedAfterDrag - 34)).toBeLessThanOrEqual(0.25);
+
+    await waitForTransitionsSettled(page);
+    await assertAccessible();
+    await expect(page).toHaveScreenshot("assistant-resized-dock.png");
+
+    // Reload keeps the remembered width.
+    await preserveStorageForReload(page);
+    await openAssistant();
+    expect(Math.abs((await widthOf()) - widened)).toBeLessThanOrEqual(2);
+
+    // Drag past the upper limit (42vw) and lower limit (20rem), asserting stored values are clamped too.
+    await dragBy(-500);
+    expect(Math.abs((await widthOf()) - maxPx)).toBeLessThanOrEqual(2);
+    const storedAtMax = Number(
+        await page.evaluate(() => window.localStorage.getItem("assistant-dock-width")),
+    );
+    expect(storedAtMax).toBeLessThanOrEqual(Math.round((maxPx / 16) * 100) / 100);
+    expect(storedAtMax).toBeGreaterThanOrEqual(Math.round((maxPx / 16) * 100) / 100 - 0.1);
+
+    await dragBy(600);
+    expect(Math.abs((await widthOf()) - minPx)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "20",
+    );
+
+    // Keyboard resize from the floor: ArrowRight stays clamped at 20rem; two ArrowLeft widen by 3rem (48px), one ArrowRight narrows by 1.5rem (24px).
+    await handle.focus();
+    await handle.press("ArrowRight");
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "20",
+    );
+    await handle.press("ArrowLeft");
+    await handle.press("ArrowLeft");
+    expect(Math.abs((await widthOf()) - (minPx + 48))).toBeLessThanOrEqual(2);
+    await handle.press("ArrowRight");
+    expect(Math.abs((await widthOf()) - (minPx + 24))).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "21.5",
+    );
+
+    // Double-click resets to 24rem.
+    await handle.dblclick();
+    expect(Math.abs((await widthOf()) - defaultPx)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "24",
+    );
+
+    // Out-of-range stored values are clamped visually and left untouched in storage.
+    await page.evaluate(() => window.localStorage.setItem("assistant-dock-width", "10"));
+    await preserveStorageForReload(page);
+    await openAssistant();
+    expect(Math.abs((await widthOf()) - minPx)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "10",
+    );
+
+    await page.evaluate(() => window.localStorage.setItem("assistant-dock-width", "90"));
+    await preserveStorageForReload(page);
+    await openAssistant();
+    expect(Math.abs((await widthOf()) - maxPx)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => window.localStorage.getItem("assistant-dock-width"))).toBe(
+        "90",
+    );
 });

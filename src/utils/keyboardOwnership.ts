@@ -38,6 +38,8 @@ const KEY_HANDLING_WIDGETS: { selector: string; keys: readonly string[] }[] = [
     { selector: '[role="slider"]', keys: [...ARROW_KEYS, "Home", "End"] },
     // the board's keyboard move grid (Board.tsx keyboardMove)
     { selector: '[role="grid"]', keys: [...ARROW_KEYS] },
+    // the Assistant dock's width handle (AssistantPanelHost.tsx)
+    { selector: '[role="separator"]', keys: ["ArrowLeft", "ArrowRight"] },
 ];
 
 /** True when the event target is inside a widget that handles this key itself (keydown targets the focused element). */
@@ -49,12 +51,12 @@ export function isKeyHandledByFocusedWidget(event: KeyboardEvent): boolean {
     );
 }
 
-/** Hotkey filter: true when an open dialog owns the key (relative to `surface`) or when the event target is inside a slider/board grid that handles this key itself (independent of `surface`). */
+/** Hotkey filter: true when an open dialog owns the key (relative to `surface`) or when the event target is inside a widget that handles this key itself (independent of `surface`). */
 export function isHotkeySuppressed(event: KeyboardEvent, surface: Element | null): boolean {
     return isKeyboardOwnedElsewhere(event, surface) || isKeyHandledByFocusedWidget(event);
 }
 
-/** react-hotkeys-hook options for a surface that is never rendered inside a dialog: keys owned by an open dialog and keys a focused slider/board grid handles itself are ignored (not fired, not prevented, not stopped). */
+/** react-hotkeys-hook options for a surface that is never rendered inside a dialog: keys owned by an open dialog and keys a focused widget handles itself are ignored (not fired, not prevented, not stopped). */
 export const backgroundHotkeyOptions = {
     ignoreEventWhen: (event: KeyboardEvent) => isHotkeySuppressed(event, null),
 };

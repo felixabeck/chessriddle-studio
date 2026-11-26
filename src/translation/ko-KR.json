@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "질문, 이 창의 대화 내용, 앱 버전, 운영 체제, 인터페이스 언어, 현재 페이지 및 보드 탭 종류, 설치된 엔진 이름, 참조 데이터베이스 선택 여부, 그리고 앱의 도움말 항목, 설정 목록 및 링크 대상이 {{provider}}에 전송됩니다. 기보, 포지션, 파일, 파일 이름 및 경로, 데이터베이스 이름, 계정 이름, 키 및 설정 값은 전송되지 않습니다. ChessRiddle 자체 서버는 관여하지 않습니다.",
     "Assistant.Notice.Title": "전송하기 전에",
     "Assistant.ReadingTopics": "도움말 항목 읽는 중…",
+    "Assistant.Resize": "Assistant 크기 조절",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "체스판, 아래쪽: {{orientation}}",
     "Board.Action.AddGame": "게임 추가",

@@ -17,6 +17,7 @@ import {
     type PlacementSide,
 } from "@/state/boardArrangement";
 import { isPlainEscape } from "@/utils/keyboardOwnership";
+import { capturePointer, releasePointerCaptureSafely } from "@/utils/pointerCapture";
 import {
     type ArrangeTarget,
     hitTestArrangeTarget,
@@ -75,18 +76,6 @@ function readTabListRect(layoutEl: HTMLElement | null): RectBox | null {
     if (!list) return null;
     const rect = list.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 ? rect : null;
-}
-
-function releaseCaptureSafely(element: HTMLElement, pointerId: number) {
-    try {
-        if (typeof element.hasPointerCapture === "function") {
-            if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
-        } else if (typeof element.releasePointerCapture === "function") {
-            element.releasePointerCapture(pointerId);
-        }
-    } catch {
-        // Pointer capture may already have been released by the browser.
-    }
 }
 
 /**
@@ -207,7 +196,7 @@ export function useBoardArranging({
         sessionRef.current = null;
         session.cleanup();
         if (releaseCapture) {
-            releaseCaptureSafely(session.element, session.pointerId);
+            releasePointerCaptureSafely(session.element, session.pointerId);
         }
         setDragPreview(null);
     }, []);
@@ -344,13 +333,9 @@ export function useBoardArranging({
                         moveEvent.clientY - current.startY,
                     );
                     if (distance < ARRANGE_DRAG_THRESHOLD_PX) return;
-                    if (typeof current.element.setPointerCapture === "function") {
-                        try {
-                            current.element.setPointerCapture(current.pointerId);
-                        } catch {
-                            endDragSession(false);
-                            return;
-                        }
+                    if (!capturePointer(current.element, current.pointerId)) {
+                        endDragSession(false);
+                        return;
                     }
                     current.active = true;
                 }

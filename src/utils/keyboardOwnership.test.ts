@@ -133,6 +133,11 @@ test.each([
     { role: "grid", key: "ArrowLeft", nested: false, handled: true },
     { role: "grid", key: "Home", nested: false, handled: false },
     { role: "slider", key: "Delete", nested: true, handled: false },
+    { role: "separator", key: "ArrowLeft", nested: false, handled: true },
+    { role: "separator", key: "ArrowRight", nested: false, handled: true },
+    { role: "separator", key: "ArrowUp", nested: false, handled: false },
+    { role: "separator", key: "ArrowDown", nested: false, handled: false },
+    { role: "separator", key: "Delete", nested: false, handled: false },
     { role: "button", key: "ArrowLeft", nested: false, handled: false },
     // VariationChooserCard's focusable listbox is driven by MoveControls' arrow hotkeys.
     { role: "listbox", key: "ArrowDown", nested: false, handled: false },

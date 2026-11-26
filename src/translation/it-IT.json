@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "La tua domanda, la conversazione di questa finestra, la versione dell'app, il sistema operativo, la lingua dell'interfaccia, la pagina corrente e il tipo di scheda scacchiera, i nomi dei motori installati, se è stato scelto un database di riferimento, e gli argomenti della guida, l'elenco delle impostazioni e le destinazioni dei link vengono inviati a {{provider}}. Partite, posizioni, file, nomi e percorsi di file, nomi di database, nomi di account, chiavi e valori delle impostazioni non vengono inviati. I server di ChessRiddle non sono coinvolti.",
     "Assistant.Notice.Title": "Prima di inviare",
     "Assistant.ReadingTopics": "Lettura degli argomenti della guida…",
+    "Assistant.Resize": "Ridimensiona Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Scacchiera, lato in basso: {{orientation}}",
     "Board.Action.AddGame": "Aggiungi partita",

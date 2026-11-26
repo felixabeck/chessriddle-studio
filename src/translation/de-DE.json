@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Deine Frage, das Gespräch dieses Fensters, App-Version, Betriebssystem, Oberflächensprache, aktuelle Seite und Art des Brett-Tabs, Namen der installierten Engines, ob eine Referenzdatenbank gewählt ist, sowie Hilfethemen, Einstellungsliste und Linkziele der App werden an {{provider}} gesendet. Partien, Stellungen, Dateien, Dateinamen und -pfade, Datenbanknamen, Kontonamen, Schlüssel und Einstellungswerte werden nicht gesendet. ChessRiddles eigene Server sind nicht beteiligt.",
     "Assistant.Notice.Title": "Vor dem Senden",
     "Assistant.ReadingTopics": "Hilfethemen werden gelesen…",
+    "Assistant.Resize": "Größe von Assistant ändern",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Schachbrett, unten: {{orientation}}",
     "Board.Action.AddGame": "Partie hinzufügen",

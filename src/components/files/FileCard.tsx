@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { tabsAtom } from "@/state/atoms";
 import { StaleFileGameError } from "@/state/fileStructureChange";
-import { rootFontPx } from "@/state/paneLayout";
+import { rootFontPx } from "@/hooks/useRootFontPx";
 import { IconAction } from "@/components/common/IconAction";
 import { OpenGameButton, useGameOpen } from "@/components/common/gameOpen";
 import NewGameButton from "@/components/boards/NewGameButton";

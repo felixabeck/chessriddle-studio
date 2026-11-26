@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "你的問題、目前視窗的對話、應用程式版本、作業系統、介面語言、目前頁面與棋盤分頁類型、已安裝的引擎名稱、是否選擇了參考資料庫，以及應用程式的說明主題、設定清單與連結目標將傳送給 {{provider}}。對局、局面、檔案、檔案名稱與路徑、資料庫名稱、帳號名稱、金鑰與設定值不會被傳送。不涉及 ChessRiddle 自己的伺服器。",
     "Assistant.Notice.Title": "傳送前",
     "Assistant.ReadingTopics": "正在讀取說明主題…",
+    "Assistant.Resize": "調整 Assistant 大小",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "棋盤，底部為{{orientation}}",
     "Board.Action.AddGame": "新增對局",

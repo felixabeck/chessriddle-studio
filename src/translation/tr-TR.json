@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Sorunuz, bu penceredeki sohbet, uygulama sürümü, işletim sistemi, arayüz dili, geçerli sayfa ve tahta sekmesi türü, yüklü motor adları, referans veritabanı seçili olup olmadığı ve uygulamanın yardım konuları, ayar listesi ve bağlantı hedefleri {{provider}} sağlayıcısına gönderilir. Oyunlar, konumlar, dosyalar, dosya adları ve yolları, veritabanı adları, hesap adları, anahtarlar ve ayar değerleri gönderilmez. ChessRiddle'ın kendi sunucuları dahil değildir.",
     "Assistant.Notice.Title": "Göndermeden önce",
     "Assistant.ReadingTopics": "Yardım konuları okunuyor…",
+    "Assistant.Resize": "Assistant boyutunu değiştir",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Satranç tahtası, altta: {{orientation}}",
     "Board.Action.AddGame": "Oyun ekle",

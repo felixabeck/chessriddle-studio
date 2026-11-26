@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "你的问题、当前窗口的对话、应用版本、操作系统、界面语言、当前页面与棋盘标签类型、已安装的引擎名称、是否选择了参考数据库，以及应用的帮助主题、设置列表和链接目标将发送给 {{provider}}。对局、局面、文件、文件名与路径、数据库名称、账号名称、密钥和设置值不会被发送。不涉及 ChessRiddle 自己的服务器。",
     "Assistant.Notice.Title": "发送前",
     "Assistant.ReadingTopics": "正在读取帮助主题…",
+    "Assistant.Resize": "调整 Assistant 大小",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "棋盘，底部为{{orientation}}",
     "Board.Action.AddGame": "添加对局",

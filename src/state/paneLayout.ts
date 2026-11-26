@@ -29,7 +29,3 @@ export function arrangementFitsWidth(
 export function needsTwoPaneStack(width: number, rootFont: number) {
     return width < paneFloorWidth(2, rootFont);
 }
-
-export function rootFontPx(computedFontSize: string, fontScale: number) {
-    return Number.parseFloat(computedFontSize) || (16 * fontScale) / 100;
-}

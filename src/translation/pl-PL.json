@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Twoje pytanie, rozmowa z tego okna, wersja aplikacji, system operacyjny, język interfejsu, bieżąca strona i typ karty szachownicy, nazwy zainstalowanych silników, informacja o wybranej bazie referencyjnej oraz tematy pomocy, lista ustawień i cele linków są wysyłane do {{provider}}. Partie, pozycje, pliki, nazwy i ścieżki plików, nazwy baz danych, nazwy kont, klucze i wartości ustawień nie są wysyłane. Serwery ChessRiddle nie biorą w tym udziału.",
     "Assistant.Notice.Title": "Przed wysłaniem",
     "Assistant.ReadingTopics": "Wczytywanie tematów pomocy…",
+    "Assistant.Resize": "Zmień rozmiar Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Szachownica, na dole: {{orientation}}",
     "Board.Action.AddGame": "Dodaj partię",

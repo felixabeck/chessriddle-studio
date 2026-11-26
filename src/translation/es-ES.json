@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Tu pregunta, la conversación de esta ventana, la versión de la aplicación, el sistema operativo, el idioma de la interfaz, la página actual y el tipo de pestaña de tablero, los nombres de los motores instalados, si hay una base de datos de referencia elegida, y los temas de ayuda, la lista de ajustes y los destinos de enlace se envían a {{provider}}. No se envían partidas, posiciones, archivos, nombres ni rutas de archivo, nombres de bases de datos, nombres de cuentas, claves ni valores de ajustes. Los servidores de ChessRiddle no intervienen.",
     "Assistant.Notice.Title": "Antes de enviar",
     "Assistant.ReadingTopics": "Leyendo temas de ayuda…",
+    "Assistant.Resize": "Cambiar tamaño de Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Tablero de ajedrez, abajo: {{orientation}}",
     "Board.Action.AddGame": "Añadir partida",

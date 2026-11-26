@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Spørsmålet ditt, samtalen i dette vinduet, appversjon, operativsystem, grensesnittspråk, gjeldende side og brettfane-type, navn på installerte motorer, om en referansedatabase er valgt, samt appens hjelpeemner, innstillingsliste og lenkemål sendes til {{provider}}. Partier, stillinger, filer, filnavn og stier, databasenavn, kontonavn, nøkler og innstillingsverdier sendes ikke. ChessRiddles egne servere er ikke involvert.",
     "Assistant.Notice.Title": "Før du sender",
     "Assistant.ReadingTopics": "Leser hjelpeemner…",
+    "Assistant.Resize": "Endre størrelse på Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Sjakkbrett, farge nederst: {{orientation}}",
     "Board.Action.AddGame": "Legg til parti",

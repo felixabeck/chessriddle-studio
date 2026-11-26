@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Votre question, la conversation de cette fenêtre, la version de l'application, le système d'exploitation, la langue de l'interface, la page active et le type d'onglet d'échiquier, les noms des moteurs installés, l'existence d'une base de données de référence choisie, ainsi que les rubriques d'aide, la liste des paramètres et les cibles de liens sont envoyés à {{provider}}. Les parties, positions, fichiers, noms et chemins de fichiers, noms de bases de données, noms de comptes, clés et valeurs des paramètres ne sont pas envoyés. Les serveurs de ChessRiddle ne sont pas impliqués.",
     "Assistant.Notice.Title": "Avant d'envoyer",
     "Assistant.ReadingTopics": "Lecture des rubriques d'aide…",
+    "Assistant.Resize": "Redimensionner l'Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Échiquier, camp en bas : {{orientation}}",
     "Board.Action.AddGame": "Ajouter une partie",

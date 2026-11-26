@@ -51,6 +51,7 @@
     "Assistant.Notice.Body": "Your question, this window's conversation, the app version, operating system, interface language, current page and board-tab kind, installed engine names, whether a reference database is chosen, and the app's help topics, settings list and link targets are sent to {{provider}}. Games, positions, files, file names and paths, database names, account names, keys and setting values are not sent. ChessRiddle's own servers are not involved.",
     "Assistant.Notice.Title": "Before you send",
     "Assistant.ReadingTopics": "Reading help topics…",
+    "Assistant.Resize": "Resize Assistant",
     "Assistant.Title": "Assistant",
     "Board.AccessibleName": "Chessboard, {{orientation}} orientation",
     "Board.Action.AddGame": "Add Game",

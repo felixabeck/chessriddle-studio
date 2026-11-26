@@ -103,6 +103,7 @@
         "src/utils/misc.ts",
         "src/utils/pgnComment.ts",
         "src/utils/phase.ts",
+        "src/utils/pointerCapture.ts",
         "src/utils/repertoire.ts",
         "src/utils/score.ts",
         "src/utils/scoresheet.ts",

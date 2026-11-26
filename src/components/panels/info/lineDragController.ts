@@ -1,4 +1,5 @@
 import type { PgnLineMove } from "@/bindings";
+import { capturePointer, releasePointerCaptureSafely } from "@/utils/pointerCapture";
 import type { GameSelectorRow } from "./GameSelector";
 import classes from "./GameSelector.module.css";
 
@@ -74,8 +75,7 @@ export function attachLineDragController({
         previous.preview.remove();
         previous.marker.remove();
         document.body.classList.remove(classes.dragging);
-        if (list.hasPointerCapture(previous.pointerId))
-            list.releasePointerCapture(previous.pointerId);
+        releasePointerCaptureSafely(list, previous.pointerId);
     };
 
     const update = (current: Session) => {
@@ -236,9 +236,7 @@ export function attachLineDragController({
                         DRAG_ACTIVATION_DISTANCE_PX
                     )
                         return;
-                    try {
-                        list.setPointerCapture(current.pointerId);
-                    } catch {
+                    if (!capturePointer(list, current.pointerId)) {
                         cancel();
                         return;
                     }
