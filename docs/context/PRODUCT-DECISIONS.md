@@ -39,6 +39,12 @@ finding ids and date.
   purpose, not storage format.
 - **Findings:** `f-20261001-11` (phase 1), `f-20261004-15` (phase 2, linked collections).
 - **Date:** 2026-10-04.
+- **Later state (noted 2026-11-26):** the Library is no longer a sidebar entry; since
+  2026-11-20 it is the first tab of the one navigation row ("2026-11-20 — One navigation row
+  replaces the title row, the tab row and the rail").
+  Linked collections still ship only on Linux and macOS (`linked_collections::supported` in
+  `src-tauri/src/db/linked_collections.rs`), although PGN writes on Windows work since
+  `d-20261124-22`; the reason given above for leaving Windows out is out of date.
 
 ## 2026-11-05 — The board tab stacks its tiles in narrow windows
 
@@ -217,6 +223,9 @@ finding ids and date.
   ask for one.
 - **Findings:** f-20261120-03 to f-20261120-06 are the upstream bug fixes taken in
   the same run; they needed no product decision.
+- **Later state (noted 2026-11-26):** the one-row navigation got its own entry, "2026-11-20 —
+  One navigation row replaces the title row, the tab row and the rail" (variant B).
+- **Date:** 2026-11-20.
 
 ## 2026-11-20 — One navigation row replaces the title row, the tab row and the rail
 
@@ -264,6 +273,9 @@ finding ids and date.
   engines are set up once and do not deserve a prominent spot. If feedback is hidden
   and a user has to click too much first, he might not send it. On the mockups and the
   proposals: "B Browser Taps, 2 menue entries, yes to all".
+- **Superseded in part (2026-11-21):** Settings, Accounts and Engines no longer appear as a
+  temporary item; they stay open as tabs until closed ("2026-11-21 — Accounts, Engines and
+  Settings stay open as tabs until closed").
 - **Date:** 2026-11-20.
 
 ## 2026-11-21 — Accounts, Engines and Settings stay open as tabs until closed
@@ -319,6 +331,11 @@ finding ids and date.
   need to be that wide and the annotate is more compact and better visualized on the
   right side next to the moves."
 - **Date:** 2026-11-22.
+- **Superseded (2026-11-25):** the switch "Panels beside the notation" is replaced by dragging
+  areas into place on the analysis board, and the place "Above the notation and tabs" is gone
+  (the engine bar's "Above the tabs" is the top of the tab strip area); see "2026-11-25 — The
+  analysis board is arranged by dragging; the Assistant gets a draggable width", Felix's answer 1.
+  A beside arrangement a user had is carried over.
 
 ## 2026-11-22 — Game report: marks option, backward analysis, saved-only numbers, Lichess-style accuracy, key moments
 
@@ -400,6 +417,13 @@ finding ids and date.
   stops the whole download instead of being skipped, so a mistyped username is noticed.
 - **Finding filed on the way:** f-20261122-03 (a Lichess account added without login on the
   Accounts page can never download its games).
+- **Later state (noted 2026-11-26):** "Prepare on board" now builds on the user's repertoire
+  and can show up to three columns, the reference database and Lichess included ("2026-11-24 —
+  Opponent preparation against the user's own repertoire, without AI" and "2026-11-25 — Lichess
+  All and Lichess Masters are normal sources of the board's Database panel").
+  The opening tree on the card itself also shows an Online section beside Over the board when
+  online games are linked (`src/components/databases/PlayerOpeningTree.tsx`), so it is no longer
+  over-the-board only.
 - **Date:** 2026-11-22.
 
 ## 2026-11-24 — Transposition markers span all chapters of a file up to a limit and switch chapter in the same tab
@@ -585,4 +609,39 @@ finding ids and date.
 - **Technical record:** `d-20261125-40` to `d-20261125-49` (DA1 to DA10 of the plan) and the
   bundle decisions `d-20261125-37` to `d-20261125-39` and `d-20261125-50` in `tasks/decisions.md`; the privacy text is
   ChessRiddle commit `7757a40b7`.
+- **Date:** 2026-11-25.
+
+## 2026-11-25 — The analysis board is arranged by dragging; the Assistant gets a draggable width
+
+- **Question:** Felix: "do you think it's worth building the whole new architecture now with the
+  movable windows? or even to show those windows and to extract them maybe so that a user with
+  two screens can set them on two, for example two different monitors, or is this too much and
+  not something for the first session?" He also said the Assistant "currently always sits on the
+  whole right side of the board. takes a lot of space which is not ideal in my estimation."
+- **Choice:** One drag-to-arrange mechanism inside the analysis board: the panels Analysis,
+  Database, Annotate, Coach and Info can be taken out of the tab strip and placed left, right,
+  above or below another area with a preview; the notation and the tab strip move the same way;
+  "Return to the tabs" and "Reset layout". The Assistant stays docked and gets a draggable,
+  remembered width. Felix ordered the plan ("Make a plan for both of those and review the plan
+  with anti-gravity.") and chose, by question dialog:
+  1. "Replace both (Recommended)": dragging replaces the Database "Pin" menu and the Settings
+     switch "Panels beside the notation" (his 2026-11-22 decision, superseded). "One way to
+     arrange things. A pinned Database and a beside arrangement are carried over automatically.
+     Two small losses: a dragged Database strip height resets once, and an engine bar pinned
+     across notation and tabs then sits above the tabs only."
+  2. "Keep it as it is (Recommended)": the compact engine bar keeps its position menu (above
+     tabs, above or below notation, below board); the full Analysis panel becomes draggable like
+     every other panel.
+  3. "Analysis board only (Recommended)": play, puzzle and ChessRiddle training boards keep their
+     layout with movable dividers.
+- **Agent proposals Felix confirmed by ordering the build, not his wording:** tabs stay the
+  default so a new user sees the simple screen; no free-floating windows; "Second monitor: not
+  now."; the Assistant stays docked because it must stay visible while it takes the user to a
+  setting.
+- **Consequences told to Felix:** the Assistant's narrowest width is 20rem; an arrangement that no
+  longer fits the window (for example after opening the Assistant) shows the plain tab layout
+  until there is room again.
+- **Technical record:** the plan's agent decisions 1 to 13 as `d-20261125-53` to
+  `d-20261125-65`, and the Photo tab staying in the tab strip as `d-20261125-66`, in
+  `tasks/decisions.md`; plan `tasks/plans/2026-11-25-board-layout-arrange.md`.
 - **Date:** 2026-11-25.

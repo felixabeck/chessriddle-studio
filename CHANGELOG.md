@@ -2,6 +2,16 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
+## Unreleased
+
+### New
+
+- Arrange the analysis board: drag Analysis, Database, Annotate, Coach or Info out of the tab strip and drop it to the left, right, above or below the board, the notation, the tabs or another panel; a preview shows where it lands. The notation and the tabs move the same way, every move also works from a grip button with named places, "Return to the tabs" puts a panel back, and Settings → Analysis & notation → "Reset layout" restores the default. This replaces the Database panel's Pin menu and the setting "Panels beside the notation"; a pinned Database or a beside arrangement is carried over. When the window is too narrow for your arrangement, the board shows the plain tab layout until there is room again.
+
+### Improved
+
+- Assistant: drag its left edge, or use the arrow keys on it, to make the docked Assistant wider or narrower (from 20rem); double-click restores the default width, and Studio remembers your choice.
+
 ## 1.3.0
 
 ### New
