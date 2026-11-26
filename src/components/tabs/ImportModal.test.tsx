@@ -1250,7 +1250,7 @@ test("saved pasted PGN as Repertoire routes through createRepertoireFromPgn with
   });
 });
 
-test("From photo card is shown only while the Coach switch is on and mounts ImportPhotoPane lazily", async () => {
+test("Photo card is shown only while the Coach switch is on and mounts ImportPhotoPane lazily", async () => {
   fixtures.coachEnabled = false;
   await renderModal();
   expect(host.querySelector('[data-testid="mode-Photo"]')).toBeNull();
@@ -1316,7 +1316,7 @@ test("turning the Coach switch off while Photo is selected falls back and unmoun
   expect(submitButton()).toBeDefined();
 });
 
-test("From photo lazy load failure is isolated by PanelErrorBoundary and recovers on retry", async () => {
+test("Photo pane lazy load failure is isolated by PanelErrorBoundary and recovers on retry", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   const originalLoad = importPhotoPaneLoader.load;
   let attempts = 0;

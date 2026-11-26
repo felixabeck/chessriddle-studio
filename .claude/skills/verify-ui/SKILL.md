@@ -75,7 +75,7 @@ now does (proof 2 below).
    in WebKitGTK under the real CSP), creates a real Coach API connection via
    `coach_save_api_connection`, verifies the private Secret Service item, restarts the app so
    startup credential reconciliation keeps the connection (`coach_has_connection` is `true`), and
-   proves the "From photo" pane route (`SP-P1`–`SP-P3`, clicking "Paste from clipboard" and
+   proves the "Photo" pane route (`SP-P1`–`SP-P3`, clicking "Paste from clipboard" and
    rendering the thumbnail). It exits `0` only when all checks pass and `1` on any failure or
    missing prerequisite.
 

@@ -9580,32 +9580,32 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
         );
       }
 
-      // SP-P: "From photo" pane route (only attempted when the saved connection survived restart).
+      // SP-P: "Photo" pane route (only attempted when the saved connection survived restart).
       if (connectionOk) {
         const spPOpened = await assertion(
-          "SP-P1 Import dialog opens and selects From photo in the connected state",
+          "SP-P1 Import dialog opens and selects Photo in the connected state",
           async () => {
             await goToBoards(session);
             await clickButton(session, "Import");
             await waitForDialogShown(session, "the fully shown Import dialog");
             const fromPhotoPresent = await session.execute(
-              `return [...document.querySelectorAll('[role="dialog"] button')].some(node => !node.disabled && node.textContent.trim() === 'From photo')`,
+              `return [...document.querySelectorAll('[role="dialog"] button')].some(node => !node.disabled && node.textContent.trim() === 'Photo')`,
             );
             if (!fromPhotoPresent) {
               throw new Error(
-                "'From photo' option is missing from the Import dialog even though coach_available was true",
+                "'Photo' option is missing from the Import dialog even though coach_available was true",
               );
             }
             const fromPhotoCard = await reachableStableCoordinates(
               session,
-              "From photo",
-              `[...document.querySelectorAll('[role="dialog"] button')].find(node => !node.disabled && node.textContent.trim() === 'From photo')`,
+              "Photo",
+              `[...document.querySelectorAll('[role="dialog"] button')].find(node => !node.disabled && node.textContent.trim() === 'Photo')`,
             );
             await clickAt(session, fromPhotoCard.x, fromPhotoCard.y);
 
             let lastPaneState = "not-rendered";
             try {
-              await waitFor("From photo pane to settle in connected state", async () => {
+              await waitFor("Photo pane to settle in connected state", async () => {
                 const state = await session.execute(`
                   const dialog = document.querySelector('[role="dialog"]');
                   if (!dialog) return "no-dialog";
@@ -9627,7 +9627,7 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
         const spPPasted = await assertion(
           "SP-P2 Paste from clipboard renders a JPEG data-URL thumbnail with naturalWidth > 0",
           async () => {
-            if (!spPOpened) throw new Error("SP-P1 Import dialog did not open From photo");
+            if (!spPOpened) throw new Error("SP-P1 Import dialog did not open the Photo pane");
             const pasteButton = await reachableStableCoordinates(
               session,
               "Paste from clipboard",

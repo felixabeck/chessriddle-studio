@@ -116,7 +116,7 @@ test("import from photo reads stubbed game and opens review tab with Photo panel
 
     const dialog = page.getByRole("dialog", { name: "Import Game" });
     await dialog.getByRole("button", { name: "Photo", exact: true }).click();
-    await dialog.getByRole("button", { name: "Choose photos" }).click();
+    await dialog.getByRole("button", { name: "Choose photos or PDF", exact: true }).click();
     await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
 
     // Choose the model through the shared model popover.
@@ -201,7 +201,7 @@ test("import from photo keeps the mode cards even below the header and shows rea
         if (label) label.textContent = "Photo";
     });
 
-    await dialog.getByRole("button", { name: "Choose photos" }).click();
+    await dialog.getByRole("button", { name: "Choose photos or PDF", exact: true }).click();
     await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
     await dialog.getByRole("button", { name: /^AI model: / }).click();
     await page.getByRole("textbox", { name: "Model" }).click();

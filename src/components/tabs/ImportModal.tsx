@@ -44,7 +44,7 @@ function CardGroupFieldset({
   );
 }
 
-/** Testable seam for the "From photo" pane's lazy chunk loader. */
+/** Testable seam for the "Photo" pane's lazy chunk loader. */
 export const importPhotoPaneLoader = {
   load: () => import("./ImportPhotoPane"),
 };
