@@ -375,9 +375,15 @@ function migrateLegacyNode(
             retainHydratedDrawings(migrated, shapes);
         } else if (typeof node.commands === "string") {
             const { text, shapes } = extractPgnDrawings(node.commands);
+            const nextCommands = shapes.length > 0 ? text.trim() : node.commands;
             if (shapes.length > 0) {
-                migrated.commands = text.trim();
+                migrated.commands = nextCommands;
                 retainHydratedDrawings(migrated, shapes);
+            }
+            const split = splitPgnComment(nextCommands);
+            if (split.reviewMark) {
+                if (!isRoot) migrated.reviewMark = true;
+                migrated.commands = split.commands;
             }
         }
         // Before the tree modeled diagrams, ChessBase's marker stayed in the comment text. A node

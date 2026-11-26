@@ -3415,3 +3415,19 @@ test("legacy node with [%crreview] in comment hydrates reviewMark on non-root no
     expect(migrated.root.children[0].comment).toBe("Legacy note");
     expect(migrated.root.children[0].commands).toBeUndefined();
 });
+
+test("legacy node with [%crreview] in commands extracts reviewMark on non-root nodes and removes the command", () => {
+    const legacy = treeWithPaths({});
+    legacy.root.commands = "[%crreview]";
+    legacy.root.children[0].commands = "[%evp 0,34] [%crreview]";
+    legacy.root.children[1].commands = "[%cal Ge2e4] [%crreview]";
+
+    const migrated = migrateTreeForStorage(legacy) as ReturnType<typeof defaultTree>;
+    expect(migrated.root.reviewMark).toBeUndefined();
+    expect(migrated.root.commands).toBe("");
+    expect(migrated.root.children[0].reviewMark).toBe(true);
+    expect(migrated.root.children[0].commands).toBe("[%evp 0,34]");
+    expect(migrated.root.children[1].reviewMark).toBe(true);
+    expect(migrated.root.children[1].commands).toBe("");
+    expect(migrated.root.children[1].shapes).toEqual([{ orig: "e2", dest: "e4", brush: "green" }]);
+});

@@ -663,7 +663,7 @@ test("file-source path creates repertoire with Orientation and opens it", async 
   expect(fixtures.openFile).toHaveBeenCalledOnce();
 });
 
-test("merge refusal during repertoire creation shows inline error without creating file", async () => {
+test("streaming reader depth refusal during repertoire creation shows inline MaxDepth error without creating file", async () => {
   const tooDeepMoves = Array.from({ length: 513 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat();
   fixtures.lexPgnGames.mockResolvedValueOnce({
     status: "games",
@@ -683,6 +683,35 @@ test("merge refusal during repertoire creation shows inline error without creati
   expect(container.textContent).toContain("Repertoire.Import.Error.MaxDepth");
 });
 
+test("merger.finish() max-line-bytes refusal during repertoire creation shows inline error without creating file", async () => {
+  fixtures.lexPgnGames.mockResolvedValueOnce({
+    status: "games",
+    games: [
+      {
+        status: "ok",
+        tokens: [
+          { type: "San", value: "e4" },
+          { type: "Comment", value: "a".repeat(600 * 1024) },
+        ],
+      },
+      {
+        status: "ok",
+        tokens: [
+          { type: "San", value: "e4" },
+          { type: "Comment", value: "b".repeat(600 * 1024) },
+        ],
+      },
+    ],
+  } satisfies LexPgnGamesOutcome);
+
+  await renderCreateForm("Too Long Line", "white", "1. e4 {a} * 1. e4 {b} *");
+  await act(async () => submitForm());
+
+  expect(fixtures.createFile).not.toHaveBeenCalled();
+  expect(setOpened).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Repertoire.Import.Error.MaxLineBytes");
+});
+
 test("repertoireImportErrorMessage and repertoireMergeRefusalMessage map every branch", () => {
   const t = ((key: string, opts?: Record<string, unknown>) =>
     opts ? `${key}:${JSON.stringify(opts)}` : key) as unknown as Parameters<
@@ -695,6 +724,12 @@ test("repertoireImportErrorMessage and repertoireMergeRefusalMessage map every b
   expect(repertoireImportErrorMessage(new RepertoireImportError("too-large", "ignored"), t)).toBe(
     'Repertoire.Import.Error.MaxNodes:{"max":100000}',
   );
+  expect(
+    repertoireImportErrorMessage(
+      new RepertoireImportError("too-large", "ignored", undefined, "max-depth"),
+      t,
+    ),
+  ).toBe('Repertoire.Import.Error.MaxDepth:{"max":2048}');
   expect(
     repertoireImportErrorMessage(new RepertoireImportError("file-changed", "ignored"), t),
   ).toBe("Repertoire.Import.Error.FileChanged");
@@ -790,4 +825,36 @@ test("unexpected throw from createRepertoireFromPgn reports inline when mounted 
   await vi.waitFor(() => expect(fixtures.notifyUnlessCancelled).toHaveBeenCalledOnce());
   expect(fixtures.notifyUnlessCancelled).toHaveBeenCalledWith("Common.Error", boom, "files");
   root = createRoot(container);
+});
+
+test("createRepertoireFromPgn notifies created-in-library when openFile returns null (refused admission)", async () => {
+  fixtures.lexPgnGames.mockResolvedValueOnce({
+    status: "games",
+    games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+  } satisfies LexPgnGamesOutcome);
+  fixtures.openFile.mockResolvedValueOnce(null);
+
+  const t = ((key: string) => key) as Parameters<
+    typeof createRepertoireModule.createRepertoireFromPgn
+  >[0]["t"];
+  const result = await createRepertoireModule.createRepertoireFromPgn({
+    name: "White",
+    color: "white",
+    source: { kind: "text", pgn: "1. e4 *" },
+    listingCache: {
+      entries: new Map(),
+      refresh: vi.fn(),
+    } as unknown as Parameters<
+      typeof createRepertoireModule.createRepertoireFromPgn
+    >[0]["listingCache"],
+    setTabs: fixtures.setTabs,
+    t,
+  });
+
+  expect(result).toEqual({ status: "created-in-library", fileName: "White" });
+  expect(fixtures.notificationsShow).toHaveBeenCalledWith({
+    color: "warning",
+    title: "Repertoire.Import.CreatedInLibraryTitle",
+    message: "Repertoire.Import.CreatedInLibraryBody",
+  });
 });

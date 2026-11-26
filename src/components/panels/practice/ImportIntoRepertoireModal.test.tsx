@@ -214,7 +214,7 @@ test("drops read result silently when the document changes while reading", async
 
   // Simulate another game/document replacing the store while the read is in flight.
   store.setState({ ...store.getState(), documentId: initialDoc + 1 });
-  const spy = vi.spyOn(store.getState(), "importIntoRepertoire");
+  const spy = vi.spyOn(store.getState(), "applyRepertoireImport");
 
   await act(async () => {
     resolveRead({
@@ -224,6 +224,37 @@ test("drops read result silently when the document changes while reading", async
   });
 
   expect(spy).not.toHaveBeenCalled();
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("drops read result silently when the tree root is edited while reading (same documentId)", async () => {
+  const store = createTreeStore();
+  let resolveRead!: (value: unknown) => void;
+  mocks.lexPgnGames.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+
+  const onClose = await renderModal(store);
+  await pastePgn("1. e4 e5 *");
+  await act(async () => submitButton().click());
+
+  // Edit the tree while reading (same documentId, new root object).
+  store.getState().makeMove({ payload: "d4" });
+  const spy = vi.spyOn(store.getState(), "applyRepertoireImport");
+
+  await act(async () => {
+    resolveRead({
+      status: "games",
+      games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+    } satisfies LexPgnGamesOutcome);
+  });
+
+  expect(spy).not.toHaveBeenCalled();
+  expect(store.getState().root.children.map((c) => c.san)).toEqual(["d4"]);
   expect(mocks.notificationsShow).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
 });
@@ -242,7 +273,7 @@ test("unmounting during read drops result silently without merging or notifying"
   await pastePgn("1. e4 e5 *");
   await act(async () => submitButton().click());
 
-  const spy = vi.spyOn(store.getState(), "importIntoRepertoire");
+  const spy = vi.spyOn(store.getState(), "applyRepertoireImport");
   await act(async () => root.unmount());
   await act(async () => {
     resolveRead({
@@ -298,8 +329,9 @@ test("imports PGN file source into open repertoire", async () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-test("merge refusal shows inline error and leaves tree unchanged", async () => {
+test("streaming reader depth refusal (too-large with max-depth) shows inline error and leaves tree unchanged", async () => {
   const store = createTreeStore();
+  const applySpy = vi.spyOn(store.getState(), "applyRepertoireImport");
   const tooDeepMoves = Array.from({ length: 513 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat();
   mocks.lexPgnGames.mockResolvedValueOnce({
     status: "games",
@@ -318,8 +350,125 @@ test("merge refusal shows inline error and leaves tree unchanged", async () => {
   expect(host.querySelector('[role="alert"]')?.textContent).toBe(
     "Repertoire.Import.Error.MaxDepth",
   );
+  expect(applySpy).not.toHaveBeenCalled();
   expect(store.getState().root.children).toHaveLength(0);
   expect(onClose).not.toHaveBeenCalled();
+});
+
+test("drops a read refusal silently when the document or root changes while reading", async () => {
+  const store = createTreeStore();
+  let resolveRead!: (value: LexPgnGamesOutcome) => void;
+  mocks.lexPgnGames.mockImplementationOnce(
+    () =>
+      new Promise<LexPgnGamesOutcome>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+
+  const onClose = await renderModal(store);
+  await pastePgn("bad");
+  await act(async () => submitButton().click());
+
+  // Mutate the tree root while reading so the snapshot becomes stale before readRepertoireSource throws.
+  store.getState().makeMove({ payload: "d4" });
+  await act(async () => {
+    resolveRead({ status: "games", games: [] });
+  });
+
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(store.getState().root.children.map((c) => c.san)).toEqual(["d4"]);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("merger.finish() max-line-bytes refusal shows inline error and leaves tree unchanged", async () => {
+  const store = createTreeStore();
+  const applySpy = vi.spyOn(store.getState(), "applyRepertoireImport");
+  mocks.lexPgnGames.mockResolvedValueOnce({
+    status: "games",
+    games: [
+      {
+        status: "ok",
+        tokens: [
+          { type: "San", value: "e4" },
+          { type: "Comment", value: "a".repeat(600 * 1024) },
+        ],
+      },
+      {
+        status: "ok",
+        tokens: [
+          { type: "San", value: "e4" },
+          { type: "Comment", value: "b".repeat(600 * 1024) },
+        ],
+      },
+    ],
+  } satisfies LexPgnGamesOutcome);
+
+  const onClose = await renderModal(store);
+  await pastePgn("1. e4 {a} * 1. e4 {b} *");
+  await act(async () => submitButton().click());
+
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "Repertoire.Import.Error.MaxLineBytes",
+  );
+  expect(applySpy).not.toHaveBeenCalled();
+  expect(store.getState().root.children).toHaveLength(0);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("drops both a read result and a read refusal silently when headers change while reading", async () => {
+  // Case 1: successful read after setHeaders -> dropped silently, headers kept.
+  const store1 = createTreeStore();
+  let resolveSuccess!: (value: LexPgnGamesOutcome) => void;
+  mocks.lexPgnGames.mockImplementationOnce(
+    () =>
+      new Promise<LexPgnGamesOutcome>((resolve) => {
+        resolveSuccess = resolve;
+      }),
+  );
+
+  const onClose1 = await renderModal(store1);
+  await pastePgn("1. e4 *");
+  await act(async () => submitButton().click());
+
+  store1.getState().setHeaders({ ...store1.getState().headers, white: "Carlsen" });
+  const spy1 = vi.spyOn(store1.getState(), "applyRepertoireImport");
+
+  await act(async () => {
+    resolveSuccess({
+      status: "games",
+      games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+    });
+  });
+
+  expect(spy1).not.toHaveBeenCalled();
+  expect(store1.getState().headers.white).toBe("Carlsen");
+  expect(store1.getState().root.children).toHaveLength(0);
+  expect(mocks.notificationsShow).not.toHaveBeenCalled();
+  expect(onClose1).not.toHaveBeenCalled();
+
+  // Case 2: read refusal after setHeaders -> dropped silently, no alert shown.
+  const store2 = createTreeStore();
+  let resolveRefusal!: (value: LexPgnGamesOutcome) => void;
+  mocks.lexPgnGames.mockImplementationOnce(
+    () =>
+      new Promise<LexPgnGamesOutcome>((resolve) => {
+        resolveRefusal = resolve;
+      }),
+  );
+
+  const onClose2 = await renderModal(store2);
+  await pastePgn("bad");
+  await act(async () => submitButton().click());
+
+  store2.getState().setHeaders({ ...store2.getState().headers, white: "Carlsen" });
+
+  await act(async () => {
+    resolveRefusal({ status: "games", games: [] });
+  });
+
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(store2.getState().headers.white).toBe("Carlsen");
+  expect(onClose2).not.toHaveBeenCalled();
 });
 
 test("submit button is disabled while read is pending and second submit is ignored", async () => {

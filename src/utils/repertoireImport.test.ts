@@ -8,10 +8,12 @@ import { MAX_TREE_DEPTH, MAX_TREE_NODES, PGN_TEXT_MAX } from "@/state/store/tabS
 import { getPGN } from "./chess";
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import {
+    createRepertoireMerger,
     MAX_REPERTOIRE_IMPORT_GAMES,
     mergeIntoRepertoire,
     readRepertoireSource,
     RepertoireImportError,
+    type RepertoireImportSource,
 } from "./repertoireImport";
 import {
     createNode,
@@ -98,6 +100,21 @@ function sanTokens(moves: string[], fen?: string) {
     return tokens;
 }
 
+async function collectRepertoireSource(
+    source: RepertoireImportSource,
+    signal?: AbortSignal,
+): Promise<{ games: TreeState[]; read: number; skipped: number }> {
+    const games: TreeState[] = [];
+    const { read, skipped } = await readRepertoireSource(source, {
+        ...(signal ? { signal } : {}),
+        onGame: (game) => {
+            games.push(game);
+            return null;
+        },
+    });
+    return { games, read, skipped };
+}
+
 describe("readRepertoireSource (O1)", () => {
     test("file paging advances by returned page length across a short page", async () => {
         mocks.countPgnGames.mockResolvedValueOnce(3);
@@ -114,7 +131,7 @@ describe("readRepertoireSource (O1)", () => {
             .mockResolvedValueOnce(sanTokens(["d4", "d5"]))
             .mockResolvedValueOnce(sanTokens(["c4", "e5"]));
 
-        const result = await readRepertoireSource({
+        const result = await collectRepertoireSource({
             kind: "file",
             file: { handle: FILE_HANDLE },
         });
@@ -122,6 +139,7 @@ describe("readRepertoireSource (O1)", () => {
         expect(mocks.readGames).toHaveBeenCalledTimes(2);
         expect(mocks.readGames).toHaveBeenNthCalledWith(1, FILE_HANDLE, 0, 2, undefined);
         expect(mocks.readGames).toHaveBeenNthCalledWith(2, FILE_HANDLE, 1, 2, undefined);
+        expect(result.read).toBe(3);
         expect(result.skipped).toBe(0);
         expect(result.games.map((g) => g.root.children[0].san)).toEqual(["e4", "d4", "c4"]);
     });
@@ -141,13 +159,14 @@ describe("readRepertoireSource (O1)", () => {
         ]);
         mocks.lexPgn.mockResolvedValueOnce(sanTokens(["e4", "e5"]));
 
-        const result = await readRepertoireSource({
+        const result = await collectRepertoireSource({
             kind: "file",
             file: { handle: FILE_HANDLE },
         });
 
         expect(mocks.lexPgn).toHaveBeenCalledTimes(1);
         expect(result.skipped).toBe(2);
+        expect(result.read).toBe(1);
         expect(result.games).toHaveLength(1);
     });
 
@@ -161,7 +180,7 @@ describe("readRepertoireSource (O1)", () => {
         mocks.lexPgn.mockResolvedValueOnce(sanTokens(["e4", "e5"]));
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "file-changed",
@@ -181,7 +200,7 @@ describe("readRepertoireSource (O1)", () => {
         mocks.lexPgn.mockResolvedValueOnce(sanTokens(["e4", "e5"]));
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "file-changed",
@@ -207,7 +226,7 @@ describe("readRepertoireSource (O1)", () => {
         mocks.lexPgn.mockResolvedValueOnce(sanTokens(["e4", "e5"]));
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "file-changed",
@@ -216,43 +235,156 @@ describe("readRepertoireSource (O1)", () => {
         expect(mocks.lexPgn).not.toHaveBeenCalled();
     });
 
-    test("refuses with too-large as soon as cumulative parsed nodes exceed MAX_TREE_NODES without paging the rest", async () => {
-        const longMoves = Array.from({ length: 50 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat();
-        const longTokens = sanTokens(longMoves);
-        // Each parsed game has 201 nodes; 500 games = 100_500 > MAX_TREE_NODES (100_000).
+    test("stops paging and refuses with too-large as soon as onGame returns a refusal reason", async () => {
+        let seen = 0;
         mocks.countPgnGames.mockResolvedValueOnce(700);
-        const makePage = (count: number) =>
+        const makePage = (start: number, count: number) =>
             Array.from({ length: count }, (_, idx) => ({
-                pgn: `game-${idx}`,
-                stamp: `s-${idx}`,
+                pgn: String(start + idx),
+                stamp: `s-${start + idx}`,
                 revision: "rev1",
                 present: true,
             }));
         mocks.readGames.mockImplementation(async (_handle, start: number, end: number) =>
-            makePage(end - start + 1),
+            makePage(start, end - start + 1),
         );
-        mocks.lexPgn.mockResolvedValue(longTokens);
+        mocks.lexPgn.mockResolvedValue(sanTokens(["e4", "e5"]));
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            readRepertoireSource(
+                { kind: "file", file: { handle: FILE_HANDLE } },
+                {
+                    onGame: () => (++seen >= 450 ? "max-nodes" : null),
+                },
+            ),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "too-large",
+            reason: "max-nodes",
         });
         // Stopped during page 5 (indices 400..499) before fetching page 6 (indices 500..599).
         expect(mocks.readGames).toHaveBeenCalledTimes(5);
 
-        // Text path also refuses immediately once cumulative nodes exceed MAX_TREE_NODES.
+        // Text path also refuses immediately when onGame returns a refusal reason.
         mocks.lexPgnGames.mockResolvedValueOnce({
             status: "games",
-            games: Array.from({ length: 550 }, () => ({ status: "ok", tokens: longTokens })),
+            games: Array.from({ length: 10 }, () => ({
+                status: "ok",
+                tokens: sanTokens(["e4", "e5"]),
+            })),
         });
         await expect(
-            readRepertoireSource({ kind: "text", pgn: "many long games" }),
+            readRepertoireSource({ kind: "text", pgn: "too deep" }, { onGame: () => "max-depth" }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "too-large",
+            reason: "max-depth",
         });
+    });
+
+    test("accepts 1,500 games sharing an opening trunk whose unmerged node sum exceeds MAX_TREE_NODES", async () => {
+        // 78-ply shared trunk + 2-ply leaf = 80 plies (81 nodes per game).
+        // 1,500 * 81 = 121,500 unmerged nodes > MAX_TREE_NODES (100,000), merged << 1,000 nodes.
+        const trunk = [
+            ...Array.from({ length: 19 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat(),
+            "Nf3",
+            "Nf6",
+        ];
+        const whiteReplies = ["e3", "e4", "d3", "d4", "c3", "c4", "g3", "b3", "Nc3", "a3"];
+        const blackReplies = ["e6", "e5", "d6", "d5", "c6", "c5", "g6", "b6", "Nc6", "a6"];
+        const leafPairs: Array<[string, string]> = [];
+        for (const w of whiteReplies) {
+            for (const b of blackReplies) {
+                leafPairs.push([w, b]);
+            }
+        }
+        const entries = Array.from({ length: 1500 }, (_, i) => {
+            const [w, b] = leafPairs[i % leafPairs.length];
+            return { status: "ok" as const, tokens: sanTokens([...trunk, w, b]) };
+        });
+
+        mocks.lexPgnGames.mockResolvedValueOnce({ status: "games", games: entries });
+        const merger = createRepertoireMerger(defaultTree(), "white");
+        const result = await readRepertoireSource(
+            { kind: "text", pgn: "course" },
+            { onGame: merger.add },
+        );
+        const merged = merger.finish();
+
+        expect(result.read).toBe(1500);
+        expect(result.skipped).toBe(0);
+        expect(merged.ok).toBe(true);
+    });
+
+    test("streaming readRepertoireSource + createRepertoireMerger matches direct mergeIntoRepertoire on order, dedup, unplaced count, and black orientation", async () => {
+        const nf3Fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+        const unrelatedFen = "4k3/8/8/8/8/8/8/4K3 b - - 0 1";
+        const rawEntries = [
+            // Game 1: custom FEN not yet in target (1. e4 e5 2. Nf3) -> unplaced
+            { status: "ok" as const, tokens: sanTokens(["Nc6"], nf3Fen) },
+            // Game 2: comment dedup against target ("King pawn" already on target e4) + adds 2. Nf3
+            {
+                status: "ok" as const,
+                tokens: [
+                    { type: "San" as const, value: "e4" },
+                    { type: "Comment" as const, value: "King pawn" },
+                    { type: "San" as const, value: "e5" },
+                    { type: "San" as const, value: "Nf3" },
+                ],
+            },
+            // Game 3: adds "Extra note" to e4 and conflicts with Black's 1... e5 via 1... c5
+            {
+                status: "ok" as const,
+                tokens: [
+                    { type: "San" as const, value: "e4" },
+                    { type: "Comment" as const, value: "Extra note" },
+                    { type: "San" as const, value: "c5" },
+                ],
+            },
+            // Game 4: same custom FEN as Game 1, now placeable after Game 2 added 2. Nf3!
+            { status: "ok" as const, tokens: sanTokens(["d6"], nf3Fen) },
+            // Five unplaced games sharing one unrelated FEN -> must count all 5
+            ...Array.from({ length: 5 }, () => ({
+                status: "ok" as const,
+                tokens: sanTokens(["Kd7"], unrelatedFen),
+            })),
+        ];
+
+        const target = buildGame(["e4", "e5"]);
+        target.root.children[0].comment = "King pawn";
+
+        // Streamed path: readRepertoireSource -> createRepertoireMerger
+        mocks.lexPgnGames.mockResolvedValueOnce({ status: "games", games: rawEntries });
+        const merger = createRepertoireMerger(target, "black");
+        const readResult = await readRepertoireSource(
+            { kind: "text", pgn: "multi" },
+            { onGame: merger.add },
+        );
+        const streamed = merger.finish();
+
+        // Direct path: collect raw games -> mergeIntoRepertoire
+        mocks.lexPgnGames.mockResolvedValueOnce({ status: "games", games: rawEntries });
+        const collected = await collectRepertoireSource({ kind: "text", pgn: "multi" });
+        const direct = mergeIntoRepertoire(target, collected.games, "black");
+
+        expect(readResult.read).toBe(9);
+        expect(streamed.ok).toBe(true);
+        expect(direct.ok).toBe(true);
+        if (!streamed.ok || !direct.ok) throw new Error("Expected both merges to succeed");
+        expect(streamed.tree.root).toEqual(direct.tree.root);
+        expect(streamed.report).toEqual(direct.report);
+
+        // Explicit assertions on the closure-round counterexamples:
+        expect(streamed.report.unplaced).toBe(6); // Game 1 + 5 unrelated
+        expect(streamed.tree.root.children[0].comment).toBe("King pawn Extra note");
+        // Black conflict mark on 1... c5 (existing 1... e5 stays first and unmarked)
+        expect(streamed.tree.root.children[0].children.map((c) => c.san)).toEqual(["e5", "c5"]);
+        expect(streamed.tree.root.children[0].children[0].reviewMark).toBeUndefined();
+        expect(streamed.tree.root.children[0].children[1].reviewMark).toBe(true);
+        // Game 4 placed 2... d6 under 2. Nf3 (order preserved after Game 2)
+        expect(
+            streamed.tree.root.children[0].children[0].children[0].children.map((c) => c.san),
+        ).toEqual(["d6"]);
     });
 
     test.each(["invalid-input", "stale-game", "conflict"] as const)(
@@ -267,7 +399,7 @@ describe("readRepertoireSource (O1)", () => {
             });
 
             await expect(
-                readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+                collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
             ).rejects.toMatchObject({
                 name: "RepertoireImportError",
                 code: "file-changed",
@@ -281,7 +413,7 @@ describe("readRepertoireSource (O1)", () => {
             });
 
             await expect(
-                readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+                collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
             ).rejects.toMatchObject({
                 name: "RepertoireImportError",
                 code: "io",
@@ -298,7 +430,7 @@ describe("readRepertoireSource (O1)", () => {
         };
         mocks.lexPgnGames.mockResolvedValueOnce(invalidOutcome);
 
-        await expect(readRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toThrow(
+        await expect(collectRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toThrow(
             /Pattern matching error/,
         );
     });
@@ -307,7 +439,7 @@ describe("readRepertoireSource (O1)", () => {
         mocks.countPgnGames.mockResolvedValueOnce(MAX_REPERTOIRE_IMPORT_GAMES + 1);
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "too-many-games",
@@ -333,7 +465,7 @@ describe("readRepertoireSource (O1)", () => {
             ],
         });
 
-        const result = await readRepertoireSource({ kind: "text", pgn: "..." });
+        const result = await collectRepertoireSource({ kind: "text", pgn: "..." });
         expect(mocks.lexPgnGames).toHaveBeenCalledWith(
             "...",
             MAX_REPERTOIRE_IMPORT_GAMES,
@@ -353,16 +485,16 @@ describe("readRepertoireSource (O1)", () => {
                 { status: "failed", message: "bad" },
             ],
         });
-        await expect(readRepertoireSource({ kind: "text", pgn: "1. Ke8 *" })).rejects.toMatchObject(
-            {
-                name: "RepertoireImportError",
-                code: "no-usable-games",
-            },
-        );
+        await expect(
+            collectRepertoireSource({ kind: "text", pgn: "1. Ke8 *" }),
+        ).rejects.toMatchObject({
+            name: "RepertoireImportError",
+            code: "no-usable-games",
+        });
 
         mocks.countPgnGames.mockResolvedValueOnce(0);
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "no-usable-games",
@@ -379,7 +511,7 @@ describe("readRepertoireSource (O1)", () => {
         ]);
 
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "file-changed",
@@ -392,10 +524,7 @@ describe("readRepertoireSource (O1)", () => {
 
         let caught: unknown;
         try {
-            await readRepertoireSource(
-                { kind: "text", pgn: "1. e4 *" },
-                { signal: controller.signal },
-            );
+            await collectRepertoireSource({ kind: "text", pgn: "1. e4 *" }, controller.signal);
         } catch (err) {
             caught = err;
         }
@@ -406,7 +535,7 @@ describe("readRepertoireSource (O1)", () => {
         mocks.lexPgnGames.mockRejectedValueOnce(cancellationError());
         let caughtBackend: unknown;
         try {
-            await readRepertoireSource({ kind: "text", pgn: "1. e4 *" });
+            await collectRepertoireSource({ kind: "text", pgn: "1. e4 *" });
         } catch (err) {
             caughtBackend = err;
         }
@@ -434,7 +563,7 @@ describe("readRepertoireSource (O1)", () => {
             })
             .mockResolvedValueOnce(sanTokens(["d4"]));
 
-        const validated = await readRepertoireSource({
+        const validated = await collectRepertoireSource({
             kind: "file",
             file: { handle: FILE_HANDLE },
         });
@@ -458,7 +587,7 @@ describe("readRepertoireSource (O1)", () => {
                 .mockResolvedValueOnce(sanTokens(["d4"]));
 
             await expect(
-                readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+                collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
             ).rejects.toMatchObject({
                 name: "RepertoireImportError",
                 code: "io",
@@ -475,7 +604,7 @@ describe("readRepertoireSource (O1)", () => {
 
         let caught: unknown;
         try {
-            await readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } });
+            await collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } });
         } catch (err) {
             caught = err;
         }
@@ -488,7 +617,9 @@ describe("readRepertoireSource (O1)", () => {
             status: "tooManyGames",
             count: MAX_REPERTOIRE_IMPORT_GAMES + 5,
         });
-        await expect(readRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toMatchObject({
+        await expect(
+            collectRepertoireSource({ kind: "text", pgn: "1. e4 *" }),
+        ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "too-many-games",
             message: expect.stringContaining(`${MAX_REPERTOIRE_IMPORT_GAMES + 5}`),
@@ -499,7 +630,9 @@ describe("readRepertoireSource (O1)", () => {
             category: "resource-limit",
             message: "native read capacity exceeded",
         });
-        await expect(readRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toMatchObject({
+        await expect(
+            collectRepertoireSource({ kind: "text", pgn: "1. e4 *" }),
+        ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
         });
@@ -509,7 +642,9 @@ describe("readRepertoireSource (O1)", () => {
             category: "io",
             message: "lexer transport failed",
         });
-        await expect(readRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toMatchObject({
+        await expect(
+            collectRepertoireSource({ kind: "text", pgn: "1. e4 *" }),
+        ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
         });
@@ -520,7 +655,7 @@ describe("readRepertoireSource (O1)", () => {
             message: "line too long",
         });
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
@@ -532,7 +667,7 @@ describe("readRepertoireSource (O1)", () => {
             message: "disk read error",
         });
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
@@ -545,7 +680,7 @@ describe("readRepertoireSource (O1)", () => {
             message: "page byte limit",
         });
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
@@ -558,7 +693,7 @@ describe("readRepertoireSource (O1)", () => {
             message: "disk read error",
         });
         await expect(
-            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            collectRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
         ).rejects.toMatchObject({
             name: "RepertoireImportError",
             code: "io",
@@ -593,7 +728,7 @@ describe("readRepertoireSource (O1)", () => {
             ],
         });
 
-        const result = await readRepertoireSource({ kind: "text", pgn: "..." });
+        const result = await collectRepertoireSource({ kind: "text", pgn: "..." });
         expect(result.skipped).toBe(2);
         expect(result.games).toHaveLength(1);
         expect(result.games[0].root.children[0].san).toBe("d4");
@@ -931,5 +1066,42 @@ describe("mergeIntoRepertoire (O2)", () => {
         expect(mergedE4.depth).toBe(20);
         expect(mergedE4.startingComment).toBe("Existing start");
         expect(mergedE4.commands).toBe("[%evp 0,40]");
+    });
+
+    test("new nodes clone source move objects instead of aliasing input moves", () => {
+        const target = defaultTree();
+        const imported = buildGame(["e4"]);
+        const result = mergeIntoRepertoire(target, [imported], "white");
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("Expected merge to succeed");
+        expect(result.tree.root.children[0].move).toEqual(imported.root.children[0].move);
+        expect(result.tree.root.children[0].move).not.toBe(imported.root.children[0].move);
+    });
+
+    test("Chess960 Shredder-FEN castling falls back to SAN when source move encoding is not legal as-is", () => {
+        // White king on d1 (sq 3), White rook on h1 (sq 7), Shredder-FEN castling right "H".
+        // Legal Chess960 O-O is king-to-rook { from: 3, to: 7 }; king-to-destination { from: 3, to: 6 } is illegal as-is.
+        const fen960 = "4k3/8/8/8/8/8/8/3K3R w H - 0 1";
+        const target = defaultTree(fen960);
+        const imported = defaultTree(fen960);
+        const [pos] = positionFromFen(fen960);
+        expect(pos).not.toBeNull();
+        expect(pos!.isLegal({ from: 3, to: 6 })).toBe(false);
+        imported.root.children.push(
+            createNode({
+                fen: "4k3/8/8/8/8/8/8/5RK1 b - - 1 1",
+                move: { from: 3, to: 6 },
+                san: "O-O",
+                halfMoves: 1,
+            }),
+        );
+
+        const result = mergeIntoRepertoire(target, [imported], "white");
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("Expected Chess960 merge to succeed");
+        expect(result.report.added).toBe(1);
+        expect(result.tree.root.children[0].san).toBe("O-O");
+        expect(result.tree.root.children[0].move).toEqual({ from: 3, to: 7 });
+        expect(result.tree.root.children[0].fen).toBe("4k3/8/8/8/8/8/8/5RK1 b - - 1 1");
     });
 });

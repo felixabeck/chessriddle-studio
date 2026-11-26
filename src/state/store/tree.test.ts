@@ -30,6 +30,7 @@ import {
     setScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { positionFromFen } from "@/utils/chessops";
+import { mergeIntoRepertoire } from "@/utils/repertoireImport";
 import * as sound from "@/utils/sound";
 import {
     closeTreeStore,
@@ -42,7 +43,7 @@ import {
     retryTreeStoreStorage,
     validateMoveSequence,
 } from "./tree";
-import { PGN_TEXT_MAX, tabStorage } from "./tabStorage";
+import { tabStorage } from "./tabStorage";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 
@@ -3042,7 +3043,7 @@ test("clearReviewMark clears the mark as one undoable edit and is a no-op when a
     expect(store.getState().root.children[0].reviewMark).toBeUndefined();
 });
 
-test("importIntoRepertoire merges as one undo step, marks dirty, and keeps cursor valid", () => {
+test("applyRepertoireImport applies a finished merge as one undo step, marks dirty, and keeps cursor valid", () => {
     const initial = defaultTree();
     const e4 = addMove(initial.root, "e2e4");
     addMove(e4, "e7e5");
@@ -3057,8 +3058,16 @@ test("importIntoRepertoire merges as one undo step, marks dirty, and keeps curso
     const g2d4 = addMove(game2.root, "d2d4");
     addMove(g2d4, "d7d5");
 
-    const result = store.getState().importIntoRepertoire([game1, game2], "white");
-    expect(result).toEqual({ ok: true, report: { added: 3, conflicts: 1, unplaced: 0 } });
+    const snapshot = store.getState();
+    const merged = mergeIntoRepertoire(snapshot, [game1, game2], "white");
+    expect(merged.ok).toBe(true);
+    if (!merged.ok) throw new Error("Expected merge to succeed");
+
+    const applied = store
+        .getState()
+        .applyRepertoireImport(snapshot.documentId, snapshot.root, snapshot.headers, merged);
+    expect(applied).toBe(true);
+    expect(merged.report).toEqual({ added: 3, conflicts: 1, unplaced: 0 });
     expect(store.getState().dirty).toBe(true);
     expect(store.getState().history.past).toHaveLength(1);
     expect(store.getState().position).toEqual([0, 0]);
@@ -3072,29 +3081,70 @@ test("importIntoRepertoire merges as one undo step, marks dirty, and keeps curso
     expect(store.getState().position).toEqual([0, 0]);
 });
 
-test("importIntoRepertoire refusal and no-op change nothing (no history, dirty unchanged)", () => {
+test("applyRepertoireImport no-op and stale snapshot change nothing (no history, dirty unchanged)", () => {
     const initial = defaultTree();
     const e4 = addMove(initial.root, "e2e4");
     addMove(e4, "e7e5");
     const store = createTreeStore(undefined, initial);
 
-    // No-op: identical game already present.
+    // No-op: identical game already present (changed === false).
     const duplicate = defaultTree();
     const de4 = addMove(duplicate.root, "e2e4");
     addMove(de4, "e7e5");
-    const noopResult = store.getState().importIntoRepertoire([duplicate], "white");
-    expect(noopResult).toEqual({ ok: true, report: { added: 0, conflicts: 0, unplaced: 0 } });
+    const snap1 = store.getState();
+    const noopMerged = mergeIntoRepertoire(snap1, [duplicate], "white");
+    expect(noopMerged.ok).toBe(true);
+    if (!noopMerged.ok) throw new Error("Expected no-op merge to succeed");
+    expect(
+        store
+            .getState()
+            .applyRepertoireImport(snap1.documentId, snap1.root, snap1.headers, noopMerged),
+    ).toBe(true);
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().history.past).toHaveLength(0);
 
-    // Refusal: exceeds PGN_TEXT_MAX bytes.
-    const oversized = defaultTree();
-    const oe4 = addMove(oversized.root, "e2e4");
-    const oc5 = addMove(oe4, "c7c5");
-    oc5.comment = "x".repeat(PGN_TEXT_MAX + 1024);
-    const refused = store.getState().importIntoRepertoire([oversized], "white");
-    expect(refused).toMatchObject({ ok: false, reason: "max-bytes" });
+    // Prepare a real merge against snap1, then mutate the store before applying.
+    const extra = defaultTree();
+    addMove(extra.root, "d2d4");
+    const realMerged = mergeIntoRepertoire(snap1, [extra], "white");
+    expect(realMerged.ok).toBe(true);
+    if (!realMerged.ok) throw new Error("Expected merge to succeed");
+
+    // Stale documentId -> rejected without changing state.
+    expect(
+        store
+            .getState()
+            .applyRepertoireImport(snap1.documentId + 1, snap1.root, snap1.headers, realMerged),
+    ).toBe(false);
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().history.past).toHaveLength(0);
-    expect(store.getState().root.children[0].children).toHaveLength(1);
+    expect(store.getState().root.children).toHaveLength(1);
+
+    // Stale root (same documentId, tree edited while import was in flight) -> rejected.
+    store.getState().makeMove({ payload: "c4" });
+    const historyAfterEdit = store.getState().history.past.length;
+    expect(
+        store
+            .getState()
+            .applyRepertoireImport(snap1.documentId, snap1.root, snap1.headers, realMerged),
+    ).toBe(false);
+    expect(store.getState().history.past).toHaveLength(historyAfterEdit);
+    expect(store.getState().root.children.map((c) => c.san)).toEqual(["e4", "c4"]);
+
+    // Stale headers (setHeaders between snapshot and apply) -> rejected, never reverts headers.
+    const snap2 = store.getState();
+    const extra2 = defaultTree();
+    addMove(extra2.root, "f2f4");
+    const merged2 = mergeIntoRepertoire(snap2, [extra2], "white");
+    expect(merged2.ok).toBe(true);
+    if (!merged2.ok) throw new Error("Expected merge to succeed");
+    store.getState().setHeaders({ ...snap2.headers, white: "Carlsen" });
+    const historyAfterHeaders = store.getState().history.past.length;
+    expect(
+        store
+            .getState()
+            .applyRepertoireImport(snap2.documentId, snap2.root, snap2.headers, merged2),
+    ).toBe(false);
+    expect(store.getState().headers.white).toBe("Carlsen");
+    expect(store.getState().history.past).toHaveLength(historyAfterHeaders);
 });

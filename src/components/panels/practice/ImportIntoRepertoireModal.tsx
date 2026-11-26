@@ -13,7 +13,11 @@ import { PgnSourceControl } from "@/components/tabs/PgnSourceControl";
 import { useAbortableAction } from "@/hooks/useAbortableAction";
 import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { errorUnlessCancelled } from "@/platform/errors";
-import { readRepertoireSource, type RepertoireImportSource } from "@/utils/repertoireImport";
+import {
+  createRepertoireMerger,
+  readRepertoireSource,
+  type RepertoireImportSource,
+} from "@/utils/repertoireImport";
 
 /** Modal for importing PGN games into the currently open repertoire tab. */
 export function ImportIntoRepertoireModal({
@@ -34,40 +38,63 @@ export function ImportIntoRepertoireModal({
   async function handleSubmit() {
     if (!file && pgn.trim() === "") return;
 
-    const submittedDocumentId = store.getState().documentId;
+    const snapshot = store.getState();
+    const submittedDocumentId = snapshot.documentId;
+    const submittedRoot = snapshot.root;
+    const submittedHeaders = snapshot.headers;
+    const submittedOrientation = snapshot.headers.orientation || "white";
     const source: RepertoireImportSource = file ? { kind: "file", file } : { kind: "text", pgn };
+    const isStale = () => {
+      const live = store.getState();
+      return (
+        live.documentId !== submittedDocumentId ||
+        live.root !== submittedRoot ||
+        live.headers !== submittedHeaders
+      );
+    };
 
     await run(() =>
       runAbortable(async (signal) => {
         setError("");
+        const merger = createRepertoireMerger(snapshot, submittedOrientation);
         let readResult;
         try {
-          readResult = await readRepertoireSource(source, { signal });
+          readResult = await readRepertoireSource(source, {
+            signal,
+            onGame: merger.add,
+          });
         } catch (err) {
           if (errorUnlessCancelled(err) === null || signal.aborted) {
             return;
           }
-          if (!isMounted()) return;
+          if (!isMounted() || isStale()) {
+            return;
+          }
           setError(repertoireImportErrorMessage(err, t));
           return;
         }
 
-        if (!isMounted() || signal.aborted || store.getState().documentId !== submittedDocumentId) {
+        if (!isMounted() || signal.aborted || isStale()) {
           return;
         }
 
-        const state = store.getState();
-        const orientation = state.headers.orientation || "white";
-        const result = state.importIntoRepertoire(readResult.games, orientation);
-        if (!result.ok) {
-          setError(repertoireMergeRefusalMessage(result.reason, t));
+        const merged = merger.finish();
+        if (!merged.ok) {
+          setError(repertoireMergeRefusalMessage(merged.reason, t));
+          return;
+        }
+
+        const applied = store
+          .getState()
+          .applyRepertoireImport(submittedDocumentId, submittedRoot, submittedHeaders, merged);
+        if (!applied) {
           return;
         }
 
         notifyRepertoireImportSuccess(t, {
-          read: readResult.games.length,
+          read: readResult.read,
           skipped: readResult.skipped,
-          report: result.report,
+          report: merged.report,
         });
         setFile(null);
         setPgn("");

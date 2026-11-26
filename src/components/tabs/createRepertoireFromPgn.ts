@@ -15,8 +15,8 @@ import { getPGN } from "@/utils/chess";
 import { createFile, ensureFileWorkspace } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import {
+    createRepertoireMerger,
     MAX_REPERTOIRE_IMPORT_GAMES,
-    mergeIntoRepertoire,
     readRepertoireSource,
     RepertoireImportError,
     type RepertoireImportSource,
@@ -36,7 +36,9 @@ export function repertoireImportErrorMessage(error: unknown, t: TFunction): stri
         case "too-many-games":
             return t("Repertoire.Import.Error.TooManyGames", { max: MAX_REPERTOIRE_IMPORT_GAMES });
         case "too-large":
-            return t("Repertoire.Import.Error.MaxNodes", { max: MAX_TREE_NODES });
+            return error.reason
+                ? repertoireMergeRefusalMessage(error.reason, t)
+                : t("Repertoire.Import.Error.MaxNodes", { max: MAX_TREE_NODES });
         case "file-changed":
             return t("Repertoire.Import.Error.FileChanged");
         case "no-usable-games":
@@ -46,7 +48,7 @@ export function repertoireImportErrorMessage(error: unknown, t: TFunction): stri
     }
 }
 
-/** Maps a `mergeIntoRepertoire` refusal reason to a translated user-facing message. */
+/** Maps a `createRepertoireMerger` refusal reason to a translated user-facing message. */
 export function repertoireMergeRefusalMessage(
     reason: RepertoireMergeRefusalReason,
     t: TFunction,
@@ -196,9 +198,17 @@ export async function createRepertoireFromPgn({
 }): Promise<CreateRepertoireFromPgnResult> {
     if (signal?.aborted) return { status: "cancelled" };
 
+    const base = defaultTree();
+    base.headers = {
+        ...base.headers,
+        event: name,
+        orientation: color,
+    };
+    const merger = createRepertoireMerger(base, color);
+
     let readResult;
     try {
-        readResult = await readRepertoireSource(source, { signal });
+        readResult = await readRepertoireSource(source, { signal, onGame: merger.add });
     } catch (error) {
         if (errorUnlessCancelled(error) === null || signal?.aborted) {
             return { status: "cancelled" };
@@ -212,13 +222,7 @@ export async function createRepertoireFromPgn({
     }
     if (signal?.aborted) return { status: "cancelled" };
 
-    const base = defaultTree();
-    base.headers = {
-        ...base.headers,
-        event: name,
-        orientation: color,
-    };
-    const merged = mergeIntoRepertoire(base, readResult.games, color);
+    const merged = merger.finish();
     if (!merged.ok) {
         return {
             status: "refused",
@@ -271,7 +275,7 @@ export async function createRepertoireFromPgn({
             return notifyCreatedInLibrary(t, fileInfo.name);
         }
         notifyRepertoireImportSuccess(t, {
-            read: readResult.games.length,
+            read: readResult.read,
             skipped: readResult.skipped,
             report: merged.report,
         });
@@ -279,7 +283,7 @@ export async function createRepertoireFromPgn({
             status: "opened",
             tabId,
             report: merged.report,
-            read: readResult.games.length,
+            read: readResult.read,
             skipped: readResult.skipped,
         };
     } catch (error) {

@@ -22,11 +22,7 @@ import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
 import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyph } from "@/utils/annotation";
 import { getMainLine, getPGN, parseStartHeader, reportRootFingerprint } from "@/utils/chess";
-import {
-    mergeIntoRepertoire,
-    type RepertoireMergeRefusalReason,
-    type RepertoireMergeReport,
-} from "@/utils/repertoireImport";
+import type { RepertoireMergeResult } from "@/utils/repertoireImport";
 import { isSameMove, positionFromFen } from "@/utils/chessops";
 import { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 export { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
@@ -194,11 +190,17 @@ export interface TreeStoreState extends TreeState {
     clearUnsureMark: () => void;
     /** Clears the repertoire import review mark on the node at `path`. One undo step. */
     clearReviewMark: (path: number[]) => void;
-    /** Merges imported games into the repertoire tree as one undoable edit. */
-    importIntoRepertoire: (
-        games: readonly TreeState[],
-        orientation: "white" | "black",
-    ) => RepertoireImportActionResult;
+    /**
+     * Applies a finished repertoire merge as one undoable edit if the store's `documentId`,
+     * `root`, and `headers` still match the snapshot the merge was built on. Returns `false` when
+     * stale (nothing changed); returns `true` when applied or when the merge changed nothing.
+     */
+    applyRepertoireImport: (
+        expectedDocumentId: number,
+        expectedRoot: TreeNode,
+        expectedHeaders: GameHeaders,
+        merged: Extract<RepertoireMergeResult, { ok: true }>,
+    ) => boolean;
     /** Ends the scoresheet review: clears every unsure mark, `scoresheetReview` and in-memory photos. Not undoable, leaves `dirty` unchanged. */
     finishScoresheetReview: () => void;
     /** Replays remaining moves from the scoresheet after a stop or a mid-game correction. One undo step. */
@@ -240,10 +242,6 @@ type PersistedTreeStoreState = Omit<TreeStoreState, "documentId" | "history">;
 export type SessionTransitionResult =
     | { success: true; persistence: "saved" | "memory" }
     | { success: false; error: Error };
-
-export type RepertoireImportActionResult =
-    | { ok: true; report: RepertoireMergeReport }
-    | { ok: false; reason: RepertoireMergeRefusalReason; message: string };
 
 export type TreeStore = StoreApi<TreeStoreState>;
 const installAdmittedTree = Symbol("installAdmittedTree");
@@ -507,7 +505,7 @@ type TreeMutationActions = Pick<
     | "promoteVariation"
     | "promoteToMainline"
     | "continueScoresheet"
-    | "importIntoRepertoire"
+    | "applyRepertoireImport"
 >;
 
 type TreeMarkupActions = Pick<
@@ -919,14 +917,17 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                     state.dirty = true;
                 }),
             ),
-        importIntoRepertoire: (games, orientation) => {
+        applyRepertoireImport: (expectedDocumentId, expectedRoot, expectedHeaders, merged) => {
             const current = get();
-            const merged = mergeIntoRepertoire(current, games, orientation);
-            if (!merged.ok) {
-                return merged;
+            if (
+                current.documentId !== expectedDocumentId ||
+                current.root !== expectedRoot ||
+                current.headers !== expectedHeaders
+            ) {
+                return false;
             }
             if (!merged.changed) {
-                return { ok: true, report: merged.report };
+                return true;
             }
             const currentNode = getNodeAtPath(current.root, current.position);
             const currentBoardState = currentNode ? getBoardState(currentNode.fen) : null;
@@ -946,7 +947,7 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                 position: nextPosition,
                 dirty: true,
             });
-            return { ok: true, report: merged.report };
+            return true;
         },
     };
 }
@@ -1215,7 +1216,7 @@ const UNDOABLE_EDITS = [
     "promoteVariation",
     "promoteToMainline",
     "continueScoresheet",
-    "importIntoRepertoire",
+    "applyRepertoireImport",
     "setStart",
     "setAnnotation",
     "setComment",

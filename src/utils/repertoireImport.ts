@@ -32,7 +32,8 @@ export type RepertoireImportSource =
     | { kind: "text"; pgn: string };
 
 export type ReadRepertoireSourceResult = {
-    games: TreeState[];
+    /** Number of usable games delivered to `onGame`. */
+    read: number;
     skipped: number;
 };
 
@@ -45,11 +46,18 @@ export type RepertoireImportErrorCode =
 
 export class RepertoireImportError extends Error {
     readonly code: RepertoireImportErrorCode;
+    readonly reason?: RepertoireMergeRefusalReason;
 
-    constructor(code: RepertoireImportErrorCode, message: string, cause?: unknown) {
+    constructor(
+        code: RepertoireImportErrorCode,
+        message: string,
+        cause?: unknown,
+        reason?: RepertoireMergeRefusalReason,
+    ) {
         super(message, cause !== undefined ? { cause } : undefined);
         this.name = "RepertoireImportError";
         this.code = code;
+        this.reason = reason;
     }
 }
 
@@ -69,6 +77,19 @@ export type RepertoireMergeResult =
     | { ok: true; tree: TreeState; report: RepertoireMergeReport; changed: boolean }
     | { ok: false; reason: RepertoireMergeRefusalReason; message: string };
 
+export type RepertoireMerger = {
+    /**
+     * Grafts one game into the merged tree, enforcing `MAX_TREE_NODES` and `MAX_TREE_DEPTH`
+     * incrementally. Returns the refusal reason if a limit is exceeded, otherwise `null`.
+     */
+    add: (game: TreeState) => RepertoireMergeRefusalReason | null;
+    /**
+     * Finalizes the merge, running the serialized PGN byte (`PGN_TEXT_MAX`) and physical line
+     * (`MAX_PGN_SCANNER_LINE_BYTES`) checks once.
+     */
+    finish: () => RepertoireMergeResult;
+};
+
 type LexedTokens = Parameters<typeof parsePgnTokens>[0];
 
 function parseRepertoireGameTokens(tokens: LexedTokens): TreeState | null {
@@ -79,24 +100,8 @@ function parseRepertoireGameTokens(tokens: LexedTokens): TreeState | null {
     return tree;
 }
 
-function countTreeNodes(root: TreeNode): number {
-    let count = 0;
-    for (const _node of treeIterator(root)) {
-        count++;
-    }
-    return count;
-}
-
-function addParsedGame(games: TreeState[], parsed: TreeState, runningNodes: number): number {
-    const nextNodes = runningNodes + countTreeNodes(parsed.root);
-    if (nextNodes > MAX_TREE_NODES) {
-        throw new RepertoireImportError(
-            "too-large",
-            `The imported games exceed the maximum size of ${MAX_TREE_NODES} positions.`,
-        );
-    }
-    games.push(parsed);
-    return nextNodes;
+function tooLargeError(reason: RepertoireMergeRefusalReason = "max-nodes"): RepertoireImportError {
+    return new RepertoireImportError("too-large", refusalMessage(reason), undefined, reason);
 }
 
 function fileChangedError(cause: unknown): RepertoireImportError {
@@ -118,23 +123,27 @@ function classifySourceError(error: unknown): never {
 }
 
 /**
- * Reads every usable game from a PGN file or pasted PGN text for repertoire import.
+ * Streams every usable game from a PGN file or pasted PGN text into `onGame` in source order
+ * without retaining a list of parsed games in memory.
  *
- * Cancellation propagates as a cancellation error. Whole-source failures (I/O, permission,
- * missing or changed file, game cap or size limit exceeded (`too-large`), whole-text lexer
- * refusal, or zero usable games) throw `RepertoireImportError`. Per-game failures (omitted,
+ * Cancellation propagates as a cancellation error. If `onGame` returns a refusal reason, reading
+ * stops immediately and throws `RepertoireImportError("too-large")` carrying that reason.
+ * Whole-source failures (I/O, permission, missing or changed file, game cap exceeded, whole-text
+ * lexer refusal, or zero usable games) throw `RepertoireImportError`. Per-game failures (omitted,
  * unlexable, illegal moves, or illegal root FEN) increment `skipped` without aborting the batch.
  */
 export async function readRepertoireSource(
     source: RepertoireImportSource,
-    options?: { signal?: AbortSignal },
+    options: {
+        signal?: AbortSignal;
+        onGame: (game: TreeState) => RepertoireMergeRefusalReason | null;
+    },
 ): Promise<ReadRepertoireSourceResult> {
-    const signal = options?.signal;
+    const { signal, onGame } = options;
     if (signal?.aborted) throw cancellationError();
 
-    const games: TreeState[] = [];
+    let read = 0;
     let skipped = 0;
-    let runningNodes = 0;
 
     if (source.kind === "text") {
         let outcome;
@@ -166,7 +175,11 @@ export async function readRepertoireSource(
                 skipped++;
                 continue;
             }
-            runningNodes = addParsedGame(games, parsed, runningNodes);
+            const refusal = onGame(parsed);
+            if (refusal !== null) {
+                throw tooLargeError(refusal);
+            }
+            read++;
         }
     } else {
         let expectedRevision: string;
@@ -224,7 +237,11 @@ export async function readRepertoireSource(
                         skipped++;
                         continue;
                     }
-                    runningNodes = addParsedGame(games, parsed, runningNodes);
+                    const refusal = onGame(parsed);
+                    if (refusal !== null) {
+                        throw tooLargeError(refusal);
+                    }
+                    read++;
                 }
             }
         } catch (error) {
@@ -240,14 +257,14 @@ export async function readRepertoireSource(
         }
     }
 
-    if (games.length === 0) {
+    if (read === 0) {
         throw new RepertoireImportError(
             "no-usable-games",
             "No usable game could be read from the PGN.",
         );
     }
 
-    return { games, skipped };
+    return { read, skipped };
 }
 
 function shapeKey(shape: DrawShape): string {
@@ -389,29 +406,62 @@ function cloneTreeState(target: TreeState): TreeState {
     };
 }
 
+function refusalMessage(reason: RepertoireMergeRefusalReason): string {
+    switch (reason) {
+        case "max-depth":
+            return `The merged repertoire exceeds the maximum depth of ${MAX_TREE_DEPTH} half-moves.`;
+        case "max-nodes":
+            return `The merged repertoire exceeds the maximum size of ${MAX_TREE_NODES} positions.`;
+        case "max-bytes":
+            return `The merged repertoire exceeds the maximum PGN size of ${PGN_TEXT_MAX} bytes.`;
+        case "max-line-bytes":
+            return `The merged repertoire contains a PGN line reaching the scanner limit of ${MAX_PGN_SCANNER_LINE_BYTES} bytes.`;
+    }
+}
+
 /**
- * Purely merges `games` into a clone of `target` for a repertoire of `orientation`.
+ * Creates an incremental repertoire merger over a clone of `target` for `orientation`.
  *
- * The input `target` and `games` are never mutated. Existing move order and main line never
- * change; a conflicting reply for `orientation` is appended with `reviewMark = true`.
- * Refuses without applying if the merged tree exceeds `MAX_TREE_NODES`, `MAX_TREE_DEPTH`,
- * `PGN_TEXT_MAX` serialized UTF-8 bytes, or `MAX_PGN_SCANNER_LINE_BYTES` on any physical line.
+ * Clones `target` once, grafts each `add(game)` call with identical anchoring, replay, conflict
+ * marking, annotation rules, and node/depth bounds, and runs serialized byte and line-length
+ * checks once in `finish()`.
  */
-export function mergeIntoRepertoire(
+export function createRepertoireMerger(
     target: TreeState,
-    games: readonly TreeState[],
     orientation: "white" | "black",
-): RepertoireMergeResult {
+): RepertoireMerger {
     const merged = cloneTreeState(target);
     let added = 0;
     let conflicts = 0;
     let unplaced = 0;
     let changed = false;
+    let rootSeeded = merged.root.children.length > 0;
+    let refusal: RepertoireMergeRefusalReason | null = null;
+    let nodeCount = 0;
 
-    if (merged.root.children.length === 0) {
-        const firstUsable = games.find((game) => positionFromFen(game.root.fen)[0] !== null);
-        if (firstUsable) {
-            const seeded = defaultTree(firstUsable.root.fen);
+    for (const { position } of treeIterator(merged.root)) {
+        if (position.length > MAX_TREE_DEPTH) {
+            refusal = "max-depth";
+            break;
+        }
+        if (++nodeCount > MAX_TREE_NODES) {
+            refusal = "max-nodes";
+            break;
+        }
+    }
+
+    const add = (game: TreeState): RepertoireMergeRefusalReason | null => {
+        if (refusal !== null) return refusal;
+
+        const [gameRootPos] = positionFromFen(game.root.fen);
+        if (!gameRootPos) {
+            unplaced++;
+            return null;
+        }
+
+        if (!rootSeeded && merged.root.children.length === 0) {
+            rootSeeded = true;
+            const seeded = defaultTree(game.root.fen);
             if (
                 seeded.root.fen !== merged.root.fen ||
                 seeded.root.halfMoves !== merged.root.halfMoves
@@ -422,32 +472,6 @@ export function mergeIntoRepertoire(
                 merged.position = [];
                 changed = true;
             }
-        }
-    }
-
-    let nodeCount = 0;
-    for (const { position } of treeIterator(merged.root)) {
-        if (position.length > MAX_TREE_DEPTH) {
-            return {
-                ok: false,
-                reason: "max-depth",
-                message: `The merged repertoire exceeds the maximum depth of ${MAX_TREE_DEPTH} half-moves.`,
-            };
-        }
-        if (++nodeCount > MAX_TREE_NODES) {
-            return {
-                ok: false,
-                reason: "max-nodes",
-                message: `The merged repertoire exceeds the maximum size of ${MAX_TREE_NODES} positions.`,
-            };
-        }
-    }
-
-    for (const game of games) {
-        const [gameRootPos] = positionFromFen(game.root.fen);
-        if (!gameRootPos) {
-            unplaced++;
-            continue;
         }
 
         const gameBoardState = getBoardState(game.root.fen);
@@ -460,7 +484,7 @@ export function mergeIntoRepertoire(
         }
         if (!anchor) {
             unplaced++;
-            continue;
+            return null;
         }
 
         if (mergeAnnotationsOntoExistingNode(anchor.node, game.root)) {
@@ -515,18 +539,12 @@ export function mergeIntoRepertoire(
 
                 const childDepth = targetDepth + 1;
                 if (childDepth > MAX_TREE_DEPTH) {
-                    return {
-                        ok: false,
-                        reason: "max-depth",
-                        message: `The merged repertoire exceeds the maximum depth of ${MAX_TREE_DEPTH} half-moves.`,
-                    };
+                    refusal = "max-depth";
+                    return refusal;
                 }
                 if (nodeCount + 1 > MAX_TREE_NODES) {
-                    return {
-                        ok: false,
-                        reason: "max-nodes",
-                        message: `The merged repertoire exceeds the maximum size of ${MAX_TREE_NODES} positions.`,
-                    };
+                    refusal = "max-nodes";
+                    return refusal;
                 }
 
                 const nextPos = parentPos.clone();
@@ -534,7 +552,7 @@ export function mergeIntoRepertoire(
                 nextPos.play(move);
                 const newNode = createNode({
                     fen: makeFen(nextPos.toSetup()),
-                    move,
+                    move: { ...move },
                     san,
                     halfMoves: targetParent.halfMoves + 1,
                 });
@@ -561,37 +579,72 @@ export function mergeIntoRepertoire(
                 stack.push(nextFrames[i]);
             }
         }
-    }
 
-    const serialized = getPGN(merged.root, {
-        headers: merged.headers,
-        glyphs: true,
-        comments: true,
-        variations: true,
-        extraMarkups: true,
-    });
-    if (utf8ByteLength(serialized) > PGN_TEXT_MAX) {
-        return {
-            ok: false,
-            reason: "max-bytes",
-            message: `The merged repertoire exceeds the maximum PGN size of ${PGN_TEXT_MAX} bytes.`,
-        };
-    }
+        return null;
+    };
 
-    for (const line of serialized.split("\n")) {
-        if (utf8ByteLength(line) >= MAX_PGN_SCANNER_LINE_BYTES) {
+    const finish = (): RepertoireMergeResult => {
+        if (refusal !== null) {
+            return { ok: false, reason: refusal, message: refusalMessage(refusal) };
+        }
+
+        const serialized = getPGN(merged.root, {
+            headers: merged.headers,
+            glyphs: true,
+            comments: true,
+            variations: true,
+            extraMarkups: true,
+        });
+        if (utf8ByteLength(serialized) > PGN_TEXT_MAX) {
             return {
                 ok: false,
-                reason: "max-line-bytes",
-                message: `The merged repertoire contains a PGN line reaching the scanner limit of ${MAX_PGN_SCANNER_LINE_BYTES} bytes.`,
+                reason: "max-bytes",
+                message: refusalMessage("max-bytes"),
             };
         }
-    }
+
+        for (const line of serialized.split("\n")) {
+            if (utf8ByteLength(line) >= MAX_PGN_SCANNER_LINE_BYTES) {
+                return {
+                    ok: false,
+                    reason: "max-line-bytes",
+                    message: refusalMessage("max-line-bytes"),
+                };
+            }
+        }
+
+        return {
+            ok: true,
+            tree: merged,
+            report: { added, conflicts, unplaced },
+            changed,
+        };
+    };
 
     return {
-        ok: true,
-        tree: merged,
-        report: { added, conflicts, unplaced },
-        changed,
+        add,
+        finish,
     };
+}
+
+/**
+ * Purely merges `games` into a clone of `target` for a repertoire of `orientation`.
+ *
+ * The input `target` and `games` are never mutated. Existing move order and main line never
+ * change; a conflicting reply for `orientation` is appended with `reviewMark = true`.
+ * Refuses without applying if the merged tree exceeds `MAX_TREE_NODES`, `MAX_TREE_DEPTH`,
+ * `PGN_TEXT_MAX` serialized UTF-8 bytes, or `MAX_PGN_SCANNER_LINE_BYTES` on any physical line.
+ */
+export function mergeIntoRepertoire(
+    target: TreeState,
+    games: readonly TreeState[],
+    orientation: "white" | "black",
+): RepertoireMergeResult {
+    const merger = createRepertoireMerger(target, orientation);
+    for (const game of games) {
+        if (merger.add(game) !== null) {
+            return merger.finish();
+        }
+    }
+    return merger.finish();
 }
