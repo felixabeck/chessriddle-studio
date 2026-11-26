@@ -5164,8 +5164,9 @@ fn home_default_path_is_the_canonical_spelling_and_activates() {
 
 /// On a case-sensitive filesystem a studio folder renamed to another case and replaced by a
 /// link to it after the open stays inside home but is a link at the requested spelling: it
-/// must be refused, as a link there is before the open.
-#[cfg(unix)]
+/// must be refused, as a link there is before the open. Linux only: macOS's default APFS
+/// is case-insensitive, so the case-variant rename and the link cannot coexist there.
+#[cfg(target_os = "linux")]
 #[test]
 fn home_default_refuses_a_case_variant_link_planted_at_the_studio_spelling() {
     let dir = tempfile::tempdir().unwrap();
