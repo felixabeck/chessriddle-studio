@@ -29449,13 +29449,17 @@ Filed from the build of the scoresheet photo import (session c4fe3a7e-d00d-4487-
 
 ### Default `pnpm verify:app` on master stops at RF2 and fails the Files Repertoire-filter check
 
-* **ID:** f-20261125-22 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261125-22 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** tooling
 * **Failure scenario:** default `pnpm verify:app` against a release build of `origin/master` `ecba11965` (2026-11-25, tuxedo-atlas, quiet machine) and against the scoresheet build on top of it (`dcae16742`): 173 checks pass, then `FAIL the Repertoire filter lists the metadata-edited workspace file — timed out waiting for the opened File type control's Repertoire option`, and after `ok RF1` the run aborts with `verify:app could not run: timed out waiting for root permission action Puzzles`, so RF2 to RF8 and every later check never run. Both reproduce identically on both binaries, so they predate the scoresheet build. AO1/AO2 in the same runs are f-20261125-13.
 * **Open question:** are these verifier drift after the 2026-11-25 Settings regroup, the unified drop-down (`270389c34`, the File type control is now a Select) and the New Tab emoji buttons, or product regressions? f-20261008-01 (Repertoire filter) and f-20261117-04 (Puzzles permission action) were handled earlier, so the cause is new.
 * **Spotted outside diff:** `scripts/verify-app.mjs` Files metadata-edit block and the RF2 Puzzles root-permission step.
 
 Filed from the scoresheet photo import build (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: f-20261125-13 (AO1/AO2 in the same runs), f-20261008-01, f-20261117-04.
+
+Verifier drift, not a product regression: the emoji pass `4aee1135b` gave the Library file-type filter options (`LibraryPage.tsx` `EmojiLabel`) and the New Tab Puzzles button (`NewTabHome.tsx` `Emoji` leftSection) a decorative aria-hidden emoji, so the exact `textContent` matches for "Repertoire" and "Puzzles" timed out. Commit `1689db6de`: `ACCESSIBLE_TEXT` (browser-side copy of `src/tests/accessibleText.ts`, skips aria-hidden subtrees) replaces raw textContent at the root-permission click helper, `clickButton`, the Repertoire option and TR2.
+  * **Proof:** default `pnpm verify:app` against a release build of `06720f913` with the fixed harness: the Repertoire filter check and RF0–RF8 pass (191 ok; one unrelated red, the 1000 ms freshness timing bound under machine load). Reviewed by review-correctness (twice) and review-root-cause, all APPROVED. Master's default run now stops earlier at the Practice tab, filed as f-20261126-02.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"28ba4dd9b74daa61c18f1002a23fd006cdaf85156efa3771dd15851fb3ef49f1","header_sha256":"0d4d04390a8c9f94377ce25b5bf3e1af53bda5e8640bebfd7db6a446f5beecfb","header_status":"handled","input_sha256":"f5afa9f70d22decb2bb891baf4eed2444ae1ceca2d08078acb1fcdd891ccd4a6","kind":"mutation-receipt","operation":"01b2c2c508687d3637bb7a98a74397026ac93cb398fa3061400e9a235e4bfe09","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-22"],"target":"f-20261125-22","v":1} -->
 
 ---
 
