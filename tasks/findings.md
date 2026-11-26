@@ -29756,3 +29756,16 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 2026-11-26, the stacked notation wheel-reachability test waits on scroll state instead of step counts: larger wheel steps, an `expect.poll` on hit-testability, scroll progress or a grown virtualized `scrollHeight`, and one evaluation for the three overflow ancestors. Measured under CDP CPU throttling rate 6 in the container: 33.1 s before (82% in the fixed-step loop), 10.9 s after; unthrottled 2.8 s. What it proves is unchanged (late move starts unmounted, becomes reachable by real wheel events, is hit at its centre, selects e4). Proof: `pnpm test:e2e:container --project=notation-hierarchy-scaled --project=notation-hierarchy` 10 passed, no snapshot moved; tests and correctness lenses approved. CI confirmation comes with the next Test run.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"7bac2c4dca6e1f5ccfb9dfc8be75b6f0d3341869e9f7df414b60b490932a375e","header_sha256":"a505daae24415899c5262b6a9831e494dfd70b653af0498fa077baf108bc8dbb","header_status":"handled","input_sha256":"754bb4de61531126c199f2feffaf042cf132b7670bf046da35e1748dbd9b568f","kind":"mutation-receipt","operation":"342b05e995fe5b49a6b795efd8fece307e172a7616658cf14d164a9bd51539a2","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-14"],"target":"f-20261126-14","v":1} -->
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The Info panel's chapter accordion nests the "Add game" button inside the accordion trigger button
+
+* **ID:** f-20261126-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+
+* **Impact class:** ux
+* **Spotted outside diff:** while writing `e2e/saved-layouts.spec.ts` in the saved-layouts build (2026-11-26), a full-page `assertAccessible()` on a fresh opponent-preparation tab reported axe `nested-interactive`; the spec now checks the layout dialogs only (commit 640daa931).
+* **Failure scenario:** `src/components/panels/info/GameSelectorAccordion.tsx` renders the `IconAction` "Add game" (`Board.Action.AddGame`) inside `Accordion.Control`, which is itself a `<button>`. A button inside a button is invalid HTML: screen readers announce one merged control, keyboard focus order is undefined across browsers, and axe reports `nested-interactive` on every analysis tab that shows the chapter accordion (visible in Felix's 2026-11-26 screenshot as the "+" beside "3. Systeme mit Sge7").
+* **Open question:** none; move the action out of the trigger (e.g. `Accordion.Control`'s sibling or Mantine's `chevron`-adjacent slot) so trigger and action are separate focusable controls, then run a full-page `assertAccessible()` on a file-backed tab.
