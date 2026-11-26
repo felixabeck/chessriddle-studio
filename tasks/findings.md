@@ -29520,8 +29520,10 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### CI e2e red on master: three notation-menu tests time out because the taller move menu covers the move they click
 
-* **ID:** f-20261126-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-03 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Failure scenario:** since `756efa232` (notation hotkeys: "Delete Variation" and "Delete Following Moves" added to the move menu) the CI `e2e` job fails on master (run 45770675964) with `notation-menu: workspace inline / preview inline / preview table dismisses and promotes with pointer clicks` (`e2e/engine-gap.spec.ts:129`): `locator.click` on the `e4` move times out because `Delete Following Moves` in the open menu intercepts pointer events. Reproduced locally in the container at `c05dd4cf0` (3 failed, same message); the hide-tab-strip change on top does not touch the notation menu.
 * **Open question:** move the test's dismiss click to a target the taller menu cannot cover, or change the menu's placement so it never covers the move list it belongs to?
 * **Spotted outside diff:** yes, while running the full e2e suite for the hide-tab-strip build (2026-11-26).
+* **Closed as duplicate:** the same CI red was filed in parallel as f-20261126-04 and fixed by `05c541843` (test dismisses the move menu with a click on a move it does not cover); f-20261126-04 is closed. Nothing left to do here.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"23ef744e569a1c6581b6be8a049c13af1e2f48897489c13edb40a77c8cd9309c","header_sha256":"1a717dcd2d602b7225235e05a0db92470236d466b04dbef4cffbd75f61e85f1b","header_status":"handled","input_sha256":"f79e7638ca03ac14d8d93ee2a61fcf2dded52a08a43b81a0088affc54315e335","kind":"mutation-receipt","operation":"e7090ced2f82664b13615401eaf3b92669d82b649d6e40b2806f70c0a1007a42","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-03"],"target":"f-20261126-03","v":1} -->
