@@ -283,13 +283,23 @@ fn disable_core_dumps() -> Result<(), LimitError> {
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &zero) } != 0 {
         return Err(LimitError);
     }
-    // On Linux, piped `/proc/sys/kernel/core_pattern` handlers ignore `RLIMIT_CORE = 0`.
-    // Marking the process non-dumpable prevents core dumps even with a pipe handler.
-    #[cfg(target_os = "linux")]
+    mark_non_dumpable()
+}
+
+/// On Linux, piped `/proc/sys/kernel/core_pattern` handlers ignore `RLIMIT_CORE = 0`.
+/// Marking the process non-dumpable prevents core dumps even with a pipe handler.
+#[cfg(target_os = "linux")]
+fn mark_non_dumpable() -> Result<(), LimitError> {
     // SAFETY: `PR_SET_DUMPABLE` takes a single flag value (0 = SUID_DUMP_DISABLE).
     if unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } != 0 {
         return Err(LimitError);
     }
+    Ok(())
+}
+
+/// Other Unix platforms honour `RLIMIT_CORE = 0` for their core handlers.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn mark_non_dumpable() -> Result<(), LimitError> {
     Ok(())
 }
 
