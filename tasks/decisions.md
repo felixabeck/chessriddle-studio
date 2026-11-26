@@ -15283,3 +15283,24 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Zero product change, and the real `keyring` crate path is exercised end to end. Reversal path: replace the provider in the harness; nothing else depends on which daemon serves `org.freedesktop.secrets`. Restore the PARTIAL branch if a platform without gnome-keyring must run the mode.
 * **Decided by:** plan session for f-20261125-21 (agy plan lenses, rounds 1-4), recorded by Claude Code (Opus 5.5) drain session 04e8f621-d458-405a-a102-f7eee9b6e626 under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"75d2063a7e535563c5eb5700e07baaf6bb12552e9dc39fdc36410596a323428d","input_sha256":"89431c38b675a2a2d5f8b975528c8ab487831eca70769144d5d64bd67f9cfb2a","kind":"mutation-receipt","operation":"9f9a53f521d348200afed97e89112c92258b88a529fe5b5e98ab8c5ce178ef12","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-33"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-27 — recorded through the decisions lock
+
+### d-20261127-01 — How are untrusted PDFs rendered for the scoresheet import?
+
+* **Question:** Felix ordered PDF support for the scoresheet import on 2026-11-26. A PDF a user picks or drops may be malformed or crafted. How is it rasterised without risking the whole app?
+* **Governs:** -
+* **Chosen:** hayro 0.9 (pure Rust, no unsafe code, Apache-2.0 OR MIT, default features with the embedded standard fonts) inside a short-lived helper process: the app's own executable started with the hidden `--internal-scoresheet-pdf-render` argument, handled as the first statement of `fn main`. The child limits itself before parsing (512 MiB data cap on Linux, a job-object memory limit on Windows, not dumpable, a 30 s deadline) and returns JPEG pages on stdout; the parent owns, kills and reaps it on every exit path inside `BLOCKING_GATEWAY` and passes every page through `process_image_bytes`. Code: `src-tauri/src/coach/scoresheet_pdf.rs`.
+* **Rejected:** Rendering in the app process with pre-checks on page resources (measured: a 306 KB PDF made hayro allocate about 400 MB, and JBIG2/JPEG 2000 headers, inline images, nested forms and masks allocate outside any such check, so an allocation failure would abort the app); pdfium-render (a native C++ library to bundle, load and sign on three platforms); MuPDF (AGPL, C); extracting embedded JPEGs (fails CCITT/JBIG2/vector pages); a separate sidecar binary (own bundling and signing per platform).
+* **Reason:** A broken or hostile PDF fails only its own file. Plan review r1–r4 (agy), `tasks/plans/2026-11-26-scoresheet-pdf-import.md`. Reversal path: move `render_pdf_pages` back in-process and drop the helper dispatch if hayro gains enforced allocation and time limits; the intake contract stays.
+* **Decided by:** Claude Code (Opus 5.5) interactive session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, under full auto · **Superseded-by:** -
+
+### d-20261127-02 — Where is the gap below a dialog's header fixed?
+
+* **Question:** In Import Game the "From photo" card touched the line under the header. The cause is shared: Mantine drops the modal body's top padding when a header is present, and our modal style draws a divider there, so the first content of every dialog sat flush against it. Fix it in Import Game only, or in the shared modal style?
+* **Governs:** -
+* **Chosen:** In the shared modal style (`src/styles/Modal.module.css`): the body gets `var(--mantine-spacing-md)` top padding when a header precedes it. 65 e2e snapshots moved, each only by that gap (commit 4efdaed2c lists them).
+* **Rejected:** A local margin on the Import Game card row (every other dialog keeps the same defect, for example Keyboard shortcuts and Sync with ChessRiddle, whose first rows touched the line).
+* **Reason:** One cause, one fix. Plan review issue R1-13, `tasks/plans/2026-11-26-scoresheet-pdf-import.md`. Reversal path: remove the `.body:not(:only-child)` rule and add spacing per dialog.
+* **Decided by:** Claude Code (Opus 5.5) interactive session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":17,"effect_sha256":"7086eef67ee8b1b0e4a00468b21364691b188b77c07c27ca6c5846995429fe20","input_sha256":"650158ca5144ac4d459ddff77bf23486a287b2f93902188e73e4f78364b6596d","kind":"mutation-receipt","operation":"5d065d48c8998b492cf94819d16ab57204b8ced9e91831f613b0b24d746035e2","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-01","d-20261127-02"],"target":"decisions-ledger","v":1} -->
