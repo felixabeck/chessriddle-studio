@@ -29551,7 +29551,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The folder-switch Rust tests fail on Windows: 8.3 temp spellings and a wrong final-sigma expectation
 
-* **ID:** f-20261126-05 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-05 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45780981166
 * **First red:** run 45780981166 on `e520e02f1` (feat(settings) folder-settings push; previous Test run 45774896559 on `aa0df030f` was green), job rust-windows-test.
@@ -29560,3 +29560,6 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Defect:** the phase-4 tests register roots with `Some(VerifiedIdentity)`, for which `registration_target` stores the caller's spelling; their directories were built from `TempDir::path()`, which on Windows runners can be an 8.3 short spelling, unlike the canonical paths production registers. The final-sigma assertion assumed `RtlUpcaseUnicodeChar('ς') == 'Σ'`; the runner shows it leaves `ς` unchanged. Both are test defects; the phase-2 Windows tests for 8.3 and `\\?\` default registration pass in the same run.
 * **Fix:** build the phase-4 test directories under `fs::canonicalize(tmp.path())`; assert `σ`/`Σ` fold together and `ς`/`Σ` stay distinct.
 * **Found by:** Claude Code (Opus 5.5), folder-settings build, post-push CI wait, 2026-11-26.
+* **Handled (2026-11-26, Claude Code (Opus 5.5), folder-settings build):** commit `01659b730`. The phase-4 folder-switch tests build their directories under `fs::canonicalize(tmp.path())`, so roots registered with a verified identity carry a canonical spelling as in production; the Windows folding test asserts `σ`/`Σ` fold together and `ς`/`Σ` stay distinct, as run 45780981166 showed.
+  * **Proof:** `pnpm rust:windows:check` (clippy, all targets, `-D warnings`) passes; `cargo test --bins -- folder_switch` 36 passed on Linux; the Windows run of the next push's Test workflow is the execution proof.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"9dd43d5be117e610693be72b8e05bda6d5aa7dbeec31e3fa4f884249adbd9cbd","header_sha256":"f7281a1b96a8f99ebe4c25cb2a46447aa8580317acbd2c93aedf9fe181daa708","header_status":"handled","input_sha256":"262d3931d838e66882d326e578eb3eba8102907f3844c6dce0b2239607705055","kind":"mutation-receipt","operation":"7a05499b405866e03e26930df40ffee47750ec48af5be0e3bd6270c5f02e5a3a","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-05"],"target":"f-20261126-05","v":1} -->
