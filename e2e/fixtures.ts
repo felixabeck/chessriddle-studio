@@ -1414,6 +1414,7 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         chessriddle_training_settings: { error: "updateRequired" },
         chessriddle_training_motifs: { result: [] },
         chessriddle_open_website: { result: null },
+        open_external_url: { result: null },
         library_sync_snapshot: {
             result: {
                 workspace: { id: { id: "files-workspace" }, kind: "fileWorkspace" },

@@ -32,6 +32,8 @@ const wrapperImportRules = [
 const unsafeFocusReset = /\b(all\s*:\s*unset|outline\s*:\s*(?:none|0(?:px)?))\b/;
 const mantineStylesheetSpec =
   /(?:from|import)\s+["']((?:@mantine\/[\w-]+|mantine-contextmenu|mantine-datatable)\/(?:styles(?:\.layer)?\.css|styles\/[\w.-]+\.css))["']/;
+const externalLinkOwner = "src/components/common/ExternalLink.tsx";
+const blankTargetLiteral = /["']_blank["']/;
 
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
@@ -97,6 +99,11 @@ for (const file of sourceFiles) {
   if (contents === null) continue;
   if (!file.endsWith(".css")) {
     inspectMantineImports(file, contents);
+    if (file !== externalLinkOwner && blankTargetLiteral.test(contents)) {
+      violations.push(
+        `${file}: direct _blank target; use ExternalLink or externalLinkProps from ${externalLinkOwner}`,
+      );
+    }
   }
   for (const line of contents.split("\n")) {
     inspectLine(file, line);

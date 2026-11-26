@@ -1,5 +1,6 @@
-import { Anchor, Divider, Stack, Text } from "@mantine/core";
+import { Divider, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+import ExternalLink from "@/components/common/ExternalLink";
 import {
   catalogEntryForInstalledDatabase,
   useDefaultDatabases,
@@ -34,15 +35,15 @@ export function DatabaseCredit({ credit }: { credit: Credit }) {
       <Text size="xs" c="dimmed">
         {t("Databases.Credit.Author", { author: credit.author })}
         {" · "}
-        <Anchor href={credit.website} target="_blank" rel="noreferrer" inherit>
+        <ExternalLink href={credit.website} inherit>
           {websiteLabel(credit.website)}
-        </Anchor>
+        </ExternalLink>
       </Text>
       <Text size="xs" c="dimmed">
         {t("Databases.Credit.License")}{" "}
-        <Anchor href={credit.license.url} target="_blank" rel="noreferrer" inherit>
+        <ExternalLink href={credit.license.url} inherit>
           {credit.license.name}
-        </Anchor>
+        </ExternalLink>
       </Text>
       {(credit.release || converter) && (
         <Text size="xs" c="dimmed">

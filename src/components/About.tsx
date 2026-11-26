@@ -1,5 +1,6 @@
-import { Anchor, Text } from "@mantine/core";
+import { Text } from "@mantine/core";
 import AppModal from "./common/AppModal";
+import ExternalLink from "./common/ExternalLink";
 import { getTauriVersion, getVersion } from "@/platform/native";
 import { arch, osType, OSVersion } from "@/platform/native";
 import { useEffect, useState } from "react";
@@ -65,14 +66,9 @@ function AboutModal({
 
       <br />
 
-      <Anchor
-        href={REPOSITORY_URL}
-        target="_blank"
-        rel="noreferrer"
-        style={{ overflowWrap: "anywhere" }}
-      >
+      <ExternalLink href={REPOSITORY_URL} style={{ overflowWrap: "anywhere" }}>
         {REPOSITORY_URL}
-      </Anchor>
+      </ExternalLink>
     </AppModal>
   );
 }

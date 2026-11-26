@@ -20,6 +20,7 @@ import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
 import type { Color } from "chessops";
 import { lineTitleOf } from "@/utils/lineTitle";
+import { externalLinkProps } from "./ExternalLink";
 import {
   getEffectiveGameEnd,
   getEffectiveTermination,
@@ -234,7 +235,7 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
           />
           <Group justify="center" className={classes.centre}>
             {sitePlatform !== null ? (
-              <a href={headers.site} target="_blank" rel="noreferrer">
+              <a {...externalLinkProps(headers.site)}>
                 <Text p="sm" w={90}>
                   {sitePlatform}
                 </Text>

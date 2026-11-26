@@ -6,6 +6,7 @@ import {
   type ElementProps,
 } from "@mantine/core";
 import { forwardRef, type ReactElement } from "react";
+import { externalLinkProps } from "./ExternalLink";
 
 type IconActionProps = Omit<
   ActionIconProps & ElementProps<"button", keyof ActionIconProps>,
@@ -45,15 +46,17 @@ export const IconAction = forwardRef<HTMLButtonElement, IconActionProps>(functio
   // The rest props are declared for the button form; their DOM handlers apply to the
   // anchor unchanged. The forwarded ref is button-typed, so a link action takes none.
   // An anchor cannot be disabled, so an unavailable link renders as the disabled button.
+  const anchorProps = props as ActionIconProps & ElementProps<"a", keyof ActionIconProps>;
   const action =
     href && !unavailable ? (
       <ActionIcon
-        {...(props as ActionIconProps & ElementProps<"a", keyof ActionIconProps>)}
+        {...anchorProps}
         {...shared}
         component="a"
-        href={href}
-        target="_blank"
-        rel="noreferrer"
+        {...externalLinkProps(href, {
+          onClick: anchorProps.onClick,
+          onAuxClick: anchorProps.onAuxClick,
+        })}
       />
     ) : (
       <ActionIcon {...props} {...shared} ref={ref} />

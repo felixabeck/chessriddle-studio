@@ -4,6 +4,7 @@ import { readCommentNotation, type CommentNotationNode } from "@/utils/commentNo
 import { recognizeGameReferences, type GameReference } from "@/utils/gameReferences";
 import type { TreeNode } from "@/utils/treeReducer";
 import { useGameReference } from "./GameReference";
+import { externalLinkProps } from "./ExternalLink";
 import classes from "./GameNotation.module.css";
 
 function renderNotation(nodes: CommentNotationNode[], multipleLine: boolean): ReactNode {
@@ -28,12 +29,7 @@ function renderNotation(nodes: CommentNotationNode[], multipleLine: boolean): Re
         break;
       case "link":
         rendered = (
-          <a
-            href={node.attrs.href}
-            title={node.attrs.title ?? undefined}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a {...externalLinkProps(node.attrs.href)} title={node.attrs.title ?? undefined}>
             {children}
           </a>
         );

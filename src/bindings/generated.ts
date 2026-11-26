@@ -438,6 +438,17 @@ async openAppLog() : Promise<Result<null, ErrorPayload>> {
 }
 },
 /**
+ * Validates and opens an external `http`, `https` or `mailto` URL in the system handler.
+ */
+async openExternalUrl(url: string) : Promise<Result<null, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_external_url", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * The native picker creates a persistent, least-privilege root for one-file downloads.
  * The renderer receives only the opaque capability ID, never a filesystem path.
  */

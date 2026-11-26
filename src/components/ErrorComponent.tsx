@@ -1,9 +1,10 @@
-import { Anchor, Button, Code, Group, Stack, Text, Title } from "@mantine/core";
+import { Button, Code, Group, Stack, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Trans, useTranslation } from "react-i18next";
 import { useClipboardCopy } from "@/hooks/useClipboardCopy";
 import { normalizeError } from "@/platform/errors";
+import ExternalLink from "@/components/common/ExternalLink";
 import LazyFeedbackModal from "@/components/feedback/LazyFeedbackModal";
 import { runUnlessCancelled } from "@/components/files/notifyError";
 import { REPOSITORY_URL } from "@/utils/product.json";
@@ -57,7 +58,7 @@ export default function ErrorComponent({ error }: { error: unknown }) {
         <Trans
           i18nKey="Error.ReportIssue"
           components={{
-            github: <Anchor href={issueUrl} target="_blank" />,
+            github: <ExternalLink href={issueUrl} />,
           }}
         />
       </Text>

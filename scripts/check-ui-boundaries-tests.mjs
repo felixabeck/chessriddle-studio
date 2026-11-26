@@ -188,3 +188,36 @@ test("allows exempt wrapper files and theme.ts to import their wrapped component
     assert.equal(result.error, undefined);
   }
 });
+
+test("rejects direct _blank target outside ExternalLink.tsx", async () => {
+  for (const [label, source] of [
+    [
+      "JSX attribute",
+      'export const A = () => <a href="https://example.com" target="_blank">x</a>;\n',
+    ],
+    ["object literal", 'export const props = { target: "_blank" };\n'],
+  ]) {
+    const result = await runChecker("src/components/Example.tsx", (root) =>
+      writeListedFile(root, "src/components/Example.tsx", source),
+    );
+
+    assert.notEqual(result.status, 0, label);
+    assert.match(
+      result.stderr,
+      /direct _blank target; use ExternalLink or externalLinkProps from src\/components\/common\/ExternalLink\.tsx/,
+    );
+  }
+});
+
+test("allows _blank target inside ExternalLink.tsx", async () => {
+  const result = await runChecker("src/components/common/ExternalLink.tsx", (root) =>
+    writeListedFile(
+      root,
+      "src/components/common/ExternalLink.tsx",
+      'export const props = { target: "_blank" as const };\n',
+    ),
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.error, undefined);
+});

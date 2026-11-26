@@ -206,6 +206,7 @@
         "src/components/common/GenericCard.tsx",
         "src/components/common/GroupedSidebarTabs.tsx",
         "src/components/common/InlineInput.tsx",
+        "src/components/common/ExternalLink.tsx",
         "src/components/common/IconAction.tsx",
         "src/components/common/PanelErrorBoundary.tsx",
         "src/components/common/CatalogDownloadCard.tsx",

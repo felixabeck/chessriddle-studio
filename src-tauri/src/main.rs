@@ -1290,6 +1290,29 @@ fn open_app_log_blocking(app: tauri::AppHandle) -> Result<(), Error> {
         .map_err(Error::from)
 }
 
+/// Validates and opens an external `http`, `https` or `mailto` URL in the system handler.
+#[tauri::command]
+#[specta::specta]
+async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), Error> {
+    let parsed = crate::infra::external_url::validate_external_url(&url)?;
+    let operations = app.state::<AppState>().operations.clone();
+    crate::infra::operations::run_accepted_blocking(&operations, "open_external_url", move || {
+        open_external_url_blocking(app, parsed)
+    })
+    .await
+}
+
+fn open_external_url_blocking(app: tauri::AppHandle, url: url::Url) -> Result<(), Error> {
+    use tauri_plugin_opener::OpenerExt;
+    let scheme = url.scheme().to_owned();
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
+        .map_err(|error| {
+            log::warn!("failed to open external {scheme} URL: {error}");
+            Error::from(error)
+        })
+}
+
 /// Whole-process budget for shutdown cleanup. Independent resources are reaped
 /// concurrently; this remains a backstop for a teardown that never completes.
 const SHUTDOWN_BUDGET: Duration = Duration::from_secs(15);
@@ -1678,6 +1701,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             save_board_snapshot,
             save_engine_logs,
             open_app_log,
+            open_external_url,
             issue_download_destination,
             download_destination_is_known,
             issue_database_workspace,
@@ -1932,7 +1956,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build(),
         )
         .invoke_handler(specta_builder.invoke_handler())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -4777,6 +4805,24 @@ mod blocking_offload_scans {
     }
 
     #[test]
+    fn opener_plugin_never_injects_js_link_click_handler() {
+        let (builder, compact) = app_builder_plugin_chain();
+        assert_eq!(
+            compact
+                .matches(
+                    "tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build()"
+                )
+                .count(),
+            1,
+            "{builder}"
+        );
+        assert!(
+            !compact.contains("tauri_plugin_opener::init()"),
+            "{builder}"
+        );
+    }
+
+    #[test]
     fn main_window_config_defers_creation_until_setup() {
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
@@ -4789,6 +4835,11 @@ mod blocking_offload_scans {
         let workspace_commands = include_str!("workspace_commands.rs");
         let puzzle = include_str!("puzzle.rs");
         assert_offloads(main, "async fn open_app_log(", "open_app_log_blocking");
+        assert_offloads(
+            main,
+            "async fn open_external_url(",
+            "open_external_url_blocking",
+        );
         for (signature, worker) in [
             (
                 "async fn save_native_export(",
@@ -6493,6 +6544,10 @@ mod blocking_offload_scans {
             (
                 "open_app_log",
                 "opens app log directory in OS file manager; touches no migrating root",
+            ),
+            (
+                "open_external_url",
+                "opens a validated external URL in the OS handler; touches no migrating root",
             ),
             (
                 "is_bmi2_compatible",

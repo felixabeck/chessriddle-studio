@@ -1,5 +1,4 @@
 import {
-  Anchor,
   Button,
   FileButton,
   Group,
@@ -16,6 +15,7 @@ import { Trans, useTranslation } from "react-i18next";
 import type { FeedbackOutcome, FeedbackType } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
 import { EmojiLabel } from "@/components/common/Emoji";
+import ExternalLink from "@/components/common/ExternalLink";
 import { emojiOf } from "@/components/common/iconCatalog";
 import { IconAction } from "@/components/common/IconAction";
 import { wrappingButton } from "@/components/common/wrappingButton";
@@ -464,7 +464,7 @@ export default function FeedbackModal({
             <Trans
               i18nKey="Feedback.Privacy"
               components={{
-                privacy: <Anchor href={PRIVACY_URL} target="_blank" rel="noreferrer" />,
+                privacy: <ExternalLink href={PRIVACY_URL} />,
               }}
             />
           </Text>

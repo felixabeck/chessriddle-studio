@@ -4,6 +4,7 @@
 pub(crate) mod appimage_handler;
 pub mod blocking;
 pub mod cancellable_lock;
+pub(crate) mod external_url;
 pub mod fs;
 pub(crate) mod game_link;
 pub(crate) mod game_link_handoff;
