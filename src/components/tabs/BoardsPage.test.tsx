@@ -733,13 +733,13 @@ test("a workspace without tabs stays empty and leaves the board view for the Lib
   expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/library", replace: true });
 });
 
-test("a New Tab admitted in a transition is not sent back to the Library by its own navigation", async () => {
+test("a tab written in a transition is not sent back to the Library by its own navigation", async () => {
   store.set(tabsAtom, []);
   fixtures.pathname = "/library";
   await renderPage();
 
-  // Tab admission is a transition (`stageAndCommitTab` in utils/tabs.ts); the navigation to "/" renders urgently, so
-  // that render still sees no tabs while the store already holds the admitted one.
+  // Tab admission itself publishes urgently (`stageAndCommitTab` in utils/tabs.ts); this proves the guard for any
+  // lower-priority writer: the urgent navigation to "/" still sees no tabs while the store already holds one.
   await act(async () => {
     startTransition(() => {
       store.set(tabsAtom, [fixtures.tabs[0]!]);

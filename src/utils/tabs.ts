@@ -3,7 +3,7 @@ import { normalizeError, type AppError } from "@/platform/errors";
 import i18n from "i18next";
 import { getDefaultStore, useSetAtom, useStore } from "jotai";
 import type { StoreApi } from "zustand";
-import { createContext, startTransition, useCallback } from "react";
+import { createContext, useCallback } from "react";
 import type { FileMetadata } from "@/components/files/file";
 import { persistStorageWriteError } from "@/state/storageWriteError";
 import { MAX_STORE_ATTEMPTS, tabStorage } from "@/state/store/tabStorage";
@@ -408,13 +408,11 @@ function stageAndCommitTab({
     seed,
     existingTabIds,
     commit,
-    keepLogicalTab = false,
     requestedId,
 }: {
     seed?: (id: string) => void;
     existingTabIds?: Iterable<string>;
     commit: (freshId: string) => boolean;
-    keepLogicalTab?: boolean;
     /** A known id (a restored unsaved game keeps its own); refused when already stored. */
     requestedId?: string;
 }): StagedAdmissionResult {
@@ -433,22 +431,13 @@ function stageAndCommitTab({
         }
     }
 
-    let result: StagedAdmissionResult | undefined;
-    let admissionError: unknown;
-    const admit = () => {
-        try {
-            result = commit(id)
-                ? { kind: "committed", id }
-                : { kind: "refused", stage: "workspace" };
-        } catch (error) {
-            admissionError = error;
-        }
-    };
-    // A retained logical owner must publish its new page before urgent error settlement.
-    if (keepLogicalTab) admit();
-    else startTransition(admit);
-    // A missing result is an application exception, never definite admission refusal.
-    if (!result) throw admissionError;
+    // Admission publishes urgently, never in a transition: a caller that navigates to the
+    // board after this returns must render the new active tab on that first board render,
+    // or a panel click lands on the previous tab and is lost (f-20261125-23, d-20261126-26).
+    // A thrown commit is an application exception, never definite admission refusal.
+    const result: StagedAdmissionResult = commit(id)
+        ? { kind: "committed", id }
+        : { kind: "refused", stage: "workspace" };
     if (result.kind === "refused") {
         if (seed) rollbackCreatedTree(id);
     }
@@ -600,7 +589,6 @@ export function replaceFileGame({
             install = replacement;
             tabStorage.seed(id, replacement.state);
         },
-        keepLogicalTab: true,
         existingTabIds: store.get(tabsAtom).flatMap((tab) => [tab.value, getTabTreeKey(tab)]),
         commit: (id) => {
             if (!owns()) {

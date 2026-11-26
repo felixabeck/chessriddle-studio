@@ -187,8 +187,9 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   // Closing the last board tab leaves none open. The board view has nothing to show then, so the
   // Library stands in for it, where the navigation row's Library link leads (the open database
   // view, if any); a new tab opens only on request. The store is read instead of this
-  // render's `tabs`: a new tab is admitted in a transition, so the urgent navigation to "/" can
-  // render first with the tab still missing, and must not be sent back to the Library.
+  // render's `tabs`: any writer that changes the tabs at a lower priority than the urgent
+  // navigation to "/" lets that render see the tab still missing, and it must not be sent back
+  // to the Library. Tab admission itself publishes urgently (`stageAndCommitTab`).
   const workspaceStore = useStore();
   const noBoardTabs = tabs.length === 0;
   useEffect(() => {
