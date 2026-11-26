@@ -29711,3 +29711,22 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** ask for the colour when the type becomes Repertoire and write it as the `Orientation` header, or show the trained colour with a switch in Practice.
 * **Open question:** none; the repertoire PGN import build fixes the import paths only.
 * **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The 1,500-game repertoire import test times out under CI coverage
+
+* **ID:** f-20261126-13 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45884131582
+* **First red:** 53b49d13a (Test run 45884131582, job frontend); 45884396140 on 26591c43a inherits it
+* **Repair owner:** f91af77a-8f6b-49e7-a680-03e91333947d on tuxedo-atlas, 2026-11-26T20:08:28Z
+* **Where:** `src/utils/repertoireImport.test.ts` "accepts 1,500 games sharing an opening trunk whose unmerged node sum exceeds MAX_TREE_NODES"
+* **Failure scenario:** the frontend job's coverage run fails with "Error: Test timed out in 5000ms." on that test; locally (no coverage instrumentation) it passes in about 1.4 s. The red Test run blocks installing the repertoire PGN import build and refuses later code pushes.
+* **Fix:** keep what the test proves (more than MAX_TREE_NODES unmerged nodes accepted because the merged tree is small) with a cheaper fixture or an explicit per-test timeout sized for instrumented CI, and check the merger itself has no avoidable per-game cost.
+* **Proof:** the test passes under `pnpm test:coverage` locally within its limit; the next Test run's frontend job succeeds.
+* **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
+
+The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geometry and wheel reachability") is not this change: run 45884131582 on the identical code (53b49d13a) passed e2e, and that spec family was already flaky on master (run 45865739811).
