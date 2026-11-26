@@ -29513,3 +29513,15 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Handled (2026-11-26, Claude Code (Opus 5.5), session 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0):** commit `05c541843`. The dismiss click targets `Bc4`, below the open menu, and expects the cursor there; the assertions on dismissal and navigation are unchanged.
   * **Proof:** `pnpm test:e2e:container --project=engine-gap` 21 passed, including all four `notation-menu ... dismisses and promotes` variants. Review: tests and root-cause lens APPROVED.
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"915ea99fb730ba4a80e892b51c76c0bc119f2537da4df516b3e1d889b35be656","header_sha256":"0331dfbbc34d46f00105406ac55878320ea4b34f38bf5a284d7ae63aaf535e9a","header_status":"handled","input_sha256":"02f965ee83b907555f992e0bdea96fcd888b8c62def75f66c5ac2eec5378bd60","kind":"mutation-receipt","operation":"8d5645a044f66ace73d77df8dd0d1ae16d72f856d8666bddac2eafc03c2215ff","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-04"],"target":"f-20261126-04","v":1} -->
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### CI e2e red on master: three notation-menu tests time out because the taller move menu covers the move they click
+
+* **ID:** f-20261126-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Failure scenario:** since `756efa232` (notation hotkeys: "Delete Variation" and "Delete Following Moves" added to the move menu) the CI `e2e` job fails on master (run 45770675964) with `notation-menu: workspace inline / preview inline / preview table dismisses and promotes with pointer clicks` (`e2e/engine-gap.spec.ts:129`): `locator.click` on the `e4` move times out because `Delete Following Moves` in the open menu intercepts pointer events. Reproduced locally in the container at `c05dd4cf0` (3 failed, same message); the hide-tab-strip change on top does not touch the notation menu.
+* **Open question:** move the test's dismiss click to a target the taller menu cannot cover, or change the menu's placement so it never covers the move list it belongs to?
+* **Spotted outside diff:** yes, while running the full e2e suite for the hide-tab-strip build (2026-11-26).
