@@ -283,25 +283,24 @@ describe("readRepertoireSource (O1)", () => {
     });
 
     test("accepts 1,500 games sharing an opening trunk whose unmerged node sum exceeds MAX_TREE_NODES", async () => {
-        // 78-ply shared trunk + 2-ply leaf = 80 plies (81 nodes per game).
-        // 1,500 * 81 = 121,500 unmerged nodes > MAX_TREE_NODES (100,000), merged << 1,000 nodes.
-        const trunk = [
-            ...Array.from({ length: 19 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat(),
-            "Nf3",
-            "Nf6",
-        ];
+        // 64-ply shared trunk + 2-ply leaf = 66 plies (67 nodes per game).
+        // 1,500 * 67 = 100,500 unmerged nodes > MAX_TREE_NODES (100,000), merged < 200 nodes.
+        const trunk = Array.from({ length: 16 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat();
         const whiteReplies = ["e3", "e4", "d3", "d4", "c3", "c4", "g3", "b3", "Nc3", "a3"];
         const blackReplies = ["e6", "e5", "d6", "d5", "c6", "c5", "g6", "b6", "Nc6", "a6"];
-        const leafPairs: Array<[string, string]> = [];
+        const uniqueEntries: Array<{ status: "ok"; tokens: ReturnType<typeof sanTokens> }> = [];
         for (const w of whiteReplies) {
             for (const b of blackReplies) {
-                leafPairs.push([w, b]);
+                uniqueEntries.push({ status: "ok", tokens: sanTokens([...trunk, w, b]) });
             }
         }
-        const entries = Array.from({ length: 1500 }, (_, i) => {
-            const [w, b] = leafPairs[i % leafPairs.length];
-            return { status: "ok" as const, tokens: sanTokens([...trunk, w, b]) };
-        });
+        const gameCount = 1500;
+        const nodesPerGame = trunk.length + 3;
+        expect(gameCount * nodesPerGame).toBeGreaterThan(MAX_TREE_NODES);
+        const entries = Array.from(
+            { length: gameCount },
+            (_, i) => uniqueEntries[i % uniqueEntries.length],
+        );
 
         mocks.lexPgnGames.mockResolvedValueOnce({ status: "games", games: entries });
         const merger = createRepertoireMerger(defaultTree(), "white");
@@ -311,10 +310,11 @@ describe("readRepertoireSource (O1)", () => {
         );
         const merged = merger.finish();
 
-        expect(result.read).toBe(1500);
+        expect(result.read).toBe(gameCount);
         expect(result.skipped).toBe(0);
         expect(merged.ok).toBe(true);
-    });
+        // Measured ~3.1 s under local v8 coverage instrumentation (100,500 parsed plies); allow CI headroom.
+    }, 15_000);
 
     test("streaming readRepertoireSource + createRepertoireMerger matches direct mergeIntoRepertoire on order, dedup, unplaced count, and black orientation", async () => {
         const nf3Fen = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
@@ -1103,5 +1103,233 @@ describe("mergeIntoRepertoire (O2)", () => {
         expect(result.tree.root.children[0].san).toBe("O-O");
         expect(result.tree.root.children[0].move).toEqual({ from: 3, to: 7 });
         expect(result.tree.root.children[0].fen).toBe("4k3/8/8/8/8/8/8/5RK1 b - - 1 1");
+    });
+
+    test("promotion fast path distinguishes e8=N from e8=Q and follows matching e8=Q", () => {
+        const promoFen = "7k/4P3/8/8/8/8/8/4K3 w - - 0 1";
+        const target = buildGame(["e8=Q"], promoFen);
+
+        const underpromo = buildGame(["e8=N"], promoFen);
+        const res1 = mergeIntoRepertoire(target, [underpromo], "white");
+        expect(res1.ok).toBe(true);
+        if (!res1.ok) throw new Error("Expected underpromotion merge to succeed");
+        expect(res1.report).toEqual({ added: 1, conflicts: 1, unplaced: 0 });
+        expect(res1.tree.root.children.map((c) => c.san)).toEqual(["e8=Q+", "e8=N"]);
+        expect(res1.tree.root.children[1].reviewMark).toBe(true);
+
+        const repeatQueen = buildGame(["e8=Q"], promoFen);
+        repeatQueen.root.children[0].comment = "Queen promo";
+        const res2 = mergeIntoRepertoire(res1.tree, [repeatQueen], "white");
+        expect(res2.ok).toBe(true);
+        if (!res2.ok) throw new Error("Expected repeat promotion merge to succeed");
+        expect(res2.report).toEqual({ added: 0, conflicts: 0, unplaced: 0 });
+        expect(res2.tree.root.children).toHaveLength(2);
+        expect(res2.tree.root.children[0].comment).toBe("Queen promo");
+    });
+
+    test("variation order inside one game preserves main line then side lines in order (empty and non-empty target)", () => {
+        // Build one game with 1. e4 followed by 3 variations: 1... e5, 1... c5, 1... d5
+        // plus duplicate-prefix variations on 1... e5 (2. Nf3, 2. Bc4, 2. d4) to pin stack frame reversal.
+        const game = buildGame(["e4", "e5", "Nf3"]);
+        const gE4 = game.root.children[0];
+        const varC5 = buildGame(["c5"], gE4.fen).root.children[0];
+        const varD5 = buildGame(["d5"], gE4.fen).root.children[0];
+        const varE5Bc4 = buildGame(["e5", "Bc4"], gE4.fen).root.children[0];
+        const varE5D4 = buildGame(["e5", "d4"], gE4.fen).root.children[0];
+        gE4.children.push(varC5, varD5, varE5Bc4, varE5D4);
+
+        const intoEmpty = mergeIntoRepertoire(defaultTree(), [game], "white");
+        expect(intoEmpty.ok).toBe(true);
+        if (!intoEmpty.ok) throw new Error("Expected empty-target merge to succeed");
+        expect(intoEmpty.tree.root.children[0].children.map((c) => c.san)).toEqual([
+            "e5",
+            "c5",
+            "d5",
+        ]);
+        expect(intoEmpty.tree.root.children[0].children[0].children.map((c) => c.san)).toEqual([
+            "Nf3",
+            "Bc4",
+            "d4",
+        ]);
+
+        const nonEmpty = buildGame(["e4", "e6"]);
+        const intoNonEmpty = mergeIntoRepertoire(nonEmpty, [game], "white");
+        expect(intoNonEmpty.ok).toBe(true);
+        if (!intoNonEmpty.ok) throw new Error("Expected non-empty-target merge to succeed");
+        expect(intoNonEmpty.tree.root.children[0].children.map((c) => c.san)).toEqual([
+            "e6",
+            "e5",
+            "c5",
+            "d5",
+        ]);
+        expect(intoNonEmpty.tree.root.children[0].children[1].children.map((c) => c.san)).toEqual([
+            "Nf3",
+            "Bc4",
+            "d4",
+        ]);
+    });
+
+    test("empty target seeded from a custom FEN anchors a second game from that FEN and marks an INITIAL_FEN game unplaced", () => {
+        const customFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 10";
+        const game1 = buildGame(["e5"], customFen);
+        const game2 = buildGame(["c5"], customFen);
+        const initialFenGame = buildGame(["d4"]);
+
+        const result = mergeIntoRepertoire(defaultTree(), [game1, game2, initialFenGame], "black");
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error("Expected custom-FEN multi-game merge to succeed");
+        expect(result.tree.root.fen).toBe(customFen);
+        expect(result.tree.root.children.map((c) => c.san)).toEqual(["e5", "c5"]);
+        expect(result.tree.root.children[1].reviewMark).toBe(true);
+        expect(result.report).toEqual({ added: 2, conflicts: 1, unplaced: 1 });
+    });
+
+    test.each([
+        {
+            label: "startingComment",
+            apply: (node: TreeNode) => {
+                node.startingComment = "Lead";
+            },
+            expected: { startingComment: "Lead" },
+        },
+        {
+            label: "commands",
+            apply: (node: TreeNode) => {
+                node.commands = "[%evp 0,1]";
+            },
+            expected: { commands: "[%evp 0,1]" },
+        },
+        {
+            label: "nags",
+            apply: (node: TreeNode) => {
+                node.nags = [1];
+            },
+            expected: { nags: [1] },
+        },
+        {
+            label: "shapes",
+            apply: (node: TreeNode) => {
+                node.shapes = [{ orig: "e2", dest: "e4", brush: "green" }];
+            },
+            expected: { shapes: [{ orig: "e2", dest: "e4", brush: "green" }] },
+        },
+        {
+            label: "score and depth",
+            apply: (node: TreeNode) => {
+                node.score = { value: { type: "cp", value: 25 }, wdl: null };
+                node.depth = 15;
+            },
+            expected: { score: { value: { type: "cp", value: 25 }, wdl: null }, depth: 15 },
+        },
+        {
+            label: "diagram",
+            apply: (node: TreeNode) => {
+                node.diagram = true;
+            },
+            expected: { diagram: true },
+        },
+        {
+            label: "comment",
+            apply: (node: TreeNode) => {
+                node.comment = "Note";
+            },
+            expected: { comment: "Note" },
+        },
+    ])(
+        "mergeAnnotationsOntoExistingNode merges when imported node carries only $label",
+        ({ apply, expected }) => {
+            const target = buildGame(["e4"]);
+            const imported = buildGame(["e4"]);
+            apply(imported.root.children[0]);
+
+            const result = mergeIntoRepertoire(target, [imported], "white");
+            expect(result.ok).toBe(true);
+            if (!result.ok) throw new Error("Expected merge to succeed");
+            expect(result.changed).toBe(true);
+            expect(result.tree.root.children[0]).toMatchObject(expected);
+        },
+    );
+
+    test("SAN-only node and Chess960 castling follow an existing child in a non-empty target and recurse into continuations", () => {
+        // SAN-only (move: null, san: "e4") with continuation 1... e5 into target that already has 1. e4.
+        const target = buildGame(["e4"]);
+        const sanOnly = defaultTree();
+        const e5Cont = buildGame(["e5"], target.root.children[0].fen).root.children[0];
+        sanOnly.root.children.push({
+            ...target.root.children[0],
+            move: null,
+            san: "e4",
+            comment: "From SAN",
+            children: [e5Cont],
+        });
+
+        const sanResult = mergeIntoRepertoire(target, [sanOnly], "white");
+        expect(sanResult.ok).toBe(true);
+        if (!sanResult.ok) throw new Error("Expected SAN-only merge to succeed");
+        expect(sanResult.changed).toBe(true);
+        expect(sanResult.report.added).toBe(1);
+        expect(sanResult.tree.root.children).toHaveLength(1);
+        expect(sanResult.tree.root.children[0].comment).toBe("From SAN");
+        expect(sanResult.tree.root.children[0].children.map((c) => c.san)).toEqual(["e5"]);
+
+        // Chess960 castling encoded as king-to-destination { from: 3, to: 6 } with continuation 1... Kd7 into target with { from: 3, to: 7 }.
+        const fen960 = "4k3/8/8/8/8/8/8/3K3R w H - 0 1";
+        const afterCastleFen = "4k3/8/8/8/8/8/8/5RK1 b - - 1 1";
+        const target960 = buildGame(["O-O"], fen960);
+        const imported960 = defaultTree(fen960);
+        const node960 = createNode({
+            fen: afterCastleFen,
+            move: { from: 3, to: 6 },
+            san: "O-O",
+            halfMoves: 1,
+        });
+        node960.comment = "Castled";
+        node960.children.push(buildGame(["Kd7"], afterCastleFen).root.children[0]);
+        imported960.root.children.push(node960);
+
+        const frcResult = mergeIntoRepertoire(target960, [imported960], "white");
+        expect(frcResult.ok).toBe(true);
+        if (!frcResult.ok) throw new Error("Expected Chess960 merge to succeed");
+        expect(frcResult.changed).toBe(true);
+        expect(frcResult.report.added).toBe(1);
+        expect(frcResult.tree.root.children).toHaveLength(1);
+        expect(frcResult.tree.root.children[0].comment).toBe("Castled");
+        expect(frcResult.tree.root.children[0].children.map((c) => c.san)).toEqual(["Kd7"]);
+    });
+
+    test("createRepertoireMerger counts games unplaced and changes nothing when target or added game has an illegal root FEN", () => {
+        // Target with illegal root FEN receiving a game with the same illegal root FEN -> unplaced, nothing changed.
+        const illegalTarget = defaultTree();
+        illegalTarget.root.fen = "not-a-legal-fen";
+        illegalTarget.headers.fen = "not-a-legal-fen";
+
+        const sameIllegalGame = defaultTree();
+        sameIllegalGame.root.fen = "not-a-legal-fen";
+        sameIllegalGame.headers.fen = "not-a-legal-fen";
+
+        const resIllegalTarget = mergeIntoRepertoire(illegalTarget, [sameIllegalGame], "white");
+        expect(resIllegalTarget.ok).toBe(true);
+        if (!resIllegalTarget.ok) throw new Error("Expected merge result");
+        expect(resIllegalTarget.changed).toBe(false);
+        expect(resIllegalTarget.report).toEqual({ added: 0, conflicts: 0, unplaced: 1 });
+        expect(resIllegalTarget.tree.root.fen).toBe("not-a-legal-fen");
+
+        // Valid empty target receiving a game with an illegal root FEN -> unplaced, not re-rooted, nothing changed.
+        const emptyTarget = defaultTree();
+        const resIllegalIntoEmpty = mergeIntoRepertoire(emptyTarget, [sameIllegalGame], "white");
+        expect(resIllegalIntoEmpty.ok).toBe(true);
+        if (!resIllegalIntoEmpty.ok) throw new Error("Expected merge result");
+        expect(resIllegalIntoEmpty.changed).toBe(false);
+        expect(resIllegalIntoEmpty.report).toEqual({ added: 0, conflicts: 0, unplaced: 1 });
+        expect(resIllegalIntoEmpty.tree.root.fen).toBe(emptyTarget.root.fen);
+
+        // Valid non-empty target receiving a game with an illegal root FEN -> unplaced, nothing changed.
+        const validTarget = buildGame(["e4"]);
+        const resIllegalGame = mergeIntoRepertoire(validTarget, [sameIllegalGame], "white");
+        expect(resIllegalGame.ok).toBe(true);
+        if (!resIllegalGame.ok) throw new Error("Expected merge result");
+        expect(resIllegalGame.changed).toBe(false);
+        expect(resIllegalGame.report).toEqual({ added: 0, conflicts: 0, unplaced: 1 });
+        expect(resIllegalGame.tree.root.children).toHaveLength(1);
     });
 });

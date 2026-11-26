@@ -1,4 +1,6 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
+import type { Move } from "chessops";
+import type { Chess } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
 import { match } from "ts-pattern";
@@ -300,6 +302,18 @@ function copyAnnotationsToNewNode(target: TreeNode, source: TreeNode): void {
 }
 
 function mergeAnnotationsOntoExistingNode(target: TreeNode, source: TreeNode): boolean {
+    if (
+        source.nags.length === 0 &&
+        source.shapes.length === 0 &&
+        source.comment === "" &&
+        source.startingComment === undefined &&
+        source.commands === undefined &&
+        source.score === null &&
+        !source.diagram
+    ) {
+        return false;
+    }
+
     let changed = false;
 
     for (const nag of source.nags) {
@@ -419,6 +433,18 @@ function refusalMessage(reason: RepertoireMergeRefusalReason): string {
     }
 }
 
+function sameNormalMove(a: Move | null, b: Move | null): boolean {
+    return (
+        a !== null &&
+        b !== null &&
+        "from" in a &&
+        "from" in b &&
+        a.from === b.from &&
+        a.to === b.to &&
+        a.promotion === b.promotion
+    );
+}
+
 /**
  * Creates an incremental repertoire merger over a clone of `target` for `orientation`.
  *
@@ -438,6 +464,15 @@ export function createRepertoireMerger(
     let rootSeeded = merged.root.children.length > 0;
     let refusal: RepertoireMergeRefusalReason | null = null;
     let nodeCount = 0;
+    let rootBoardState = getBoardState(merged.root.fen);
+    const posCache = new WeakMap<TreeNode, Chess | null>();
+
+    const getPosition = (node: TreeNode): Chess | null => {
+        if (posCache.has(node)) return posCache.get(node)!;
+        const [pos] = positionFromFen(node.fen);
+        posCache.set(node, pos);
+        return pos;
+    };
 
     for (const { position } of treeIterator(merged.root)) {
         if (position.length > MAX_TREE_DEPTH) {
@@ -453,10 +488,17 @@ export function createRepertoireMerger(
     const add = (game: TreeState): RepertoireMergeRefusalReason | null => {
         if (refusal !== null) return refusal;
 
-        const [gameRootPos] = positionFromFen(game.root.fen);
-        if (!gameRootPos) {
-            unplaced++;
-            return null;
+        if (game.root.fen === merged.root.fen) {
+            if (!getPosition(merged.root)) {
+                unplaced++;
+                return null;
+            }
+        } else {
+            const [gameRootPos] = positionFromFen(game.root.fen);
+            if (!gameRootPos) {
+                unplaced++;
+                return null;
+            }
         }
 
         if (!rootSeeded && merged.root.children.length === 0) {
@@ -470,16 +512,21 @@ export function createRepertoireMerger(
                 merged.root = seeded.root;
                 merged.headers = { ...merged.headers, fen: merged.root.fen };
                 merged.position = [];
+                rootBoardState = getBoardState(merged.root.fen);
                 changed = true;
             }
         }
 
-        const gameBoardState = getBoardState(game.root.fen);
         let anchor: { node: TreeNode; depth: number } | null = null;
-        for (const item of treeIterator(merged.root)) {
-            if (getBoardState(item.node.fen) === gameBoardState) {
-                anchor = { node: item.node, depth: item.position.length };
-                break;
+        if (game.root.fen === merged.root.fen || getBoardState(game.root.fen) === rootBoardState) {
+            anchor = { node: merged.root, depth: 0 };
+        } else {
+            const gameBoardState = getBoardState(game.root.fen);
+            for (const item of treeIterator(merged.root)) {
+                if (getBoardState(item.node.fen) === gameBoardState) {
+                    anchor = { node: item.node, depth: item.position.length };
+                    break;
+                }
             }
         }
         if (!anchor) {
@@ -499,19 +546,37 @@ export function createRepertoireMerger(
 
         while (stack.length > 0) {
             const { targetParent, sourceParent, targetDepth } = stack.pop()!;
-            if (sourceParent.children.length === 0) continue;
+            const childCount = sourceParent.children.length;
+            if (childCount === 0) continue;
 
-            const [parentPos] = positionFromFen(targetParent.fen);
-            if (!parentPos) continue;
-            const turn = parentPos.turn;
-
-            const nextFrames: Array<{
-                targetParent: TreeNode;
-                sourceParent: TreeNode;
-                targetDepth: number;
-            }> = [];
+            let parentPos: Chess | null | undefined;
+            const pushStart = stack.length;
 
             for (const sourceChild of sourceParent.children) {
+                const directMatch =
+                    sourceChild.move !== null
+                        ? targetParent.children.find((candidate) =>
+                              sameNormalMove(candidate.move, sourceChild.move),
+                          )
+                        : undefined;
+                if (directMatch) {
+                    if (mergeAnnotationsOntoExistingNode(directMatch, sourceChild)) {
+                        changed = true;
+                    }
+                    stack.push({
+                        targetParent: directMatch,
+                        sourceParent: sourceChild,
+                        targetDepth: targetDepth + 1,
+                    });
+                    continue;
+                }
+
+                if (parentPos === undefined) {
+                    parentPos = getPosition(targetParent);
+                }
+                if (!parentPos) break;
+                const turn = parentPos.turn;
+
                 let move =
                     sourceChild.move && parentPos.isLegal(sourceChild.move)
                         ? sourceChild.move
@@ -523,13 +588,13 @@ export function createRepertoireMerger(
 
                 const existing = targetParent.children.find(
                     (candidate) =>
-                        candidate.move !== null && isSameMove(parentPos, candidate.move, move),
+                        candidate.move !== null && isSameMove(parentPos!, candidate.move, move),
                 );
                 if (existing) {
                     if (mergeAnnotationsOntoExistingNode(existing, sourceChild)) {
                         changed = true;
                     }
-                    nextFrames.push({
+                    stack.push({
                         targetParent: existing,
                         sourceParent: sourceChild,
                         targetDepth: targetDepth + 1,
@@ -556,6 +621,7 @@ export function createRepertoireMerger(
                     san,
                     halfMoves: targetParent.halfMoves + 1,
                 });
+                posCache.set(newNode, nextPos);
                 copyAnnotationsToNewNode(newNode, sourceChild);
 
                 if (turn === orientation && targetParent.children.length > 0) {
@@ -568,15 +634,18 @@ export function createRepertoireMerger(
                 added++;
                 changed = true;
 
-                nextFrames.push({
+                stack.push({
                     targetParent: newNode,
                     sourceParent: sourceChild,
                     targetDepth: childDepth,
                 });
             }
 
-            for (let i = nextFrames.length - 1; i >= 0; i--) {
-                stack.push(nextFrames[i]);
+            // Reverse the slice pushed for this parent so children are visited in pre-order.
+            for (let left = pushStart, right = stack.length - 1; left < right; left++, right--) {
+                const tmp = stack[left];
+                stack[left] = stack[right];
+                stack[right] = tmp;
             }
         }
 
