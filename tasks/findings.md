@@ -29499,7 +29499,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The notation-menu dismiss e2e test clicks 1. e4, which the taller move menu now covers
 
-* **ID:** f-20261126-04 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-04 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45770675964
 * **First red:** run 45770675964 on `756efa232` (feat(notation): hotkeys for promote variation, delete variation and delete following moves), job e2e.
@@ -29510,3 +29510,6 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Proof:** `pnpm test:e2e:container --project=engine-gap -g "notation-menu"` passes all variants.
 * **Repair owner:** 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0 on tuxedo-atlas, 2026-11-26T07:09:06Z
 * **Found by:** Claude Code (Opus 5.5), session 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0, variation hotkeys push, 2026-11-26.
+* **Handled (2026-11-26, Claude Code (Opus 5.5), session 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0):** commit `05c541843`. The dismiss click targets `Bc4`, below the open menu, and expects the cursor there; the assertions on dismissal and navigation are unchanged.
+  * **Proof:** `pnpm test:e2e:container --project=engine-gap` 21 passed, including all four `notation-menu ... dismisses and promotes` variants. Review: tests and root-cause lens APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"915ea99fb730ba4a80e892b51c76c0bc119f2537da4df516b3e1d889b35be656","header_sha256":"0331dfbbc34d46f00105406ac55878320ea4b34f38bf5a284d7ae63aaf535e9a","header_status":"handled","input_sha256":"02f965ee83b907555f992e0bdea96fcd888b8c62def75f66c5ac2eec5378bd60","kind":"mutation-receipt","operation":"8d5645a044f66ace73d77df8dd0d1ae16d72f856d8666bddac2eafc03c2215ff","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-04"],"target":"f-20261126-04","v":1} -->
