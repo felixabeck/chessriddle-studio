@@ -15324,3 +15324,32 @@ Former private decision identifier: d-20261029-14
 * **Reason:** the guard exists to keep a measurement change from loosening the ratchet unnoticed; changing only the entry the new instrumentation invalidates keeps every other entry exactly as reviewed and removes the exact-count exposure this repair introduced. Reversal path: restore the pre-`d-20261127-03` app-infrastructure function entry together with the old nightly if hayro is removed.
 * **Decided by:** Claude Code (Opus 5.5) interactive session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import second repair of f-20261127-03, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"0189fbfc04007b775b15df54d0f9624c3b22d1d984485443fa2618d63cfffdb5","input_sha256":"3ecb4912fc64d7db51231edcd7c7b6082fc46f41e8f1e2b26b162834210c62e0","kind":"mutation-receipt","operation":"a436379647d428887509b241f8403ab1f188ac25a5f60fab67db936361bde0a0","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-04"],"target":"decisions-ledger","v":1} -->
+
+### d-20261126-36 — Can the scoresheet Photo tab become an area of the arranged analysis board? (revisited)
+
+* **Question:** d-20261125-66 kept Photo strip-only. Felix now asked to pull Photo out like the other windows and chose that a pulled-out Photo reopens in the same spot for the next imported game.
+* **Governs:** -
+* **Chosen:** `photo` joins `PANEL_AREA_IDS` (not the always-present set) with the Coach's rule: offered only while the tab has photos to show (review active or a photo reference in the game), hidden but kept in the app-wide arrangement otherwise, so its place is remembered.
+* **Rejected:** Keeping Photo strip-only (contradicts Felix's order of 2026-11-26).
+* **Reason:** Felix's order and answer "Same spot" (2026-11-26) are new evidence; d-20261125-66 named this reversal path. Reversal path: remove `photo` from `PANEL_AREA_IDS` and restore the special strip tab in `BoardAnalysis.tsx`.
+* **Supersedes:** d-20261125-66 (Photo strip-only), on Felix's order of 2026-11-26.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for scoresheet-photo-panel (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+
+### d-20261126-34 — How does a saved game keep its scoresheet photos?
+
+* **Question:** Felix chose to keep scoresheet photos permanently with the game (PGN file or database), carried by copy/move inside Studio, not synced to the website. Where do the bytes live and how does the game point to them?
+* **Governs:** -
+* **Chosen:** Photos live in a private app-data root `scoresheet-photos/` as content-addressed JPEG files named by their SHA-256; the game carries a `ScoresheetPhotos` PGN header tag with the ordered ids. Standalone `.db3` databases carry the same value in a lazily created auxiliary table `ScoresheetPhotos(GameID, Photos)` (no schema-version bump), included in `game_row_stamp` only when present.
+* **Rejected:** Embedding image bytes in the PGN (up to ~8 MB per game, breaks the per-game write cap, would upload photos through the library sync); a sidecar file next to each PGN (lost by every move/copy path that does not know it); a new `Games` column (touches the hot schema and forces a version bump).
+* **Reason:** A header tag already round-trips through every PGN path (save, copy, move, trash, tab duplication, linked collections); content addressing makes copies share one file. Reversal path: stop writing the tag and the table; existing tags stay inert text.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for scoresheet-photo-panel (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+
+### d-20261126-35 — How are scoresheet photos of deleted games removed?
+
+* **Question:** Content-addressed photos can be shared by copies of a game, so a single delete cannot know whether the photo is still referenced. How is the store bounded?
+* **Governs:** -
+* **Chosen:** A once-per-process background mark-and-sweep marks ids referenced by Library PGN files and trash, Library databases, path-authority-registered files and the decoded workspace-session leaves, and deletes unmarked photos older than 24 hours. Any unreadable location or hit bound aborts with zero deletions; disabled without the instance lock.
+* **Rejected:** Per-delete reference counting (cannot see copies); never deleting (unbounded growth).
+* **Reason:** One fail-closed mechanism instead of hooks in every delete path. Known limit: a PGN copied outside Studio to an unknown place keeps only the reference. Reversal path: unschedule the sweep task in `main.rs`.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-26 for scoresheet-photo-panel (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":27,"effect_sha256":"00378e28d49907d3c171212f8f82e78587a851ae485a81853e944b1c5c6488c1","input_sha256":"e0aec2d1d8a59c0d592d94132dadfdec15ae5641c788fa728e9003b59736f631","kind":"mutation-receipt","operation":"3a6079d3540ed1e1e62ab2f5fdc6896db62240eac0970e9c5fcaa79c687a9d11","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-36","d-20261126-34","d-20261126-35"],"target":"decisions-ledger","v":1} -->
