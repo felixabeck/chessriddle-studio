@@ -2928,8 +2928,9 @@ pub(crate) fn ensure_app_owned_default_dir(
 
 /// Materialise one visible default folder under the OS home: first the studio folder
 /// (`ChessRiddle Studio` or `ChessRiddle Studio Dev`), then the kind leaf. Both levels
-/// are created and opened no-follow. A link-like or non-directory component is refused
-/// with the same path-free `Error::Io` text as [`ensure_app_owned_default_dir`].
+/// are created and opened no-follow and spelled as they are on disk
+/// ([`on_disk_child_spelling`]). A link-like or non-directory component is refused with the
+/// same path-free `Error::Io` text as [`ensure_app_owned_default_dir`].
 pub(crate) fn ensure_home_owned_default_dir(
     home: &HomeDir,
     kind: VisibleDefaultKind,
@@ -2944,50 +2945,13 @@ pub(crate) fn ensure_home_owned_default_dir(
             hook();
         }
     });
-    // A verified registration keeps the spelling it is given, and acquire_stored_target
-    // re-proves it as canonical parent + leaf. An existing studio folder in another case
-    // (opened case-insensitively on NTFS) must therefore be spelled as it is on disk. The
-    // canonical spelling must still be the opened home's child of that name and the opened
-    // directory: a rename plus link planted between the open and canonicalize resolves
-    // elsewhere and is refused.
-    let refuse = |error: Error| default_root_refusal(&studio_path, error);
-    let changed = || {
-        refuse(Error::Conflict(
-            "default folder changed while it was opened".into(),
-        ))
-    };
-    let canonical_identity = |path: &Path| -> Result<(u64, u64), Error> {
-        opened_file_identity(&folder_switch::open_directory_nofollow_readonly(path)?)
-    };
-    let canonical_home =
-        fs::canonicalize(home.as_path()).map_err(|error| refuse(Error::from(error)))?;
     let canonical_studio =
-        fs::canonicalize(&studio_path).map_err(|error| refuse(Error::from(error)))?;
-    let same_name = canonical_studio
-        .file_name()
-        .and_then(OsStr::to_str)
-        .is_some_and(|name| name.eq_ignore_ascii_case(home.studio_leaf()));
-    // The home path was canonicalized once when it was acquired and is never followed again.
-    if canonical_home != home.as_path()
-        || !same_name
-        || canonical_studio.parent() != Some(canonical_home.as_path())
-    {
-        return Err(changed());
-    }
-    // The requested spelling must still open no-follow (a link planted there is refused) and,
-    // like the canonical spelling, name the directory that was opened.
-    let opened_studio = opened_file_identity(&studio)?;
-    if canonical_identity(&canonical_home).map_err(refuse)?
-        != opened_file_identity(&home.directory)?
-        || canonical_identity(&studio_path).map_err(refuse)? != opened_studio
-        || canonical_identity(&canonical_studio).map_err(refuse)? != opened_studio
-    {
-        return Err(changed());
-    }
-    let leaf = OsStr::new(kind.leaf());
-    let path = canonical_studio.join(leaf);
-    let opened = crate::infra::fs::ensure_directory_at(&studio, leaf)
-        .map_err(|error| default_root_refusal(&path, error))?;
+        on_disk_child_spelling(home.as_path(), &home.directory, home.studio_leaf(), &studio)?;
+    let leaf = kind.leaf();
+    let requested = canonical_studio.join(leaf);
+    let opened = crate::infra::fs::ensure_directory_at(&studio, OsStr::new(leaf))
+        .map_err(|error| default_root_refusal(&requested, error))?;
+    let path = on_disk_child_spelling(&canonical_studio, &studio, leaf, &opened)?;
     let identity = opened_file_identity(&opened)?;
     let directory = VerifiedDir::new(opened, identity)?;
     Ok(AuthorizedDir {
@@ -2995,6 +2959,54 @@ pub(crate) fn ensure_home_owned_default_dir(
         identity,
         path,
     })
+}
+
+/// Spells a directory the producer has just opened no-follow as `name` under `parent_path`
+/// (itself canonical and open as `parent`) the way it is on disk. A verified registration
+/// keeps the spelling it is given and acquire_stored_target re-proves it as canonical
+/// parent + leaf, so an existing folder in another case (opened case-insensitively on NTFS
+/// or APFS) must carry its on-disk case, at this level and for every child below it. The
+/// canonical spelling must still be `parent_path`'s child of that name (ASCII
+/// case-insensitive), the requested spelling must still open no-follow, and both must name
+/// the opened directory: a rename plus link planted after the open is refused.
+fn on_disk_child_spelling(
+    parent_path: &Path,
+    parent: &fs::File,
+    name: &str,
+    opened: &fs::File,
+) -> Result<PathBuf, Error> {
+    let requested = parent_path.join(name);
+    let refuse = |error: Error| default_root_refusal(&requested, error);
+    let changed = || {
+        refuse(Error::Conflict(
+            "default folder changed while it was opened".into(),
+        ))
+    };
+    let identity_at = |path: &Path| -> Result<(u64, u64), Error> {
+        opened_file_identity(&folder_switch::open_directory_nofollow_readonly(path)?)
+    };
+    let canonical_parent =
+        fs::canonicalize(parent_path).map_err(|error| refuse(Error::from(error)))?;
+    let canonical = fs::canonicalize(&requested).map_err(|error| refuse(Error::from(error)))?;
+    let same_name = canonical
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|on_disk| on_disk.eq_ignore_ascii_case(name));
+    // The parent was canonicalized when it was acquired and is never followed again.
+    if canonical_parent != parent_path
+        || !same_name
+        || canonical.parent() != Some(canonical_parent.as_path())
+    {
+        return Err(changed());
+    }
+    let opened_identity = opened_file_identity(opened)?;
+    if identity_at(&canonical_parent).map_err(refuse)? != opened_file_identity(parent)?
+        || identity_at(&requested).map_err(refuse)? != opened_identity
+        || identity_at(&canonical).map_err(refuse)? != opened_identity
+    {
+        return Err(changed());
+    }
+    Ok(canonical)
 }
 
 fn log_visible_home_default_fallback(kind: VisibleDefaultKind, error: &Error) {

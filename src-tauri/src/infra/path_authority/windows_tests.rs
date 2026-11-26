@@ -729,6 +729,39 @@ fn default_root_under_a_case_variant_studio_folder_activates_and_lists() {
     authority
         .list_database_children_cancellable(&root, &tokio_util::sync::CancellationToken::new())
         .unwrap();
+    // A database below the default re-proves under the on-disk spelling too.
+    let child = authority
+        .create_database_child(&root, OsStr::new("games.db3"))
+        .unwrap();
+    authority
+        .database_file_target(&child, PathOperation::DatabaseMutate)
+        .unwrap();
+}
+
+#[test]
+fn default_root_whose_kind_folder_exists_in_another_case_activates_and_resolves_children() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let home = HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER);
+    // The kind folder already exists lower-case inside the studio folder.
+    fs::create_dir_all(home.as_path().join(home.studio_leaf()).join("databases")).unwrap();
+    let authorized = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    assert_eq!(
+        authorized.path().file_name(),
+        Some(OsStr::new("databases")),
+        "the default carries the on-disk case"
+    );
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    let root = authority
+        .get_or_create_database_root(authorized.path(), "Databases", Some(authorized.identity()))
+        .unwrap();
+    authority.set_active_database_root(&root).unwrap();
+    let child = authority
+        .create_database_child(&root, OsStr::new("games.db3"))
+        .unwrap();
+    authority
+        .database_file_target(&child, PathOperation::DatabaseMutate)
+        .unwrap();
 }
 
 #[tokio::test]
@@ -761,8 +794,10 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename_and_folding_and_un
     fs::create_dir(&dst).unwrap();
 
     let mut auth = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+    // Roots arrive in their on-disk spelling (folder picker, producers); only the tombstone
+    // below uses the case variant.
     let root = auth
-        .get_or_create_database_root(&src_case_variant, "srcdbs", None)
+        .get_or_create_database_root(&src, "SrcDbs", None)
         .unwrap();
     auth.set_active_database_root(&root).unwrap();
     let db_handle = auth
