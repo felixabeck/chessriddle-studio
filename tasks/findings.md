@@ -29782,3 +29782,20 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Spotted outside diff:** the saved-layouts build (2026-11-26) gives fresh repertoire tabs a preset with Annotate as its own area; the full-page `assertAccessible()` of `e2e/repertoire-pgn-import.spec.ts` then reported axe violations on the visible Annotate panel. The spec now seeds the two-pane default layout because it tests the import.
 * **Failure scenario:** with the Annotate panel visible, axe reports (1) `aria-allowed-attr` / `aria-prohibited-attr` on the TipTap editor `<div contenteditable aria-label="Comment" aria-multiline="true" class="tiptap ProseMirror">` (aria-multiline and aria-label are not allowed on a div without `role="textbox"`), and (2) `nested-interactive` on a Mantine `Divider` with label (`role="separator"`) that contains the button "Show more annotations". Screen-reader users get an unnamed editable region and a button inside a separator. Felix's 2026-11-26 screenshot shows the panel as its own area, so it is an everyday view.
 * **Open question:** none; give the editor `role="textbox"` (keeping aria-multiline and its label), and move the "Show more annotations" button out of the Divider label; prove with a full-page `assertAccessible()` on a tab with Annotate as its own area.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### Selecting a tab from a page other than the board view renders the previously active tab first
+
+* **ID:** f-20261126-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 439df079-7fd8-4b60-8786-9e87dd68a222
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** `src/components/tabs/TabCommands.tsx` `handleSetActiveTab` (`startTransition(() => setActiveTab(value))`) with `showTab` (always `navigate({ to: "/" })`), `selectTab`, `selectTabAt` and `cycleTabs` (`goToBoards()`, urgent navigation when off the board route).
+* **Defect:** off the board route (Library, Files, a page tab), activating a board tab writes the active tab in a transition and then navigates urgently, so `BoardsPage` first mounts the previously active tab, then remounts to the chosen one when the transition commits. Same mechanism as f-20261125-23, whose fix (d-20261126-26) made tab admission urgent but left tab switching transitioned by design. A panel-tab click in that window lands on the outgoing tab, and the outgoing board is mounted for nothing.
+* **Failure scenario:** on the Library page with tabs A (active) and B, click tab B in the navigation row (or Ctrl+Tab / Alt+2): the first board render shows A, then B. Found by source reading (review-root-cause lens over the f-20261125-23 diff, confidence 92); no runtime trace recorded yet.
+* **Open question:** should activation publish urgently when it also navigates onto the board view (keeping the transition only when already on `/`, which `BoardsPage.test.tsx` "transitions $name before showing a suspending tab" pins), or does an urgent activation off the board route reintroduce the close-time crash `b829b562` fixed with `startTransition`?
+* **Fix:** decide the priority rule for activation-plus-navigation, apply it once in `handleSetActiveTab`'s callers, and prove it with a renderer test in the style of `src/utils/openFile.admission.test.tsx` (active-tab subscription mounted above the routes, first board render logged).
+* **Found by:** Claude Code (Opus 5.5) build urgent-tab-admission, phase 1 diff review, 2026-11-26
