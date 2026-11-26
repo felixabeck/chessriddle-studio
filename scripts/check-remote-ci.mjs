@@ -235,7 +235,7 @@ function runsForBranch(
   });
 }
 
-function jobsForRun(runner, cwd, run, repository) {
+function jobsForRun(runner, cwd, run, repository, { allowEmptyCompleted = false } = {}) {
   const args = ["run", "view", String(run.databaseId), "--json", "jobs", "--repo", repository];
   const output = runChecked(runner, "gh", args, cwd);
   const payload = parseJson(output, `gh run view ${run.databaseId}`);
@@ -244,7 +244,7 @@ function jobsForRun(runner, cwd, run, repository) {
   }
   if (payload.jobs.length === 0) {
     // GitHub may not have scheduled jobs for an unfinished run yet.
-    if (run.status !== "completed") return [];
+    if (run.status !== "completed" || allowEmptyCompleted) return [];
     throw new Error(`gh run view ${run.databaseId} returned an empty jobs list`);
   }
   return payload.jobs.map((job, index) => validateJob(job, run.databaseId, index));
@@ -364,16 +364,24 @@ function inspectMutationSweep(runner, cwd, branch, repository) {
   });
 
   for (const run of runs) {
-    if (run.status !== "completed" || run.conclusion === "cancelled") continue;
-    const jobs = jobsForRun(runner, cwd, run, repository);
-    const substantiveFrontendJobs = jobs.filter(
-      (job) =>
-        isFrontendMutationJob(job.name) &&
-        job.status === "completed" &&
-        job.conclusion !== "skipped" &&
-        job.conclusion !== "cancelled",
-    );
+    if (run.status !== "completed") continue;
+    // A run cancelled before GitHub scheduled any job has none and carries no result.
+    const frontendJobs = jobsForRun(runner, cwd, run, repository, {
+      allowEmptyCompleted: run.conclusion === "cancelled",
+    }).filter((job) => isFrontendMutationJob(job.name));
+    // A cancelled or unfinished frontend job leaves its package unswept, so the run says nothing
+    // about the sweep. A run cancelled only by a backend job's timeout still carries a full
+    // frontend result.
+    if (frontendJobs.some((job) => job.status !== "completed" || job.conclusion === "cancelled")) {
+      continue;
+    }
+    const substantiveFrontendJobs = frontendJobs.filter((job) => job.conclusion !== "skipped");
     if (substantiveFrontendJobs.length === 0) continue;
+    // The package list alone sweeps nothing: green only when a sweep job ran.
+    const sweptOrListFailed = substantiveFrontendJobs.some(
+      (job) => job.name !== "frontend-mutation-packages" || job.conclusion !== "success",
+    );
+    if (!sweptOrListFailed) continue;
     const redMutationJobs = substantiveFrontendJobs
       .filter((job) => job.conclusion !== "success")
       .map((job) => ({

@@ -1377,6 +1377,11 @@ test("Mutation: Sunday backend-only and cancelled runs skip back to the last fro
   ];
   const jobsByRun = {
     902: [job("frontend")],
+    // Cancelled during the frontend sweep: that package was never swept.
+    963: [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation (tree-path)", { conclusion: "cancelled" }),
+    ],
     962: [
       job("packages"),
       job("backend (chess)", { conclusion: "success" }),
@@ -1413,6 +1418,106 @@ test("Mutation: Sunday backend-only and cancelled runs skip back to the last fro
   assert.equal(greenResult.redMutationJobs.length, 0);
 });
 
+test("Mutation: a run cancelled only by a backend timeout counts its finished frontend sweep", () => {
+  const runs = [run(905, recent)];
+  const mutationRuns = [
+    run(981, recent, { conclusion: "cancelled" }),
+    run(980, older, { conclusion: "failure" }),
+  ];
+  const jobsByRun = {
+    905: [job("frontend")],
+    981: [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation (tree-path)"),
+      job("frontend-mutation (workspace-storage)"),
+      job("packages"),
+      job("backend (lexer)"),
+      job("backend (pgn-parser)", { conclusion: "cancelled" }),
+    ],
+    980: [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation (tree-path)", { conclusion: "failure" }),
+    ],
+  };
+
+  const green = checkRemoteCi({ runner: cannedRunner({ runs, mutationRuns, jobsByRun }).runner });
+  assert.equal(green.exitCode, 0);
+  assert.equal(green.redMutationJobs.length, 0);
+
+  // A red package in that run is still reported from it.
+  const red = checkRemoteCi({
+    runner: cannedRunner({
+      runs,
+      mutationRuns,
+      jobsByRun: {
+        ...jobsByRun,
+        981: [
+          ...jobsByRun[981].filter(({ name }) => name !== "frontend-mutation (workspace-storage)"),
+          job("frontend-mutation (workspace-storage)", { conclusion: "failure" }),
+        ],
+      },
+    }).runner,
+  });
+  assert.equal(red.exitCode, 1);
+  assert.deepEqual(
+    red.redMutationJobs.map(({ name, runId }) => [name, runId]),
+    [["frontend-mutation (workspace-storage)", 981]],
+  );
+});
+
+test("Mutation: a cancelled run without jobs, an unswept package list or an unfinished sweep job is skipped", () => {
+  const runs = [run(906, recent)];
+  const olderRed = {
+    990: [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation (tree-path)", { conclusion: "failure" }),
+    ],
+  };
+  const cases = {
+    "cancelled before any job": [],
+    "cancelled after the package list only": [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation", { conclusion: "skipped" }),
+    ],
+    "completed with an unfinished sweep job": [
+      job("frontend-mutation-packages"),
+      job("frontend-mutation (tree-path)", { status: "in_progress", conclusion: "" }),
+    ],
+  };
+  for (const [label, jobs] of Object.entries(cases)) {
+    const conclusion = label.startsWith("cancelled") ? "cancelled" : "success";
+    const mutationRuns = [
+      run(991, recent, { conclusion }),
+      run(990, older, { conclusion: "failure" }),
+    ];
+    const result = checkRemoteCi({
+      runner: cannedRunner({
+        runs,
+        mutationRuns,
+        jobsByRun: { 906: [job("frontend")], 991: jobs, ...olderRed },
+      }).runner,
+    });
+    assert.equal(result.exitCode, 1, label);
+    assert.deepEqual(
+      result.redMutationJobs.map(({ name, runId }) => [name, runId]),
+      [["frontend-mutation (tree-path)", 990]],
+      label,
+    );
+  }
+});
+
+test("Mutation: a finished, not cancelled run without jobs still refuses", () => {
+  const result = checkRemoteCi({
+    runner: cannedRunner({
+      runs: [run(907, recent)],
+      mutationRuns: [run(992, recent, { conclusion: "success" })],
+      jobsByRun: { 907: [job("frontend")], 992: [] },
+    }).runner,
+  });
+  assert.equal(result.exitCode, 2);
+  assert.match(result.error, /empty jobs list/u);
+});
+
 test("Mutation: no frontend result in 10 runs is reported and exits 0", () => {
   const runs = [run(903, recent)];
   const mutationRuns = [
@@ -1421,6 +1526,7 @@ test("Mutation: no frontend result in 10 runs is reported and exits 0", () => {
   ];
   const jobsByRun = {
     903: [job("frontend")],
+    972: [job("frontend-mutation-packages", { conclusion: "cancelled" })],
     971: [
       job("packages"),
       job("backend (chess)"),
