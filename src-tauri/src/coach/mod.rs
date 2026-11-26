@@ -24,6 +24,7 @@ pub(crate) mod models;
 pub(crate) mod prompt;
 pub(crate) mod responses;
 pub(crate) mod scoresheet;
+pub(crate) mod scoresheet_pdf;
 pub(crate) mod scoresheet_photo;
 pub(crate) mod sse;
 pub(crate) mod stats;

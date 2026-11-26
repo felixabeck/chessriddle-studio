@@ -1,8 +1,9 @@
-//! Native scoresheet photo intake: file picker, system clipboard, and window drag-and-drop.
+//! Native scoresheet intake: file picker (photos and PDFs), system clipboard (images), and
+//! window drag-and-drop (photos and PDFs).
 //!
-//! All three producers feed one bounded processor that validates magic bytes, applies EXIF
-//! orientation, scales down to at most 2,048 px on the long edge, and re-encodes as JPEG from
-//! pixels (stripping all metadata, including camera location).
+//! Raster images and PDF pages rendered by the isolated helper feed one bounded processor that
+//! validates magic bytes, applies EXIF orientation, scales down to at most 2,048 px on the long
+//! edge, and re-encodes as JPEG from pixels (stripping all metadata, including camera location).
 
 use std::{
     collections::HashMap,
@@ -23,7 +24,11 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_specta::Event;
 use uuid::Uuid;
 
-use super::{coach, error::CoachError};
+use super::{
+    coach,
+    error::CoachError,
+    scoresheet_pdf::{render_pdf_in_helper, RenderedPdf},
+};
 use crate::infra::{
     blocking::BLOCKING_GATEWAY,
     path_authority::{
@@ -46,9 +51,13 @@ const JPEG_DATA_URL_PREFIX: &str = "data:image/jpeg;base64,";
 const ACCEPTED_FORMATS: &[RasterFormat] =
     &[RasterFormat::Jpeg, RasterFormat::Png, RasterFormat::Webp];
 
-const IMAGE_EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "webp"];
+const PDF_MAGIC: &[u8] = b"%PDF-";
+
+const SCORESHEET_EXTENSIONS: [&str; 5] = ["jpg", "jpeg", "png", "webp", "pdf"];
 /// GTK file filters are case-sensitive, so every extension is listed in lower and upper case.
-const PICKER_EXTENSIONS: [&str; 8] = ["jpg", "JPG", "jpeg", "JPEG", "png", "PNG", "webp", "WEBP"];
+const PICKER_EXTENSIONS: [&str; 10] = [
+    "jpg", "JPG", "jpeg", "JPEG", "png", "PNG", "webp", "WEBP", "pdf", "PDF",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -110,14 +119,18 @@ impl DroppedPhotoSlots {
     }
 }
 
-pub(crate) fn is_scoresheet_image_path(path: &Path) -> bool {
+pub(crate) fn is_scoresheet_file_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            IMAGE_EXTENSIONS
+            SCORESHEET_EXTENSIONS
                 .iter()
                 .any(|known| ext.eq_ignore_ascii_case(known))
         })
+}
+
+fn is_pdf_bytes(bytes: &[u8]) -> bool {
+    bytes.starts_with(PDF_MAGIC)
 }
 
 fn to_image_format(format: RasterFormat) -> Option<ImageFormat> {
@@ -156,6 +169,20 @@ fn encode_jpeg(rgb: &RgbImage, quality: u8) -> Result<Vec<u8>, CoachError> {
     Ok(out)
 }
 
+pub(super) fn encode_rgb_jpeg_bounded(
+    rgb: &RgbImage,
+    max_output_bytes: usize,
+) -> Result<Vec<u8>, CoachError> {
+    let mut jpeg = encode_jpeg(rgb, JPEG_QUALITY_PRIMARY)?;
+    if jpeg.len() > max_output_bytes {
+        jpeg = encode_jpeg(rgb, JPEG_QUALITY_FALLBACK)?;
+    }
+    if jpeg.len() > max_output_bytes {
+        return Err(CoachError::PhotoUnreadable);
+    }
+    Ok(jpeg)
+}
+
 fn encode_processed_image(
     mut image: DynamicImage,
     max_output_bytes: usize,
@@ -168,13 +195,7 @@ fn encode_processed_image(
         image = image.resize(MAX_LONG_EDGE, MAX_LONG_EDGE, FilterType::Lanczos3);
     }
     let rgb = flatten_to_rgb8(image);
-    let mut jpeg = encode_jpeg(&rgb, JPEG_QUALITY_PRIMARY)?;
-    if jpeg.len() > max_output_bytes {
-        jpeg = encode_jpeg(&rgb, JPEG_QUALITY_FALLBACK)?;
-    }
-    if jpeg.len() > max_output_bytes {
-        return Err(CoachError::PhotoUnreadable);
-    }
+    let jpeg = encode_rgb_jpeg_bounded(&rgb, max_output_bytes)?;
     let mut data_url =
         String::with_capacity(JPEG_DATA_URL_PREFIX.len() + 4 * jpeg.len().div_ceil(3));
     data_url.push_str(JPEG_DATA_URL_PREFIX);
@@ -253,41 +274,87 @@ fn grant_image_path(
     })?
 }
 
-fn read_and_process_grant(
+fn read_grant_bytes(
     authority: &SharedPathAuthority,
     grant: &PathRef,
-) -> Result<ScoresheetPhoto, CoachError> {
+) -> Result<Vec<u8>, CoachError> {
     let (file, declared) = image_reader_for(authority, grant, MAX_INPUT_FILE_BYTES)
         .map_err(|_| CoachError::PhotoUnreadable)?;
-    let bytes = read_verified_image_bytes(file, declared, MAX_INPUT_FILE_BYTES)
-        .map_err(|_| CoachError::PhotoUnreadable)?;
-    process_image_bytes(&bytes)
+    read_verified_image_bytes(file, declared, MAX_INPUT_FILE_BYTES)
+        .map_err(|_| CoachError::PhotoUnreadable)
 }
 
-fn process_picked_selections<E>(
-    authority: &SharedPathAuthority,
-    selections: Vec<Result<PathBuf, E>>,
-) -> ScoresheetPhotoBatch {
-    let total = selections.len();
-    let skipped = total.saturating_sub(MAX_SCORESHEET_PHOTOS) as u32;
-    let mut photos = Vec::with_capacity(total.min(MAX_SCORESHEET_PHOTOS));
-    let mut failed = 0u32;
+enum BatchItem<T> {
+    Ready(T),
+    Failed,
+}
 
-    for selection in selections.into_iter().take(MAX_SCORESHEET_PHOTOS) {
-        let Ok(path) = selection else {
-            failed = failed.saturating_add(1);
+/// Shared batch builder for picked and dropped intake.
+///
+/// The caller enforces the 4-file intake cap before passing `items` and supplies `initial_skipped`
+/// and `initial_failed`. Within those files, at most [`MAX_SCORESHEET_PHOTOS`] images are returned
+/// in total: once the image budget is full, remaining items are counted in `skipped` one each,
+/// unrendered PDF pages are counted in `skipped` by page count, and any PDF failure is
+/// all-or-nothing (leaving the image budget free for later files).
+fn process_file_batch_with<I, T, FResolve, FPdf>(
+    authority: &SharedPathAuthority,
+    items: I,
+    initial_skipped: u32,
+    initial_failed: u32,
+    mut resolve_grant: FResolve,
+    mut render_pdf: FPdf,
+) -> ScoresheetPhotoBatch
+where
+    I: IntoIterator<Item = BatchItem<T>>,
+    FResolve: FnMut(&SharedPathAuthority, T) -> Result<PathRef, CoachError>,
+    FPdf: FnMut(&[u8], usize) -> Result<RenderedPdf, CoachError>,
+{
+    let mut photos = Vec::with_capacity(MAX_SCORESHEET_PHOTOS);
+    let mut skipped = initial_skipped;
+    let mut failed = initial_failed;
+
+    for item in items {
+        let remaining = MAX_SCORESHEET_PHOTOS.saturating_sub(photos.len());
+        if remaining == 0 {
+            skipped = skipped.saturating_add(1);
             continue;
-        };
-        let grant = match grant_image_path(authority, &path) {
-            Ok(grant) => grant,
-            Err(_) => {
+        }
+
+        let grant = match item {
+            BatchItem::Ready(value) => match resolve_grant(authority, value) {
+                Ok(grant) => grant,
+                Err(_) => {
+                    failed = failed.saturating_add(1);
+                    continue;
+                }
+            },
+            BatchItem::Failed => {
                 failed = failed.saturating_add(1);
                 continue;
             }
         };
-        match read_and_process_grant(authority, &grant) {
-            Ok(photo) => photos.push(photo),
-            Err(_) => failed = failed.saturating_add(1),
+
+        let Ok(bytes) = read_grant_bytes(authority, &grant) else {
+            failed = failed.saturating_add(1);
+            continue;
+        };
+
+        if is_pdf_bytes(&bytes) {
+            match render_pdf(&bytes, remaining) {
+                Ok(rendered) => {
+                    let unrendered = rendered.total_pages.saturating_sub(rendered.photos.len());
+                    skipped = skipped.saturating_add(u32::try_from(unrendered).unwrap_or(u32::MAX));
+                    photos.extend(rendered.photos);
+                }
+                Err(_) => {
+                    failed = failed.saturating_add(1);
+                }
+            }
+        } else {
+            match process_image_bytes(&bytes) {
+                Ok(photo) => photos.push(photo),
+                Err(_) => failed = failed.saturating_add(1),
+            }
         }
     }
 
@@ -298,27 +365,71 @@ fn process_picked_selections<E>(
     }
 }
 
+fn process_picked_selections<E>(
+    authority: &SharedPathAuthority,
+    selections: Vec<Result<PathBuf, E>>,
+) -> ScoresheetPhotoBatch {
+    process_picked_selections_with(authority, selections, render_pdf_in_helper)
+}
+
+fn process_picked_selections_with<E, FPdf>(
+    authority: &SharedPathAuthority,
+    selections: Vec<Result<PathBuf, E>>,
+    render_pdf: FPdf,
+) -> ScoresheetPhotoBatch
+where
+    FPdf: FnMut(&[u8], usize) -> Result<RenderedPdf, CoachError>,
+{
+    let total = selections.len();
+    let initial_skipped = total.saturating_sub(MAX_SCORESHEET_PHOTOS) as u32;
+    let items =
+        selections
+            .into_iter()
+            .take(MAX_SCORESHEET_PHOTOS)
+            .map(|selection| match selection {
+                Ok(path) => BatchItem::Ready(path),
+                Err(_) => BatchItem::Failed,
+            });
+    process_file_batch_with(
+        authority,
+        items,
+        initial_skipped,
+        0,
+        |authority, path| {
+            grant_image_path(authority, &path).map_err(|_| CoachError::PhotoUnreadable)
+        },
+        render_pdf,
+    )
+}
+
 fn process_dropped_slot(
     authority: &SharedPathAuthority,
     slot: DroppedPhotoSlot,
 ) -> ScoresheetPhotoBatch {
-    let mut photos = Vec::with_capacity(slot.grants.len());
-    let mut failed = slot.failed;
-    for grant in &slot.grants {
-        match read_and_process_grant(authority, grant) {
-            Ok(photo) => photos.push(photo),
-            Err(_) => failed = failed.saturating_add(1),
-        }
-    }
-    ScoresheetPhotoBatch {
-        photos,
-        skipped: slot.skipped,
-        failed,
-    }
+    process_dropped_slot_with(authority, slot, render_pdf_in_helper)
+}
+
+fn process_dropped_slot_with<FPdf>(
+    authority: &SharedPathAuthority,
+    slot: DroppedPhotoSlot,
+    render_pdf: FPdf,
+) -> ScoresheetPhotoBatch
+where
+    FPdf: FnMut(&[u8], usize) -> Result<RenderedPdf, CoachError>,
+{
+    let items = slot.grants.into_iter().map(BatchItem::Ready);
+    process_file_batch_with(
+        authority,
+        items,
+        slot.skipped,
+        slot.failed,
+        |_authority, grant| Ok(grant),
+        render_pdf,
+    )
 }
 
 /// Handles native window `DragDrop` events next to `chessbase::handle_drop`.
-/// Grants up to 4 image paths at drop time, stores only the grants in the window's slot,
+/// Grants up to 4 photo or PDF paths at drop time, stores only the grants in the window's slot,
 /// and emits `ScoresheetPhotosDropped` to that window.
 pub(crate) fn handle_drop<R: tauri::Runtime>(
     window: &tauri::Window<R>,
@@ -350,17 +461,17 @@ fn stage_dropped_paths(
     window_label: &str,
     paths: &[PathBuf],
 ) -> Option<String> {
-    let image_paths: Vec<&PathBuf> = paths
+    let scoresheet_paths: Vec<&PathBuf> = paths
         .iter()
-        .filter(|path| is_scoresheet_image_path(path))
+        .filter(|path| is_scoresheet_file_path(path))
         .collect();
-    if image_paths.is_empty() {
+    if scoresheet_paths.is_empty() {
         return None;
     }
-    let skipped = image_paths.len().saturating_sub(MAX_SCORESHEET_PHOTOS) as u32;
-    let mut grants = Vec::with_capacity(image_paths.len().min(MAX_SCORESHEET_PHOTOS));
+    let skipped = scoresheet_paths.len().saturating_sub(MAX_SCORESHEET_PHOTOS) as u32;
+    let mut grants = Vec::with_capacity(scoresheet_paths.len().min(MAX_SCORESHEET_PHOTOS));
     let mut failed = 0u32;
-    for path in image_paths.into_iter().take(MAX_SCORESHEET_PHOTOS) {
+    for path in scoresheet_paths.into_iter().take(MAX_SCORESHEET_PHOTOS) {
         match grant_image_path(authority, path) {
             Ok(grant) => grants.push(grant),
             Err(_) => failed = failed.saturating_add(1),
@@ -385,7 +496,8 @@ pub(crate) fn clear_window_dropped_photos(state: &crate::AppState, window: &str)
     }
 }
 
-/// Opens the native multi-file image picker and processes up to 4 selected photos.
+/// Opens the native multi-file picker for photos and PDFs and processes up to 4 selected files
+/// into at most 4 scoresheet images.
 pub(crate) async fn pick_photos(
     app: tauri::AppHandle,
     state: &crate::AppState,
@@ -393,7 +505,7 @@ pub(crate) async fn pick_photos(
     pick_photos_with(state, move || {
         app.dialog()
             .file()
-            .add_filter("Image", &PICKER_EXTENSIONS)
+            .add_filter("Images and PDF", &PICKER_EXTENSIONS)
             .blocking_pick_files()
             .map(|paths| {
                 paths
@@ -489,7 +601,7 @@ pub(crate) async fn take_dropped_photos(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::infra::path_authority::PathAuthority;
     use std::time::Duration;
@@ -503,7 +615,7 @@ mod tests {
         (dir, authority)
     }
 
-    fn make_rgb_jpeg(width: u32, height: u32, color: [u8; 3]) -> Vec<u8> {
+    pub(in crate::coach) fn make_rgb_jpeg(width: u32, height: u32, color: [u8; 3]) -> Vec<u8> {
         let img = RgbImage::from_pixel(width, height, Rgb(color));
         encode_jpeg(&img, 90).expect("encode test jpeg")
     }
@@ -892,19 +1004,167 @@ mod tests {
     }
 
     #[test]
-    fn image_extension_filter_is_ascii_case_insensitive_and_picker_has_both_cases() {
-        for ext in IMAGE_EXTENSIONS {
-            assert!(is_scoresheet_image_path(Path::new(&format!("a.{ext}"))));
-            assert!(is_scoresheet_image_path(Path::new(&format!(
+    fn scoresheet_extension_filter_is_ascii_case_insensitive_and_picker_has_both_cases() {
+        for ext in SCORESHEET_EXTENSIONS {
+            assert!(is_scoresheet_file_path(Path::new(&format!("a.{ext}"))));
+            assert!(is_scoresheet_file_path(Path::new(&format!(
                 "a.{}",
                 ext.to_ascii_uppercase()
             ))));
             assert!(PICKER_EXTENSIONS.contains(&ext));
             assert!(PICKER_EXTENSIONS.contains(&ext.to_ascii_uppercase().as_str()));
         }
-        assert!(!is_scoresheet_image_path(Path::new("a.gif")));
-        assert!(!is_scoresheet_image_path(Path::new("a.cbh")));
-        assert!(!is_scoresheet_image_path(Path::new("noext")));
+        assert!(is_scoresheet_file_path(Path::new("scan.pdf")));
+        assert!(is_scoresheet_file_path(Path::new("SCAN.PDF")));
+        assert!(!is_scoresheet_file_path(Path::new("a.gif")));
+        assert!(!is_scoresheet_file_path(Path::new("a.cbh")));
+        assert!(!is_scoresheet_file_path(Path::new("noext")));
+    }
+
+    fn render_pdf_in_process_for_test(
+        pdf_bytes: &[u8],
+        max_pages: usize,
+    ) -> Result<RenderedPdf, CoachError> {
+        let rendered = crate::coach::scoresheet_pdf::render_pdf_pages(pdf_bytes, max_pages)
+            .map_err(|_| CoachError::PhotoUnreadable)?;
+        let mut photos = Vec::with_capacity(rendered.pages.len());
+        for page in &rendered.pages {
+            photos.push(process_image_bytes(page)?);
+        }
+        Ok(RenderedPdf {
+            total_pages: rendered.total_pages,
+            photos,
+        })
+    }
+
+    #[test]
+    fn batch_caps_images_at_four_and_counts_unrendered_pdf_pages_and_unreached_files_as_skipped() {
+        use crate::coach::scoresheet_pdf::test_pdf::make_jpeg_pages_pdf;
+
+        let (dir, authority) = make_test_authority();
+        let img = dir.path().join("photo.jpg");
+        let pdf4 = dir.path().join("four_pages.pdf");
+        let extra = dir.path().join("extra.jpg");
+        std::fs::write(&img, make_rgb_jpeg(24, 24, [10, 20, 30])).unwrap();
+        std::fs::write(&pdf4, make_jpeg_pages_pdf(4, 595.0, 842.0)).unwrap();
+        std::fs::write(&extra, make_rgb_jpeg(24, 24, [40, 50, 60])).unwrap();
+
+        // Image + 4-page PDF -> 4 images total, 1 unrendered page skipped.
+        let batch = process_picked_selections_with::<(), _>(
+            &authority,
+            vec![Ok(img.clone()), Ok(pdf4.clone())],
+            render_pdf_in_process_for_test,
+        );
+        assert_eq!(batch.photos.len(), 4);
+        assert_eq!(batch.skipped, 1);
+        assert_eq!(batch.failed, 0);
+
+        // 4-page PDF + extra image -> 4 images total, extra file not reached -> skipped 1.
+        let batch = process_picked_selections_with::<(), _>(
+            &authority,
+            vec![Ok(pdf4), Ok(extra)],
+            render_pdf_in_process_for_test,
+        );
+        assert_eq!(batch.photos.len(), 4);
+        assert_eq!(batch.skipped, 1);
+        assert_eq!(batch.failed, 0);
+    }
+
+    #[test]
+    fn batch_enforces_both_four_file_and_four_image_caps_with_failing_pdf() {
+        let (dir, authority) = make_test_authority();
+        let bad_pdf = dir.path().join("bad.pdf");
+        let a = dir.path().join("a.jpg");
+        let b = dir.path().join("b.jpg");
+        let c = dir.path().join("c.jpg");
+        let d = dir.path().join("d.jpg");
+        std::fs::write(&bad_pdf, b"%PDF-1.4\ntruncated").unwrap();
+        let jpg = make_rgb_jpeg(24, 24, [20, 60, 100]);
+        for p in [&a, &b, &c, &d] {
+            std::fs::write(p, &jpg).unwrap();
+        }
+
+        // Plan O2 example: [bad.pdf, a.jpg, b.jpg, c.jpg, d.jpg] -> 3 images, failed 1, skipped 1.
+        let batch = process_picked_selections_with::<(), _>(
+            &authority,
+            vec![Ok(bad_pdf), Ok(a), Ok(b), Ok(c), Ok(d)],
+            render_pdf_in_process_for_test,
+        );
+        assert_eq!(batch.photos.len(), 3);
+        assert_eq!(batch.failed, 1);
+        assert_eq!(batch.skipped, 1);
+    }
+
+    #[test]
+    fn batch_pdf_failure_is_all_or_nothing_and_leaves_budget_free_for_later_files() {
+        use crate::coach::scoresheet_pdf::test_pdf::make_second_page_corrupt_image_pdf;
+
+        let (dir, authority) = make_test_authority();
+        let bad_two_page = dir.path().join("partial_bad.pdf");
+        let good_jpg = dir.path().join("good.jpg");
+        std::fs::write(&bad_two_page, make_second_page_corrupt_image_pdf()).unwrap();
+        std::fs::write(&good_jpg, make_rgb_jpeg(24, 24, [80, 140, 200])).unwrap();
+
+        let batch = process_picked_selections_with::<(), _>(
+            &authority,
+            vec![Ok(bad_two_page), Ok(good_jpg)],
+            render_pdf_in_process_for_test,
+        );
+        assert_eq!(batch.photos.len(), 1);
+        assert_eq!(batch.failed, 1);
+        assert_eq!(batch.skipped, 0);
+    }
+
+    #[test]
+    fn batch_routes_by_magic_bytes_not_extension_and_stages_uppercase_pdf_on_drop() {
+        use crate::coach::scoresheet_pdf::test_pdf::make_jpeg_pages_pdf;
+
+        let (dir, authority) = make_test_authority();
+        let pdf_as_jpg = dir.path().join("disguised_pdf.jpg");
+        let jpg_as_pdf = dir.path().join("DISGUISED_JPG.PDF");
+        std::fs::write(&pdf_as_jpg, make_jpeg_pages_pdf(2, 595.0, 842.0)).unwrap();
+        std::fs::write(&jpg_as_pdf, make_rgb_jpeg(32, 32, [90, 40, 180])).unwrap();
+
+        let slots = DroppedPhotoSlots::default();
+        let drop_id = stage_dropped_paths(
+            &slots,
+            &authority,
+            "main",
+            &[pdf_as_jpg.clone(), jpg_as_pdf.clone()],
+        )
+        .expect("uppercase .PDF and .jpg both stage");
+        let slot = slots.take("main", &drop_id).expect("staged slot");
+        assert_eq!(slot.grants.len(), 2);
+        assert_eq!(slot.skipped, 0);
+        assert_eq!(slot.failed, 0);
+
+        let batch = process_dropped_slot_with(&authority, slot, render_pdf_in_process_for_test);
+        // 2 pages from the PDF behind .jpg + 1 image from the JPEG behind .PDF = 3 images.
+        assert_eq!(batch.photos.len(), 3);
+        assert_eq!(batch.skipped, 0);
+        assert_eq!(batch.failed, 0);
+    }
+
+    #[test]
+    fn batch_isolates_crashing_pdf_helper_child_and_still_processes_sibling_file() {
+        use crate::coach::scoresheet_pdf::{
+            render_pdf_in_test_helper, test_pdf::make_jpeg_pages_pdf,
+        };
+
+        let (dir, authority) = make_test_authority();
+        let pdf = dir.path().join("crash.pdf");
+        let sibling = dir.path().join("sibling.jpg");
+        std::fs::write(&pdf, make_jpeg_pages_pdf(1, 595.0, 842.0)).unwrap();
+        std::fs::write(&sibling, make_rgb_jpeg(24, 24, [15, 95, 175])).unwrap();
+
+        let batch = process_picked_selections_with::<(), _>(
+            &authority,
+            vec![Ok(pdf), Ok(sibling)],
+            |bytes, max_pages| render_pdf_in_test_helper(bytes, max_pages, "abort"),
+        );
+        assert_eq!(batch.photos.len(), 1);
+        assert_eq!(batch.failed, 1);
+        assert_eq!(batch.skipped, 0);
     }
 
     #[test]

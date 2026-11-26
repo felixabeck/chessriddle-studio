@@ -1652,6 +1652,9 @@ fn native_log_targets() -> Vec<Target> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(code) = coach::scoresheet_pdf::maybe_run_from_args() {
+        std::process::exit(code);
+    }
     let specta_builder = tauri_specta::Builder::new()
         .commands(tauri_specta::collect_commands!(
             chessriddle::chessriddle_account,
@@ -3277,6 +3280,26 @@ mod tests {
             main.contains("RotationStrategy::KeepSome(")
                 && main.contains("NATIVE_LOG_ROTATION_KEEP"),
             "the plugin must keep the named archive count: {main}"
+        );
+    }
+
+    #[test]
+    fn main_dispatches_scoresheet_pdf_helper_as_first_statement() {
+        use crate::infra::blocking::source_scan::{body_at_indent, compact, normalise, Literals};
+
+        let source = include_str!("main.rs");
+        let main = body_at_indent(source, "fn main()");
+        let normalised = normalise(main, Literals::Keep);
+        let opening = normalised
+            .find('{')
+            .expect("fn main must have an opening brace");
+        let body = compact(&normalised[opening + 1..]);
+        let expected_prefix = compact(
+            "if let Some(code) = coach::scoresheet_pdf::maybe_run_from_args() { std::process::exit(code); }",
+        );
+        assert!(
+            body.starts_with(&expected_prefix),
+            "helper dispatch must be the very first statement of fn main(): {body}"
         );
     }
 
