@@ -15,6 +15,7 @@ import {
     selectFilesTreeRow,
     whitePawnSquares,
     waitForFontsSettled,
+    waitForTransitionsSettled,
     scrollbarFreeScreenshot,
     wheelBoardStackTo,
     wheelColumnTo,
@@ -846,33 +847,135 @@ test("font-scaled-breakpoints: live slider change stacks Settings and database p
 
 // Emoji-labelled Feedback type segments wrap onto a second row rather than clipping; the longest
 // shipped labels (Italian, Russian) overflowed one row of the fixed-width dialog at every window size.
-// 320px at 200% is excluded: there the dialog itself is narrower than single words (f-20261125-09).
+// At 320px and 200% the dialog is narrower than single words, so the whole dialog must break them
+// rather than clip (f-20261125-09). nb-NO exercises a single-word header title wider than the title slot.
 for (const [locale, feedback] of [
     ["it-IT", "Feedback"],
     ["ru-RU", "Отзыв"],
+    ["nb-NO", "Tilbakemelding"],
 ] as const) {
     test.describe(locale, () => {
         test.use({ appLocale: locale });
 
-        for (const [width, scale] of [
-            [1000, 200],
-            [420, 100],
-        ] as const) {
-            test(`font-scaled-breakpoints: ${locale} Feedback type choice at ${width}px and ${scale}%`, async ({
+        if (locale !== "nb-NO") {
+            for (const [width, scale] of [
+                [1000, 200],
+                [420, 100],
+            ] as const) {
+                test(`font-scaled-breakpoints: ${locale} Feedback type choice at ${width}px and ${scale}%`, async ({
+                    page,
+                    mockScenario,
+                }) => {
+                    if (scale === 100) await seedFontScale(page, scale);
+                    await page.setViewportSize({ width, height: 720 });
+                    await mockScenario({ commands: { coach_available: { result: false } } });
+                    await page.goto("/");
+                    await page.getByRole("button", { name: feedback, exact: true }).first().click();
+                    const dialog = page.getByRole("dialog");
+                    await expect(dialog).toBeVisible();
+                    await waitForFontsSettled(page);
+                    const types = dialog.locator(".mantine-SegmentedControl-root");
+                    await expect(types.getByRole("radio")).toHaveCount(4);
+                    await assertNothingClipped(types);
+                });
+            }
+        }
+
+        test(`font-scaled-breakpoints: ${locale} Feedback dialog fits at 320px and 200%`, async ({
+            page,
+            mockScenario,
+            capture,
+        }) => {
+            await page.setViewportSize({ width: 320, height: 720 });
+            await mockScenario({ commands: { coach_available: { result: false } } });
+            await page.goto("/");
+            await page.getByRole("button", { name: feedback, exact: true }).first().click();
+            const dialog = page.getByRole("dialog");
+            await expect(dialog).toBeVisible();
+            await waitForFontsSettled(page);
+            await waitForTransitionsSettled(page);
+            await expect(
+                dialog.locator(".mantine-SegmentedControl-root").getByRole("radio"),
+            ).toHaveCount(4);
+            const labels = dialog.locator(".mantine-SegmentedControl-label");
+            await expect(labels).toHaveCount(4);
+            expect(
+                await labels.evaluateAll((elements) =>
+                    elements
+                        .filter((element) => element.scrollWidth > element.clientWidth + 1)
+                        .map(
+                            (element) =>
+                                `${element.textContent?.trim()}: ${element.scrollWidth} > ${element.clientWidth}`,
+                        ),
+                ),
+            ).toEqual([]);
+            await assertNothingClipped(dialog);
+            if (locale === "it-IT") {
+                await page.mouse.move(319, 719);
+                await capture("feedback-dialog-320-200-it-IT");
+                await expect(dialog).toHaveScreenshot("feedback-dialog-320-200-it-IT.png", {
+                    stylePath: scrollbarFreeScreenshot,
+                });
+            }
+        });
+
+        if (locale === "it-IT") {
+            test("font-scaled-breakpoints: it-IT Feedback landscape preview fits at 320px and 200%", async ({
                 page,
                 mockScenario,
             }) => {
-                if (scale === 100) await seedFontScale(page, scale);
-                await page.setViewportSize({ width, height: 720 });
+                await page.setViewportSize({ width: 320, height: 720 });
                 await mockScenario({ commands: { coach_available: { result: false } } });
                 await page.goto("/");
                 await page.getByRole("button", { name: feedback, exact: true }).first().click();
                 const dialog = page.getByRole("dialog");
                 await expect(dialog).toBeVisible();
                 await waitForFontsSettled(page);
-                const types = dialog.locator(".mantine-SegmentedControl-root");
-                await expect(types.getByRole("radio")).toHaveCount(4);
-                await assertNothingClipped(types);
+                const dataUrl = await page.evaluate(() => {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = 1600;
+                    canvas.height = 400;
+                    const context = canvas.getContext("2d")!;
+                    context.fillStyle = "#808080";
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    return canvas.toDataURL("image/png");
+                });
+                await dialog.locator('input[type="file"]').setInputFiles({
+                    name: "landscape.png",
+                    mimeType: "image/png",
+                    buffer: Buffer.from(dataUrl.split(",")[1], "base64"),
+                });
+                const preview = dialog.getByAltText("Anteprima dell’immagine");
+                await expect(preview).toBeVisible();
+                await expect
+                    .poll(() =>
+                        preview.evaluate(
+                            (img) =>
+                                img instanceof HTMLImageElement &&
+                                img.complete &&
+                                img.naturalWidth === 1600,
+                        ),
+                    )
+                    .toBe(true);
+                const geometry = await dialog.evaluate((modal) => {
+                    const body = modal.querySelector(".mantine-Modal-body")!;
+                    const img = modal.querySelector("img")!;
+                    const bodyRect = body.getBoundingClientRect();
+                    const bodyStyle = getComputedStyle(body);
+                    const contentRight =
+                        bodyRect.right -
+                        parseFloat(bodyStyle.borderRightWidth) -
+                        parseFloat(bodyStyle.paddingRight);
+                    const imgRect = img.getBoundingClientRect();
+                    return {
+                        imgRight: imgRect.right,
+                        contentRight,
+                    };
+                });
+                expect(geometry.imgRight).toBeLessThanOrEqual(geometry.contentRight + 1);
+                // The remove IconAction sits at right: -8 on the full-width wrapper, inside the
+                // modal body's padding rather than overflowing the modal itself.
+                await assertNothingClipped(dialog, { mode: "reachable" });
             });
         }
     });

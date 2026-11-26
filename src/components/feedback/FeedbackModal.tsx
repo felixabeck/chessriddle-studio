@@ -331,8 +331,15 @@ export default function FeedbackModal({
   }
 
   return (
-    <AppModal opened={opened} onClose={handleClose} pending={pending} title={t("Feedback.Title")}>
+    <AppModal
+      opened={opened}
+      onClose={handleClose}
+      pending={pending}
+      title={t("Feedback.Title")}
+      classNames={{ title: classes.title }}
+    >
       <form
+        className={classes.form}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -437,11 +444,24 @@ export default function FeedbackModal({
               </FileButton>
             </Group>
             {image && (
-              <div style={{ position: "relative", display: "inline-block", marginTop: 8 }}>
+              <div
+                style={{
+                  position: "relative",
+                  display: "inline-block",
+                  maxWidth: "100%",
+                  marginTop: 8,
+                }}
+              >
                 <img
                   src={image}
                   alt={t("Feedback.ImagePreview")}
-                  style={{ height: "6rem", width: "auto", display: "block" }}
+                  style={{
+                    height: "6rem",
+                    width: "auto",
+                    maxWidth: "100%",
+                    objectFit: "contain",
+                    display: "block",
+                  }}
                 />
                 <IconAction
                   label={t("Feedback.RemoveImage")}

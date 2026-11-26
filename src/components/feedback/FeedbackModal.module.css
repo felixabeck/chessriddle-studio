@@ -1,9 +1,31 @@
+/* A word wider than the dialog (a long locale word at 200% in a 320px window) breaks instead of
+   pushing the dialog content past its edge. */
+.form {
+  overflow-wrap: anywhere;
+}
+
+/* nb-NO "tilbakemelding" is wider than the title slot at 320px/200%; allow the flex title item
+   to shrink and break rather than overflow the header. */
+.title {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
 /* Emoji-labelled type segments wrap onto a second row instead of clipping when a locale's labels,
-   the font scale or a narrow window leave too little width for one row. */
-.typeControl {
+   the font scale or a narrow window leave too little width for one row. A bounded radius keeps
+   multi-row stacks rounded instead of clipping active rings in an oval, while >= half the
+   single-row height (39.125px at 100%) still renders a full pill on one row. A segment alone on
+   its row shrinks to the row and wraps its label rather than ellipsizing it. */
+.typeControl:global(.mantine-SegmentedControl-root) {
   flex-wrap: wrap;
+  border-radius: 1.25rem;
 }
 
 .typeControl :global(.mantine-SegmentedControl-control) {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.typeControl :global(.mantine-SegmentedControl-label) {
+  white-space: normal;
 }
