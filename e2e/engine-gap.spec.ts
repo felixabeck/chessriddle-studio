@@ -136,9 +136,10 @@ for (const scope of ["workspace", "preview"] as const) {
             await move("d6").click();
             await move("c5").click({ button: "right" });
             await expect(page.getByRole("menu")).toBeVisible();
-            await move("e4").click();
+            // A move below the menu: the open menu covers the 1. e4 e5 row above c5.
+            await move("Bc4").click();
             await expect(page.getByRole("menu")).toHaveCount(0);
-            await expect(current).toHaveText("e4");
+            await expect(current).toHaveText("Bc4");
             await move("d6").click();
             await move("c5").click({ button: "right" });
             await expect(page.getByRole("menu")).toBeVisible();
