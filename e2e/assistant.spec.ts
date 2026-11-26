@@ -278,6 +278,26 @@ test("resize the Assistant dock by mouse and keyboard, clamp limits, reset, pers
         "20",
     );
 
+    // At the 20rem floor the composer's toolbar keeps the model button, New conversation and Send
+    // on one line, in that order, inside the panel.
+    const toolbarBoxes = await Promise.all(
+        [
+            panel.getByRole("button", { name: /^AI model: / }),
+            panel.getByRole("button", { name: "New conversation", exact: true }),
+            panel.getByRole("button", { name: "Send", exact: true }),
+        ].map(async (control) => (await control.boundingBox())!),
+    );
+    const panelRight = (await panel.boundingBox())!.x + minPx;
+    const centreY = (box: { y: number; height: number }) => box.y + box.height / 2;
+    for (const [index, box] of toolbarBoxes.entries()) {
+        expect(Math.abs(centreY(box) - centreY(toolbarBoxes[0]))).toBeLessThanOrEqual(2);
+        expect(box.x + box.width).toBeLessThanOrEqual(panelRight);
+        if (index > 0) {
+            const previous = toolbarBoxes[index - 1];
+            expect(previous.x + previous.width).toBeLessThanOrEqual(box.x);
+        }
+    }
+
     // Keyboard resize from the floor: ArrowRight stays clamped at 20rem; two ArrowLeft widen by 3rem (48px), one ArrowRight narrows by 1.5rem (24px).
     await handle.focus();
     await handle.press("ArrowRight");

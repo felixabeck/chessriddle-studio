@@ -1,14 +1,17 @@
-import { Button, Group, Text, Textarea } from "@mantine/core";
+import { Group, Text, Textarea, useMantineTheme } from "@mantine/core";
+import { ArrowUp, Square } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { IconAction } from "@/components/common/IconAction";
 import classes from "./CoachPanel.module.css";
 
 const MAX_QUESTION_CHARS = 4000;
 
 /**
- * Shared question composer for the Coach and the Assistant: auto-sizing text input,
- * Enter-to-send, the panel's own controls (model button, new conversation), Send/Stop action and
- * missing-selection hint.
+ * Shared question composer for the Coach and the Assistant: one framed box with the auto-sizing
+ * question field across its full width, and below it a toolbar holding the panel's own controls
+ * (model button, new conversation) on the left and the Send/Stop action on the right. Enter sends;
+ * the missing-selection hint sits under the box.
  */
 export function AiComposer({
   draft,
@@ -36,6 +39,7 @@ export function AiComposer({
   controls: ReactNode;
 }) {
   const { t } = useTranslation();
+  const theme = useMantineTheme();
   return (
     <form
       className={classes.composer}
@@ -44,12 +48,13 @@ export function AiComposer({
         onSubmit();
       }}
     >
-      <Group gap="xs" align="flex-end" wrap="wrap">
+      <div className={classes.composerBox}>
         <Textarea
-          className={classes.input}
+          classNames={{ input: classes.composerInput }}
+          variant="unstyled"
           autosize
-          minRows={1}
-          maxRows={6}
+          minRows={2}
+          maxRows={8}
           maxLength={MAX_QUESTION_CHARS}
           aria-label={ariaLabel}
           placeholder={placeholder}
@@ -62,17 +67,34 @@ export function AiComposer({
             }
           }}
         />
-        {controls}
-        {running ? (
-          <Button className={classes.send} variant="default" disabled={stopping} onClick={onStop}>
-            {t("Coach.Stop")}
-          </Button>
-        ) : (
-          <Button className={classes.send} type="submit" disabled={!canSend}>
-            {t("Coach.Send")}
-          </Button>
-        )}
-      </Group>
+        <Group className={classes.composerToolbar} justify="space-between" gap={4} wrap="nowrap">
+          <Group className={classes.composerControls} gap={4} wrap="nowrap">
+            {controls}
+          </Group>
+          {running ? (
+            <IconAction
+              label={t("Coach.Stop")}
+              variant="default"
+              radius="xl"
+              disabled={stopping}
+              onClick={onStop}
+            >
+              <Square size="0.75rem" fill="currentColor" aria-hidden />
+            </IconAction>
+          ) : (
+            <IconAction
+              label={t("Coach.Send")}
+              type="submit"
+              variant="filled"
+              color={theme.primaryColor}
+              radius="xl"
+              disabled={!canSend}
+            >
+              <ArrowUp size="1rem" aria-hidden />
+            </IconAction>
+          )}
+        </Group>
+      </div>
       {missingChoice && (
         <Text size="xs" c="dimmed" mt={4}>
           {missingChoice}

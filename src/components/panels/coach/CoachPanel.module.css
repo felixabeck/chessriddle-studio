@@ -5,22 +5,33 @@
   min-height: 0;
 }
 
-/* The question field keeps a usable width: where the row is too narrow for it and the controls,
-   the controls and Send wrap onto a line of their own under it. */
-.input {
-  flex: 1 1 14rem;
+/* One framed field: the question spans the full width, the toolbar line under it holds every
+   control, so no line is spent on a single button and nothing wraps. */
+.composerBox {
+  composes: input from "../../../styles/Input.module.css";
+}
+
+.composerInput {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) 0;
+}
+
+.composerToolbar {
+  padding: 2px var(--mantine-spacing-xs) var(--mantine-spacing-xs);
+}
+
+.composerControls {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.send {
-  margin-left: auto;
-}
-
-/* Shortened only when even a line of its own, beside "New conversation" and Send, is too narrow. */
+/* Shortened beside "New conversation" and Send when the toolbar is too narrow for the full name.
+   The reserve covers those two icon buttons (1.75rem each), the toolbar gaps and side padding,
+   and the box border. */
 .modelButton {
+  --composer-toolbar-reserve: 5.5rem;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: calc(100cqi - 9rem);
+  max-width: calc(100cqi - var(--composer-toolbar-reserve));
   font-weight: 400;
 }
 

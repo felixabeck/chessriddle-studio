@@ -94,6 +94,11 @@ test("ask the Coach, read the streamed answer, preview a line and insert it", as
     await composer.click();
     await expect(page.getByRole("textbox", { name: "Effort" })).toHaveCount(0);
     await composer.fill("What should Black play here?");
+    // With a question typed, Send is the primary action on the composer's toolbar line.
+    await waitForTransitionsSettled(page);
+    await expect(page.locator("form").filter({ has: composer })).toHaveScreenshot(
+        "coach-composer-ready.png",
+    );
     await composer.press("Enter");
 
     // Nothing is sent before the notice for this connection was accepted.
