@@ -15204,3 +15204,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Required behaviour Felix ordered on 2026-11-26; the growth is text, not code weight. Reversal path: revert the ceiling with the feature.
 * **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"23ef11993d5204148684348f978d0fad978c20a21df5e0d5c96a242b33315700","input_sha256":"fcb191c58bf8c6585da0a7be901295f16d1c4985673bb8706f27ffe3a1a3bfb6","kind":"mutation-receipt","operation":"768bf138c2c525ad6ab6304e1ca847f53242a31445631c6f7e298509ef98d7d1","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-21"],"target":"decisions-ledger","v":1} -->
+
+### d-20261126-22 — What total bundle ceiling holds for repertoire PGN import after rebasing onto focus mode?
+
+* **Question:** `d-20261126-21` raised the total ceiling to 2,520,000 B from a candidate measured on base `b15b79643`. After rebasing onto `b043c7410` (focus mode and the notation toolbar), the candidate measures 2,516,152 B, leaving 3,848 B, below the documented 5,000 B margin rule. Which ceiling holds?
+* **Governs:** bundle-budgets.json (limits.total), docs/bundle-budgets.md
+* **Chosen:** Total 2,530,000 B; Entry 640,000 B and largest lazy 600,000 B unchanged. Base `origin/master` at `b043c7410`, built in a detached worktree: 629,462 B Entry, 588,325 B largest lazy, 2,499,762 B total. Candidate (the change rebased onto that base): 632,994 B Entry, 592,240 B largest lazy, 2,516,152 B total, all gzip from `vite build` as `pnpm build-vite` runs it and production `buildBundleReport`, with byte-identical `package.json`, `pnpm-lock.yaml` and `vite.config.ts`. Deltas +3,532 B Entry, +3,915 B largest lazy, +16,390 B total. 2,530,000 B is the next multiple of 10,000 B leaving at least 5,000 B of margin (13,848 B).
+* **Rejected:** Keeping 2,520,000 B with 3,848 B of margin (below the documented rule).
+* **Reason:** Same feature growth as `d-20261126-21`, re-measured on the current base; upstream growth beneath the change consumed the earlier margin. Reversal path: revert the ceiling with the feature.
+* **Decided by:** Claude Code (Opus 5.5) build, full auto, 2026-11-26 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"43f6d010ce2c397a20b2ae29c436c74010a619c8607d7227dc84cd875cd4bbb2","input_sha256":"3a988111ea56ded98c2b51d8f937e777ea2558ac4c72aad2f4a2fbd9ae9612db","kind":"mutation-receipt","operation":"b058ae3d2532112067b9e5376f263ae1a787f344c5bbbc1b56080e085c26f7af","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-22"],"target":"decisions-ledger","v":1} -->
