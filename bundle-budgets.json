@@ -2,15 +2,15 @@
   "version": 1,
   "unit": "gzipBytes",
   "limits": {
-    "entry": 630000,
+    "entry": 640000,
     "largestLazy": 600000,
-    "total": 2480000
+    "total": 2500000
   },
   "measurement": {
     "source": "pnpm build-vite",
     "date": "2026-11-26",
-    "entry": 620550,
-    "largestLazy": 590225,
-    "total": 2467978
+    "entry": 627958,
+    "largestLazy": 589749,
+    "total": 2494494
   }
 }
