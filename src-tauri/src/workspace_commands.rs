@@ -12,6 +12,15 @@ use crate::infra::operations::OperationRegistry;
 use crate::{native_read_operation, AppState};
 
 const MAX_ENGINE_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+/// Minimum age before an unlocked `.atomic-<UUID>` temporary in the database folder is treated
+/// as a crash orphan. The per-temporary advisory lock (unix) / private share mode (Windows)
+/// proves host-local liveness; this grace covers the unix create->lock gap and clock jitter.
+const DATABASE_ATOMIC_ORPHAN_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+/// Room for a full database listing plus orphaned atomic temporaries (same x2 rationale as
+/// `MAX_ENGINE_IMAGE_SWEEP_ENTRIES`, d-20261019-09).
+const MAX_DATABASE_ATOMIC_SWEEP_ENTRIES: usize =
+    crate::infra::fs::MAX_DIRECTORY_LISTING_ENTRIES.saturating_mul(2);
+const DATABASE_ATOMIC_ORPHAN_SWEEP_LABEL: &str = "sweep_database_atomic_orphans";
 
 #[cfg(test)]
 pub(crate) struct ImageIssuanceTestGate {
@@ -483,7 +492,7 @@ pub async fn get_database_workspace(
         )
         .await?;
     let authority = state.pgn_path_authority.clone();
-    crate::infra::operations::run_accepted_blocking(
+    let resolution = crate::infra::operations::run_accepted_blocking(
         &state.operations,
         "get_database_workspace",
         move || {
@@ -492,7 +501,145 @@ pub async fn get_database_workspace(
             })
         },
     )
+    .await;
+    schedule_database_workspace_orphan_sweep(
+        resolution,
+        &state.operations,
+        state.pgn_path_authority.clone(),
+        &state.database_atomic_orphan_sweep_scheduled,
+    )
     .await
+}
+
+/// Schedules the one-shot database atomic-orphan sweep after a successful workspace resolution.
+/// Resolution errors pass through without touching the once-flag; admission failures log once
+/// and leave the flag unset so a later call can retry without failing the command.
+pub(crate) async fn schedule_database_workspace_orphan_sweep(
+    resolution: Result<crate::infra::path_authority::DatabaseRootDescriptor, Error>,
+    operations: &OperationRegistry,
+    authority: crate::infra::path_authority::SharedPathAuthority,
+    scheduled: &std::sync::atomic::AtomicBool,
+) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+    let descriptor = resolution?;
+    if scheduled.load(std::sync::atomic::Ordering::Acquire) {
+        return Ok(descriptor);
+    }
+    let lease = match operations.accept(DATABASE_ATOMIC_ORPHAN_SWEEP_LABEL) {
+        Ok(lease) => lease,
+        Err(error) => {
+            log::warn!(
+                "database atomic orphan sweep admission failed: {}",
+                error.category()
+            );
+            return Ok(descriptor);
+        }
+    };
+    if scheduled.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        drop(lease);
+        return Ok(descriptor);
+    }
+    let root = descriptor.root.clone();
+    let cancellation = lease.token();
+    tokio::spawn(async move {
+        let _ = crate::infra::operations::run_native_operation(
+            lease,
+            DATABASE_ATOMIC_ORPHAN_SWEEP_LABEL,
+            async move {
+                BLOCKING_GATEWAY
+                    .spawn(move || {
+                        sweep_database_atomic_orphans_blocking(&authority, &root, &cancellation);
+                        Ok(())
+                    })
+                    .await
+            },
+        )
+        .await;
+    });
+    Ok(descriptor)
+}
+
+fn sweep_database_atomic_orphans_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    root: &crate::infra::path_authority::DatabaseRootHandle,
+    cancellation: &tokio_util::sync::CancellationToken,
+) {
+    if cancellation.is_cancelled() {
+        return;
+    }
+    let root_dir = match authority
+        .with_mut(|authority| authority.open_database_root_for_mutation(root))
+        .map_err(Error::from)
+        .and_then(|result| result)
+    {
+        Ok(dir) => dir,
+        Err(error) => {
+            log::warn!(
+                "database atomic orphan sweep root open failed: {}",
+                error.category()
+            );
+            return;
+        }
+    };
+    let listing = match crate::infra::fs::read_listing_directory_entries_at(
+        &root_dir,
+        cancellation,
+        Some(MAX_DATABASE_ATOMIC_SWEEP_ENTRIES),
+        &mut crate::infra::fs::is_atomic_temp_name,
+    ) {
+        Ok(listing) => listing,
+        Err(Error::Cancellation) => return,
+        Err(error) => {
+            log::warn!(
+                "database atomic orphan sweep listing failed: {}",
+                error.category()
+            );
+            return;
+        }
+    };
+    if let Some((_, _, error)) = listing
+        .unread
+        .iter()
+        .find(|(_, _, error)| !error.is_missing_entry())
+    {
+        log::warn!(
+            "database atomic orphan sweep listing failed: {}",
+            error.category()
+        );
+        return;
+    }
+    let now = std::time::SystemTime::now();
+    let mut removed = 0usize;
+    for entry in &listing.entries {
+        if cancellation.is_cancelled() {
+            break;
+        }
+        match crate::infra::fs::remove_atomic_temp_orphan_at(
+            &root_dir,
+            entry,
+            now,
+            DATABASE_ATOMIC_ORPHAN_GRACE,
+        ) {
+            crate::infra::fs::AtomicTempSweepOutcome::Removed => {
+                removed += 1;
+            }
+            crate::infra::fs::AtomicTempSweepOutcome::Kept => {}
+            crate::infra::fs::AtomicTempSweepOutcome::LockUnsupported => {
+                log::warn!(
+                    "database atomic orphan sweep skipped remaining atomic temporaries: advisory locks are unsupported"
+                );
+                break;
+            }
+            crate::infra::fs::AtomicTempSweepOutcome::Failed(category) => {
+                log::warn!(
+                    "database atomic orphan sweep removal failed for {}: {category}",
+                    entry.name.to_string_lossy()
+                );
+            }
+        }
+    }
+    if removed > 0 {
+        log::debug!("database atomic orphan sweep removed {removed} orphaned temporary file(s)");
+    }
 }
 
 fn get_database_workspace_blocking(
@@ -2659,5 +2806,443 @@ mod tests {
                 "unexpected error for {invalid:?}: {err:?}"
             );
         }
+    }
+
+    struct ActiveDatabaseSweepFixture {
+        _directory: tempfile::TempDir,
+        databases: PathBuf,
+        authority: crate::infra::path_authority::SharedPathAuthority,
+        descriptor: crate::infra::path_authority::DatabaseRootDescriptor,
+    }
+
+    impl ActiveDatabaseSweepFixture {
+        fn new() -> Self {
+            use crate::infra::path_authority::{PathAuthority, SharedPathAuthority};
+
+            let directory = tempfile::tempdir().unwrap();
+            let databases = directory.path().join("MyChessDBs");
+            std::fs::create_dir(&databases).unwrap();
+            let authority = SharedPathAuthority::installed(
+                PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+            );
+            let crate::infra::path_authority::WorkspaceChoice::Activated { descriptor } =
+                issue_database_workspace_blocking(&authority, databases.clone()).unwrap()
+            else {
+                panic!("empty database folder should activate directly");
+            };
+            Self {
+                _directory: directory,
+                databases,
+                authority,
+                descriptor,
+            }
+        }
+
+        fn resolve(&self) -> Result<crate::infra::path_authority::DatabaseRootDescriptor, Error> {
+            let no_home = || Err(Error::Conflict("unexpected home lookup".into()));
+            let no_app = || Err(Error::Conflict("unexpected app-data lookup".into()));
+            let no_default =
+                crate::infra::path_authority::DefaultDirLookups::new(&no_home, &no_app);
+            get_database_workspace_blocking(&self.authority, &no_default)
+        }
+    }
+
+    fn create_atomic_temp_file(dir: &std::path::Path, age: Option<Duration>) -> PathBuf {
+        let path = dir.join(format!(
+            "{}{}",
+            crate::infra::fs::ATOMIC_TEMP_PREFIX,
+            uuid::Uuid::new_v4()
+        ));
+        let file = std::fs::File::options()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        if let Some(age) = age {
+            file.set_modified(std::time::SystemTime::now() - age)
+                .unwrap();
+        }
+        path
+    }
+
+    fn create_aged_atomic_orphan(dir: &std::path::Path) -> PathBuf {
+        create_atomic_temp_file(
+            dir,
+            Some(DATABASE_ATOMIC_ORPHAN_GRACE + Duration::from_secs(60)),
+        )
+    }
+
+    fn create_young_atomic_temp(dir: &std::path::Path) -> PathBuf {
+        create_atomic_temp_file(dir, None)
+    }
+
+    async fn await_operations_drain(operations: &OperationRegistry) {
+        let ops = operations.clone();
+        let drained =
+            tokio::task::spawn_blocking(move || ops.wait_for_drain(Duration::from_secs(10)))
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(drained, "scheduled sweep operation did not drain in time");
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_removes_aged_orphan_and_keeps_live_writer_and_db_files() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let aged_orphan = create_aged_atomic_orphan(&fixture.databases);
+        let young_temp = create_young_atomic_temp(&fixture.databases);
+        let db_file = fixture.databases.join("games.db3");
+        let ecsi_file = fixture.databases.join("games.db3.ecsi");
+        let integrity_file = fixture.databases.join("games.db3.integrity");
+        std::fs::write(&db_file, b"db").unwrap();
+        std::fs::write(&ecsi_file, b"index").unwrap();
+        std::fs::write(&integrity_file, b"stamp").unwrap();
+
+        let parent = fixture
+            .authority
+            .with_mut(|auth| auth.open_database_root_for_mutation(&fixture.descriptor.root))
+            .unwrap()
+            .unwrap();
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let writer_entered = Arc::clone(&entered);
+        let writer_release = Arc::clone(&release);
+        let writer_databases = fixture.databases.clone();
+        let aged_name = aged_orphan.file_name().unwrap().to_os_string();
+        let young_name = young_temp.file_name().unwrap().to_os_string();
+        let live_temp_slot: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        let writer_live_slot = Arc::clone(&live_temp_slot);
+        let writer = std::thread::spawn(move || {
+            let outcome = crate::infra::fs::atomic_replace_at(
+                &parent,
+                OsStr::new("live.db3.ecsi"),
+                move |temp| {
+                    temp.write_all(b"live index payload")?;
+                    let old = std::time::SystemTime::now()
+                        - DATABASE_ATOMIC_ORPHAN_GRACE
+                        - Duration::from_secs(60);
+                    temp.set_modified(old)?;
+                    let live_path = std::fs::read_dir(&writer_databases)?
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.path())
+                        .find(|path| {
+                            path.file_name().is_some_and(|name| {
+                                name != aged_name
+                                    && name != young_name
+                                    && crate::infra::fs::is_atomic_temp_name(name)
+                            })
+                        })
+                        .expect("live atomic_replace_at temporary must exist");
+                    *writer_live_slot.lock().unwrap() = Some(live_path);
+                    writer_entered.wait();
+                    writer_release.wait();
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert!(matches!(
+                outcome,
+                crate::infra::fs::AtomicFileOutcome::DurableCommit
+            ));
+        });
+
+        entered.wait();
+        let live_temp = live_temp_slot.lock().unwrap().clone().unwrap();
+
+        let operations = OperationRegistry::default();
+        let scheduled = AtomicBool::new(false);
+
+        let returned = schedule_database_workspace_orphan_sweep(
+            fixture.resolve(),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        assert_eq!(returned, fixture.descriptor);
+        assert!(scheduled.load(Ordering::Acquire));
+
+        await_operations_drain(&operations).await;
+
+        assert!(!aged_orphan.exists(), "aged orphan should be removed");
+        assert!(
+            young_temp.is_file(),
+            "young temporary within grace must be kept"
+        );
+        assert!(live_temp.is_file(), "live writer temporary must be kept");
+        assert!(db_file.is_file(), "database file must be kept");
+        assert!(ecsi_file.is_file(), ".ecsi sidecar must be kept");
+        assert!(integrity_file.is_file(), ".integrity sidecar must be kept");
+
+        release.wait();
+        writer.join().unwrap();
+        assert_eq!(
+            std::fs::read(fixture.databases.join("live.db3.ecsi")).unwrap(),
+            b"live index payload"
+        );
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_removes_aged_orphan_in_visible_default_folder() {
+        use crate::infra::path_authority::{
+            AppDataDir, DefaultDirLookups, HomeDir, PathAuthority, SharedPathAuthority,
+        };
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let directory = tempfile::tempdir().unwrap();
+        let home_path = directory.path().join("home");
+        let app_path = directory.path().join("app-data");
+        let default_dbs = home_path.join("ChessRiddle Studio").join("Databases");
+        std::fs::create_dir_all(&default_dbs).unwrap();
+        std::fs::create_dir_all(&app_path).unwrap();
+        let aged_orphan = create_aged_atomic_orphan(&default_dbs);
+
+        let home = || {
+            Ok(HomeDir::for_test(
+                &home_path,
+                crate::file_workspace::RELEASE_APP_IDENTIFIER,
+            ))
+        };
+        let app_data = || Ok(AppDataDir::for_test(&app_path));
+        let lookups = DefaultDirLookups::new(&home, &app_data);
+        let authority = SharedPathAuthority::installed(
+            PathAuthority::open(directory.path().join("registry.json"), vec![]).unwrap(),
+        );
+        let operations = OperationRegistry::default();
+        let scheduled = AtomicBool::new(false);
+
+        let resolution = get_database_workspace_blocking(&authority, &lookups);
+        let descriptor = schedule_database_workspace_orphan_sweep(
+            resolution,
+            &operations,
+            authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        assert_eq!(descriptor.display_name, "Databases");
+        assert!(scheduled.load(Ordering::Acquire));
+
+        await_operations_drain(&operations).await;
+        assert!(
+            !aged_orphan.exists(),
+            "aged orphan in visible default folder should be removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_runs_only_once_per_process() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let operations = OperationRegistry::default();
+        let scheduled = AtomicBool::new(false);
+
+        let first_orphan = create_aged_atomic_orphan(&fixture.databases);
+        schedule_database_workspace_orphan_sweep(
+            fixture.resolve(),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        await_operations_drain(&operations).await;
+        assert!(!first_orphan.exists());
+        assert!(scheduled.load(Ordering::Acquire));
+
+        let second_orphan = create_aged_atomic_orphan(&fixture.databases);
+        schedule_database_workspace_orphan_sweep(
+            fixture.resolve(),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        await_operations_drain(&operations).await;
+        assert!(
+            second_orphan.is_file(),
+            "second call in the same process must not schedule another sweep"
+        );
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_leaves_flag_unset_on_resolution_error_and_sweeps_later() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let orphan = create_aged_atomic_orphan(&fixture.databases);
+        let operations = OperationRegistry::default();
+        let scheduled = AtomicBool::new(false);
+
+        let err = schedule_database_workspace_orphan_sweep(
+            Err(Error::Conflict("interrupted database move".into())),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, Error::Conflict(ref msg) if msg == "interrupted database move"));
+        assert!(!scheduled.load(Ordering::Acquire));
+        assert!(orphan.is_file());
+
+        schedule_database_workspace_orphan_sweep(
+            fixture.resolve(),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        await_operations_drain(&operations).await;
+        assert!(scheduled.load(Ordering::Acquire));
+        assert!(!orphan.exists());
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_root_open_failure_keeps_command_ok_and_sets_flag() {
+        use crate::infra::path_authority::FolderSwitchKind;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let orphan = create_aged_atomic_orphan(&fixture.databases);
+        let descriptor = fixture.resolve().unwrap();
+
+        let journal_path = fixture
+            .authority
+            .with_mut(|auth| auth.journal_path(FolderSwitchKind::Database))
+            .unwrap();
+        std::fs::write(&journal_path, b"unresolved database move journal").unwrap();
+
+        let operations = OperationRegistry::default();
+        let scheduled = AtomicBool::new(false);
+
+        let returned = schedule_database_workspace_orphan_sweep(
+            Ok(descriptor.clone()),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        assert_eq!(returned, descriptor);
+        await_operations_drain(&operations).await;
+        assert!(scheduled.load(Ordering::Acquire));
+        assert!(
+            orphan.is_file(),
+            "unresolved database move journal must refuse root open and leave files untouched"
+        );
+    }
+
+    #[tokio::test]
+    async fn database_workspace_sweep_accept_failure_keeps_command_ok_and_leaves_flag_unset() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let orphan = create_aged_atomic_orphan(&fixture.databases);
+        let descriptor = fixture.resolve().unwrap();
+
+        let operations = OperationRegistry::default();
+        operations.seal_and_request_cancellation().unwrap();
+        let scheduled = AtomicBool::new(false);
+
+        let returned = schedule_database_workspace_orphan_sweep(
+            Ok(descriptor.clone()),
+            &operations,
+            fixture.authority.clone(),
+            &scheduled,
+        )
+        .await
+        .unwrap();
+        assert_eq!(returned, descriptor);
+        assert!(!scheduled.load(Ordering::Acquire));
+        assert!(orphan.is_file());
+    }
+
+    #[cfg(unix)]
+    struct ListingChildStatHookGuard;
+
+    #[cfg(unix)]
+    impl Drop for ListingChildStatHookGuard {
+        fn drop(&mut self) {
+            crate::infra::fs::set_listing_child_stat_hook(None);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_workspace_sweep_skips_missing_stat_candidate_and_removes_remaining_orphans() {
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let stat_missing_candidate = create_aged_atomic_orphan(&fixture.databases);
+        let removed_orphan = create_aged_atomic_orphan(&fixture.databases);
+        let stat_missing_name = stat_missing_candidate.file_name().unwrap().to_os_string();
+
+        let _guard = ListingChildStatHookGuard;
+        crate::infra::fs::set_listing_child_stat_hook(Some(Box::new(move |name, kind| {
+            (name == stat_missing_name).then(|| {
+                (
+                    kind,
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "vanished before stat"),
+                )
+            })
+        })));
+
+        sweep_database_atomic_orphans_blocking(
+            &fixture.authority,
+            &fixture.descriptor.root,
+            &tokio_util::sync::CancellationToken::new(),
+        );
+
+        assert!(
+            !removed_orphan.exists(),
+            "aged orphan listed beside a missing-stat candidate must still be removed"
+        );
+        assert!(
+            stat_missing_candidate.is_file(),
+            "missing-stat candidate must be skipped without aborting the sweep"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_workspace_sweep_warns_once_and_skips_on_non_missing_stat_error() {
+        let fixture = ActiveDatabaseSweepFixture::new();
+        let unreadable = create_aged_atomic_orphan(&fixture.databases);
+        let aged_orphan = create_aged_atomic_orphan(&fixture.databases);
+        let unreadable_name = unreadable.file_name().unwrap().to_os_string();
+
+        let _guard = ListingChildStatHookGuard;
+        crate::infra::fs::set_listing_child_stat_hook(Some(Box::new(move |name, kind| {
+            (name == unreadable_name).then(|| {
+                (
+                    kind,
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "stat denied"),
+                )
+            })
+        })));
+
+        let capture = crate::error::LogCaptureScope::start();
+        sweep_database_atomic_orphans_blocking(
+            &fixture.authority,
+            &fixture.descriptor.root,
+            &tokio_util::sync::CancellationToken::new(),
+        );
+
+        let listing_warns = capture
+            .messages()
+            .into_iter()
+            .filter(|message| message.contains("database atomic orphan sweep listing failed:"))
+            .count();
+        assert_eq!(listing_warns, 1, "expected exactly one listing warn");
+        assert!(
+            aged_orphan.is_file(),
+            "non-missing stat failure must skip the sweep and remove nothing"
+        );
+        assert!(unreadable.is_file());
     }
 }

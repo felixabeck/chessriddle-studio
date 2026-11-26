@@ -638,6 +638,8 @@ pub struct AppState {
     pub(crate) json_http_client: Arc<reqwest::Client>,
     /// Game links accepted from the operating system that the renderer has not taken yet.
     pub(crate) game_links: Arc<infra::game_link::PendingGameLinks>,
+    /// Whether the one-shot database atomic-orphan sweep has been scheduled in this process.
+    pub(crate) database_atomic_orphan_sweep_scheduled: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -683,6 +685,9 @@ impl AppState {
             http_transport,
             json_http_client,
             game_links: Arc::default(),
+            database_atomic_orphan_sweep_scheduled: Arc::new(std::sync::atomic::AtomicBool::new(
+                false,
+            )),
         })
     }
 }

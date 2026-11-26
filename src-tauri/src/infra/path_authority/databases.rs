@@ -36,6 +36,20 @@ impl PathAuthority {
         Ok(DatabaseRootDescriptor { root, display_name })
     }
 
+    /// Opens a database root directory through the authority for namespace mutations
+    /// (writable on Windows so `remove_entry_at` can flush the parent after unlinking).
+    pub(crate) fn open_database_root_for_mutation(
+        &mut self,
+        root: &DatabaseRootHandle,
+    ) -> Result<fs::File, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Database) {
+            return Err(Self::interrupted_move_root_error());
+        }
+        Ok(self
+            .capability_directory(root.path_ref(), PathOperation::DatabaseMutate)?
+            .directory)
+    }
+
     pub(super) fn live_practice_stored(&self, id: &PathRef) -> Result<&StoredEntry, Error> {
         if self.pending_unpersisted_removals.contains(&id.id) {
             return Err(Error::InvalidInput(
