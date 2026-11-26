@@ -29492,3 +29492,21 @@ Verifier drift, not a product regression: the emoji pass `4aee1135b` gave the Li
 * **Spotted outside diff:** yes, while proving the f-20261125-22/-13 harness fix.
 
 Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up). Related: f-20261125-22, f-20261125-13.
+
+---
+
+## 2026-11-26 — filed through the inbox spool
+
+### The notation-menu dismiss e2e test clicks 1. e4, which the taller move menu now covers
+
+* **ID:** f-20261126-04 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45770675964
+* **First red:** run 45770675964 on `756efa232` (feat(notation): hotkeys for promote variation, delete variation and delete following moves), job e2e.
+* **Where:** `e2e/engine-gap.spec.ts:129` (`notation-menu: <scope> <layout> dismisses and promotes with pointer clicks`), the `move("e4").click()` after right-clicking `c5`.
+* **Defect:** `756efa232` added Delete Variation and Delete Following Moves to the move menu. On `1... c5`, a side line with a continuation, the menu opens upward and now covers the `1. e4 e5` row, so the test's dismiss click on `e4` is intercepted by the menu item "Delete Following Moves" until the 45 s timeout. The product behaviour (a click on another move closes the menu) is unchanged; the click target is under the menu.
+* **Failure scenario:** job e2e of Test run 45770675964: 3 failed (workspace inline, preview inline, preview table), `locator.click: Test timeout of 45000ms exceeded`, "Delete Following Moves ... intercepts pointer events".
+* **Fix:** click a move outside the open menu (`Bc4`, below it) and expect the cursor there.
+* **Proof:** `pnpm test:e2e:container --project=engine-gap -g "notation-menu"` passes all variants.
+* **Repair owner:** 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0 on tuxedo-atlas, 2026-11-26T07:09:06Z
+* **Found by:** Claude Code (Opus 5.5), session 3b6a4203-e8e9-4a02-9fd7-5b0b0fa690c0, variation hotkeys push, 2026-11-26.
