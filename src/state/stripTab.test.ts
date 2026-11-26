@@ -1,13 +1,15 @@
 import { createStore } from "jotai";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { tabFamily } from "./atoms";
-import type { BoardArrangement } from "./boardArrangement";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { tabFamily, tabsAtom } from "./atoms";
 import {
-    ANALYSIS_TABS_HIDDEN_KEY,
-    analysisTabsHiddenAtom,
-    boardArrangementAtom,
-} from "./layoutStorage";
+    opponentPreparationAtom,
+    type StoredOpponentPreparation,
+    tabPreparationViewFamily,
+} from "./atoms/preparation";
+import type { BoardArrangement } from "./boardArrangement";
+import { boardLayoutFamily } from "./layoutStorage";
 import { selectStripTab } from "./stripTab";
+import type { Tab } from "./workspaceTypes";
 
 vi.mock("@/platform/native", () => ({ warn: vi.fn() }));
 vi.mock("./persistError", () => ({ reportPersistError: vi.fn() }));
@@ -22,36 +24,95 @@ const withDatabaseArea: BoardArrangement = {
     },
 };
 
+function makeRepertoireTab(id: string): Tab {
+    return {
+        value: id,
+        name: "Rep",
+        type: "analysis",
+        gameOrigin: {
+            kind: "file",
+            gameNumber: 0,
+            file: {
+                type: "file",
+                handle: { kind: "fileWorkspace", id: { id: "rep" } },
+                name: "rep.pgn",
+                numGames: 1,
+                metadata: { type: "repertoire", tags: [] },
+                lastModified: 0,
+            },
+        },
+    };
+}
+
+function makeGameTab(id: string): Tab {
+    return {
+        value: id,
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "none" },
+    };
+}
+
+afterEach(() => {
+    localStorage.clear();
+    for (const param of Array.from(tabPreparationViewFamily.getParams())) {
+        tabPreparationViewFamily.remove(param);
+    }
+});
+
 describe("selectStripTab", () => {
     let store: ReturnType<typeof createStore>;
     beforeEach(() => {
         store = createStore();
-        store.set(boardArrangementAtom, withDatabaseArea);
-        store.set(analysisTabsHiddenAtom, true);
+        store.set(tabsAtom, [makeGameTab("game-tab"), makeRepertoireTab("rep-tab")]);
+        for (const kind of ["repertoire", "game", "preparation"] as const) {
+            store.set(boardLayoutFamily(kind), {
+                arrangement: withDatabaseArea,
+                tabsHidden: true,
+            });
+        }
     });
 
-    test("selects a tab that lives in the strip and shows the hidden strip", () => {
-        selectStripTab(store, "tab-1", "practice");
-        expect(store.get(tabFamily("tab-1"))).toBe("practice");
-        expect(store.get(analysisTabsHiddenAtom)).toBe(false);
+    test("selects a tab that lives in the strip and shows the hidden strip only for that tab's kind", () => {
+        selectStripTab(store, "rep-tab", "practice");
+        expect(store.get(tabFamily("rep-tab"))).toBe("practice");
+        expect(store.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(false);
+        expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
+        expect(store.get(boardLayoutFamily("preparation")).tabsHidden).toBe(true);
     });
 
     test("selects a panel shown as its own area without showing the strip", () => {
-        selectStripTab(store, "tab-1", "database");
-        expect(store.get(tabFamily("tab-1"))).toBe("database");
-        expect(store.get(analysisTabsHiddenAtom)).toBe(true);
+        selectStripTab(store, "game-tab", "database");
+        expect(store.get(tabFamily("game-tab"))).toBe("database");
+        expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
     });
-});
 
-describe("analysisTabsHiddenAtom storage", () => {
-    test("an absent or corrupt stored value reads as shown", async () => {
-        localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "not json");
-        vi.resetModules();
-        const fresh = await import("./layoutStorage");
-        expect(createStore().get(fresh.analysisTabsHiddenAtom)).toBe(false);
-        localStorage.removeItem(ANALYSIS_TABS_HIDDEN_KEY);
-        vi.resetModules();
-        const absent = await import("./layoutStorage");
-        expect(createStore().get(absent.analysisTabsHiddenAtom)).toBe(false);
+    test("targets the preparation kind when the tab shows the active opponent preparation", () => {
+        store.set(opponentPreparationAtom, {
+            id: "prep-1",
+            identityKey: "k",
+            cardDatabaseKey: "db",
+            playerId: 1,
+            opponentName: "Opp",
+            opponentColor: "white",
+            period: null,
+            source: "otb",
+            minGames: 1,
+            views: { gaps: [], lines: [] } as unknown as StoredOpponentPreparation["views"],
+            stats: { otb: new Map(), online: null },
+            files: [],
+            partial: false,
+            onlineFailed: false,
+        });
+        store.set(tabPreparationViewFamily("rep-tab"), {
+            preparationId: "prep-1",
+            landing: null,
+            showAllLines: false,
+        });
+
+        selectStripTab(store, "rep-tab", "practice");
+        expect(store.get(boardLayoutFamily("preparation")).tabsHidden).toBe(false);
+        expect(store.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(true);
+        expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
     });
 });

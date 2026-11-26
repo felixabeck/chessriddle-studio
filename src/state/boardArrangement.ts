@@ -30,6 +30,9 @@ export type StaticBoardAreaId = (typeof BOARD_AREA_IDS)[number];
 
 export const ENGINE_AREA_PREFIX = "engine:";
 export type EngineAreaId = `${typeof ENGINE_AREA_PREFIX}${string}`;
+/** Prefix for engine placeholder ids (`engine:@1`, `engine:@2`, ...) in presets and layouts. */
+export const ENGINE_PLACEHOLDER_PREFIX = "@";
+const ENGINE_PLACEHOLDER_PATTERN = /^@[1-9]\d*$/;
 /** Maximum number of engine windows that can be pulled out into the arrangement at once. */
 export const MAX_ENGINE_AREAS = 4;
 
@@ -66,7 +69,7 @@ const MOSAIC_NODE_KEYS: ReadonlySet<string> = new Set([
     "splitPercentage",
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -159,6 +162,21 @@ export function engineIdFromArea(area: EngineAreaId): string {
     return area.slice(ENGINE_AREA_PREFIX.length);
 }
 
+/** Builds a reserved placeholder engine area id (`engine:@1`, `engine:@2`, ...). */
+export function enginePlaceholderAreaId(slot: number): EngineAreaId {
+    return engineAreaId(`${ENGINE_PLACEHOLDER_PREFIX}${slot}`);
+}
+
+/** Whether an engine id is a reserved layout placeholder (`@1`, `@2`, ...). */
+export function isEnginePlaceholderId(engineId: string): boolean {
+    return ENGINE_PLACEHOLDER_PATTERN.test(engineId);
+}
+
+/** Whether `area` is a reserved engine placeholder leaf (`engine:@1`, `engine:@2`, ...). */
+export function isEnginePlaceholderArea(area: string): area is EngineAreaId {
+    return isEngineArea(area) && isEnginePlaceholderId(engineIdFromArea(area));
+}
+
 export function isBoardAreaId(id: string): id is BoardAreaId {
     return STATIC_BOARD_AREA_SET.has(id as StaticBoardAreaId) || isEngineArea(id);
 }
@@ -181,8 +199,6 @@ export function isValidBoardArrangement(value: unknown): value is BoardArrangeme
     }
     return engineCount <= MAX_ENGINE_AREAS;
 }
-
-export const boardArrangementSchema = z.custom<BoardArrangement>(isValidBoardArrangement);
 
 export function defaultBoardArrangement(): BoardArrangement {
     return {
@@ -359,24 +375,82 @@ export function hiddenEngineAreas(
 }
 
 /**
- * Prunes engine leaves whose id is absent from a successfully loaded engine list (deleted
- * engines). Never prunes when `engines` is `undefined` (list absent or not yet loaded).
+ * Resolves engine leaves in `arrangement` against `engines`:
+ * 1. While `engines` is `undefined`, every engine leaf is kept as is.
+ * 2. A real engine leaf whose id is present in `engines` is kept (even when disabled).
+ * 3. A placeholder leaf — or, with `fallbackMissing: true` (at apply time), a real leaf whose id
+ *    is absent from `engines` — takes the first enabled (`loaded`) engine not already in the
+ *    layout; when none exists, it stays or becomes a hidden placeholder leaf (`engine:@<n>`).
+ * 4. With `fallbackMissing: false` (default, live layout), a real leaf whose id is absent from
+ *    `engines` is pruned.
  */
-export function pruneMissingEngineAreas(
+export function resolveArrangementEngines(
     arrangement: BoardArrangement,
     engines: readonly EnginePresence[] | undefined,
+    options?: { fallbackMissing?: boolean },
 ): BoardArrangement {
     if (engines === undefined) return arrangement;
     const engineAreas = arrangementEngineAreas(arrangement);
     if (engineAreas.length === 0) return arrangement;
+
+    const fallbackMissing = options?.fallbackMissing === true;
     const knownIds = new Set(engines.map((engine) => engine.id));
-    let current = arrangement;
+    const enabledIds = engines.filter((engine) => engine.loaded).map((engine) => engine.id);
+
+    const usedEngineIds = new Set<string>();
+    const usedPlaceholders = new Set<EngineAreaId>();
     for (const area of engineAreas) {
-        if (!knownIds.has(engineIdFromArea(area))) {
-            const next = removeLeaf(current, area);
-            if (next !== null) current = next;
+        if (isEnginePlaceholderArea(area)) {
+            usedPlaceholders.add(area);
+        } else {
+            const id = engineIdFromArea(area);
+            if (knownIds.has(id)) usedEngineIds.add(id);
         }
     }
+
+    const nextEnabledEngineId = (): string | undefined => {
+        for (const id of enabledIds) {
+            if (!usedEngineIds.has(id)) {
+                usedEngineIds.add(id);
+                return id;
+            }
+        }
+        return undefined;
+    };
+
+    const nextPlaceholderArea = (): EngineAreaId => {
+        let slot = 1;
+        while (usedPlaceholders.has(enginePlaceholderAreaId(slot))) {
+            slot += 1;
+        }
+        const placeholder = enginePlaceholderAreaId(slot);
+        usedPlaceholders.add(placeholder);
+        return placeholder;
+    };
+
+    let current = arrangement;
+    for (const area of engineAreas) {
+        const isPlaceholder = isEnginePlaceholderArea(area);
+        const id = engineIdFromArea(area);
+
+        if (!isPlaceholder && knownIds.has(id)) {
+            continue;
+        }
+
+        if (isPlaceholder || fallbackMissing) {
+            const replacementId = nextEnabledEngineId();
+            if (replacementId !== undefined) {
+                current = replaceLeaf(current, area, engineAreaId(replacementId));
+            } else if (!isPlaceholder) {
+                current = replaceLeaf(current, area, nextPlaceholderArea());
+            }
+            continue;
+        }
+
+        const pruned = removeLeaf(current, area);
+        if (pruned !== null) current = pruned;
+    }
+
     return current;
 }
 

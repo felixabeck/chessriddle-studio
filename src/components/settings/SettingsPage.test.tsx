@@ -959,25 +959,43 @@ test("compact Shortcuts stack each action above its key instead of a two-column 
   expect(panel.textContent).toContain("Settings.Keybinds.Actions.NEW_TAB");
 });
 
-test("Reset layout in Analysis / Layout & Saving restores default arrangement (clearing engine areas) and shows hidden tabs without touching windowsState or tab selection", async () => {
-  const { ANALYSIS_BOARD_LAYOUT_KEY, ANALYSIS_TABS_HIDDEN_KEY, WINDOWS_STATE_KEY } =
+test("Reset layout in Analysis / Layout & Saving restores all three kinds to their presets and keeps saved layouts without touching windowsState or tab selection", async () => {
+  const { ANALYSIS_BOARD_LAYOUTS_KEY, BOARD_LAYOUTS_VERSION, boardLayoutsAtom, WINDOWS_STATE_KEY } =
     await import("@/state/layoutStorage");
   const { defaultBoardArrangement, engineAreaId } = await import("@/state/boardArrangement");
+  const { defaultKindLayouts } = await import("@/state/layoutPresets");
   const { tabFamily } = await import("@/state/atoms");
 
   const customWindows = JSON.stringify({ currentNode: "left" });
-  localStorage.setItem(
-    ANALYSIS_BOARD_LAYOUT_KEY,
-    JSON.stringify({
-      direction: "row",
-      first: { direction: "column", first: "left", second: engineAreaId("eng-1") },
-      second: { direction: "row", first: "bottomRight", second: "topRight" },
-    }),
-  );
+  const customArrangement = {
+    direction: "row" as const,
+    first: { direction: "column" as const, first: "left" as const, second: engineAreaId("eng-1") },
+    second: {
+      direction: "row" as const,
+      first: "bottomRight" as const,
+      second: "topRight" as const,
+    },
+  };
+  const savedEntry = {
+    id: "saved-1",
+    name: "My Study",
+    arrangement: defaultBoardArrangement(),
+    tabsHidden: true,
+  };
+  const initialLayouts = {
+    version: BOARD_LAYOUTS_VERSION,
+    kinds: {
+      repertoire: { arrangement: customArrangement, tabsHidden: true },
+      game: { arrangement: customArrangement, tabsHidden: true },
+      preparation: { arrangement: customArrangement, tabsHidden: true },
+    },
+    saved: [savedEntry],
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUTS_KEY, JSON.stringify(initialLayouts));
   localStorage.setItem(WINDOWS_STATE_KEY, customWindows);
-  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
 
   const { host, atoms } = await renderSettingsPage();
+  atoms.set(boardLayoutsAtom, initialLayouts);
   atoms.set(tabFamily("tab-1"), "database");
 
   await act(async () => settingsTab(host, "analysis").click());
@@ -993,10 +1011,11 @@ test("Reset layout in Analysis / Layout & Saving restores default arrangement (c
 
   await act(async () => resetButton.click());
 
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(
-    defaultBoardArrangement(),
-  );
-  expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("false");
+  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUTS_KEY)!)).toEqual({
+    version: BOARD_LAYOUTS_VERSION,
+    kinds: defaultKindLayouts(),
+    saved: [savedEntry],
+  });
   expect(localStorage.getItem(WINDOWS_STATE_KEY)).toBe(customWindows);
   expect(atoms.get(tabFamily("tab-1"))).toBe("database");
 });

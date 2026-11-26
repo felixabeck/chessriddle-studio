@@ -67,14 +67,17 @@ import BoardTabLayout, { BoardArrangementContext, boardAreaTargetId } from "./Bo
 import { fontSizeAtom } from "@/state/atoms";
 import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import {
-  ANALYSIS_BOARD_LAYOUT_KEY,
-  ANALYSIS_TABS_HIDDEN_KEY,
-  boardArrangementAtom,
+  ANALYSIS_BOARD_LAYOUTS_KEY,
+  boardLayoutFamily,
+  defaultBoardLayoutsState,
   WINDOWS_STATE_KEY,
 } from "@/state/layoutStorage";
+import type { BoardLayoutKind } from "@/state/layoutPresets";
 import {
+  arrangementEngineAreas,
   defaultBoardArrangement,
   engineAreaId,
+  enginePlaceholderAreaId,
   placeArea,
   type BoardArrangement,
   type PanelAreaId,
@@ -134,16 +137,41 @@ afterEach(async () => {
   document.documentElement.style.fontSize = "";
   vi.restoreAllMocks();
 });
-async function renderAt(width: number, arrangeable = false) {
+function seedGameLayout(arrangement: BoardArrangement, tabsHidden = false) {
+  const state = defaultBoardLayoutsState();
+  state.kinds.game = { arrangement, tabsHidden };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUTS_KEY, JSON.stringify(state));
+}
+function readStoredGameLayout() {
+  return JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUTS_KEY)!).kinds.game as {
+    arrangement: BoardArrangement;
+    tabsHidden: boolean;
+  };
+}
+function getGameArrangement() {
+  return store.get(boardLayoutFamily("game")).arrangement;
+}
+function setGameArrangement(arrangement: BoardArrangement) {
+  store.set(boardLayoutFamily("game"), (prev) => ({ ...prev, arrangement }));
+}
+
+async function renderAt(width: number, arrangeable = false, kind: BoardLayoutKind = "game") {
   measured.width = width;
   await act(async () =>
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable={arrangeable}>
-            <StatefulConsumer />
-            <ArrangementProbe />
-          </BoardTabLayout>
+          {arrangeable ? (
+            <BoardTabLayout arrangeable kind={kind}>
+              <StatefulConsumer />
+              <ArrangementProbe />
+            </BoardTabLayout>
+          ) : (
+            <BoardTabLayout>
+              <StatefulConsumer />
+              <ArrangementProbe />
+            </BoardTabLayout>
+          )}
         </MantineProvider>
       </Provider>,
     ),
@@ -290,7 +318,7 @@ test("analysis board switches cleanly across stacked, fallback windowsState and 
     },
   };
   localStorage.setItem(WINDOWS_STATE_KEY, JSON.stringify(savedWindows));
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   const writes = vi.spyOn(Storage.prototype, "setItem");
 
   // Case 1: narrower than two pane floors -> stacked, no panel areas, arranging unavailable.
@@ -322,15 +350,13 @@ test("analysis board switches cleanly across stacked, fallback windowsState and 
 
   // Switching across modes never rewrote either stored key.
   expect(
-    writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUT_KEY || k === WINDOWS_STATE_KEY),
+    writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUTS_KEY || k === WINDOWS_STATE_KEY),
   ).toEqual([]);
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(
-    THREE_PANE_ARRANGEMENT,
-  );
+  expect(readStoredGameLayout().arrangement).toEqual(THREE_PANE_ARRANGEMENT);
 });
 
 test("arrangement width threshold follows the root font scale", async () => {
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   document.documentElement.style.fontSize = "32px";
   await act(async () => store.set(fontSizeAtom, 200));
 
@@ -344,18 +370,20 @@ test("arrangement width threshold follows the root font scale", async () => {
   expect(mosaicTree()).toEqual(THREE_PANE_ARRANGEMENT);
 });
 
-test("divider drag in case 2 updates analysis-board-layout only; in case 3 updates windowsState only", async () => {
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+test("divider drag in case 2 updates analysis-board-layouts only; in case 3 updates windowsState only", async () => {
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   await renderAt(1400, true);
   const writes = vi.spyOn(Storage.prototype, "setItem");
 
-  // Case 2 drag: updates analysis-board-layout, never windowsState.
+  // Case 2 drag: updates analysis-board-layouts, never windowsState.
   const resized = { ...THREE_PANE_ARRANGEMENT, splitPercentage: 48 };
   await act(async () => dividers.get("left+database+bottomRight+topRight")!(resized));
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!).splitPercentage).toBe(48);
+  expect((readStoredGameLayout().arrangement as { splitPercentage?: number }).splitPercentage).toBe(
+    48,
+  );
   expect(writes.mock.calls.filter(([k]) => k === WINDOWS_STATE_KEY)).toEqual([]);
 
-  // Case 3 drag: updates windowsState, never analysis-board-layout.
+  // Case 3 drag: updates windowsState, never analysis-board-layouts.
   writes.mockClear();
   await renderAt(800, true);
   const nextWindows = {
@@ -372,8 +400,10 @@ test("divider drag in case 2 updates analysis-board-layout only; in case 3 updat
   expect(JSON.parse(localStorage.getItem(WINDOWS_STATE_KEY)!)).toEqual({
     currentNode: nextWindows,
   });
-  expect(writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUT_KEY)).toEqual([]);
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!).splitPercentage).toBe(48);
+  expect(writes.mock.calls.filter(([k]) => k === ANALYSIS_BOARD_LAYOUTS_KEY)).toEqual([]);
+  expect((readStoredGameLayout().arrangement as { splitPercentage?: number }).splitPercentage).toBe(
+    48,
+  );
 });
 
 test("hidden coach panel area is omitted while Coach is off and kept across divider drags", async () => {
@@ -393,7 +423,7 @@ test("hidden coach panel area is omitted while Coach is off and kept across divi
       },
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withCoach));
+  seedGameLayout(withCoach);
   await renderAt(1400, true);
   expect(mosaicTree()).toEqual({
     direction: "row",
@@ -417,8 +447,7 @@ test("hidden coach panel area is omitted while Coach is off and kept across divi
       },
     }),
   );
-  const stored = JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!);
-  expect(stored).toEqual({
+  expect(readStoredGameLayout().arrangement).toEqual({
     direction: "row",
     first: "left",
     splitPercentage: 55,
@@ -452,8 +481,7 @@ test("hidden tabs leave the shown arrangement only; stacked, fallback and other 
       second: "bottomRight",
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(stored));
-  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
+  seedGameLayout(stored, true);
   const stripHidden = () => document.getElementById("topRight")?.closest("[hidden]") != null;
 
   await renderAt(1400, true);
@@ -475,7 +503,7 @@ test("hidden tabs leave the shown arrangement only; stacked, fallback and other 
       second: "bottomRight",
     }),
   );
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual({
+  expect(readStoredGameLayout().arrangement).toEqual({
     ...stored,
     splitPercentage: 60,
   });
@@ -491,7 +519,7 @@ test("hidden tabs leave the shown arrangement only; stacked, fallback and other 
   // Showing again restores the strip at its place and size.
   await renderAt(1400, true);
   await act(async () => latestContext!.setTabsHidden(false));
-  expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("false");
+  expect(readStoredGameLayout().tabsHidden).toBe(false);
   expect(mosaicTree()).toEqual({ ...stored, splitPercentage: 60 });
   expect(stripHidden()).toBe(false);
 });
@@ -507,8 +535,7 @@ test("hidden tabs: the too-narrow fallback shows them, and a keyboard return foc
       second: { direction: "row", first: "database", second: "topRight" },
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(fourColumns));
-  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
+  seedGameLayout(fourColumns, true);
   const stripHidden = () => document.getElementById("topRight")?.closest("[hidden]") != null;
 
   await renderAt(971, true);
@@ -534,22 +561,22 @@ test("hidden tabs: the too-narrow fallback shows them, and a keyboard return foc
   )!;
   await act(async () => back.click());
   expect(document.activeElement).toBe(notationGrip);
-  expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("true");
-  expect(store.get(boardArrangementAtom)).toEqual({
+  expect(readStoredGameLayout().tabsHidden).toBe(true);
+  expect(getGameArrangement()).toEqual({
     direction: "row",
     first: "left",
     second: { direction: "row", first: "bottomRight", second: "topRight" },
   });
 });
 
-test("returnPanel removes the panel area from analysis-board-layout", async () => {
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+test("returnPanel removes the panel area from the kind's stored arrangement", async () => {
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   await renderAt(1400, true);
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
 
   await act(async () => latestContext!.returnPanel("database" as PanelAreaId));
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
-  expect(store.get(boardArrangementAtom)).toEqual({
+  expect(getGameArrangement()).toEqual({
     direction: "row",
     first: "left",
     splitPercentage: 40,
@@ -557,8 +584,8 @@ test("returnPanel removes the panel area from analysis-board-layout", async () =
   });
 });
 
-test("non-arrangeable boards (play, puzzles) ignore analysis-board-layout and stay on windowsState", async () => {
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+test("non-arrangeable boards (play, puzzles) ignore analysis layouts and stay on windowsState", async () => {
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   await renderAt(1400, false);
   expect(layoutMode()).toBe("mosaic");
   expect(latestContext?.arrangingAvailable).toBe(false);
@@ -666,7 +693,7 @@ test("pointer drag previews each side and applies placement; return over tab lis
   expect(releaseSpy).toHaveBeenCalledWith(7);
   expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
-  expect(store.get(boardArrangementAtom)).toEqual({
+  expect(getGameArrangement()).toEqual({
     direction: "row",
     first: { direction: "column", first: "left", second: "database", splitPercentage: 50 },
     second: { direction: "column", first: "topRight", second: "bottomRight" },
@@ -718,7 +745,7 @@ test.each(["outside", "escape", "pointercancel", "lostcapture", "blur", "leave-c
     await renderAt(1400, true);
     const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
     mockLayoutGeometry(layoutEl);
-    const before = store.get(boardArrangementAtom);
+    const before = getGameArrangement();
 
     const handle = document.createElement("button");
     let captured = false;
@@ -771,12 +798,12 @@ test.each(["outside", "escape", "pointercancel", "lostcapture", "blur", "leave-c
 
     expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
     expect(captured).toBe(false);
-    expect(store.get(boardArrangementAtom)).toEqual(before);
+    expect(getGameArrangement()).toEqual(before);
   },
 );
 
 test("keyboard placing uses an aria-modal dialog, suppresses board hotkeys, traps focus, respects fit rule and restores focus", async () => {
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(THREE_PANE_ARRANGEMENT));
+  seedGameLayout(THREE_PANE_ARRANGEMENT);
   // 1100px fits 3 panes (972px) but not 4 (1298px).
   await renderAt(1100, true);
 
@@ -806,14 +833,14 @@ test("keyboard placing uses an aria-modal dialog, suppresses board hotkeys, trap
     first: "left",
     second: { direction: "row", first: "bottomRight", second: "topRight" },
   };
-  await act(async () => store.set(boardArrangementAtom, pureThreeColumns));
+  await act(async () => setGameArrangement(pureThreeColumns));
   const pureButtons = [...dialog.querySelectorAll("button")];
   const pureLabels = pureButtons.slice(1).map((b) => b.textContent);
   expect(pureLabels.some((label) => label?.includes("LeftOf") || label?.includes("RightOf"))).toBe(
     false,
   );
   // Restore THREE_PANE_ARRANGEMENT for the return-to-tabs check below.
-  await act(async () => store.set(boardArrangementAtom, THREE_PANE_ARRANGEMENT));
+  await act(async () => setGameArrangement(THREE_PANE_ARRANGEMENT));
 
   // Board hotkeys are suppressed while placing is open.
   const moveEvent = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true });
@@ -868,7 +895,7 @@ test("throwing setPointerCapture fails closed with no preview and no leaked list
 
   const addSpy = vi.spyOn(window, "addEventListener");
   const removeSpy = vi.spyOn(window, "removeEventListener");
-  const before = store.get(boardArrangementAtom);
+  const before = getGameArrangement();
 
   const handle = document.createElement("button");
   handle.setPointerCapture = () => {
@@ -890,7 +917,7 @@ test("throwing setPointerCapture fails closed with no preview and no leaked list
   });
 
   expect(container.querySelector('[data-testid="board-arrange-preview"]')).toBeNull();
-  expect(store.get(boardArrangementAtom)).toEqual(before);
+  expect(getGameArrangement()).toEqual(before);
   const addedTypes = addSpy.mock.calls.map(([type]) => type);
   const removedTypes = removeSpy.mock.calls.map(([type]) => type);
   for (const type of ["pointermove", "pointerup", "pointercancel", "keydown", "blur"]) {
@@ -1159,7 +1186,7 @@ test("pending focus whose target never mounts does not steal focus later; zero-t
       },
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(fourTakenOut));
+  seedGameLayout(fourTakenOut);
   await renderAt(1400, true);
 
   // Zero-targets branch: placing "info" violates the strip rule so 0 targets are offered.
@@ -1236,7 +1263,7 @@ test("exposes element portal targets for base, panel and special-char engine lea
   const specialEngine = engineAreaId(specialEngineId);
   store.set(enginesMock.atom!, [{ id: specialEngineId, name: "Stockfish", loaded: true }]);
   const withEngine = placeArea(defaultBoardArrangement(), specialEngine, "left", "bottom");
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+  seedGameLayout(withEngine);
 
   let observedTargetInRender: HTMLElement | undefined;
   function EnginePortalConsumer() {
@@ -1257,7 +1284,7 @@ test("exposes element portal targets for base, panel and special-char engine lea
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <StatefulConsumer />
             <ArrangementProbe />
             <EnginePortalConsumer />
@@ -1292,7 +1319,7 @@ test("exposes element portal targets for base, panel and special-char engine lea
   expect(document.activeElement).toBe(grip);
 
   // Removing the engine leaf drops its target during that same render and leaves no hidden host for it.
-  await act(async () => store.set(boardArrangementAtom, defaultBoardArrangement()));
+  await act(async () => setGameArrangement(defaultBoardArrangement()));
   expect(observedTargetInRender).toBeUndefined();
   expect(latestContext!.getAreaTarget(specialEngine)).toBeUndefined();
   const hiddenHostSlots = [...container.querySelectorAll("[hidden] [data-board-slot]")].map((el) =>
@@ -1312,7 +1339,7 @@ test("engine return via keyboard placing focuses returned card grip, or Analysis
 
   // Case 1: returned card grip is rendered -> focuses returned card grip.
   const withEngine = placeArea(defaultBoardArrangement(), engArea, "left", "bottom");
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+  seedGameLayout(withEngine);
   let showCardInPanel = true;
   function FocusProbe() {
     const ctx = useContext(BoardArrangementContext);
@@ -1341,7 +1368,7 @@ test("engine return via keyboard placing focuses returned card grip, or Analysis
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
             <FocusProbe />
           </BoardTabLayout>
@@ -1361,7 +1388,7 @@ test("engine return via keyboard placing focuses returned card grip, or Analysis
 
   // Case 2: card not rendered (another tab active), strip visible -> focuses Analysis strip tab.
   showCardInPanel = false;
-  await act(async () => store.set(boardArrangementAtom, withEngine));
+  await act(async () => setGameArrangement(withEngine));
   await act(async () => latestContext!.startPlacing(engArea, engArea));
   const returnBtn2 = [
     ...container.querySelectorAll<HTMLButtonElement>(
@@ -1377,10 +1404,9 @@ test("engine return via keyboard placing focuses returned card grip, or Analysis
   // Case 3: strip hidden with Analysis selected (card grip mounted inside `<div hidden>`) ->
   // both keyboard return and × (`returnEngine`) skip the hidden subtree and focus the notation grip.
   showCardInPanel = true;
-  localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
   await act(async () => {
     latestContext!.setTabsHidden(true);
-    store.set(boardArrangementAtom, withEngine);
+    setGameArrangement(withEngine);
   });
   await act(async () => latestContext!.startPlacing(engArea, engArea));
   const returnBtn3 = [
@@ -1396,14 +1422,14 @@ test("engine return via keyboard placing focuses returned card grip, or Analysis
 
   // Clicking × (`returnEngine`) on an engine window while the strip is hidden also removes the leaf
   // and lands focus on the notation grip rather than the hidden panel card grip.
-  await act(async () => store.set(boardArrangementAtom, withEngine));
+  await act(async () => setGameArrangement(withEngine));
   (document.activeElement as HTMLElement | null)?.blur();
   await act(async () => latestContext!.returnEngine(engArea));
   await act(async () => {
     await new Promise((r) => requestAnimationFrame(r));
   });
   expect(latestContext!.shownEngineAreas.has(engArea)).toBe(false);
-  expect(store.get(boardArrangementAtom)).toEqual(defaultBoardArrangement());
+  expect(getGameArrangement()).toEqual(defaultBoardArrangement());
   expect(document.activeElement?.textContent).toBe("notation-grip");
 });
 
@@ -1449,7 +1475,7 @@ test("engine card grip drag reorders even in stacked (non-arranged) mode", async
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
             <StackedEngineList />
           </BoardTabLayout>
@@ -1562,7 +1588,7 @@ test("overflowed engine list clips reorder hit-testing to its scroll viewport, s
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
             <OverflowedEngineList />
           </BoardTabLayout>
@@ -1681,7 +1707,7 @@ test("reordering when the leading card is scrolled out of the viewport maps to t
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
             <ScrolledThreeCardList />
           </BoardTabLayout>
@@ -1729,7 +1755,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
 
   // (a) Analysis in the tab strip -> dropping over [data-board-tab-list="true"] returns the engine.
   const withEngine = placeArea(defaultBoardArrangement(), engArea, "left", "bottom");
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+  seedGameLayout(withEngine);
 
   let headerEl: HTMLDivElement | null = null;
   let tabListEl: HTMLDivElement | null = null;
@@ -1779,7 +1805,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
             <DragReturnProbe />
           </BoardTabLayout>
@@ -1815,7 +1841,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
       new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 800, clientY: 20 }),
     );
   });
-  expect(store.get(boardArrangementAtom)).toEqual(defaultBoardArrangement());
+  expect(getGameArrangement()).toEqual(defaultBoardArrangement());
 
   // (b) Analysis as its own area -> dropping over [data-panel-header="analysis"] returns the engine.
   const withAnalysisAndEngine = placeArea(
@@ -1824,7 +1850,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
     "left",
     "bottom",
   );
-  await act(async () => store.set(boardArrangementAtom, withAnalysisAndEngine));
+  await act(async () => setGameArrangement(withAnalysisAndEngine));
   vi.spyOn(analysisHeaderEl!, "getBoundingClientRect").mockReturnValue(
     new DOMRect(400, 0, 300, 32),
   );
@@ -1853,7 +1879,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
     );
   });
   expect(latestContext!.shownEngineAreas.has(engArea)).toBe(false);
-  expect(store.get(boardArrangementAtom)).toEqual(
+  expect(getGameArrangement()).toEqual(
     placeArea(defaultBoardArrangement(), "analysis", "left", "right"),
   );
 });
@@ -1867,7 +1893,7 @@ test("unloaded engine leaves stay stored without rendering a tile, and deleted e
     "topRight",
     "top",
   );
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(start));
+  seedGameLayout(start);
   store.set(enginesMock.atom!, [{ id: "unloaded-eng", name: "Unloaded", loaded: false }]);
 
   measured.width = 1400;
@@ -1875,7 +1901,7 @@ test("unloaded engine leaves stay stored without rendering a tile, and deleted e
     root.render(
       <Provider store={store}>
         <MantineProvider>
-          <BoardTabLayout arrangeable>
+          <BoardTabLayout arrangeable kind="game">
             <ArrangementProbe />
           </BoardTabLayout>
         </MantineProvider>
@@ -1887,7 +1913,96 @@ test("unloaded engine leaves stay stored without rendering a tile, and deleted e
   // Deleted engine (absent from loaded engines list) is pruned from stored arrangement.
   expect(latestContext!.shownEngineAreas.has(unloadedArea)).toBe(false);
   expect(latestContext!.shownEngineAreas.has(deletedArea)).toBe(false);
-  expect(store.get(boardArrangementAtom)).toEqual(
+  expect(getGameArrangement()).toEqual(
     placeArea(defaultBoardArrangement(), unloadedArea, "left", "bottom"),
   );
+});
+
+test("renders distinct layouts per kind and updates displayed layout when kind changes without touching other kinds", async () => {
+  const state = defaultBoardLayoutsState();
+  state.kinds.game = { arrangement: THREE_PANE_ARRANGEMENT, tabsHidden: false };
+  state.kinds.repertoire = {
+    arrangement: placeArea(defaultBoardArrangement(), "annotate", "left", "bottom"),
+    tabsHidden: true,
+  };
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUTS_KEY, JSON.stringify(state));
+
+  await renderAt(1400, true, "game");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
+  expect(latestContext?.tabsHidden).toBe(false);
+
+  // Switching kind to repertoire renders repertoire's layout and hidden strip.
+  await renderAt(1400, true, "repertoire");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["annotate"]);
+  expect(latestContext?.tabsHidden).toBe(true);
+
+  // Editing repertoire (returning annotate) leaves game's layout untouched.
+  await act(async () => latestContext!.returnPanel("annotate"));
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+  expect(store.get(boardLayoutFamily("game")).arrangement).toEqual(THREE_PANE_ARRANGEMENT);
+
+  // Switching back to game shows game's untouched layout.
+  await renderAt(1400, true, "game");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["database"]);
+});
+
+test("engine rules 1-4: drives engines from undefined to [] to disabled+enabled (placeholder kept then resolved, disabled kept, deleted pruned)", async () => {
+  const placeholder = enginePlaceholderAreaId(1);
+  const disabledArea = engineAreaId("disabled-eng");
+  const deletedArea = engineAreaId("deleted-eng");
+
+  // Part A: placeholder survives undefined -> [] -> disabled-only, then resolves when enabled appears.
+  const withPlaceholder = placeArea(defaultBoardArrangement(), placeholder, "left", "bottom");
+  seedGameLayout(withPlaceholder);
+  store.set(enginesMock.atom!, undefined);
+
+  await renderAt(1400, true, "game");
+  // Rule 1: engines undefined -> placeholder kept in stored tree and hidden.
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([placeholder]);
+  expect(latestContext!.shownEngineAreas.size).toBe(0);
+
+  // Rule 3 on empty list ([]): placeholder stays in stored tree and hidden (never dropped).
+  await act(async () => store.set(enginesMock.atom!, []));
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([placeholder]);
+  expect(latestContext!.shownEngineAreas.size).toBe(0);
+
+  // Rule 3 with only a disabled engine: placeholder still stays hidden.
+  await act(async () =>
+    store.set(enginesMock.atom!, [{ id: "disabled-eng", name: "Disabled", loaded: false }]),
+  );
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([placeholder]);
+  expect(latestContext!.shownEngineAreas.size).toBe(0);
+
+  // Rule 3 when an enabled engine appears: placeholder resolves to the enabled engine and shows.
+  await act(async () =>
+    store.set(enginesMock.atom!, [
+      { id: "disabled-eng", name: "Disabled", loaded: false },
+      { id: "enabled-eng", name: "Enabled", loaded: true },
+    ]),
+  );
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([engineAreaId("enabled-eng")]);
+  expect([...latestContext!.shownEngineAreas]).toEqual([engineAreaId("enabled-eng")]);
+
+  // Part B: rules 1, 2, 4 with real ids (disabled kept hidden, deleted pruned only after list loads).
+  const withRealIds = placeArea(
+    placeArea(defaultBoardArrangement(), disabledArea, "left", "bottom"),
+    deletedArea,
+    "topRight",
+    "top",
+  );
+  await act(async () => {
+    store.set(enginesMock.atom!, undefined);
+    setGameArrangement(withRealIds);
+  });
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([disabledArea, deletedArea]);
+  expect(latestContext!.shownEngineAreas.size).toBe(0);
+
+  await act(async () =>
+    store.set(enginesMock.atom!, [
+      { id: "disabled-eng", name: "Disabled", loaded: false },
+      { id: "enabled-eng", name: "Enabled", loaded: true },
+    ]),
+  );
+  expect(arrangementEngineAreas(getGameArrangement())).toEqual([disabledArea]);
+  expect(latestContext!.shownEngineAreas.size).toBe(0);
 });

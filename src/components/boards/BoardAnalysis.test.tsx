@@ -13,7 +13,7 @@ import {
   type EngineAreaId,
   type PanelAreaId,
 } from "@/state/boardArrangement";
-import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
+import { boardLayoutFamily } from "@/state/layoutStorage";
 import { TreeStateContext, TreeStateProvider } from "@/components/common/TreeStateContext";
 import {
   activeTabAtom,
@@ -799,7 +799,7 @@ describe("BoardAnalysis", () => {
       treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
       treeStore.getState().makeMove({ payload: "e4" });
       jotaiStore.set(tabFamily(tabId), "info");
-      jotaiStore.set(analysisTabsHiddenAtom, true);
+      jotaiStore.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
       jotaiStore.set(reportModalOpenFamily(tabId), false);
     });
     await renderWithArrangement(["report"], vi.fn(), { tabsHidden: true });
@@ -811,7 +811,7 @@ describe("BoardAnalysis", () => {
     await act(async () => binding[1](new KeyboardEvent("keydown", { cancelable: true })));
 
     expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
-    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+    expect(jotaiStore.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
     expect(jotaiStore.get(reportModalOpenFamily(tabId))).toBe(true);
   });
 
@@ -993,21 +993,21 @@ describe("BoardAnalysis", () => {
     // Stored selection "annotate" is detached, so the strip showed Analysis as its fallback.
     await act(async () => {
       jotaiStore.set(tabFamily(tabId), "annotate");
-      jotaiStore.set(analysisTabsHiddenAtom, true);
+      jotaiStore.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
     });
     const first = await renderWithArrangement(["annotate", "database"], vi.fn(), {
       tabsHidden: true,
     });
     await act(async () => first.triggerReturn("database"));
     expect(jotaiStore.get(tabFamily(tabId))).toBe("analysis");
-    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+    expect(jotaiStore.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
 
     // A selection that is in the strip is left alone.
     await act(async () => jotaiStore.set(tabFamily(tabId), "info"));
     const second = await renderWithArrangement(["database"], vi.fn(), { tabsHidden: true });
     await act(async () => second.triggerReturn("database"));
     expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
-    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+    expect(jotaiStore.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
   });
 
   test("every strip-tab shortcut and Generate Report shows the hidden strip with that tab; a detached panel's shortcut does not", async () => {
@@ -1030,21 +1030,21 @@ describe("BoardAnalysis", () => {
       [keyMap.GENERATE_REPORT.keys, "report"],
     ] as const) {
       await act(async () => {
-        jotaiStore.set(analysisTabsHiddenAtom, true);
+        jotaiStore.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
         jotaiStore.set(tabFamily(tabId), tab === "info" ? "database" : "info");
       });
       await fire(keys);
       expect(jotaiStore.get(tabFamily(tabId))).toBe(tab);
-      expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(false);
+      expect(jotaiStore.get(boardLayoutFamily("game")).tabsHidden).toBe(false);
     }
 
     await act(async () => {
-      jotaiStore.set(analysisTabsHiddenAtom, true);
+      jotaiStore.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
       jotaiStore.set(tabFamily(tabId), "info");
     });
     await fire(keyMap.ANNOTATE_TAB.keys);
     expect(jotaiStore.get(tabFamily(tabId))).toBe("info");
-    expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(true);
+    expect(jotaiStore.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
   });
 
   test("PRACTICE_TAB on a repertoire tab and COACH_TAB show the hidden strip with their tab (available: true)", async () => {
@@ -1080,12 +1080,15 @@ describe("BoardAnalysis", () => {
       [keyMap.COACH_TAB.keys, "coach"],
     ] as const) {
       await act(async () => {
-        jotaiStore.set(analysisTabsHiddenAtom, true);
+        jotaiStore.set(boardLayoutFamily("repertoire"), (prev) => ({
+          ...prev,
+          tabsHidden: true,
+        }));
         jotaiStore.set(tabFamily(tabId), "info");
       });
       await fire(keys);
       expect(jotaiStore.get(tabFamily(tabId))).toBe(tab);
-      expect(jotaiStore.get(analysisTabsHiddenAtom)).toBe(false);
+      expect(jotaiStore.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(false);
     }
   });
 

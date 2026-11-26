@@ -6,22 +6,24 @@ import {
     arrangementLeaves,
     arrangementPanelAreas,
     type BoardArrangement,
-    boardArrangementSchema,
     canTakeOutEngine,
     canTakeOutPanel,
     computeCarryOverArrangement,
     defaultBoardArrangement,
     engineAreaId,
     engineIdFromArea,
+    enginePlaceholderAreaId,
     hiddenEngineAreas,
     type HideableAreaId,
     isEngineArea,
+    isEnginePlaceholderArea,
+    isEnginePlaceholderId,
     isValidBoardArrangement,
     type LegacyLayoutValues,
     MAX_ENGINE_AREAS,
     type PanelAreaId,
     placeArea,
-    pruneMissingEngineAreas,
+    resolveArrangementEngines,
     type RetiredEngineValues,
     returnEngineArea,
     returnPanelArea,
@@ -45,7 +47,6 @@ describe("validateMosaicTree and isValidBoardArrangement", () => {
     test("accepts the default arrangement and valid arrangements up to the maximum bounds", () => {
         const def = defaultBoardArrangement();
         expect(isValidBoardArrangement(def)).toBe(true);
-        expect(boardArrangementSchema.safeParse(def).success).toBe(true);
 
         // 7 leaves (3 base + 3 always-present + coach) in a depth-6 comb (13 nodes).
         const maxTree: BoardArrangement = {
@@ -246,7 +247,6 @@ describe("validateMosaicTree and isValidBoardArrangement", () => {
         ["single leaf", "left"],
     ])("rejects invalid arrangement: %s", (_label, candidate) => {
         expect(isValidBoardArrangement(candidate)).toBe(false);
-        expect(boardArrangementSchema.safeParse(candidate).success).toBe(false);
     });
 });
 
@@ -1087,7 +1087,6 @@ describe("engine leaves: validation, bounds, place/return, hide and prune", () =
             second: { direction: "column", first: "topRight", second: "bottomRight" },
         };
         expect(isValidBoardArrangement(withEmptyEngine)).toBe(false);
-        expect(boardArrangementSchema.safeParse(withEmptyEngine).success).toBe(false);
         const base = defaultBoardArrangement();
         expect(canTakeOutEngine(base, "engine:" as `engine:${string}`)).toBe(false);
         expect(placeArea(base, "engine:" as `engine:${string}`, "left", "bottom")).toBe(base);
@@ -1182,7 +1181,7 @@ describe("engine leaves: validation, bounds, place/return, hide and prune", () =
         arr = placeArea(arr, engineAreaId(sameNameOrPath[1].id), "topRight", "top");
         expect(arrangementEngineAreas(arr)).toEqual([engineAreaId("id-a"), engineAreaId("id-b")]);
         expect(hiddenEngineAreas(arr, sameNameOrPath)).toEqual([]);
-        expect(pruneMissingEngineAreas(arr, sameNameOrPath)).toBe(arr);
+        expect(resolveArrangementEngines(arr, sameNameOrPath)).toBe(arr);
         // Unloading only id-a hides id-a without affecting id-b.
         expect(
             hiddenEngineAreas(arr, [{ ...sameNameOrPath[0], loaded: false }, sameNameOrPath[1]]),
@@ -1271,7 +1270,7 @@ describe("engine leaves: validation, bounds, place/return, hide and prune", () =
         expect(hiddenEngineAreas(stored, undefined)).toEqual([engA, engB]);
     });
 
-    test("pruneMissingEngineAreas prunes only with a loaded list lacking the id, never with undefined", () => {
+    test("resolveArrangementEngines prunes deleted real ids only with a loaded list lacking the id, never with undefined or placeholders", () => {
         const engA = engineAreaId("eng-a");
         const engB = engineAreaId("eng-b");
         const stored = placeArea(
@@ -1282,20 +1281,134 @@ describe("engine leaves: validation, bounds, place/return, hide and prune", () =
         );
 
         // Absent/unloaded list: never prunes.
-        expect(pruneMissingEngineAreas(stored, undefined)).toBe(stored);
+        expect(resolveArrangementEngines(stored, undefined)).toBe(stored);
         // Unloaded engine still in the list: never prunes.
         expect(
-            pruneMissingEngineAreas(stored, [
+            resolveArrangementEngines(stored, [
                 { id: "eng-a", loaded: false },
                 { id: "eng-b", loaded: false },
             ]),
         ).toBe(stored);
         // Deleted engine absent from a loaded list: pruned.
-        const pruned = pruneMissingEngineAreas(stored, [{ id: "eng-b", loaded: true }]);
+        const pruned = resolveArrangementEngines(stored, [{ id: "eng-b", loaded: true }]);
         expect(arrangementEngineAreas(pruned)).toEqual([engB]);
         expect(isValidBoardArrangement(pruned)).toBe(true);
-        // Empty loaded list: prunes all engine leaves.
-        expect(arrangementEngineAreas(pruneMissingEngineAreas(stored, []))).toEqual([]);
+        // Empty loaded list: prunes all real engine leaves, but keeps placeholder leaves.
+        expect(arrangementEngineAreas(resolveArrangementEngines(stored, []))).toEqual([]);
+        const withPlaceholder = placeArea(
+            defaultBoardArrangement(),
+            enginePlaceholderAreaId(1),
+            "left",
+            "bottom",
+        );
+        expect(resolveArrangementEngines(withPlaceholder, [])).toBe(withPlaceholder);
+    });
+
+    test("resolveArrangementEngines with an already-present enabled engine assigns distinct enabled engines to placeholder and missing slots", () => {
+        const existing = engineAreaId("eng-existing");
+        const placeholder = enginePlaceholderAreaId(1);
+        const missing = engineAreaId("eng-missing");
+        const tree = placeArea(
+            placeArea(
+                placeArea(defaultBoardArrangement(), existing, "left", "bottom"),
+                placeholder,
+                "topRight",
+                "top",
+            ),
+            missing,
+            "bottomRight",
+            "bottom",
+        );
+
+        const resolved = resolveArrangementEngines(
+            tree,
+            [
+                { id: "eng-existing", loaded: true },
+                { id: "eng-alt-1", loaded: true },
+                { id: "eng-alt-2", loaded: true },
+            ],
+            { fallbackMissing: true },
+        );
+        expect(arrangementEngineAreas(resolved)).toEqual([
+            existing,
+            engineAreaId("eng-alt-1"),
+            engineAreaId("eng-alt-2"),
+        ]);
+        expect(isValidBoardArrangement(resolved)).toBe(true);
+    });
+
+    test("resolveArrangementEngines enforces rules 1-4 for live layouts and apply-time fallback", () => {
+        const p1 = enginePlaceholderAreaId(1);
+        const p2 = enginePlaceholderAreaId(2);
+        const disabled = engineAreaId("eng-disabled");
+        const removed = engineAreaId("eng-removed");
+
+        expect(isEnginePlaceholderId("@1")).toBe(true);
+        expect(isEnginePlaceholderId("@12")).toBe(true);
+        expect(isEnginePlaceholderId("@0")).toBe(false);
+        expect(isEnginePlaceholderId("@")).toBe(false);
+        expect(isEnginePlaceholderId("uuid-1")).toBe(false);
+        expect(isEnginePlaceholderArea(p1)).toBe(true);
+        expect(isEnginePlaceholderArea(disabled)).toBe(false);
+
+        const tree = placeArea(
+            placeArea(
+                placeArea(defaultBoardArrangement(), p1, "left", "bottom"),
+                disabled,
+                "topRight",
+                "top",
+            ),
+            removed,
+            "bottomRight",
+            "bottom",
+        );
+
+        // Rule 1: undefined engines leaves everything untouched.
+        expect(resolveArrangementEngines(tree, undefined)).toBe(tree);
+        expect(resolveArrangementEngines(tree, undefined, { fallbackMissing: true })).toBe(tree);
+
+        // Rule 2 & 3 & 4 (live layout): disabled kept, placeholder resolved to first unused enabled, deleted pruned.
+        const liveResolved = resolveArrangementEngines(tree, [
+            { id: "eng-disabled", loaded: false },
+            { id: "eng-enabled-1", loaded: true },
+            { id: "eng-enabled-2", loaded: true },
+        ]);
+        expect(arrangementEngineAreas(liveResolved)).toEqual([
+            engineAreaId("eng-enabled-1"),
+            disabled,
+        ]);
+        expect(isValidBoardArrangement(liveResolved)).toBe(true);
+
+        // Apply-time fallback: disabled kept, placeholder takes first enabled, missing real id takes second enabled.
+        const applyResolved = resolveArrangementEngines(
+            tree,
+            [
+                { id: "eng-disabled", loaded: false },
+                { id: "eng-enabled-1", loaded: true },
+                { id: "eng-enabled-2", loaded: true },
+            ],
+            { fallbackMissing: true },
+        );
+        expect(arrangementEngineAreas(applyResolved)).toEqual([
+            engineAreaId("eng-enabled-1"),
+            disabled,
+            engineAreaId("eng-enabled-2"),
+        ]);
+        expect(isValidBoardArrangement(applyResolved)).toBe(true);
+
+        // Apply-time fallback with no enabled engines: placeholder stays @1, missing real id becomes @2, disabled kept.
+        const applyNoEnabled = resolveArrangementEngines(
+            tree,
+            [{ id: "eng-disabled", loaded: false }],
+            { fallbackMissing: true },
+        );
+        expect(arrangementEngineAreas(applyNoEnabled)).toEqual([p1, disabled, p2]);
+        expect(isValidBoardArrangement(applyNoEnabled)).toBe(true);
+        expect(hiddenEngineAreas(applyNoEnabled, [{ id: "eng-disabled", loaded: false }])).toEqual([
+            p1,
+            disabled,
+            p2,
+        ]);
     });
 });
 

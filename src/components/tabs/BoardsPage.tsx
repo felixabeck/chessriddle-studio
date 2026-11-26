@@ -1,4 +1,5 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
+import { useAnalysisTabLayoutKind } from "@/state/boardLayoutKind";
 import BoardTabLayout from "./BoardTabLayout";
 import { getTabTreeKey, type Tab } from "@/utils/tabs";
 import BoardAnalysis from "../boards/BoardAnalysis";
@@ -52,11 +53,7 @@ function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => v
       <TreeStateProvider id={tab.value} treeKey={getTabTreeKey(tab)}>
         <TreeRecoveryGate tabId={tab.value} treeKey={getTabTreeKey(tab)}>
           {tab.type === "analysis" ? (
-            <FileFreshnessGate tab={tab} closeTab={closeTab}>
-              <BoardTabLayout arrangeable>
-                <BoardAnalysis />
-              </BoardTabLayout>
-            </FileFreshnessGate>
+            <AnalysisBoardTab tab={tab} closeTab={closeTab} />
           ) : (
             <BoardTabLayout>
               {tab.type === "play" ? <BoardGame tabId={tab.value} /> : <Puzzles id={tab.value} />}
@@ -65,5 +62,16 @@ function TabSwitch({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => v
         </TreeRecoveryGate>
       </TreeStateProvider>
     </WorkspaceTabScope>
+  );
+}
+
+function AnalysisBoardTab({ tab, closeTab }: { tab: Tab; closeTab: (tabId: string) => void }) {
+  const kind = useAnalysisTabLayoutKind(tab);
+  return (
+    <FileFreshnessGate tab={tab} closeTab={closeTab}>
+      <BoardTabLayout arrangeable kind={kind}>
+        <BoardAnalysis />
+      </BoardTabLayout>
+    </FileFreshnessGate>
   );
 }

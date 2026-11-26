@@ -21,6 +21,7 @@ import {
   BASE_AREA_IDS,
   BOARD_AREA_IDS,
   type BoardAreaId,
+  type BoardArrangement,
   canTakeOutEngine,
   canTakeOutPanel,
   type EngineAreaId,
@@ -31,7 +32,7 @@ import {
   type PanelAreaId,
   placeArea,
   type PlacementSide,
-  pruneMissingEngineAreas,
+  resolveArrangementEngines,
   returnEngineArea,
   returnPanelArea,
   shownArrangement,
@@ -39,12 +40,8 @@ import {
 } from "@/state/boardArrangement";
 import { enginesAtom } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
-import {
-  analysisTabsHiddenAtom,
-  boardArrangementAtom,
-  type ViewId,
-  windowsStateAtom,
-} from "@/state/layoutStorage";
+import type { BoardLayoutKind } from "@/state/layoutPresets";
+import { boardLayoutFamily, type ViewId, windowsStateAtom } from "@/state/layoutStorage";
 import { arrangementFitsWidth, needsTwoPaneStack } from "@/state/paneLayout";
 import BoardArrangeOverlay from "./BoardArrangeOverlay";
 import classes from "./BoardsPage.module.css";
@@ -140,29 +137,60 @@ function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct
   );
 }
 
+type BoardTabLayoutProps =
+  | {
+      children: ReactNode;
+      /** Whether this tab uses the analysis board's stored arrangement. */
+      arrangeable: true;
+      /** Which analysis tab kind's live layout this board shows and edits. */
+      kind: BoardLayoutKind;
+    }
+  | {
+      children: ReactNode;
+      arrangeable?: false;
+      kind?: undefined;
+    };
+
 export default function BoardTabLayout({
   children,
   arrangeable = false,
-}: {
-  children: ReactNode;
-  /** Whether this tab uses the analysis board's stored arrangement. */
-  arrangeable?: boolean;
-}) {
+  kind,
+}: BoardTabLayoutProps) {
   const [windowsState, setWindowsState] = useAtom(windowsStateAtom);
-  const [storedArrangement, setStoredArrangement] = useAtom(boardArrangementAtom);
+  const [kindLayout, setKindLayout] = useAtom(boardLayoutFamily(kind ?? "game"));
+  const storedArrangement = kindLayout.arrangement;
+  const tabsHiddenStored = kindLayout.tabsHidden;
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const engines = useAtomValue(enginesAtom);
-  const [tabsHiddenStored, setTabsHidden] = useAtom(analysisTabsHiddenAtom);
   const { ref, width } = useElementWidth();
   const rootFont = useRootFontPx();
   const returnListenerRef = useRef<((panel: PanelAreaId) => void) | null>(null);
 
-  // Prune stored engine leaves whose engine was deleted once the engine list has loaded.
+  const setStoredArrangement = useCallback(
+    (update: BoardArrangement | ((prev: BoardArrangement) => BoardArrangement)) => {
+      setKindLayout((prev) => {
+        const next = typeof update === "function" ? update(prev.arrangement) : update;
+        return next === prev.arrangement ? prev : { ...prev, arrangement: next };
+      });
+    },
+    [setKindLayout],
+  );
+
+  const setTabsHidden = useCallback(
+    (hidden: boolean) => {
+      setKindLayout((prev) =>
+        prev.tabsHidden === hidden ? prev : { ...prev, tabsHidden: hidden },
+      );
+    },
+    [setKindLayout],
+  );
+
+  // Resolve engine placeholders and prune deleted real engine leaves once the engine list loads.
   useEffect(() => {
     if (!arrangeable || engines === undefined) return;
-    const pruned = pruneMissingEngineAreas(storedArrangement, engines);
-    if (pruned !== storedArrangement) {
-      setStoredArrangement(pruned);
+    const resolved = resolveArrangementEngines(storedArrangement, engines);
+    if (resolved !== storedArrangement) {
+      setStoredArrangement(resolved);
     }
   }, [arrangeable, engines, storedArrangement, setStoredArrangement]);
 

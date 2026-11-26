@@ -6,7 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { SWRConfig } from "swr";
 import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
-import { analysisTabsHiddenAtom } from "@/state/layoutStorage";
+import { boardLayoutFamily } from "@/state/layoutStorage";
 import type {
   DatabaseHandle,
   PositionSearchQuery,
@@ -729,12 +729,12 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
     expect(store.get(localOptionsFamily(id))).not.toHaveProperty("include_unknown_results");
     expect(store.get(localOptionsFamily(id))).not.toHaveProperty("sample_order");
     expect(store.get(tabFamily(id))).toBe("database");
-    // Database lives in the tab strip in the default layout, so a hidden strip is shown.
-    expect(store.get(analysisTabsHiddenAtom)).toBe(false);
+    // Database lives in the tab strip in the default game layout, so a hidden strip is shown.
+    expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(false);
     expect(store.get(dbTypeFamily(id))).toBe("local");
     expect(store.get(dbTabFamily(id))).toBe("stats");
   });
-  store.set(analysisTabsHiddenAtom, true);
+  store.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
   await click(button("Prepare on board"));
   expect(mocks.navigate).toHaveBeenCalledOnce();
   const tab = store.get(tabsAtom).at(-1)!;

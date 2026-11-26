@@ -29,13 +29,22 @@ vi.mock("@/utils/chess", async (importOriginal) => {
     return { ...actual, parsePGN: mocks.parsePGN };
 });
 
-vi.mock("./tabs", () => ({ createTab: mocks.createTab }));
+vi.mock("./tabs", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("./tabs")>()),
+    createTab: mocks.createTab,
+}));
 
 import type { StampedGame } from "@/bindings";
 import i18n, { initializeI18n } from "@/i18n";
-import { addRecentFileAtom, hidePreviewMovesAtom, invisibleFamily, tabFamily } from "@/state/atoms";
+import {
+    addRecentFileAtom,
+    hidePreviewMovesAtom,
+    invisibleFamily,
+    tabFamily,
+    tabsAtom,
+} from "@/state/atoms";
 import { defaultBoardArrangement } from "@/state/boardArrangement";
-import { analysisTabsHiddenAtom, boardArrangementAtom } from "@/state/layoutStorage";
+import { boardLayoutFamily } from "@/state/layoutStorage";
 import { getFileFreshness } from "@/state/fileFreshness";
 import { beginFileStructureChange, hasFileOpenInFlight } from "@/state/fileStructureChange";
 import { openFile } from "./openFile";
@@ -245,9 +254,14 @@ describe("openFile tab admission", () => {
     test("passes the owner through full preparation and selects Practice only on request", async () => {
         mocks.createTab.mockResolvedValueOnce("practice-id");
         const prior = mocks.storeGet.getMockImplementation();
-        mocks.storeGet.mockImplementation((atom: unknown) =>
-            atom === boardArrangementAtom ? defaultBoardArrangement() : prior?.(atom),
-        );
+        const gameLayoutAtom = boardLayoutFamily("game");
+        mocks.storeGet.mockImplementation((atom: unknown) => {
+            if (atom === tabsAtom) return [];
+            if (atom === gameLayoutAtom) {
+                return { arrangement: defaultBoardArrangement(), tabsHidden: true };
+            }
+            return prior?.(atom);
+        });
         await openFile(file, setTabs, { ownerId: "home", panel: "practice" });
         expect(mocks.createTab).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -257,7 +271,15 @@ describe("openFile tab admission", () => {
         );
         expect(mocks.storeSet).toHaveBeenCalledWith(tabFamily("practice-id"), "practice");
         // Practice lives in the tab strip, so a hidden strip is shown.
-        expect(mocks.storeSet).toHaveBeenCalledWith(analysisTabsHiddenAtom, false);
+        const layoutCall = mocks.storeSet.mock.calls.find(([atom]) => atom === gameLayoutAtom);
+        expect(layoutCall).toBeDefined();
+        const updater = layoutCall![1] as (prev: {
+            arrangement: ReturnType<typeof defaultBoardArrangement>;
+            tabsHidden: boolean;
+        }) => { arrangement: ReturnType<typeof defaultBoardArrangement>; tabsHidden: boolean };
+        expect(
+            updater({ arrangement: defaultBoardArrangement(), tabsHidden: true }).tabsHidden,
+        ).toBe(false);
     });
 
     test("an owner without an admitted id leaves freshness and all metadata untouched", async () => {

@@ -304,10 +304,18 @@ vi.mock("./NewTabHome", () => ({
 }));
 vi.mock("react-mosaic-component", () => ({ Mosaic: () => null }));
 vi.mock("./BoardTabLayout", () => ({
-  // The stand-in records whether the page gives this tab the analysis board's arrangement.
-  default: ({ children, arrangeable }: { children: ReactNode; arrangeable?: boolean }) => (
+  // The stand-in records whether the page gives this tab the analysis board's arrangement and kind.
+  default: ({
+    children,
+    arrangeable,
+    kind,
+  }: {
+    children: ReactNode;
+    arrangeable?: boolean;
+    kind?: string;
+  }) => (
     <>
-      <span hidden data-arrangeable={String(arrangeable === true)} />
+      <span hidden data-arrangeable={String(arrangeable === true)} data-layout-kind={kind ?? ""} />
       {children}
     </>
   ),
@@ -354,6 +362,11 @@ import {
   pendingGameStartFamily,
   tabsAtom,
 } from "@/state/atoms";
+import {
+  opponentPreparationAtom,
+  type StoredOpponentPreparation,
+  tabPreparationViewFamily,
+} from "@/state/atoms/preparation";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -1483,6 +1496,87 @@ test.each(recoveryRoutes)(
     ).toEqual([String(type === "analysis")]);
   },
 );
+
+test("BoardsPage passes kind prop reacting to isRepertoireTab, preparation opening, and preparation replacement", async () => {
+  const repTab: TabFixture = {
+    value: "rep-tab",
+    name: "Repertoire",
+    type: "analysis",
+    gameOrigin: {
+      kind: "fileDraft",
+      file: {
+        type: "file",
+        handle: { kind: "fileWorkspace", id: { id: "rep-file" } },
+        name: "rep.pgn",
+        numGames: 1,
+        metadata: { type: "repertoire", tags: [] },
+        lastModified: 0,
+      },
+    },
+  };
+  const gameTab: TabFixture = {
+    value: "game-tab",
+    name: "Game",
+    type: "analysis",
+    gameOrigin: { kind: "none" },
+  };
+  const makePrep = (id: string): StoredOpponentPreparation => ({
+    id,
+    identityKey: `k-${id}`,
+    cardDatabaseKey: "db",
+    playerId: 1,
+    opponentName: "Opp",
+    opponentColor: "white",
+    period: null,
+    source: "otb",
+    minGames: 1,
+    views: { gaps: [], lines: [] } as unknown as StoredOpponentPreparation["views"],
+    stats: { otb: new Map(), online: null },
+    files: [],
+    partial: false,
+    onlineFailed: false,
+  });
+
+  try {
+    store.set(tabsAtom, [gameTab, repTab]);
+    store.set(activeTabAtom, "game-tab");
+    await renderPage();
+    expect(container.querySelector("[data-layout-kind]")?.getAttribute("data-layout-kind")).toBe(
+      "game",
+    );
+
+    // Switching to a repertoire tab updates kind to "repertoire".
+    await act(async () => store.set(activeTabAtom, "rep-tab"));
+    expect(container.querySelector("[data-layout-kind]")?.getAttribute("data-layout-kind")).toBe(
+      "repertoire",
+    );
+
+    // Opening a matching opponent preparation switches kind to "preparation".
+    await act(async () => {
+      store.set(opponentPreparationAtom, makePrep("prep-1"));
+      store.set(tabPreparationViewFamily("rep-tab"), {
+        preparationId: "prep-1",
+        landing: null,
+        showAllLines: false,
+      });
+    });
+    expect(container.querySelector("[data-layout-kind]")?.getAttribute("data-layout-kind")).toBe(
+      "preparation",
+    );
+
+    // Replacing the global preparation makes the tab's view stale -> falls back to "repertoire".
+    await act(async () => {
+      store.set(opponentPreparationAtom, makePrep("prep-2"));
+    });
+    expect(container.querySelector("[data-layout-kind]")?.getAttribute("data-layout-kind")).toBe(
+      "repertoire",
+    );
+  } finally {
+    store.set(opponentPreparationAtom, null);
+    tabPreparationViewFamily.remove("rep-tab");
+    tabPreparationViewFamily.remove("game-tab");
+  }
+});
 
 test("BoardsPage routes provider, recovery and close through the physical generation", async () => {
   const treeKey = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";

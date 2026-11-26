@@ -67,8 +67,7 @@ import {
 import { coachEnabledAtom } from "@/state/coach";
 import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
-import { defaultBoardArrangement } from "@/state/boardArrangement";
-import { analysisTabsHiddenAtom, boardArrangementAtom } from "@/state/layoutStorage";
+import { resetBoardLayoutsAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
 import { PIECE_SCALE_MAX, PIECE_SCALE_MIN, PIECE_SCALE_STEP } from "@/state/pieceScale";
 import {
@@ -211,8 +210,7 @@ export default function Page() {
   const [animationSpeed, setAnimationSpeed] = useAtom(boardAnimationSpeedAtom);
   const [materialDisplay, setMaterialDisplay] = useAtom(materialDisplayAtom);
   const [defaultPanelTab, setDefaultPanelTab] = useAtom(defaultPanelTabAtom);
-  const setBoardArrangement = useSetAtom(boardArrangementAtom);
-  const setTabsHidden = useSetAtom(analysisTabsHiddenAtom);
+  const resetBoardLayouts = useSetAtom(resetBoardLayoutsAtom);
   const [practiceGrading, setPracticeGrading] = useAtom(practiceGradingAtom);
   const [practiceNewPerSession, setPracticeNewPerSession] = useAtom(practiceNewPerSessionAtom);
   // A build without the Coach shows nothing of it: no category, no rows, no search results.
@@ -336,13 +334,7 @@ export default function Page() {
         />
       ),
       "board-layout": () => (
-        <Button
-          variant="default"
-          onClick={() => {
-            setBoardArrangement(defaultBoardArrangement());
-            setTabsHidden(false);
-          }}
-        >
+        <Button variant="default" onClick={() => resetBoardLayouts()}>
           {t("Settings.BoardLayout.Reset")}
         </Button>
       ),
@@ -580,8 +572,7 @@ export default function Page() {
       setMaterialDisplay,
       defaultPanelTab,
       setDefaultPanelTab,
-      setBoardArrangement,
-      setTabsHidden,
+      resetBoardLayouts,
       practiceGrading,
       setPracticeGrading,
       practiceNewPerSession,
