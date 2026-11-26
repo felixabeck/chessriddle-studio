@@ -12,6 +12,7 @@ import {
     playBoardMove,
     selectFilesTreeRow,
     scrollbarFreeScreenshot,
+    seedBoardLayouts,
     goToBoards,
 } from "./fixtures";
 
@@ -81,6 +82,7 @@ test("Library New game opens a fileDraft, asks for the line name and appends on 
     mockScenario,
     assertAccessible,
 }) => {
+    await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     await mockScenario({ commands: repertoireCommands() });
     await page.goto("/library");
@@ -158,6 +160,7 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
     mockScenario,
     assertAccessible,
 }) => {
+    await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     await mockScenario({ commands: repertoireCommands() });
     await page.goto("/library");

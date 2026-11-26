@@ -13,6 +13,7 @@ import type {
     EngineInstallRequest,
     InstalledEngineResult,
 } from "../src/bindings/generated";
+import type { BoardArrangement } from "../src/state/boardArrangement";
 import { needsTwoPaneStack } from "../src/state/paneLayout";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import type { Tab } from "../src/state/workspaceTypes";
@@ -96,6 +97,31 @@ export function bestMovesPayload(
             },
         ],
     };
+}
+
+export const DEFAULT_BOARD_ARRANGEMENT: BoardArrangement = {
+    direction: "row",
+    first: "left",
+    second: { direction: "column", first: "topRight", second: "bottomRight" },
+};
+
+export async function seedBoardLayouts(
+    page: Page,
+    arrangement: BoardArrangement = DEFAULT_BOARD_ARRANGEMENT,
+) {
+    await page.addInitScript((layoutArrangement) => {
+        if (localStorage.getItem("analysis-board-layouts") === null) {
+            const layout = { arrangement: layoutArrangement, tabsHidden: false };
+            localStorage.setItem(
+                "analysis-board-layouts",
+                JSON.stringify({
+                    version: 1,
+                    kinds: { repertoire: layout, game: layout, preparation: layout },
+                    saved: [],
+                }),
+            );
+        }
+    }, arrangement);
 }
 
 export async function seedAnalysisEngines(

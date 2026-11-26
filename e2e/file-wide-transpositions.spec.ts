@@ -7,6 +7,7 @@ import {
     filesWorkspaceFixture,
     playBoardMove,
     scrollbarFreeScreenshot,
+    seedBoardLayouts,
     selectFilesTreeRow,
     test,
     waitForFontsSettled,
@@ -55,6 +56,7 @@ const chapter1Tokens: Token[] = [
 ];
 
 async function openSecondChapterOnAnnotate(page: Page) {
+    await seedBoardLayouts(page);
     await page.addInitScript(() => {
         localStorage.setItem("mantine-color-scheme", "light");
         localStorage.setItem("letters", JSON.stringify("letters"));

@@ -133,6 +133,18 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "saved-layouts",
+            testMatch: /saved-layouts\.spec\.ts/,
+            grepInvert: /narrow save and manage/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "saved-layouts-narrow",
+            testMatch: /saved-layouts\.spec\.ts/,
+            grep: /narrow save and manage/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
+        {
             name: "focus-mode",
             testMatch: /focus-mode\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },

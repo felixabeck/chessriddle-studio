@@ -877,7 +877,7 @@ test("engine-gap: carries over a seeded pinned engine below the board and remove
         { id: "e2e-engine-2", name: "E2E ChessDB", handleId: "e2e-engine-handle" },
     ]);
     await page.addInitScript(() => {
-        if (localStorage.getItem("analysis-board-layout") === null) {
+        if (localStorage.getItem("analysis-board-layouts") === null) {
             localStorage.setItem("detached-engine", JSON.stringify("e2e-engine"));
             localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
             localStorage.setItem("detached-engine-lines", JSON.stringify(2));
@@ -899,27 +899,39 @@ test("engine-gap: carries over a seeded pinned engine below the board and remove
     await expect(page.locator('[data-engine-card-id="e2e-engine-2"]')).toBeVisible();
 
     const storageState = await page.evaluate(() => ({
-        layout: JSON.parse(localStorage.getItem("analysis-board-layout")!),
+        layouts: JSON.parse(localStorage.getItem("analysis-board-layouts")!),
         retired: [
             localStorage.getItem("detached-engine"),
             localStorage.getItem("detached-engine-placement"),
             localStorage.getItem("detached-engine-lines"),
         ],
     }));
+    const expectedLayout = {
+        arrangement: {
+            direction: "row",
+            first: {
+                direction: "column",
+                first: "left",
+                second: "engine:e2e-engine",
+                splitPercentage: 70,
+            },
+            second: {
+                direction: "column",
+                first: "topRight",
+                second: "bottomRight",
+            },
+        },
+        tabsHidden: false,
+    };
     expect(storageState.retired).toEqual([null, null, null]);
-    expect(storageState.layout).toEqual({
-        direction: "row",
-        first: {
-            direction: "column",
-            first: "left",
-            second: "engine:e2e-engine",
-            splitPercentage: 70,
+    expect(storageState.layouts).toEqual({
+        version: 1,
+        kinds: {
+            repertoire: expectedLayout,
+            game: expectedLayout,
+            preparation: expectedLayout,
         },
-        second: {
-            direction: "column",
-            first: "topRight",
-            second: "bottomRight",
-        },
+        saved: [],
     });
 
     await preserveStorageForReload(page);

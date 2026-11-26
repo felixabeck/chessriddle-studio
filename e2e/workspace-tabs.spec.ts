@@ -16,6 +16,7 @@ import {
     drawMark,
     assertNothingClipped,
     assertButtonGlyphsUnclipped,
+    seedBoardLayouts,
 } from "./fixtures";
 import { deserializeStorageValue } from "../src/state/store/debouncedStorage";
 import { getBoardState } from "../src/utils/treeReducer";
@@ -570,7 +571,8 @@ test("workspace-tabs: analysis row and nested column drags resize panes and rest
     }
     const percentages = () =>
         page.evaluate(() => {
-            const node = JSON.parse(localStorage.getItem("analysis-board-layout")!);
+            const node = JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game
+                .arrangement;
             return { row: node.splitPercentage, column: node.second.splitPercentage };
         });
     await expect.poll(async () => Math.abs((await percentages()).row - 60)).toBeLessThan(0.5);
@@ -657,6 +659,7 @@ for (const surface of [
         await page.clock.pauseAt(clockStart.getTime() + 1000);
         await page.setViewportSize({ width: surface.width, height: 1000 });
         const database = { id: { id: "coverage-reference" }, kind: "database" } as const;
+        await seedBoardLayouts(page);
         await page.addInitScript(
             ({ scale, database }) => {
                 localStorage.setItem("font-size", scale);
@@ -928,6 +931,7 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
     const now = new Date("2026-10-21T12:00:00Z");
     await page.clock.install({ time: now });
     await page.setViewportSize({ width: 800, height: 500 });
+    await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const { repertoireFile, commands } = practiceFeedbackSetup(now);
     await mockScenario({ commands });
@@ -1067,6 +1071,7 @@ test("workspace-tabs: incorrect practice reveals the existing answer and its rev
     await page.clock.install({ time: now });
     await page.clock.pauseAt(now.getTime() + 1000);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const { repertoireFile, game, cardFen, commands } = practiceFeedbackSetup(now);
     await mockScenario({ commands });
@@ -1410,6 +1415,7 @@ test("workspace-tabs: real transposed practice card selects and reveals the exis
     await page.clock.install({ time: now });
     await page.clock.pauseAt(now.getTime() + 1000);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const repertoireFile = {
         ...filesWorkspaceFixture.pgnFile,

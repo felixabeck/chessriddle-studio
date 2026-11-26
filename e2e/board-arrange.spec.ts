@@ -1,10 +1,12 @@
 import type { Page } from "@playwright/test";
 import {
+    DEFAULT_BOARD_ARRANGEMENT,
     dragMosaicDivider,
     expect,
     goToSettings,
     preserveStorageForReload,
     seedAnalysisEngines,
+    seedBoardLayouts,
     test,
 } from "./fixtures";
 
@@ -42,14 +44,8 @@ test("board-arrange: carries over legacy beside + pinned database, handles width
     await expect(dbArea).toBeVisible();
     await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);
 
-    // Carry-over wrote `analysis-board-layout` and removed all five legacy keys.
-    const afterCarryOver = await page.evaluate((keys) => {
-        const stored = JSON.parse(localStorage.getItem("analysis-board-layout")!);
-        const remaining = keys.filter((key) => localStorage.getItem(key) !== null);
-        return { stored, remaining };
-    }, LEGACY_KEYS);
-    expect(afterCarryOver.remaining).toEqual([]);
-    expect(afterCarryOver.stored).toEqual({
+    // Carry-over wrote `analysis-board-layouts` (seeding all three kinds) and removed all five legacy keys.
+    const expectedCarried = {
         direction: "row",
         first: "left",
         splitPercentage: 42,
@@ -64,11 +60,26 @@ test("board-arrange: carries over legacy beside + pinned database, handles width
                 splitPercentage: 52,
             },
         },
+    };
+    const afterCarryOver = await page.evaluate((keys) => {
+        const stored = JSON.parse(localStorage.getItem("analysis-board-layouts")!);
+        const remaining = keys.filter((key) => localStorage.getItem(key) !== null);
+        return { stored, remaining };
+    }, LEGACY_KEYS);
+    expect(afterCarryOver.remaining).toEqual([]);
+    expect(afterCarryOver.stored).toEqual({
+        version: 1,
+        kinds: {
+            repertoire: { arrangement: expectedCarried, tabsHidden: false },
+            game: { arrangement: expectedCarried, tabsHidden: false },
+            preparation: { arrangement: expectedCarried, tabsHidden: false },
+        },
+        saved: [],
     });
     await assertNoHorizontalOverflow("wide-carried-over");
     await expect(layout).toHaveScreenshot("board-arrange-beside-database.png");
 
-    // Dragging the outer row divider persists in `analysis-board-layout` across reload.
+    // Dragging the outer row divider persists in `analysis-board-layouts` (game kind) across reload.
     const mosaic = layout.locator(".mosaic-root");
     await dragMosaicDivider(page, {
         root: mosaic,
@@ -82,19 +93,24 @@ test("board-arrange: carries over legacy beside + pinned database, handles width
         .poll(() =>
             page.evaluate(() =>
                 Math.abs(
-                    JSON.parse(localStorage.getItem("analysis-board-layout")!).splitPercentage - 48,
+                    JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game
+                        .arrangement.splitPercentage - 48,
                 ),
             ),
         )
         .toBeLessThan(1);
     const draggedSplit = await page.evaluate(
-        () => JSON.parse(localStorage.getItem("analysis-board-layout")!).splitPercentage,
+        () =>
+            JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement
+                .splitPercentage,
     );
     await preserveStorageForReload(page);
     await expect(dbArea).toBeVisible();
     expect(
         await page.evaluate(
-            () => JSON.parse(localStorage.getItem("analysis-board-layout")!).splitPercentage,
+            () =>
+                JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement
+                    .splitPercentage,
         ),
     ).toBeCloseTo(draggedSplit, 1);
 
@@ -124,17 +140,29 @@ test("board-arrange: carries over legacy beside + pinned database, handles width
         "true",
     );
 
-    // Reset layout in Settings restores the default arrangement.
+    // Reset layout in Settings restores all three kinds to their presets.
     await goToSettings(page);
     await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
     await page.getByRole("button", { name: "Reset layout", exact: true }).click();
     const afterReset = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem("analysis-board-layout")!),
+        JSON.parse(localStorage.getItem("analysis-board-layouts")!),
     );
-    expect(afterReset).toEqual({
+    expect(afterReset.version).toBe(1);
+    expect(afterReset.saved).toEqual([]);
+    expect(afterReset.kinds.game).toEqual({
+        arrangement: DEFAULT_BOARD_ARRANGEMENT,
+        tabsHidden: false,
+    });
+    expect(afterReset.kinds.repertoire.tabsHidden).toBe(false);
+    expect(afterReset.kinds.repertoire.arrangement).toMatchObject({
+        direction: "row",
+        first: { direction: "column", first: "left", second: "engine:@1", splitPercentage: 70 },
+    });
+    expect(afterReset.kinds.preparation.tabsHidden).toBe(false);
+    expect(afterReset.kinds.preparation.arrangement).toMatchObject({
         direction: "row",
         first: "left",
-        second: { direction: "column", first: "topRight", second: "bottomRight" },
+        second: { direction: "column", first: "database", splitPercentage: 40 },
     });
 });
 
@@ -156,10 +184,8 @@ test("board-arrange: database area below the board renders cleanly and 200% font
             first: "topRight",
             second: "bottomRight",
         },
-    };
-    await page.addInitScript((arrangement) => {
-        localStorage.setItem("analysis-board-layout", JSON.stringify(arrangement));
-    }, belowBoard);
+    } as const;
+    await seedBoardLayouts(page, belowBoard);
     await openAnalysisBoard(page);
 
     const layout = page.locator("[data-board-layout]");
@@ -250,7 +276,10 @@ test("board-arrange: drag Database below board and reload, move notation beside 
     await preserveStorageForReload(page);
     await expect(dbArea).toBeVisible();
     expect(
-        await page.evaluate(() => JSON.parse(localStorage.getItem("analysis-board-layout")!)),
+        await page.evaluate(
+            () =>
+                JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement,
+        ),
     ).toEqual({
         direction: "row",
         first: {
@@ -279,8 +308,8 @@ test("board-arrange: drag Database below board and reload, move notation beside 
     await page.mouse.up();
     await expect(preview).toHaveCount(0);
 
-    const afterNotationMove = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem("analysis-board-layout")!),
+    const afterNotationMove = await page.evaluate(
+        () => JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement,
     );
     expect(afterNotationMove.second).toEqual({
         direction: "row",
@@ -392,9 +421,9 @@ test("board-arrange: keyboard placing, aria-modal hotkey suppression, fit rule, 
 
     // 200% font scale: grips, panel area header and placing targets do not overflow or clip.
     await page.evaluate(() => {
-        localStorage.setItem(
-            "analysis-board-layout",
-            JSON.stringify({
+        const stored = JSON.parse(localStorage.getItem("analysis-board-layouts")!);
+        stored.kinds.game = {
+            arrangement: {
                 direction: "row",
                 first: {
                     direction: "column",
@@ -403,8 +432,10 @@ test("board-arrange: keyboard placing, aria-modal hotkey suppression, fit rule, 
                     splitPercentage: 65,
                 },
                 second: { direction: "column", first: "topRight", second: "bottomRight" },
-            }),
-        );
+            },
+            tabsHidden: false,
+        };
+        localStorage.setItem("analysis-board-layouts", JSON.stringify(stored));
         localStorage.setItem("font-size", "200");
         document.documentElement.style.fontSize = "32px";
     });
@@ -453,12 +484,8 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
                 splitPercentage: 40,
             },
         },
-    };
-    await page.addInitScript((layout) => {
-        if (localStorage.getItem("analysis-board-layout") === null) {
-            localStorage.setItem("analysis-board-layout", JSON.stringify(layout));
-        }
-    }, stored);
+    } as const;
+    await seedBoardLayouts(page, stored);
     await openAnalysisBoard(page);
 
     const tabList = page.locator("[data-board-tab-list]");
@@ -487,9 +514,11 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
         "mosaic",
     );
     await expect(tabList).toBeHidden();
-    expect(await page.evaluate(() => localStorage.getItem("analysis-board-tabs-hidden"))).toBe(
-        "true",
-    );
+    expect(
+        await page.evaluate(
+            () => JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.tabsHidden,
+        ),
+    ).toBe(true);
 
     // While hidden, the notation grip still starts placing the notation directly.
     await page.locator('[data-arrange-grip="bottomRight"]').click();
@@ -512,17 +541,22 @@ test("board-arrange: hiding the tabs keeps their place and size, survives reload
     await expect(tabList).toBeVisible();
     await expect(showTabs).toHaveCount(0);
     expect(
-        await page.evaluate(() => JSON.parse(localStorage.getItem("analysis-board-layout")!)),
+        await page.evaluate(
+            () => JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game,
+        ),
     ).toEqual({
-        direction: "row",
-        first: "left",
-        splitPercentage: 50,
-        second: {
-            direction: "column",
-            first: "topRight",
-            second: "bottomRight",
-            splitPercentage: 40,
+        arrangement: {
+            direction: "row",
+            first: "left",
+            splitPercentage: 50,
+            second: {
+                direction: "column",
+                first: "topRight",
+                second: "bottomRight",
+                splitPercentage: 40,
+            },
         },
+        tabsHidden: false,
     });
 });
 

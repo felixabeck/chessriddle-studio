@@ -3,6 +3,7 @@ import {
     expect,
     gameOpeningFixture,
     gotoPreservingStorage,
+    seedBoardLayouts,
     test,
     toggleNotationViewOption,
     waitForFontsSettled,
@@ -14,6 +15,7 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     mockScenario,
     assertNoHorizontalOverflow,
 }) => {
+    await seedBoardLayouts(page);
     await page.addInitScript(() => {
         localStorage.setItem("mantine-color-scheme", "light");
         localStorage.setItem("font-size", "100");
@@ -128,6 +130,7 @@ test("opponent-preparation: narrow card stacks Since and Minimum games controls 
     mockScenario,
     assertNoHorizontalOverflow,
 }) => {
+    await seedBoardLayouts(page);
     await page.addInitScript(() => {
         localStorage.setItem("mantine-color-scheme", "light");
         localStorage.setItem("font-size", "100");
