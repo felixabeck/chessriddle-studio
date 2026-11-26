@@ -29448,13 +29448,16 @@ Verifier drift: `fecfa6daa` moved Auto Save to Analysis & notation; `setAutoSave
 
 ### The real application cannot prove the "From photo" pane, because a test profile cannot hold an AI connection
 
-* **ID:** f-20261125-21 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261125-21 · **Status:** handled · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** tooling
 * **Failure scenario:** `pnpm verify:app --scoresheet-paste` seeds one registry entry in the throwaway profile's `credentials/coach-connections.json`, as the plan's O12 prescribes (the keyring is never touched). Measured 2026-11-25 on a release build of `66dd3755c`: `coach_available` is `true` but `coach_has_connection` is `false`, because `CredentialManager::initialize` runs `reconcile` (`src-tauri/src/credentials.rs`), which drops every Active entry without an OS keyring secret. The pane therefore shows only the "needs an AI connection" hint, and "Paste from clipboard" can never be clicked in the real app. `window.__TAURI_INTERNALS__.invoke` is non-writable, so the renderer's check cannot be stubbed either. The mode now proves the native route (clipboard read, processing, `data:` image under the real CSP) and reports the pane route as NOT PROVEN.
 * **Open question:** which isolated way gives the driven app a connection without touching the user's keyring: a private D-Bus session with its own Secret Service for the driven app, or a build-time test credential store for the release-like binary? Either must keep production credential behaviour unchanged.
 * **Spotted outside diff:** `src-tauri/src/credentials.rs` reconcile on startup (correct behaviour, not a defect in itself).
 
 Filed from the build of the scoresheet photo import (session c4fe3a7e-d00d-4487-ac2f-31b99658a655). Related: none in the ledger (checked `related --area gate-scripts --file scripts/verify-app.mjs`).
+
+* **Closed 2026-11-27 (build, adopted plan `tasks/plans/2026-11-26-verify-app-private-secret-service.md`, plan review r1=7 r2=0 r3=0 r4=0):** answered the open question with a private D-Bus session bus and a headless gnome-keyring Secret Service started by the harness inside the throwaway profile (d-20261126-33; rejected: a build-time test credential store, KWallet/KeePassXC). The harness creates the connection through `coach_save_api_connection`, checks the private keyring item, restarts the app so `reconcile` runs over it, and then runs SP-P1–SP-P3. PARTIAL / exit 3 removed along d-20261125-52's reversal path. Commit `774bc54cb`. Proof: release build, `pnpm verify:app --scoresheet-paste` exit 0 with 10 ok checks (thumbnail visible in the From photo pane screenshot); the user's gnome-keyring-daemon PID unchanged and no profile daemon survived; staged failures (missing gnome-keyring, dbus-daemon exit, non-unix address, keyring exit) each exit 1 with their cause; `--external-link` unaffected.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"d4c8efc61f54b8ed16c45a664b477cd597b5287e626c92603d6a477864978e0a","header_sha256":"f1f3e23860706197317f6fb89969f1d644af28b3effac509eb184397de1daaea","header_status":"handled","input_sha256":"06d7b6b7b64ae4b6980b4368e22bc232ef574335fe56eeb2f4bc95e63306c3e9","kind":"mutation-receipt","operation":"f9499a013b48d3135a41b26aef055f7dbf1dc518be29bfb77d41543d630ac8fb","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-21"],"target":"f-20261125-21","v":1} -->
 
 ---
 
