@@ -1,13 +1,14 @@
-import type { ErrorCategory, FileWorkspaceHandle } from "@/bindings";
+import type { FileWorkspaceHandle } from "@/bindings";
 import type { FileMetadata } from "@/components/files/file";
 import {
     errorUnlessCancelled,
-    normalizeError,
+    isPgnContentError,
     safeFailureContext,
     warnSafely,
 } from "@/platform/errors";
 import { tauri } from "@/platform/tauri";
 import { scanChapterPositions, type ChapterScanResult } from "@/state/chapterScan";
+import { readPgnGamePages } from "@/utils/chess";
 import { getFileGameName } from "@/utils/files";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { FileChapterOccurrence } from "@/state/transpositionTarget";
@@ -61,21 +62,10 @@ export type FilePositionIndexRequest = {
     finished: Promise<FileIndexExitStatus>;
 };
 
-const PGN_CONTENT_ERROR_CATEGORIES: ReadonlySet<ErrorCategory> = new Set([
-    "parsing",
-    "invalid-input",
-    "chess-data",
-]);
-
 const encoder = new TextEncoder();
 
 function isCancellationError(cause: unknown): boolean {
     return errorUnlessCancelled(cause) === null;
-}
-
-function isPgnContentError(cause: unknown): boolean {
-    const { backendCategory } = normalizeError(cause);
-    return backendCategory !== undefined && PGN_CONTENT_ERROR_CATEGORIES.has(backendCategory);
 }
 
 function yieldToEventLoop(signal: AbortSignal): Promise<void> {
@@ -113,7 +103,6 @@ async function buildFilePositionIndex(
             return { outcome: "ineligible" };
         }
 
-        let next = 0;
         let totalBytes = 0;
         let totalPositions = 0;
         let parsedAnyChapter = false;
@@ -122,29 +111,13 @@ async function buildFilePositionIndex(
         const chapters = new Map<number, IndexedChapter>();
         const positions = new Map<string, IndexedFileOccurrence[]>();
 
-        while (next < chapterCount) {
-            if (signal.aborted) return { outcome: "cancelled" };
-            const end = Math.min(chapterCount - 1, next + bounds.pageSize - 1);
-            const page = await tauri.readGames(file.handle, next, end, { signal });
-            if (signal.aborted) return { outcome: "cancelled" };
-
-            if (page.length === 0) {
-                throw new Error(`Empty game page returned at chapter ${next} of ${chapterCount}`);
-            }
-            if (next + page.length > chapterCount) {
-                throw new Error(
-                    `Game page exceeded counted chapters (${next + page.length} > ${chapterCount})`,
-                );
-            }
-
-            for (const game of page) {
-                if (game.revision !== revision) {
-                    throw new Error(
-                        `File revision changed during index build (expected ${revision}, got ${game.revision})`,
-                    );
-                }
-            }
-
+        for await (const { start: next, games: page } of readPgnGamePages({
+            handle: file.handle,
+            totalGames: chapterCount,
+            pageSize: bounds.pageSize,
+            signal,
+            expectedRevision: revision,
+        })) {
             for (const game of page) {
                 if (game.omission === "tooLarge") {
                     return { outcome: "ineligible" };
@@ -215,8 +188,6 @@ async function buildFilePositionIndex(
                     rootKey: scanResult.rootKey,
                 });
             }
-
-            next += page.length;
         }
 
         if (skippedChapters > 0) {

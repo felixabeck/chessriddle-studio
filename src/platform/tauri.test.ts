@@ -954,7 +954,7 @@ describe("tauri command facade", () => {
         mocks.lexPgn.mockResolvedValue({ status: "ok", data: [] });
         mocks.lexPgnGames.mockResolvedValue({
             status: "ok",
-            data: [{ status: "ok", tokens: [] }],
+            data: { status: "games", games: [{ status: "ok", tokens: [] }] },
         });
         mocks.listFileWorkspace.mockResolvedValue({
             status: "ok",
@@ -988,9 +988,10 @@ describe("tauri command facade", () => {
         await tauri.lexPgn("1. e4", { signal });
         expect(mocks.lexPgn).toHaveBeenCalledWith("1. e4", "ticket-pgn");
 
-        await expect(tauri.lexPgnGames("1. e4 *", 2000, { signal })).resolves.toEqual([
-            { status: "ok", tokens: [] },
-        ]);
+        await expect(tauri.lexPgnGames("1. e4 *", 2000, { signal })).resolves.toEqual({
+            status: "games",
+            games: [{ status: "ok", tokens: [] }],
+        });
         expect(mocks.lexPgnGames).toHaveBeenCalledWith("1. e4 *", 2000, "ticket-pgn");
 
         await tauri.listFileWorkspace(wsHandle, { signal });

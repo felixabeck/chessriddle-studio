@@ -1,6 +1,11 @@
 import { type Evaluation, parseComment } from "chessops/pgn";
 import { extractPgnDrawings, PGN_COMMENT_COMMAND, type PgnDrawing } from "./drawings";
-import { GAME_END_COMMAND, GAME_END_PROSE, type TreeNode } from "./treeReducer";
+import {
+    GAME_END_COMMAND,
+    GAME_END_PROSE,
+    REVIEW_MARK_COMMAND,
+    type TreeNode,
+} from "./treeReducer";
 
 /** Drawings are extracted per entry before chessops parses the other modeled fields. */
 const MODELED_COMMANDS = new Set(["eval", "clk"]);
@@ -36,6 +41,8 @@ export type SplitComment = {
     gameEnds: NonNullable<TreeNode["gameEnd"]>[];
     /** The comment carried a diagram marker, which is not part of `text`. */
     diagram: boolean;
+    /** The comment carried a Studio review mark (`[%crreview]`), never kept in `commands`. */
+    reviewMark: boolean;
 };
 
 /** A modeled command chessops accepts: parsing it alone leaves no text behind. */
@@ -53,11 +60,16 @@ export function splitPgnComment(comment: string, modelGameEnd = false): SplitCom
     const drawings = extractPgnDrawings(comment);
     const commands: string[] = [];
     const gameEnds: SplitComment["gameEnds"] = [];
+    let reviewMark = false;
     const marker = extractDiagramMarker(drawings.text);
     const rest = marker.text.replace(PGN_COMMENT_COMMAND, (match, name: string, body?: string) => {
         if (modelGameEnd && name === GAME_END_COMMAND) {
             const termination = body?.trim();
             gameEnds.push(termination ? { termination } : {});
+            return " ";
+        }
+        if (name === REVIEW_MARK_COMMAND) {
+            reviewMark = true;
             return " ";
         }
         if (MODELED_COMMANDS.has(name) && isWellFormedModeled(match.trim())) return match;
@@ -73,6 +85,7 @@ export function splitPgnComment(comment: string, modelGameEnd = false): SplitCom
         clock: parsed.clock,
         gameEnds,
         diagram: marker.diagram,
+        reviewMark,
     };
 }
 

@@ -20,11 +20,14 @@ import {
     getOpening,
     getPGN,
     headersToPGN,
+    MAX_PGN_MOVETEXT_LINE_BYTES,
     openingLineFens,
     parsePGN,
+    parsePgnTokens,
     parsePGNWithLossReport,
     parseStartHeader,
     replayUciMoves,
+    utf8ByteLength,
 } from "../chess";
 import { positionFromFen } from "../chessops";
 import {
@@ -2316,4 +2319,128 @@ test("getOpening sends exactly the opening line's FENs", async () => {
     mocks.getOpeningFromFens.mockResolvedValueOnce("King's Pawn Game");
     await expect(getOpening(root, [0, 0, 3])).resolves.toBe("King's Pawn Game");
     expect(mocks.getOpeningFromFens).toHaveBeenCalledExactlyOnceWith(openingLineFens(root, [0, 0]));
+});
+
+test("reviewMark round-trips through [%crreview] once, never in commands, and disappears when cleared", async () => {
+    mockCommentLexer();
+    const parsed = await parsePGN(
+        "1. e4 {[%evp 0,34] [%crreview] Check} (1. d4 {[%crreview] [%crreview]}) e5 *",
+    );
+    const [e4, d4] = parsed.root.children;
+    expect(e4.reviewMark).toBe(true);
+    expect(e4.commands).toBe("[%evp 0,34]");
+    expect(e4.comment).toBe("Check");
+    expect(d4.reviewMark).toBe(true);
+    expect(d4.commands).toBeUndefined();
+    expect(d4.comment).toBe("");
+
+    const saved = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
+    expect(saved.match(/\[%crreview\]/g)).toHaveLength(2);
+    expect((await parsePGN(saved)).root).toEqual(parsed.root);
+
+    delete e4.reviewMark;
+    delete d4.reviewMark;
+    const savedCleared = getPGN(parsed.root, { ...ALL_MARKUPS, headers: parsed.headers });
+    expect(savedCleared).not.toContain("[%crreview]");
+    const reparsedCleared = await parsePGN(savedCleared);
+    expect(reparsedCleared.root.children[0].reviewMark).toBeUndefined();
+    expect(reparsedCleared.root.children[1].reviewMark).toBeUndefined();
+});
+
+test("parsePgnTokens separates move-legality failures from preservation-only losses", () => {
+    const tokens: Token[] = [
+        { type: "San", value: "e4" },
+        { type: "Comment", value: "[%clk 0:05:00] [%clk 0:04:00]" },
+        { type: "San", value: "Ke8" },
+        { type: "Unparsed", value: "???" },
+    ];
+    const result = parsePgnTokens(tokens);
+    expect(result.moveLegalityFailures).toEqual(["Unplayable move", "Unparsed content"]);
+    expect(result.losses).toEqual(["Multiple clocks", "Unplayable move", "Unparsed content"]);
+
+    const preservationOnly = parsePgnTokens([
+        { type: "San", value: "e4" },
+        { type: "Comment", value: "[%clk 0:05:00] [%clk 0:04:00]" },
+    ]);
+    expect(preservationOnly.moveLegalityFailures).toEqual([]);
+    expect(preservationOnly.losses).toEqual(["Multiple clocks"]);
+
+    // Variation with an illegal move or Unparsed token also reports move-legality failures.
+    const illegalVariation = parsePgnTokens([
+        { type: "San", value: "e4" },
+        { type: "ParenOpen" },
+        { type: "San", value: "Ke8" },
+        { type: "ParenClose" },
+        { type: "San", value: "e5" },
+    ]);
+    expect(illegalVariation.moveLegalityFailures).toEqual(["Unplayable move"]);
+
+    const unparsedVariation = parsePgnTokens([
+        { type: "San", value: "e4" },
+        { type: "ParenOpen" },
+        { type: "San", value: "d4" },
+        { type: "Unparsed", value: "???" },
+        { type: "ParenClose" },
+    ]);
+    expect(unparsedVariation.moveLegalityFailures).toEqual(["Unparsed content"]);
+});
+
+test("utf8ByteLength counts 1-byte, 2-byte, 3-byte, 4-byte surrogate pairs, and lone surrogates", () => {
+    expect(utf8ByteLength("abc")).toBe(3);
+    expect(utf8ByteLength("é")).toBe(2);
+    expect(utf8ByteLength("♔")).toBe(3);
+    expect(utf8ByteLength("😀")).toBe(4);
+    expect(utf8ByteLength("\ud800")).toBe(3);
+    expect(utf8ByteLength("\udc00")).toBe(3);
+    expect(utf8ByteLength("aé♔😀\ud800")).toBe(1 + 2 + 3 + 4 + 3);
+});
+
+test("writePGN wraps movetext over MAX_PGN_MOVETEXT_LINE_BYTES into lines under the limit and re-parses identically", async () => {
+    mockCommentLexer();
+    const tree = defaultTree();
+    let cur = tree.root;
+    const [pos] = positionFromFen(INITIAL_FEN);
+    if (!pos) throw new Error("Invalid start");
+    const cycle = ["Nf3", "Nf6", "Ng1", "Ng8"];
+    // ~1,800 plies with short comments -> > 100 KiB of movetext, well over 64 KiB.
+    for (let i = 0; i < 1800; i++) {
+        const san = cycle[i % cycle.length];
+        const move = parseUci(
+            san === "Nf3" ? "g1f3" : san === "Nf6" ? "g8f6" : san === "Ng1" ? "f3g1" : "f6g8",
+        )!;
+        pos.play(move);
+        const child = createNode({
+            fen: makeFen(pos.toSetup()),
+            move,
+            san,
+            halfMoves: i + 1,
+        });
+        child.comment = `note ${i} keeps words together inside comment`;
+        cur.children.push(child);
+        cur = child;
+    }
+
+    const pgn = getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers });
+    const [, movetext] = pgn.split("\n\n");
+    expect(utf8ByteLength(movetext)).toBeGreaterThan(MAX_PGN_MOVETEXT_LINE_BYTES);
+
+    const lines = movetext.split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+        expect(utf8ByteLength(line)).toBeLessThan(MAX_PGN_MOVETEXT_LINE_BYTES);
+        // Never breaks inside a comment: brace depth must stay balanced on every line.
+        expect(line.split("{").length).toBe(line.split("}").length);
+    }
+
+    const reparsed = await parsePGN(pgn);
+    expect(reparsed.root).toEqual(tree.root);
+});
+
+test("writePGN keeps ordinary games byte-identical without extra movetext newlines", async () => {
+    mockCommentLexer();
+    const tree = await parsePGN("1. e4 e5 2. Nf3 Nc6 (2... d6 3. d4) 3. Bb5 a6 *");
+    const pgn = getPGN(tree.root, { ...ALL_MARKUPS, headers: tree.headers });
+    const [, movetext] = pgn.split("\n\n");
+    expect(movetext).not.toContain("\n");
+    expect(movetext).toBe("1. e4 e5 2. Nf3 Nc6  (2... d6  3. d4) 3. Bb5 a6 *");
 });

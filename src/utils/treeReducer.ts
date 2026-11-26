@@ -45,6 +45,7 @@ const nodeBoardStateCache = new WeakMap<TreeNode, { fen: string; boardState: str
 
 export const GAME_END_COMMAND = "gameend";
 export const GAME_END_PROSE = "Game ended here";
+export const REVIEW_MARK_COMMAND = "crreview";
 // Match the lexer's text bound so every parsed termination can survive tab hydration.
 export const MAX_GAME_END_TERMINATION_LENGTH = 10 * 1024 * 1024;
 
@@ -83,6 +84,11 @@ export interface TreeNode {
      * never written to PGN, and only active while `scoresheetReview` is present.
      */
     unsure?: true;
+    /**
+     * Imported repertoire move that conflicts with an existing reply for the repertoire's side.
+     * Persisted as `[%crreview]` in PGN and in tab storage until cleared.
+     */
+    reviewMark?: true;
 }
 
 export type ListNode = {

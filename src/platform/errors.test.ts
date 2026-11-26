@@ -5,6 +5,7 @@ import {
     errorUnlessCancelled,
     failureUnlessCancelled,
     isErrorReported,
+    isPgnContentError,
     markErrorReported,
     normalizeError,
     safeFailureContext,
@@ -903,4 +904,29 @@ describe("structured applied-despite-error helpers", () => {
             ).resolves.toBe(recovered);
         },
     );
+});
+
+describe("isPgnContentError", () => {
+    test.each(["parsing", "invalid-input", "chess-data"] as const)(
+        "returns true for backend content category %s",
+        (category) => {
+            expect(isPgnContentError({ tag: "backend-error", category, message: "bad game" })).toBe(
+                true,
+            );
+        },
+    );
+
+    test.each(["resource-limit", "conflict", "io"] as const)(
+        "returns false for non-content backend category %s",
+        (category) => {
+            expect(isPgnContentError({ tag: "backend-error", category, message: "failure" })).toBe(
+                false,
+            );
+        },
+    );
+
+    test("returns false when there is no backend category", () => {
+        expect(isPgnContentError(new Error("invalid PGN"))).toBe(false);
+        expect(isPgnContentError("validation failed")).toBe(false);
+    });
 });

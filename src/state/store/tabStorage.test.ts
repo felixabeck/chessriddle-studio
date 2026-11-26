@@ -3377,3 +3377,41 @@ test("prepareTreeForStorage and seed strip unsure marks when scoresheetReview is
     const read = storage.read("no-review-strip")?.state as ReturnType<typeof defaultTree>;
     expect(read.root.children[0].unsure).toBeUndefined();
 });
+
+test("tab storage keeps reviewMark and drops malformed reviewMark values without failing hydration", () => {
+    const tree = treeWithPaths({});
+    tree.root.children[0].reviewMark = true;
+
+    expect(canRehydrate(tree)).toBe(true);
+    const prepared = prepareTreeForStorage(tree);
+    expect(prepared.root.children[0].reviewMark).toBe(true);
+
+    storage.seed("review-mark-valid", tree);
+    const read = storage.read("review-mark-valid")?.state as ReturnType<typeof defaultTree>;
+    expect(read.root.children[0].reviewMark).toBe(true);
+
+    for (const invalid of [false, "yes", 1, null, {}]) {
+        const malformed = treeWithPaths({});
+        (malformed.root.children[0] as unknown as Record<string, unknown>).reviewMark = invalid;
+        expect(canRehydrate(malformed)).toBe(true);
+        const tabId = `review-mark-bad-${String(invalid)}`;
+        persistTree(tabId, malformed);
+        const hydrated = storage.read(tabId)?.state as ReturnType<typeof defaultTree>;
+        expect(hydrated.root.children[0].reviewMark).toBeUndefined();
+    }
+});
+
+test("legacy node with [%crreview] in comment hydrates reviewMark on non-root nodes", () => {
+    const legacy = treeWithPaths({});
+    legacy.root.comment = "[%crreview] Root text";
+    legacy.root.children[0].comment = "[%crreview] Legacy note";
+    delete legacy.root.commands;
+    delete legacy.root.children[0].commands;
+
+    const migrated = migrateTreeForStorage(legacy) as ReturnType<typeof defaultTree>;
+    expect(migrated.root.reviewMark).toBeUndefined();
+    expect(migrated.root.comment).toBe("Root text");
+    expect(migrated.root.children[0].reviewMark).toBe(true);
+    expect(migrated.root.children[0].comment).toBe("Legacy note");
+    expect(migrated.root.children[0].commands).toBeUndefined();
+});

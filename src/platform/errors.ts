@@ -466,3 +466,15 @@ export function errorCategoryOf(error: unknown): string {
     const normalized = normalizeError(error);
     return normalized.backendCategory ?? normalized.category;
 }
+
+const PGN_CONTENT_ERROR_CATEGORIES: ReadonlySet<ErrorCategory> = new Set([
+    "parsing",
+    "invalid-input",
+    "chess-data",
+]);
+
+/** A backend failure of one game's PGN content, not of the read itself. */
+export function isPgnContentError(error: unknown): boolean {
+    const { backendCategory } = normalizeError(error);
+    return backendCategory !== undefined && PGN_CONTENT_ERROR_CATEGORIES.has(backendCategory);
+}

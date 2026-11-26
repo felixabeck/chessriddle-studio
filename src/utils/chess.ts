@@ -6,7 +6,7 @@ import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { isPawns } from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { match } from "ts-pattern";
-import type { Outcome, Score, Token } from "@/bindings";
+import type { FileWorkspaceHandle, Outcome, Score, Token } from "@/bindings";
 import {
     type BasicAnnotation,
     isBasicAnnotation,
@@ -32,6 +32,7 @@ import {
     defaultTree,
     GAME_END_COMMAND,
     GAME_END_PROSE,
+    REVIEW_MARK_COMMAND,
     getEffectiveGameEnd,
     getEffectiveTermination,
     getResolvedPathLength,
@@ -133,6 +134,13 @@ export function getMoveText(
         // comments: an "Update" from a PGN shown without extra markups must not drop them.
         if (opt.comments && tree.commands) {
             content += `${safeComment(tree.commands)} `;
+        }
+
+        if (opt.comments && tree.reviewMark) {
+            const separated = content.endsWith("{") || content.endsWith(" ");
+            content += `${separated ? "" : " "}[%${REVIEW_MARK_COMMAND}]${
+                tree.diagram || tree.comment !== "" ? " " : ""
+            }`;
         }
 
         // The marker leads the prose: the diagram is shown above its comment.
@@ -304,6 +312,107 @@ export function getPGN(tree: TreeNode, options: Parameters<typeof writePGN>[1]):
     return writePGN(tree, { ...options, headers }, omitGameEnd);
 }
 
+/**
+ * Soft line-length ceiling for PGN movetext, well below the native scanner's 1 MiB
+ * `MAX_LINE_LEN`. Lines are broken between tokens outside `{…}` comments once adding
+ * the next token would reach this limit, leaving ordinary games byte-identical.
+ */
+export const MAX_PGN_MOVETEXT_LINE_BYTES = 64 * 1024;
+
+/**
+ * Hard physical line-length limit enforced by the native PGN scanner (`MAX_LINE_LEN` in
+ * `src-tauri/src/pgn.rs`, 1 MiB). A line reaching this length cannot be scanned back.
+ */
+export const MAX_PGN_SCANNER_LINE_BYTES = 1024 * 1024;
+
+export function utf8ByteLength(text: string): number {
+    let bytes = 0;
+    for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (code < 0x80) {
+            bytes += 1;
+        } else if (code < 0x800) {
+            bytes += 2;
+        } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+            const next = text.charCodeAt(i + 1);
+            if (next >= 0xdc00 && next <= 0xdfff) {
+                bytes += 4;
+                i++;
+            } else {
+                bytes += 3;
+            }
+        } else {
+            bytes += 3;
+        }
+    }
+    return bytes;
+}
+
+function wrapPgnMovetext(movetext: string): string {
+    if (
+        movetext.length * 3 < MAX_PGN_MOVETEXT_LINE_BYTES ||
+        utf8ByteLength(movetext) < MAX_PGN_MOVETEXT_LINE_BYTES
+    ) {
+        return movetext;
+    }
+    const parts: string[] = [];
+    let lineBytes = 0;
+    let i = 0;
+    const len = movetext.length;
+
+    while (i < len) {
+        const spaceStart = i;
+        while (i < len && movetext[i] === " ") i++;
+        const spaceRun = movetext.slice(spaceStart, i);
+        if (i >= len) {
+            parts.push(spaceRun);
+            break;
+        }
+
+        const tokenStart = i;
+        let inComment = false;
+        while (i < len) {
+            const ch = movetext[i];
+            if (inComment) {
+                if (ch === "}") inComment = false;
+                i++;
+            } else if (ch === "{") {
+                inComment = true;
+                i++;
+            } else if (ch === " ") {
+                break;
+            } else {
+                i++;
+            }
+        }
+        const token = movetext.slice(tokenStart, i);
+
+        const firstNl = token.indexOf("\n");
+        const firstLineBytes =
+            firstNl === -1 ? utf8ByteLength(token) : utf8ByteLength(token.slice(0, firstNl));
+
+        if (
+            spaceRun.length > 0 &&
+            lineBytes > 0 &&
+            lineBytes + spaceRun.length + firstLineBytes >= MAX_PGN_MOVETEXT_LINE_BYTES
+        ) {
+            parts.push("\n", token);
+            lineBytes =
+                firstNl === -1
+                    ? firstLineBytes
+                    : utf8ByteLength(token.slice(token.lastIndexOf("\n") + 1));
+        } else {
+            parts.push(spaceRun, token);
+            if (firstNl === -1) {
+                lineBytes += spaceRun.length + firstLineBytes;
+            } else {
+                lineBytes = utf8ByteLength(token.slice(token.lastIndexOf("\n") + 1));
+            }
+        }
+    }
+    return parts.join("");
+}
+
 function writePGN(
     tree: TreeNode,
     {
@@ -328,17 +437,20 @@ function writePGN(
     if (path && path.length === 0) {
         return "";
     }
-    let pgn = "";
+    let headerPrefix = "";
     if (headers) {
-        pgn += headersToPGN(headers);
+        headerPrefix += headersToPGN(headers);
     }
     if (root && tree.fen !== INITIAL_FEN) {
-        pgn += '[SetUp "1"]\n';
-        pgn += `[FEN "${tree.fen}"]\n`;
+        headerPrefix += '[SetUp "1"]\n';
+        headerPrefix += `[FEN "${tree.fen}"]\n`;
     }
-    pgn += "\n";
+    if (root) {
+        headerPrefix += "\n";
+    }
+    let movetext = "";
     if (root && tree.comment !== null) {
-        pgn += `${getMoveText(tree, {
+        movetext += `${getMoveText(tree, {
             glyphs,
             comments,
             extraMarkups,
@@ -370,7 +482,7 @@ function writePGN(
         : [];
     if (tree.children.length > 0) {
         const child = tree.children[path ? path[0] : 0];
-        pgn += getMoveText(child, {
+        movetext += getMoveText(child, {
             glyphs: glyphs,
             comments,
             extraMarkups,
@@ -380,12 +492,12 @@ function writePGN(
     }
     if (!path) {
         for (const variation of variationsPGN) {
-            pgn += ` (${variation}) `;
+            movetext += ` (${variation}) `;
         }
     }
 
     if (tree.children.length > 0) {
-        pgn += writePGN(
+        movetext += writePGN(
             tree.children[path ? path[0] : 0],
             {
                 headers: null,
@@ -400,9 +512,12 @@ function writePGN(
         );
     }
     if (root && headers) {
-        pgn += ` ${headers.result}`;
+        movetext += ` ${headers.result}`;
     }
-    return pgn.trim();
+    if (root) {
+        return (headerPrefix + wrapPgnMovetext(movetext)).trim();
+    }
+    return movetext.trim();
 }
 
 export function parseKeyboardMove(san: string, fen: string) {
@@ -453,6 +568,7 @@ export async function getOpening(root: TreeNode, position: number[]): Promise<st
 function innerParsePGN(
     tokens: Token[],
     losses: string[],
+    moveLegalityFailures: string[],
     fen: string = INITIAL_FEN,
     halfMoves?: number,
 ): TreeState {
@@ -523,6 +639,7 @@ function innerParsePGN(
             }
 
             if (comment.diagram) node.diagram = true;
+            if (comment.reviewMark && node !== tree.root) node.reviewMark = true;
 
             if (comment.text) {
                 // Match starting comments: a space replaces the boundary between comment tokens.
@@ -557,7 +674,13 @@ function innerParsePGN(
                 variation.shift();
                 leading = variation[0];
             }
-            const newTree = innerParsePGN(variation, losses, prevNode.fen, prevNode.halfMoves);
+            const newTree = innerParsePGN(
+                variation,
+                losses,
+                moveLegalityFailures,
+                prevNode.fen,
+                prevNode.halfMoves,
+            );
             // `newTree.root` stands for `prevNode` itself, so every child it has is an
             // alternative from `prevNode` — a variation nested at the variation's first move included.
             const [first] = newTree.root.children;
@@ -572,6 +695,7 @@ function innerParsePGN(
             losses.push("Unmatched variation close");
         } else if (token.type === "Unparsed") {
             losses.push("Unparsed content");
+            moveLegalityFailures.push("Unparsed content");
         } else if (token.type === "Nag") {
             const code = /^\$\d+$/.test(token.value) ? Number(token.value.slice(1)) : NaN;
             if (isNagCode(code)) {
@@ -584,11 +708,13 @@ function innerParsePGN(
             const [pos, error] = positionFromFen(node.fen);
             if (error) {
                 losses.push("Invalid move position");
+                moveLegalityFailures.push("Invalid move position");
                 continue;
             }
             const move = parseSanOrUci(pos, token.value);
             if (!move) {
                 losses.push("Unplayable move");
+                moveLegalityFailures.push("Unplayable move");
                 continue;
             }
             const san = makeSan(pos, move);
@@ -614,6 +740,29 @@ function innerParsePGN(
     return tree;
 }
 
+/**
+ * Builds a `TreeState` from already-lexed PGN tokens, reporting move-legality failures
+ * ("Invalid move position", "Unplayable move", "Unparsed content") separately from
+ * preservation-only losses. Shared by single-game and multi-game PGN parsing.
+ */
+export function parsePgnTokens(
+    tokens: Token[],
+    initialFen?: string,
+): { tree: TreeState; losses: string[]; moveLegalityFailures: string[] } {
+    const headers = getPgnHeaders(tokens);
+    const fen = initialFen?.trim() || headers.fen.trim();
+
+    const losses: string[] = [];
+    const moveLegalityFailures: string[] = [];
+    const tree = innerParsePGN(tokens, losses, moveLegalityFailures, fen);
+    // The validated path replaces the raw tag, so an unresolvable Start never reaches the store.
+    const start = parseStartHeader(headers.start, tree.root);
+    tree.headers = { ...headers, fen: tree.root.fen, start };
+    tree.position = start;
+    applyGameEndLoadDefault(tree);
+    return { tree, losses, moveLegalityFailures };
+}
+
 export async function parsePGN(
     pgn: string,
     initialFen?: string,
@@ -636,20 +785,75 @@ export async function parsePGNWithLossReport(
         throw cancellationError();
     }
 
-    const headers = getPgnHeaders(tokens);
-    const fen = initialFen?.trim() || headers.fen.trim();
-
-    const losses: string[] = [];
-    const tree = innerParsePGN(tokens, losses, fen);
-    // The validated path replaces the raw tag, so an unresolvable Start never reaches the store.
-    const start = parseStartHeader(headers.start, tree.root);
-    tree.headers = { ...headers, fen: tree.root.fen, start };
-    tree.position = start;
-    applyGameEndLoadDefault(tree);
+    const { tree, losses } = parsePgnTokens(tokens, initialFen);
     if (options?.signal?.aborted) {
         throw cancellationError();
     }
     return { tree, losses };
+}
+
+export class PgnPageError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "PgnPageError";
+    }
+}
+
+export type PgnGamePage = {
+    start: number;
+    games: Awaited<ReturnType<typeof tauri.readGames>>;
+};
+
+/**
+ * Streams validated pages of PGN games from `handle` up to `totalGames`, advancing by each
+ * returned page's length.
+ *
+ * - Aborts with `cancellationError()` before or after any read when `signal` is aborted.
+ * - Requests `[next, min(totalGames - 1, next + pageSize - 1)]` via `tauri.readGames`.
+ * - Throws `PgnPageError` if a page is empty before `totalGames`, overflows `totalGames`, or
+ *   carries a `revision` different from `expectedRevision` (or the first game's revision when
+ *   omitted).
+ * - Propagates any error from `tauri.readGames` unchanged.
+ */
+export async function* readPgnGamePages(options: {
+    handle: FileWorkspaceHandle;
+    totalGames: number;
+    pageSize: number;
+    signal?: AbortSignal;
+    expectedRevision?: string;
+}): AsyncGenerator<PgnGamePage> {
+    const { handle, totalGames, pageSize, signal } = options;
+    let expectedRevision = options.expectedRevision ?? null;
+    let next = 0;
+
+    while (next < totalGames) {
+        if (signal?.aborted) throw cancellationError();
+        const end = Math.min(totalGames - 1, next + pageSize - 1);
+        const games = await tauri.readGames(handle, next, end, signal ? { signal } : undefined);
+        if (signal?.aborted) throw cancellationError();
+
+        if (games.length === 0) {
+            throw new PgnPageError(`Empty game page returned at chapter ${next} of ${totalGames}`);
+        }
+        if (next + games.length > totalGames) {
+            throw new PgnPageError(
+                `Game page exceeded counted chapters (${next + games.length} > ${totalGames})`,
+            );
+        }
+
+        for (const game of games) {
+            if (expectedRevision === null) {
+                expectedRevision = game.revision;
+            } else if (game.revision !== expectedRevision) {
+                throw new PgnPageError(
+                    `File revision changed during read (expected ${expectedRevision}, got ${game.revision})`,
+                );
+            }
+        }
+
+        yield { start: next, games };
+        next += games.length;
+    }
 }
 
 /**

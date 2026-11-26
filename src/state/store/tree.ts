@@ -21,7 +21,12 @@ import { boundCoachSession, coachSessionSchema, type CoachSession } from "@/stat
 import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
 import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyph } from "@/utils/annotation";
-import { getMainLine, getPGN, reportRootFingerprint } from "@/utils/chess";
+import { getMainLine, getPGN, parseStartHeader, reportRootFingerprint } from "@/utils/chess";
+import {
+    mergeIntoRepertoire,
+    type RepertoireMergeRefusalReason,
+    type RepertoireMergeReport,
+} from "@/utils/repertoireImport";
 import { isSameMove, positionFromFen } from "@/utils/chessops";
 import { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 export { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
@@ -51,6 +56,7 @@ import {
     treeIteratorMainLine,
     getBoardState,
     getMemoizedBoardStateMap,
+    locateBoardState,
     normalizeFen,
     normalizeTreeHalfMoves,
     getEffectiveGameEnd,
@@ -186,6 +192,13 @@ export interface TreeStoreState extends TreeState {
     clearShapes: () => void;
     /** Clears the scoresheet unsure mark on the current node. Not undoable, leaves `dirty` unchanged. */
     clearUnsureMark: () => void;
+    /** Clears the repertoire import review mark on the node at `path`. One undo step. */
+    clearReviewMark: (path: number[]) => void;
+    /** Merges imported games into the repertoire tree as one undoable edit. */
+    importIntoRepertoire: (
+        games: readonly TreeState[],
+        orientation: "white" | "black",
+    ) => RepertoireImportActionResult;
     /** Ends the scoresheet review: clears every unsure mark, `scoresheetReview` and in-memory photos. Not undoable, leaves `dirty` unchanged. */
     finishScoresheetReview: () => void;
     /** Replays remaining moves from the scoresheet after a stop or a mid-game correction. One undo step. */
@@ -227,6 +240,10 @@ type PersistedTreeStoreState = Omit<TreeStoreState, "documentId" | "history">;
 export type SessionTransitionResult =
     | { success: true; persistence: "saved" | "memory" }
     | { success: false; error: Error };
+
+export type RepertoireImportActionResult =
+    | { ok: true; report: RepertoireMergeReport }
+    | { ok: false; reason: RepertoireMergeRefusalReason; message: string };
 
 export type TreeStore = StoreApi<TreeStoreState>;
 const installAdmittedTree = Symbol("installAdmittedTree");
@@ -490,6 +507,7 @@ type TreeMutationActions = Pick<
     | "promoteVariation"
     | "promoteToMainline"
     | "continueScoresheet"
+    | "importIntoRepertoire"
 >;
 
 type TreeMarkupActions = Pick<
@@ -513,6 +531,7 @@ type TreeMarkupActions = Pick<
     | "setReportOperationId"
     | "clearShapes"
     | "clearUnsureMark"
+    | "clearReviewMark"
     | "finishScoresheetReview"
 >;
 
@@ -900,6 +919,35 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                     state.dirty = true;
                 }),
             ),
+        importIntoRepertoire: (games, orientation) => {
+            const current = get();
+            const merged = mergeIntoRepertoire(current, games, orientation);
+            if (!merged.ok) {
+                return merged;
+            }
+            if (!merged.changed) {
+                return { ok: true, report: merged.report };
+            }
+            const currentNode = getNodeAtPath(current.root, current.position);
+            const currentBoardState = currentNode ? getBoardState(currentNode.fen) : null;
+            const nextPosition =
+                currentBoardState !== null
+                    ? (locateBoardState(merged.tree.root, current.position, currentBoardState)
+                          ?.position ?? [])
+                    : [];
+            const nextStart = parseStartHeader(merged.tree.headers.start, merged.tree.root);
+            const nextHeaders =
+                merged.tree.headers.start !== undefined
+                    ? { ...merged.tree.headers, start: nextStart }
+                    : merged.tree.headers;
+            set({
+                root: merged.tree.root,
+                headers: nextHeaders,
+                position: nextPosition,
+                dirty: true,
+            });
+            return { ok: true, report: merged.report };
+        },
     };
 }
 
@@ -1121,6 +1169,23 @@ function treeMarkupActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMark
                 }),
             ),
 
+        clearReviewMark: (path) =>
+            set(
+                produce((state) => {
+                    if (
+                        !Array.isArray(path) ||
+                        path.length === 0 ||
+                        getResolvedPathLength(state.root, path) !== path.length
+                    ) {
+                        return;
+                    }
+                    const node = getNodeAtPath(state.root, path);
+                    if (!node.reviewMark) return;
+                    delete node.reviewMark;
+                    state.dirty = true;
+                }),
+            ),
+
         finishScoresheetReview: () => {
             set(
                 produce((state) => {
@@ -1150,6 +1215,7 @@ const UNDOABLE_EDITS = [
     "promoteVariation",
     "promoteToMainline",
     "continueScoresheet",
+    "importIntoRepertoire",
     "setStart",
     "setAnnotation",
     "setComment",
@@ -1163,6 +1229,7 @@ const UNDOABLE_EDITS = [
     "setShapes",
     "applyReport",
     "clearShapes",
+    "clearReviewMark",
 ] as const;
 
 /** Clipboard export, the engine's view-only score, report bookkeeping and scoresheet review controls are not edits. */

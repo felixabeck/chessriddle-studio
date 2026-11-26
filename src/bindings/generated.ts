@@ -1343,7 +1343,7 @@ async lexPgn(pgn: string, ticket: string | null) : Promise<Result<Token[], Error
     else return { status: "error", error: e  as any };
 }
 },
-async lexPgnGames(pgn: string, maxGames: number, ticket: string | null) : Promise<Result<LexedPgnGame[], ErrorPayload>> {
+async lexPgnGames(pgn: string, maxGames: number, ticket: string | null) : Promise<Result<LexPgnGamesOutcome, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("lex_pgn_games", { pgn, maxGames, ticket }) };
 } catch (e) {
@@ -2332,6 +2332,7 @@ export type HistoryRole = "user" | "coach"
 export type InsertedDbGame = { id: number; stamp: string }
 export type InstalledEngineResult = { handle: EngineHandle; config: EngineConfig; filename: string }
 export type LatestRatingData = { time_control: string; date: string; time: string | null; game_id: number; player_elo: number }
+export type LexPgnGamesOutcome = { status: "games"; games: LexedPgnGame[] } | { status: "tooManyGames"; count: number }
 export type LexedPgnGame = { status: "ok"; tokens: Token[] } | { status: "failed"; message: string }
 /**
  * Monotonic change signal emitted to the renderer (at most 4 Hz); the renderer refetches the

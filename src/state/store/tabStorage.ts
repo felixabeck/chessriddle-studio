@@ -33,7 +33,7 @@ const NON_TREE_SESSION_KEYS = new Set([
     "expanded-directories",
     "workspace-session-unavailable",
 ]);
-const MAX_TREE_NODES = 100_000;
+export const MAX_TREE_NODES = 100_000;
 // Plies from the root. 2,048 = 1,024 moves, about four times the longest tournament game
 // (538 plies). The ceiling is the recursive PGN writer and native JSON serialization
 // (measured: Chromium getPGN overflows between 4,096 and 5,000 plies), not this file,
@@ -238,6 +238,7 @@ function createPersistedTreeSchema() {
         // A wrong-typed marker is dropped, never a reason to refuse the node or the tree.
         reportLine: z.literal(true).optional().catch(undefined),
         unsure: z.literal(true).optional().catch(undefined),
+        reviewMark: z.literal(true).optional().catch(undefined),
     });
 
     return {
@@ -357,15 +358,20 @@ function migrateLegacyNode(
         return migrated;
     };
 
-    const finishNode = (node: Record<string, unknown>, migrated: Record<string, unknown>) => {
+    const finishNode = (
+        node: Record<string, unknown>,
+        migrated: Record<string, unknown>,
+        isRoot: boolean,
+    ) => {
         if (
             !Object.prototype.hasOwnProperty.call(node, "commands") &&
             typeof node.comment === "string"
         ) {
-            const { text, commands, shapes, diagram } = splitPgnComment(node.comment);
+            const { text, commands, shapes, diagram, reviewMark } = splitPgnComment(node.comment);
             migrated.comment = text;
             if (commands.length > 0) migrated.commands = commands;
             if (diagram) migrated.diagram = true;
+            if (!isRoot && reviewMark) migrated.reviewMark = true;
             retainHydratedDrawings(migrated, shapes);
         } else if (typeof node.commands === "string") {
             const { text, shapes } = extractPgnDrawings(node.commands);
@@ -422,7 +428,7 @@ function migrateLegacyNode(
             continue;
         }
         if (frame.childOutputs) frame.migrated.children = frame.childOutputs;
-        finishNode(frame.node, frame.migrated);
+        finishNode(frame.node, frame.migrated, frame.depth === 0);
         stack.pop();
     }
 

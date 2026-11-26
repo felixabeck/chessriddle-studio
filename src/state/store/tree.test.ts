@@ -42,7 +42,7 @@ import {
     retryTreeStoreStorage,
     validateMoveSequence,
 } from "./tree";
-import { tabStorage } from "./tabStorage";
+import { PGN_TEXT_MAX, tabStorage } from "./tabStorage";
 import { deserializeStorageValue, serializeStorageValue } from "./debouncedStorage";
 import { emptyPuzzleSession } from "@/state/puzzleSession";
 
@@ -3014,4 +3014,87 @@ test("continueScoresheet after-stop is a no-op when first remaining token is ill
     expect(store.getState().root).toBe(rootBefore);
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().history.past).toHaveLength(0);
+});
+
+test("clearReviewMark clears the mark as one undoable edit and is a no-op when absent", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    e4.reviewMark = true;
+    const store = createTreeStore(undefined, initial);
+
+    store.getState().clearReviewMark([]);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    store.getState().clearReviewMark([0]);
+    expect(store.getState().root.children[0].reviewMark).toBeUndefined();
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().history.past).toHaveLength(1);
+
+    // Clearing again is a no-op (no second undo entry).
+    store.getState().clearReviewMark([0]);
+    expect(store.getState().history.past).toHaveLength(1);
+
+    store.getState().undo();
+    expect(store.getState().root.children[0].reviewMark).toBe(true);
+
+    store.getState().redo();
+    expect(store.getState().root.children[0].reviewMark).toBeUndefined();
+});
+
+test("importIntoRepertoire merges as one undo step, marks dirty, and keeps cursor valid", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    addMove(e4, "e7e5");
+    initial.position = [0, 0];
+    const store = createTreeStore(undefined, initial);
+
+    const game1 = defaultTree();
+    const g1e4 = addMove(game1.root, "e2e4");
+    addMove(g1e4, "c7c5");
+
+    const game2 = defaultTree();
+    const g2d4 = addMove(game2.root, "d2d4");
+    addMove(g2d4, "d7d5");
+
+    const result = store.getState().importIntoRepertoire([game1, game2], "white");
+    expect(result).toEqual({ ok: true, report: { added: 3, conflicts: 1, unplaced: 0 } });
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().history.past).toHaveLength(1);
+    expect(store.getState().position).toEqual([0, 0]);
+    expect(getNodeAtPath(store.getState().root, [0, 0]).san).toBe("e5");
+    expect(getNodeAtPath(store.getState().root, [1]).reviewMark).toBe(true);
+
+    // One undo restores the entire pre-import tree.
+    store.getState().undo();
+    expect(store.getState().root.children).toHaveLength(1);
+    expect(store.getState().root.children[0].children).toHaveLength(1);
+    expect(store.getState().position).toEqual([0, 0]);
+});
+
+test("importIntoRepertoire refusal and no-op change nothing (no history, dirty unchanged)", () => {
+    const initial = defaultTree();
+    const e4 = addMove(initial.root, "e2e4");
+    addMove(e4, "e7e5");
+    const store = createTreeStore(undefined, initial);
+
+    // No-op: identical game already present.
+    const duplicate = defaultTree();
+    const de4 = addMove(duplicate.root, "e2e4");
+    addMove(de4, "e7e5");
+    const noopResult = store.getState().importIntoRepertoire([duplicate], "white");
+    expect(noopResult).toEqual({ ok: true, report: { added: 0, conflicts: 0, unplaced: 0 } });
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    // Refusal: exceeds PGN_TEXT_MAX bytes.
+    const oversized = defaultTree();
+    const oe4 = addMove(oversized.root, "e2e4");
+    const oc5 = addMove(oe4, "c7c5");
+    oc5.comment = "x".repeat(PGN_TEXT_MAX + 1024);
+    const refused = store.getState().importIntoRepertoire([oversized], "white");
+    expect(refused).toMatchObject({ ok: false, reason: "max-bytes" });
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+    expect(store.getState().root.children[0].children).toHaveLength(1);
 });

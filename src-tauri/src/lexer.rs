@@ -46,6 +46,13 @@ pub enum LexedPgnGame {
     Failed { message: String },
 }
 
+#[derive(Serialize, Clone, Type, Debug, PartialEq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum LexPgnGamesOutcome {
+    Games { games: Vec<LexedPgnGame> },
+    TooManyGames { count: u32 },
+}
+
 #[cfg(test)]
 pub(crate) struct LexerTestHook {
     pub entered: std::sync::mpsc::SyncSender<()>,
@@ -214,7 +221,7 @@ pub fn lex_pgn_games_cancellable(
     pgn: &str,
     max_games: u32,
     cancellation: Option<&CancellationToken>,
-) -> Result<Vec<LexedPgnGame>, Error> {
+) -> Result<LexPgnGamesOutcome, Error> {
     if cancellation.is_some_and(|token| token.is_cancelled()) {
         return Err(Error::Cancellation);
     }
@@ -231,9 +238,9 @@ pub fn lex_pgn_games_cancellable(
         return Err(Error::Cancellation);
     }
     if ranges.len() as u64 > u64::from(max_games) {
-        return Err(Error::ResourceLimit(format!(
-            "PGN text exceeds {max_games} games"
-        )));
+        return Ok(LexPgnGamesOutcome::TooManyGames {
+            count: u32::try_from(ranges.len()).unwrap_or(u32::MAX),
+        });
     }
     let mut games = Vec::with_capacity(ranges.len());
     for range in ranges {
@@ -258,7 +265,7 @@ pub fn lex_pgn_games_cancellable(
             }),
         }
     }
-    Ok(games)
+    Ok(LexPgnGamesOutcome::Games { games })
 }
 
 #[tauri::command]
@@ -291,7 +298,7 @@ pub async fn lex_pgn_games(
     ticket: Option<String>,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<LexedPgnGame>, Error> {
+) -> Result<LexPgnGamesOutcome, Error> {
     validate_pgn_len(&pgn)?;
 
     let operation = crate::native_read_operation(ticket, &window, &state, "lex_pgn_games")?;
@@ -714,40 +721,45 @@ mod tests {
     #[test]
     fn lex_pgn_games_splits_two_games_into_two_token_lists() {
         let pgn = "\u{feff}[Event \"One\"]\r\n\r\n1. e4 e5 *\r\n\r\n[Event \"Two\"]\r\n\r\n1. d4 d5 1-0\r\n";
-        let games = lex_pgn_games_cancellable(pgn, 2, None).unwrap();
+        let outcome = lex_pgn_games_cancellable(pgn, 2, None).unwrap();
         assert_eq!(
-            games,
-            vec![
-                LexedPgnGame::Ok {
-                    tokens: vec![
-                        Token::Header {
-                            tag: "Event".into(),
-                            value: "One".into(),
-                        },
-                        Token::San("e4".into()),
-                        Token::San("e5".into()),
-                        Token::Outcome("*".into()),
-                    ],
-                },
-                LexedPgnGame::Ok {
-                    tokens: vec![
-                        Token::Header {
-                            tag: "Event".into(),
-                            value: "Two".into(),
-                        },
-                        Token::San("d4".into()),
-                        Token::San("d5".into()),
-                        Token::Outcome("1-0".into()),
-                    ],
-                },
-            ]
+            outcome,
+            LexPgnGamesOutcome::Games {
+                games: vec![
+                    LexedPgnGame::Ok {
+                        tokens: vec![
+                            Token::Header {
+                                tag: "Event".into(),
+                                value: "One".into(),
+                            },
+                            Token::San("e4".into()),
+                            Token::San("e5".into()),
+                            Token::Outcome("*".into()),
+                        ],
+                    },
+                    LexedPgnGame::Ok {
+                        tokens: vec![
+                            Token::Header {
+                                tag: "Event".into(),
+                                value: "Two".into(),
+                            },
+                            Token::San("d4".into()),
+                            Token::San("d5".into()),
+                            Token::Outcome("1-0".into()),
+                        ],
+                    },
+                ],
+            }
         );
     }
 
     #[test]
     fn lex_pgn_games_keeps_line_start_bracket_inside_comment_in_one_game() {
         let pgn = "[Event \"Commented\"]\n\n1. e4 { line one\n[FakeTag \"still inside comment\"]\n} 1... e5 *\n";
-        let games = lex_pgn_games_cancellable(pgn, 10, None).unwrap();
+        let LexPgnGamesOutcome::Games { games } = lex_pgn_games_cancellable(pgn, 10, None).unwrap()
+        else {
+            panic!("expected Games outcome");
+        };
         assert_eq!(games.len(), 1);
         assert_eq!(
             games[0],
@@ -769,7 +781,10 @@ mod tests {
     #[test]
     fn lex_pgn_games_reports_one_malformed_range_while_others_lex() {
         let pgn = "[Event \"First\"]\n\n1. e4 e5 *\n\n[Event \"Broken\"]\n\n1. c4 *\n\n1. Nf3 *\n\n[Event \"Third\"]\n\n1. d4 d5 *\n";
-        let games = lex_pgn_games_cancellable(pgn, 10, None).unwrap();
+        let LexPgnGamesOutcome::Games { games } = lex_pgn_games_cancellable(pgn, 10, None).unwrap()
+        else {
+            panic!("expected Games outcome");
+        };
         assert_eq!(games.len(), 3);
         assert!(
             matches!(games[0], LexedPgnGame::Ok { ref tokens } if tokens.contains(&Token::San("e4".into())))
@@ -798,7 +813,10 @@ mod tests {
         });
 
         let result = lex_pgn_games_cancellable(pgn, 2, None);
-        assert!(matches!(result, Err(Error::ResourceLimit(_))));
+        assert_eq!(
+            result.unwrap(),
+            LexPgnGamesOutcome::TooManyGames { count: 3 }
+        );
         assert!(
             entered_rx.try_recv().is_err(),
             "lexer must not be invoked when range count exceeds max_games"
@@ -807,10 +825,13 @@ mod tests {
 
     #[test]
     fn lex_pgn_games_empty_text_yields_zero_games() {
-        assert_eq!(lex_pgn_games_cancellable("", 10, None).unwrap(), vec![]);
+        assert_eq!(
+            lex_pgn_games_cancellable("", 10, None).unwrap(),
+            LexPgnGamesOutcome::Games { games: vec![] }
+        );
         assert_eq!(
             lex_pgn_games_cancellable("   \r\n\t  \n", 10, None).unwrap(),
-            vec![]
+            LexPgnGamesOutcome::Games { games: vec![] }
         );
     }
 
@@ -827,7 +848,7 @@ mod tests {
         );
     }
 
-    fn lex_games_cancelled_mid_lex(pgn: &str) -> Result<Vec<LexedPgnGame>, Error> {
+    fn lex_games_cancelled_mid_lex(pgn: &str) -> Result<LexPgnGamesOutcome, Error> {
         let token = CancellationToken::new();
         let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);

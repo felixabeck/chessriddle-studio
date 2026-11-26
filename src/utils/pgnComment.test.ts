@@ -24,9 +24,33 @@ test("splitPgnComment reports the marker apart from prose, commands and drawings
         text: "Plan",
         commands: "[%evp 0,34]",
         diagram: true,
+        reviewMark: false,
         shapes: [{ color: "green" }],
     });
     expect(splitPgnComment("Plan").diagram).toBe(false);
+    expect(splitPgnComment("Plan").reviewMark).toBe(false);
+});
+
+test("splitPgnComment extracts [%crreview] into reviewMark and never keeps it in commands", () => {
+    expect(splitPgnComment("[%crreview]")).toEqual({
+        text: "",
+        commands: "",
+        evaluation: undefined,
+        shapes: [],
+        clock: undefined,
+        gameEnds: [],
+        diagram: false,
+        reviewMark: true,
+    });
+    expect(
+        splitPgnComment("[%cal Ge2e4] [%crreview] [#] Check this [%evp 0,34] [%crreview]"),
+    ).toMatchObject({
+        text: "Check this",
+        commands: "[%evp 0,34]",
+        diagram: true,
+        reviewMark: true,
+        shapes: [{ color: "green" }],
+    });
 });
 
 test.each([
