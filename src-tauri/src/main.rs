@@ -6291,6 +6291,22 @@ mod blocking_offload_scans {
                 "assistant_turn",
                 "runs LLM-only Assistant turn over HTTPS; never opens Database/Puzzle/Engine roots",
             ),
+            (
+                "scoresheet_pick_photos",
+                "reads user-picked photos through one-shot ImageRead dialog grants; no Database/Puzzle/Engine root",
+            ),
+            (
+                "scoresheet_paste_photo",
+                "reads an image from the clipboard; touches no file root",
+            ),
+            (
+                "scoresheet_take_dropped_photos",
+                "reads dropped photos through one-shot ImageRead grants; no Database/Puzzle/Engine root",
+            ),
+            (
+                "scoresheet_read",
+                "sends already-read photo bytes to the Coach provider over HTTPS; touches no file root",
+            ),
             // db/mod.rs
             (
                 "clear_games",
