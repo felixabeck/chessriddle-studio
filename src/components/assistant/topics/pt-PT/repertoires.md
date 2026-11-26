@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Repertórios de aberturas
-summary: Crie um repertório, construa cobertura face a uma base de referência, pratique com repetição espaçada e acompanhe variantes abertas e transposições.
-source: 62b7ff51627518a7
+summary: Crie um repertório, importe PGNs, construa cobertura face a uma base de referência, pratique com repetição espaçada e acompanhe variantes abertas, transposições e marcas de revisão.
+source: db00ec0860d0fa31
 ---
 
 Os repertórios são ficheiros PGN do tipo Repertório que adicionam o separador {{label:Board.Tabs.Practice}} ao tabuleiro de análise.
 
-Para criar um repertório, abra [[page:new-tab]] e clique em {{label:Home.Card.NewRepertoire.Title}} (ou crie um ficheiro de repertório em [[page:library]]). Introduza um {{label:Common.Name}}, escolha {{label:Common.WHITE}} ou {{label:Common.BLACK}} e clique em {{label:Common.Create}}.
+Para criar um repertório, abra [[page:new-tab]] e clique em {{label:Home.Card.NewRepertoire.Title}} (ou crie um ficheiro de repertório em [[page:library]]). Introduza um {{label:Common.Name}}, escolha {{label:Common.WHITE}} ou {{label:Common.BLACK}}, selecione ou cole opcionalmente um PGN em {{label:Home.Card.NewRepertoire.FromPgn}} e clique em {{label:Common.Create}}. Também pode importar um PGN em {{label:Home.Card.ImportGame.Title}} com {{label:Import.SaveToCollection}} ativado e tipo de ficheiro {{label:Files.FileType.Repertoire}}.
 
 Construa o seu repertório em {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}:
+- Clique em {{label:Board.Practice.Build.ImportPgn}} para fundir um ficheiro PGN ou partidas coladas no repertório aberto (funciona com ou sem base de referência).
 - Defina uma {{label:Databases.Settings.ReferenceDatabase}} em [[page:library]] para que o construtor mostre frequências de lances e cobertura.
 - Num repertório vazio, pode começar por um dos modelos integrados em {{label:Board.Practice.Build.Presets}} ou introduzir lances no tabuleiro.
 - Defina a posição inicial do seu repertório com {{label:Board.Practice.Build.SetAsStart}} (ou clique com o botão direito num lance da notação e escolha {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ Pratique o seu repertório em {{label:Board.Tabs.Practice}} -> {{label:Board.Pra
 Na notação do tabuleiro de análise:
 - Uma linha secundária com apenas um lance é destacada com uma moldura tracejada como {{label:Notation.OpenVariation}} para identificar ramos inacabados. Prima o atalho {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} para saltar para a próxima.
 - Quando uma posição aparece noutro ramo do mesmo repertório, surge um ícone {{label:Notation.Transposition}} junto ao lance; clique nele para saltar para o outro ramo.
+- Quando um PGN importado contém uma resposta diferente para o seu lado, o lance importado é acrescentado como variante e assinalado como {{label:Notation.ReviewMove}}. Clique com o botão direito no lance e escolha {{label:Menu.MarkAsReviewed}} para limpar a marca.

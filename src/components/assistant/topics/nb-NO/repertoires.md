@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Åpningsrepertoarer
-summary: Opprett et repertoar, bygg dekning mot en referansedatabase, øv med tidsfordelt repetisjon og hold oversikt over åpne varianter og transponeringer.
-source: 62b7ff51627518a7
+summary: Opprett et repertoar, importer PGN-er, bygg dekning mot en referansedatabase, øv med tidsfordelt repetisjon og hold oversikt over åpne varianter, transponeringer og gjennomgangsmerker.
+source: db00ec0860d0fa31
 ---
 
 Repertoarer er PGN-filer av typen Repertoar som legger til fanen {{label:Board.Tabs.Practice}} på analysebrettet.
 
-For å opprette et repertoar åpner du [[page:new-tab]] og klikker {{label:Home.Card.NewRepertoire.Title}} (eller oppretter en repertoarfil i [[page:library]]). Skriv inn et {{label:Common.Name}}, velg {{label:Common.WHITE}} eller {{label:Common.BLACK}} og klikk {{label:Common.Create}}.
+For å opprette et repertoar åpner du [[page:new-tab]] og klikker {{label:Home.Card.NewRepertoire.Title}} (eller oppretter en repertoarfil i [[page:library]]). Skriv inn et {{label:Common.Name}}, velg {{label:Common.WHITE}} eller {{label:Common.BLACK}}, velg eller lim inn en PGN under {{label:Home.Card.NewRepertoire.FromPgn}} om ønskelig, og klikk {{label:Common.Create}}. Du kan også importere en PGN fra {{label:Home.Card.ImportGame.Title}} med {{label:Import.SaveToCollection}} på og filtypen {{label:Files.FileType.Repertoire}}.
 
 Bygg repertoaret ditt i {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}:
+- Klikk {{label:Board.Practice.Build.ImportPgn}} for å flette en PGN-fil eller innlimte partier inn i det åpne repertoaret (fungerer både med og uten referansedatabase).
 - Angi en {{label:Databases.Settings.ReferenceDatabase}} i [[page:library]] slik at byggeren kan vise trekkfrekvenser og dekning.
 - På et tomt repertoar kan du starte fra en av de innebygde malene i {{label:Board.Practice.Build.Presets}} eller legge inn trekk på brettet.
 - Marker startstillingen for repertoaret med {{label:Board.Practice.Build.SetAsStart}} (eller høyreklikk et trekk i notasjonen og velg {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ Bygg repertoaret ditt i {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.
 I notasjonen på analysebrettet:
 - En sidevariant som bare er ett trekk lang får en stiplet ramme som {{label:Notation.OpenVariation}} slik at du ser uferdige grener. Trykk hurtigtasten {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} for å hoppe til den neste.
 - Når en stilling dukker opp i en annen gren av det samme repertoaret, vises et {{label:Notation.Transposition}}-ikon ved siden av trekket; klikk på det for å hoppe til den andre grenen.
+- Når en importert PGN inneholder et annet svar for din side, legges det importerte trekket til som en variant og merkes som {{label:Notation.ReviewMove}}. Høyreklikk trekket og velg {{label:Menu.MarkAsReviewed}} for å fjerne merket.

@@ -1636,3 +1636,100 @@ test("StrictMode remount under an existing success owner seeds the reference mov
   expect(host.textContent).toContain("70%");
   expect(mocks.computeTreeCoverage).not.toHaveBeenCalled();
 });
+
+test("Import PGN button is rendered both without and with a reference database (empty and non-empty)", async () => {
+  const store = createStore();
+  store.set(tabsAtom, [
+    { name: "Repertoire", value: "tab", type: "analysis", gameOrigin: { kind: "none" } },
+  ]);
+  store.set(activeTabAtom, "tab");
+  store.set(referenceDbAtom, null);
+
+  await act(async () => {
+    root.render(
+      <MantineProvider>
+        <Provider store={store}>
+          <TreeStateProvider id="no-ref-db-import-button" initial={defaultTree()}>
+            <WorkspaceTabScope tabId="tab">
+              <RepertoireInfo />
+            </WorkspaceTabScope>
+          </TreeStateProvider>
+        </Provider>
+      </MantineProvider>,
+    );
+    await Promise.resolve();
+  });
+
+  const findImportBtn = () =>
+    [...host.querySelectorAll("button")].find(
+      (btn) => btn.textContent === "Board.Practice.Build.ImportPgn",
+    );
+
+  expect(host.textContent).toContain("Board.Practice.Build.NoRefDb");
+  expect(findImportBtn()).toBeDefined();
+
+  await act(async () => {
+    findImportBtn()!.click();
+  });
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain("Board.Practice.Build.ImportPgnTitle"),
+  );
+
+  await act(async () => store.set(referenceDbAtom, database));
+  expect(findImportBtn()).toBeDefined();
+});
+
+test("Import PGN button renders on a non-empty tree both with and without reference DB and opens import modal", async () => {
+  const tree = defaultTree();
+  const builder = createTreeStore(undefined, tree);
+  builder.getState().makeMoves({ payload: ["e4", "e5"] });
+  builder.getState().save();
+
+  const store = createStore();
+  store.set(tabsAtom, [
+    { name: "Repertoire", value: "tab", type: "analysis", gameOrigin: { kind: "none" } },
+  ]);
+  store.set(activeTabAtom, "tab");
+  store.set(referenceDbAtom, null);
+
+  await act(async () => {
+    root.render(
+      <MantineProvider>
+        <Provider store={store}>
+          <TreeStateProvider id="non-empty-import-button" initial={builder.getState()}>
+            <WorkspaceTabScope tabId="tab">
+              <RepertoireInfo />
+            </WorkspaceTabScope>
+          </TreeStateProvider>
+        </Provider>
+      </MantineProvider>,
+    );
+    await Promise.resolve();
+  });
+
+  const findImportBtn = () =>
+    [...host.querySelectorAll("button")].find(
+      (btn) => btn.textContent === "Board.Practice.Build.ImportPgn",
+    );
+
+  // Without reference database on non-empty tree.
+  expect(host.textContent).toContain("Board.Practice.Build.NoRefDb");
+  expect(findImportBtn()).toBeDefined();
+
+  // With reference database on non-empty tree, button sits after the move/stats content.
+  await act(async () => store.set(referenceDbAtom, database));
+  const importBtn = findImportBtn();
+  expect(importBtn).toBeDefined();
+  const divider = host.querySelector(".mantine-Divider-root")!;
+  expect(divider).not.toBeNull();
+  expect(
+    divider.compareDocumentPosition(importBtn!) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  await act(async () => {
+    importBtn!.click();
+  });
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain("Board.Practice.Build.ImportPgnTitle"),
+  );
+});

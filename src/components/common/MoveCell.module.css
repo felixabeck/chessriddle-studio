@@ -53,10 +53,10 @@
   pointer-events: none;
 }
 
-/* A main-line move flagged as unsure during a scoresheet photo review. Uses the warning semantic
-   token with a subtle tint and bottom accent so it stays distinct from the current-move gold fill
-   and annotation text colours across Light, Dark and Dim. */
-.cell[data-notation-unsure="true"] {
+/* Moves flagged as unsure (scoresheet review) or differing from an existing repertoire
+   share the subtle warning surface tint across Light, Dark and Dim. */
+.cell[data-notation-unsure="true"],
+.cell[data-notation-review-mark="true"] {
   position: relative;
   background-color: color-mix(in srgb, var(--cf-warning) 14%, var(--move-bg));
 }
@@ -68,6 +68,19 @@
   height: 2px;
   background-color: var(--cf-warning);
   border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Uses ::before for its corner dot so it stays visible alongside ::after's open-variation
+   dashed frame and the current-move gold fill, using DESIGN.md warning tokens. */
+.cell[data-notation-review-mark="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px auto auto;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--cf-radius-full);
+  background-color: var(--cf-warning);
   pointer-events: none;
 }
 

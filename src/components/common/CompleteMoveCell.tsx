@@ -1,6 +1,6 @@
 import { useOwnerTab } from "@/state/tabScope";
 import { Box, Menu, Text } from "@mantine/core";
-import { Merge, ArrowUpRight, Copy, Flag, Grid2x2, Target, Trash2 } from "lucide-react";
+import { Merge, ArrowUpRight, Check, Copy, Flag, Grid2x2, Target, Trash2 } from "lucide-react";
 import equal from "fast-deep-equal";
 import {
   createContext,
@@ -73,6 +73,8 @@ type CompleteMoveCellProps = {
   openVariation?: boolean;
   /** Flagged as unsure during an active scoresheet photo review. */
   unsure?: boolean;
+  /** Imported repertoire conflict move awaiting review. */
+  reviewMark?: boolean;
   isStart?: boolean;
   isCurrentVariation?: boolean;
   root: TreeNode;
@@ -94,6 +96,7 @@ function CompleteMoveCell({
   analysis,
   openVariation,
   unsure,
+  reviewMark,
   isStart: providedIsStart,
   isCurrentVariation: providedIsCurrentVariation,
   root,
@@ -165,6 +168,7 @@ function CompleteMoveCell({
       </Text>
     ) : undefined;
 
+  const hasReviewMark = reviewMark ?? node.reviewMark === true;
   const moveCell = move ? (
     <MoveCell
       move={move}
@@ -181,6 +185,7 @@ function CompleteMoveCell({
       analysis={analysis}
       openVariation={openVariation}
       unsure={unsure}
+      reviewMark={hasReviewMark}
     />
   ) : null;
 
@@ -235,6 +240,7 @@ function CompleteMoveCell({
             analysis={analysis}
             openVariation={openVariation}
             unsure={unsure}
+            reviewMark={hasReviewMark}
             onClose={() => setOpen(false)}
           />
         ) : (
@@ -295,6 +301,7 @@ type MoveMenuActions = {
   toggleDiagram?: () => void;
   markGameEnd?: () => void;
   markStart?: () => void;
+  markReviewed?: () => void;
   promoteToMainline?: () => void;
   promote: () => void;
   copy?: () => void;
@@ -347,6 +354,14 @@ function MoveActionItems({
           onClick={() => onAction(actions.markStart!)}
         >
           {t("Menu.MarkAsStart")}
+        </Menu.Item>
+      )}
+      {actions.markReviewed && (
+        <Menu.Item
+          leftSection={<Check size="0.875rem" />}
+          onClick={() => onAction(actions.markReviewed!)}
+        >
+          {t("Menu.MarkAsReviewed")}
         </Menu.Item>
       )}
       {actions.promoteToMainline && (
@@ -413,6 +428,7 @@ function OpenMoveMenu({
   analysis,
   openVariation,
   unsure,
+  reviewMark,
   onClose,
 }: {
   store: NonNullable<React.ContextType<typeof TreeStateContext>>;
@@ -428,6 +444,7 @@ function OpenMoveMenu({
   analysis?: boolean;
   openVariation?: boolean;
   unsure?: boolean;
+  reviewMark?: boolean;
   onClose: () => void;
 }) {
   const [currentTab] = useOwnerTab();
@@ -457,6 +474,7 @@ function OpenMoveMenu({
           analysis={analysis}
           openVariation={openVariation}
           unsure={unsure}
+          reviewMark={reviewMark}
         />
       </Menu.Target>
       <Menu.Dropdown>
@@ -475,6 +493,7 @@ function OpenMoveMenu({
                   }
                 : undefined,
             markStart: isRepertoireTab(currentTab) ? () => actions.setStart(path) : undefined,
+            markReviewed: reviewMark ? () => actions.clearReviewMark(path) : undefined,
             promoteToMainline: () => actions.promoteToMainline(path),
             promote: () => actions.promoteVariation(path),
             copy: () => actions.copyVariationPgn(path),
@@ -524,6 +543,7 @@ export default memo(CompleteMoveCell, (prev, next) => {
     prev.analysis === next.analysis &&
     prev.openVariation === next.openVariation &&
     prev.unsure === next.unsure &&
+    prev.reviewMark === next.reviewMark &&
     prev.isStart === next.isStart &&
     prev.isCurrentVariation === next.isCurrentVariation
   );

@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Eröffnungsrepertoires
-summary: Repertoire anlegen, Abdeckung anhand einer Referenzdatenbank aufbauen, mit verteilter Wiederholung üben und offene Varianten sowie Zugumstellungen verfolgen.
-source: 62b7ff51627518a7
+summary: Repertoire anlegen, PGNs importieren, Abdeckung anhand einer Referenzdatenbank aufbauen, mit verteilter Wiederholung üben und offene Varianten, Zugumstellungen sowie Prüfmarkierungen verfolgen.
+source: db00ec0860d0fa31
 ---
 
 Repertoires sind PGN-Dateien vom Typ Repertoire, die auf dem Analysebrett den Tab {{label:Board.Tabs.Practice}} hinzufügen.
 
-Um ein Repertoire anzulegen, öffne [[page:new-tab]] und klicke auf {{label:Home.Card.NewRepertoire.Title}} (oder erstelle eine Repertoire-Datei in [[page:library]]). Gib einen {{label:Common.Name}} ein, wähle {{label:Common.WHITE}} oder {{label:Common.BLACK}} und klicke auf {{label:Common.Create}}.
+Um ein Repertoire anzulegen, öffne [[page:new-tab]] und klicke auf {{label:Home.Card.NewRepertoire.Title}} (oder erstelle eine Repertoire-Datei in [[page:library]]). Gib einen {{label:Common.Name}} ein, wähle {{label:Common.WHITE}} oder {{label:Common.BLACK}}, wähle oder füge optional ein PGN unter {{label:Home.Card.NewRepertoire.FromPgn}} ein und klicke auf {{label:Common.Create}}. Du kannst ein PGN auch über {{label:Home.Card.ImportGame.Title}} mit aktiviertem {{label:Import.SaveToCollection}} und dem Dateityp {{label:Files.FileType.Repertoire}} importieren.
 
 Baue dein Repertoire unter {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}} auf:
+- Klicke auf {{label:Board.Practice.Build.ImportPgn}}, um eine PGN-Datei oder eingefügte Partien in das geöffnete Repertoire zusammenzuführen (funktioniert mit oder ohne Referenzdatenbank).
 - Wähle in [[page:library]] eine {{label:Databases.Settings.ReferenceDatabase}}, damit der Builder Zughäufigkeiten und Abdeckung anzeigen kann.
 - Bei einem leeren Repertoire kannst du mit einer der integrierten Vorlagen unter {{label:Board.Practice.Build.Presets}} beginnen oder Züge auf dem Brett eingeben.
 - Lege die Ausgangsstellung deines Repertoires über {{label:Board.Practice.Build.SetAsStart}} fest (oder rechtsklicke einen Zug in der Notation und wähle {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ Baue dein Repertoire unter {{label:Board.Tabs.Practice}} -> {{label:Board.Practi
 In der Notation auf dem Analysebrett:
 - Eine Nebenvariante, die nur einen Zug lang ist, wird mit gestricheltem Rahmen als {{label:Notation.OpenVariation}} markiert, damit du unfertige Zweige erkennst. Drücke das Tastenkürzel {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}}, um zur nächsten zu springen.
 - Taucht eine Stellung in einem anderen Zweig desselben Repertoires auf, erscheint neben dem Zug ein {{label:Notation.Transposition}}-Symbol; klicke darauf, um zum anderen Zweig zu wechseln.
+- Enthält ein importiertes PGN für deine Seite eine abweichende Antwort, wird der importierte Zug als Variante angehängt und als {{label:Notation.ReviewMove}} markiert. Rechtsklicke auf den Zug und wähle {{label:Menu.MarkAsReviewed}}, um die Markierung zu entfernen.

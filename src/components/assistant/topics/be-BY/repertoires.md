@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Дэбютныя рэпертуары
-summary: Стварэнне рэпертуару, пабудова пакрыцця па даведачнай базе, трэніроўка з інтэрвальным паўтарэннем і адсочванне незавершаных варыяцый і транспазіцый.
-source: 62b7ff51627518a7
+summary: Стварэнне рэпертуару, імпарт PGN, пабудова пакрыцця па даведачнай базе, трэніроўка з інтэрвальным паўтарэннем і адсочванне незавершаных варыяцый, транспазіцый і пазнак праверкі.
+source: db00ec0860d0fa31
 ---
 
 Рэпертуары — гэта файлы PGN з тыпам «Рэпертуар», якія дадаюць на дошку аналізу ўкладку {{label:Board.Tabs.Practice}}.
 
-Каб стварыць рэпертуар, адкрыйце [[page:new-tab]] і націсніце {{label:Home.Card.NewRepertoire.Title}} (або стварыце файл рэпертуару ў [[page:library]]). Увядзіце {{label:Common.Name}}, выберыце {{label:Common.WHITE}} або {{label:Common.BLACK}} і націсніце {{label:Common.Create}}.
+Каб стварыць рэпертуар, адкрыйце [[page:new-tab]] і націсніце {{label:Home.Card.NewRepertoire.Title}} (або стварыце файл рэпертуару ў [[page:library]]). Увядзіце {{label:Common.Name}}, выберыце {{label:Common.WHITE}} або {{label:Common.BLACK}}, па жаданні абярыце або ўстаўце PGN у раздзеле {{label:Home.Card.NewRepertoire.FromPgn}} і націсніце {{label:Common.Create}}. Таксама можна імпартаваць PGN праз {{label:Home.Card.ImportGame.Title}}, уключыўшы {{label:Import.SaveToCollection}} і выбраўшы тып {{label:Files.FileType.Repertoire}}.
 
 Будуйце свой рэпертуар у {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}:
+- Націсніце {{label:Board.Practice.Build.ImportPgn}}, каб аб’яднаць файл PGN або ўстаўленыя партыі з адкрытым рэпертуарам (працуе і з даведачнай базай, і без яе).
 - Задайце {{label:Databases.Settings.ReferenceDatabase}} у [[page:library]], каб канструктар паказваў частату хадоў і пакрыццё.
 - У пустым рэпертуары можна пачаць з аднаго з убудаваных шаблонаў {{label:Board.Practice.Build.Presets}} або ўвесці хады на дошцы.
 - Пазначце пачатковую пазіцыю вашага рэпертуару з дапамогай {{label:Board.Practice.Build.SetAsStart}} (або пстрыкніце правай кнопкай па ходзе ў натацыі і выберыце {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ source: 62b7ff51627518a7
 У натацыі на дошцы аналізу:
 - Бакавая лінія даўжынёй усяго ў адзін ход абводзіцца пункцірнай рамкай як {{label:Notation.OpenVariation}}, каб вы бачылі незавершаныя галіны. Націсніце спалучэнне клавіш {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}}, каб перайсці да наступнай такой галіны.
 - Калі пазіцыя сустракаецца ў іншай галіне таго ж рэпертуару, побач з ходам з’яўляецца значок {{label:Notation.Transposition}}; націсніце на яго, каб перайсці да іншай галіны.
+- Калі імпартаваны PGN змяшчае іншы адказ для вашага боку, імпартаваны ход дадаецца як варыянт і пазначаецца як {{label:Notation.ReviewMove}}. Пстрыкніце правай кнопкай па ходзе і выберыце {{label:Menu.MarkAsReviewed}}, каб зняць пазнаку.

@@ -57,6 +57,8 @@ interface MoveCellProps {
   openVariation?: boolean;
   /** Flagged as unsure during an active scoresheet photo review. */
   unsure?: boolean;
+  /** Imported repertoire conflict move awaiting review. */
+  reviewMark?: boolean;
   ref?: RefObject<HTMLButtonElement>;
 }
 
@@ -104,9 +106,11 @@ function MoveCell(props: MoveCellProps) {
   const formattedNags = showAnnotations ? formatNagGlyphs(props.annotations) : "";
   const title = props.unsure
     ? t("Notation.UnsureMove")
-    : props.openVariation
-      ? t("Notation.OpenVariation")
-      : undefined;
+    : props.reviewMark
+      ? t("Notation.ReviewMove")
+      : props.openVariation
+        ? t("Notation.OpenVariation")
+        : undefined;
 
   return (
     <Box
@@ -116,11 +120,14 @@ function MoveCell(props: MoveCellProps) {
       data-notation-analysis={props.analysis ? "true" : undefined}
       data-notation-open-variation={props.openVariation ? "true" : undefined}
       data-notation-unsure={props.unsure ? "true" : undefined}
+      data-notation-review-mark={props.reviewMark ? "true" : undefined}
       title={title}
       aria-label={
         props.unsure
           ? t("Notation.UnsureMoveLabel", { move: `${formattedMove}${formattedNags}` })
-          : undefined
+          : props.reviewMark
+            ? t("Notation.ReviewMoveLabel", { move: `${formattedMove}${formattedNags}` })
+            : undefined
       }
       aria-current={props.isCurrentVariation ? "true" : undefined}
       style={{

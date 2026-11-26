@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Repertuary debiutowe
-summary: Utwórz repertuar, buduj pokrycie względem bazy odniesienia, ćwicz z powtórkami interwałowymi oraz śledź otwarte warianty i transpozycje.
-source: 62b7ff51627518a7
+summary: Utwórz repertuar, importuj pliki PGN, buduj pokrycie względem bazy odniesienia, ćwicz z powtórkami interwałowymi oraz śledź otwarte warianty, transpozycje i oznaczenia do sprawdzenia.
+source: db00ec0860d0fa31
 ---
 
 Repertuary to pliki PGN typu Repertuar, które dodają do tablicy analizy kartę {{label:Board.Tabs.Practice}}.
 
-Aby utworzyć repertuar, otwórz [[page:new-tab]] i kliknij {{label:Home.Card.NewRepertoire.Title}} (albo utwórz plik repertuaru w [[page:library]]). Wpisz {{label:Common.Name}}, wybierz {{label:Common.WHITE}} lub {{label:Common.BLACK}} i kliknij {{label:Common.Create}}.
+Aby utworzyć repertuar, otwórz [[page:new-tab]] i kliknij {{label:Home.Card.NewRepertoire.Title}} (albo utwórz plik repertuaru w [[page:library]]). Wpisz {{label:Common.Name}}, wybierz {{label:Common.WHITE}} lub {{label:Common.BLACK}}, opcjonalnie wskaż lub wklej PGN w sekcji {{label:Home.Card.NewRepertoire.FromPgn}} i kliknij {{label:Common.Create}}. Możesz też zaimportować PGN w oknie {{label:Home.Card.ImportGame.Title}} z zaznaczoną opcją {{label:Import.SaveToCollection}} i typem pliku {{label:Files.FileType.Repertoire}}.
 
 Buduj swój repertuar w {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}:
+- Kliknij {{label:Board.Practice.Build.ImportPgn}}, aby scalić plik PGN lub wklejone partie z otwartym repertuarem (działa z bazą odniesienia lub bez niej).
 - Ustaw {{label:Databases.Settings.ReferenceDatabase}} w [[page:library]], aby kreator mógł pokazywać częstość ruchów i pokrycie.
 - W pustym repertuarze możesz zacząć od jednego z wbudowanych szablonów {{label:Board.Practice.Build.Presets}} lub wprowadzić ruchy na szachownicy.
 - Oznacz pozycję startową swojego repertuaru za pomocą {{label:Board.Practice.Build.SetAsStart}} (lub kliknij prawym przyciskiem ruch w notacji i wybierz {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ Buduj swój repertuar w {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.
 W notacji na tablicy analizy:
 - Odgałęzienie o długości zaledwie jednego ruchu ma przerywaną ramkę jako {{label:Notation.OpenVariation}}, co pomaga wychwycić niedokończone warianty. Naciśnij skrót {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}}, aby przejść do kolejnego.
 - Gdy pozycja występuje w innej gałęzi tego samego repertuaru, obok ruchu pojawia się ikona {{label:Notation.Transposition}}; kliknij ją, aby przeskoczyć do tamtej gałęzi.
+- Gdy zaimportowany plik PGN zawiera inną odpowiedź po twojej stronie, zaimportowany ruch jest dopisywany jako wariant i oznaczany jako {{label:Notation.ReviewMove}}. Kliknij ruch prawym przyciskiem i wybierz {{label:Menu.MarkAsReviewed}}, aby usunąć oznaczenie.

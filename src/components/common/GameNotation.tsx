@@ -854,6 +854,7 @@ function moveProps(
     analysis: move.analysis,
     openVariation: move.openVariation,
     unsure,
+    reviewMark: move.node.reviewMark === true,
   };
 }
 

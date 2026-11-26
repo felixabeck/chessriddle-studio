@@ -212,3 +212,26 @@ test("an unsure move carries data-notation-unsure and announces itself to assist
   expect(cell().getAttribute("title")).toBe("Notation.UnsureMove");
   expect(cell().getAttribute("aria-label")).toBe("Notation.UnsureMoveLabel");
 });
+
+test("a review-marked move carries data-notation-review-mark and its accessible label", async () => {
+  expect(cell().hasAttribute("data-notation-review-mark")).toBe(false);
+  expect(cell().hasAttribute("aria-label")).toBe(false);
+
+  await act(async () =>
+    root.render(
+      <MoveCell
+        annotations={[]}
+        isStart={false}
+        isCurrentVariation={false}
+        move="c5"
+        onClick={onClick}
+        onContextMenu={() => {}}
+        reviewMark
+      />,
+    ),
+  );
+
+  expect(cell().getAttribute("data-notation-review-mark")).toBe("true");
+  expect(cell().getAttribute("title")).toBe("Notation.ReviewMove");
+  expect(cell().getAttribute("aria-label")).toBe("Notation.ReviewMoveLabel");
+});

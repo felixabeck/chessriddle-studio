@@ -15,7 +15,7 @@ import {
   Tooltip,
   UnstyledButton,
 } from "@mantine/core";
-import { Check, ChevronDown, ChevronRight, Flag, Info, Play } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FileText, Flag, Info, Play } from "lucide-react";
 import { useAtomValue } from "jotai";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +42,7 @@ import {
   usePracticeStatisticsContext,
   type CoverageStatus,
 } from "./usePracticeStatistics";
+import { ImportIntoRepertoireModal } from "./ImportIntoRepertoireModal";
 import classes from "./RepertoireInfo.module.css";
 import paneClasses from "@/components/common/PaneTabs.module.css";
 
@@ -256,137 +257,166 @@ function RepertoireInfoView() {
     [root, orientation, coverageResult, startPath, minGames],
   );
 
+  const [importOpen, setImportOpen] = useState(false);
+
   if (!currentTab) return null;
 
-  if (!referenceDb) {
-    return (
-      <Stack h="100%" p="sm" className={`${paneClasses.root} ${paneClasses.content}`}>
-        <TreeStatsBar store={store} />
-        <Alert icon={<Info />} color={selectedReference ? "warning" : undefined}>
-          {selectedReference
-            ? t("Collections.Unavailable", {
-                defaultValue:
-                  "The search index is unavailable. Retry, or select the collection's source file again.",
-              })
-            : t("Board.Practice.Build.NoRefDb")}
-        </Alert>
-      </Stack>
-    );
-  }
+  const importPgnButton = (
+    <Button
+      variant="default"
+      size="xs"
+      leftSection={<FileText size={16} />}
+      onClick={() => setImportOpen(true)}
+    >
+      {t("Board.Practice.Build.ImportPgn")}
+    </Button>
+  );
 
   return (
-    <Stack h="100%" p="sm" gap={0} className={`${paneClasses.root} ${paneClasses.content}`}>
-      {isBeforeStart && (
-        <Paper p="sm" my="sm" withBorder>
-          <Stack gap="xs">
-            <Text fz="xs" c="dimmed">
-              {t("Board.Practice.Build.BeforeStart")}
-            </Text>
-            <Button
-              leftSection={<Play size={16} />}
-              variant="light"
-              size="xs"
-              onClick={() => goToMove(startPath)}
-            >
-              {t("Board.Practice.Build.GoToStart")}
-            </Button>
-          </Stack>
-        </Paper>
-      )}
-
-      {!hasStart && !isEmptyTree && (
-        <Paper p="sm" my="sm" withBorder>
-          <Stack gap="xs">
-            <Text fz="xs" c="dimmed">
-              {t("Board.Practice.MarkStart")}
-            </Text>
-            <Button
-              leftSection={<Flag size={16} />}
-              variant="light"
-              size="xs"
-              onClick={() => setStart(position)}
-            >
-              {t("Board.Practice.Build.SetAsStart")}
-            </Button>
-          </Stack>
-        </Paper>
-      )}
-
-      {isEmptyTree && position.length === 0 && (
-        <Paper p="sm" my="sm" withBorder>
-          <Stack gap="xs">
-            <Text fz="sm" fw={600}>
-              {t("Board.Practice.Build.Presets")}
-            </Text>
-            <Text fz="xs" c="dimmed">
-              {t("Board.Practice.Build.PresetsDesc")}
-            </Text>
-            <Stack gap={4}>
-              {(orientation === "white"
-                ? [
-                    {
-                      name: "Italian Game",
-                      moves: ["e4", "e5", "Nf3", "Nc6", "Bc4"],
-                    },
-                    {
-                      name: "Ruy Lopez",
-                      moves: ["e4", "e5", "Nf3", "Nc6", "Bb5"],
-                    },
-                    { name: "Catalan", moves: ["d4", "Nf6", "c4", "e6", "g3"] },
-                  ]
-                : [
-                    { name: "French Defense", moves: ["e4", "e6", "d4", "d5"] },
-                    { name: "King's Indian", moves: ["d4", "Nf6", "c4", "g6"] },
-                    {
-                      name: "Najdorf",
-                      moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6"],
-                    },
-                  ]
-              ).map((preset) => (
+    <>
+      {!referenceDb ? (
+        <Stack h="100%" p="sm" className={`${paneClasses.root} ${paneClasses.content}`}>
+          <TreeStatsBar store={store} />
+          <Alert icon={<Info />} color={selectedReference ? "warning" : undefined}>
+            {selectedReference
+              ? t("Collections.Unavailable", {
+                  defaultValue:
+                    "The search index is unavailable. Retry, or select the collection's source file again.",
+                })
+              : t("Board.Practice.Build.NoRefDb")}
+          </Alert>
+          {importPgnButton}
+        </Stack>
+      ) : (
+        <Stack h="100%" p="sm" gap={0} className={`${paneClasses.root} ${paneClasses.content}`}>
+          {isBeforeStart && (
+            <Paper p="sm" my="sm" withBorder>
+              <Stack gap="xs">
+                <Text fz="xs" c="dimmed">
+                  {t("Board.Practice.Build.BeforeStart")}
+                </Text>
                 <Button
-                  key={preset.name}
-                  variant="default"
+                  leftSection={<Play size={16} />}
+                  variant="light"
                   size="xs"
-                  justify="start"
-                  onClick={() => {
-                    const result = makeMoves({ payload: preset.moves });
-                    if (!result.success) {
-                      notifyUnlessCancelled(commonErrorRef.current, result.error);
-                      return;
-                    }
-                    setStart(store.getState().position);
-                  }}
+                  onClick={() => goToMove(startPath)}
                 >
-                  {preset.name}
+                  {t("Board.Practice.Build.GoToStart")}
                 </Button>
-              ))}
-            </Stack>
-          </Stack>
-        </Paper>
+              </Stack>
+            </Paper>
+          )}
+
+          {!hasStart && !isEmptyTree && (
+            <Paper p="sm" my="sm" withBorder>
+              <Stack gap="xs">
+                <Text fz="xs" c="dimmed">
+                  {t("Board.Practice.MarkStart")}
+                </Text>
+                <Button
+                  leftSection={<Flag size={16} />}
+                  variant="light"
+                  size="xs"
+                  onClick={() => setStart(position)}
+                >
+                  {t("Board.Practice.Build.SetAsStart")}
+                </Button>
+              </Stack>
+            </Paper>
+          )}
+
+          {isEmptyTree && position.length === 0 && (
+            <Paper p="sm" my="sm" withBorder>
+              <Stack gap="xs">
+                <Text fz="sm" fw={600}>
+                  {t("Board.Practice.Build.Presets")}
+                </Text>
+                <Text fz="xs" c="dimmed">
+                  {t("Board.Practice.Build.PresetsDesc")}
+                </Text>
+                <Stack gap={4}>
+                  {(orientation === "white"
+                    ? [
+                        {
+                          name: "Italian Game",
+                          moves: ["e4", "e5", "Nf3", "Nc6", "Bc4"],
+                        },
+                        {
+                          name: "Ruy Lopez",
+                          moves: ["e4", "e5", "Nf3", "Nc6", "Bb5"],
+                        },
+                        { name: "Catalan", moves: ["d4", "Nf6", "c4", "e6", "g3"] },
+                      ]
+                    : [
+                        { name: "French Defense", moves: ["e4", "e6", "d4", "d5"] },
+                        { name: "King's Indian", moves: ["d4", "Nf6", "c4", "g6"] },
+                        {
+                          name: "Najdorf",
+                          moves: [
+                            "e4",
+                            "c5",
+                            "Nf3",
+                            "d6",
+                            "d4",
+                            "cxd4",
+                            "Nxd4",
+                            "Nf6",
+                            "Nc3",
+                            "a6",
+                          ],
+                        },
+                      ]
+                  ).map((preset) => (
+                    <Button
+                      key={preset.name}
+                      variant="default"
+                      size="xs"
+                      justify="start"
+                      onClick={() => {
+                        const result = makeMoves({ payload: preset.moves });
+                        if (!result.success) {
+                          notifyUnlessCancelled(commonErrorRef.current, result.error);
+                          return;
+                        }
+                        setStart(store.getState().position);
+                      }}
+                    >
+                      {preset.name}
+                    </Button>
+                  ))}
+                </Stack>
+              </Stack>
+            </Paper>
+          )}
+
+          {isEmptyTree && <Box my="xs">{importPgnButton}</Box>}
+
+          <MovesView
+            isUserTurn={isUserTurn}
+            currentNode={currentNode}
+            positionMoves={positionMoves}
+            coverageMap={coverageMap}
+            coverageStatus={coverageStatus}
+            onRetryCoverage={retryCoverage}
+            root={root}
+            nextGap={nextGap}
+            biggestGap={biggestGap}
+            goToMove={goToMove}
+            onMoveClick={handleMoveClick}
+            t={t}
+            minGames={minGames}
+            boardStateMap={boardStateMap}
+            nodeToPath={nodeToPath}
+            startPath={startPath}
+          />
+
+          <Divider pb="sm" />
+          <TreeStatsBar store={store} />
+          {!isEmptyTree && <Box mt="xs">{importPgnButton}</Box>}
+        </Stack>
       )}
-
-      <MovesView
-        isUserTurn={isUserTurn}
-        currentNode={currentNode}
-        positionMoves={positionMoves}
-        coverageMap={coverageMap}
-        coverageStatus={coverageStatus}
-        onRetryCoverage={retryCoverage}
-        root={root}
-        nextGap={nextGap}
-        biggestGap={biggestGap}
-        goToMove={goToMove}
-        onMoveClick={handleMoveClick}
-        t={t}
-        minGames={minGames}
-        boardStateMap={boardStateMap}
-        nodeToPath={nodeToPath}
-        startPath={startPath}
-      />
-
-      <Divider pb="sm" />
-      <TreeStatsBar store={store} />
-    </Stack>
+      <ImportIntoRepertoireModal opened={importOpen} onClose={() => setImportOpen(false)} />
+    </>
   );
 }
 

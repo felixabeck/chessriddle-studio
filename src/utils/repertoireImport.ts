@@ -1,6 +1,7 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
+import { match } from "ts-pattern";
 import type { FileMetadata } from "@/components/files/file";
 import { errorUnlessCancelled, isPgnContentError, normalizeError } from "@/platform/errors";
 import { cancellationError, tauri } from "@/platform/tauri";
@@ -37,6 +38,7 @@ export type ReadRepertoireSourceResult = {
 
 export type RepertoireImportErrorCode =
     | "too-many-games"
+    | "too-large"
     | "file-changed"
     | "no-usable-games"
     | "io";
@@ -77,15 +79,39 @@ function parseRepertoireGameTokens(tokens: LexedTokens): TreeState | null {
     return tree;
 }
 
+function countTreeNodes(root: TreeNode): number {
+    let count = 0;
+    for (const _node of treeIterator(root)) {
+        count++;
+    }
+    return count;
+}
+
+function addParsedGame(games: TreeState[], parsed: TreeState, runningNodes: number): number {
+    const nextNodes = runningNodes + countTreeNodes(parsed.root);
+    if (nextNodes > MAX_TREE_NODES) {
+        throw new RepertoireImportError(
+            "too-large",
+            `The imported games exceed the maximum size of ${MAX_TREE_NODES} positions.`,
+        );
+    }
+    games.push(parsed);
+    return nextNodes;
+}
+
+function fileChangedError(cause: unknown): RepertoireImportError {
+    return new RepertoireImportError(
+        "file-changed",
+        "The PGN file changed while being read.",
+        cause,
+    );
+}
+
 function classifySourceError(error: unknown): never {
     if (errorUnlessCancelled(error) === null) throw error;
     if (error instanceof RepertoireImportError) throw error;
     if (error instanceof PgnPageError) {
-        throw new RepertoireImportError(
-            "file-changed",
-            "The PGN file changed while being read.",
-            error,
-        );
+        throw fileChangedError(error);
     }
     const normalized = normalizeError(error);
     throw new RepertoireImportError("io", normalized.message, error);
@@ -95,9 +121,9 @@ function classifySourceError(error: unknown): never {
  * Reads every usable game from a PGN file or pasted PGN text for repertoire import.
  *
  * Cancellation propagates as a cancellation error. Whole-source failures (I/O, permission,
- * missing or changed file, game cap exceeded, whole-text lexer refusal, or zero usable games)
- * throw `RepertoireImportError`. Per-game failures (omitted, unlexable, illegal moves, or
- * illegal root FEN) increment `skipped` without aborting the batch.
+ * missing or changed file, game cap or size limit exceeded (`too-large`), whole-text lexer
+ * refusal, or zero usable games) throw `RepertoireImportError`. Per-game failures (omitted,
+ * unlexable, illegal moves, or illegal root FEN) increment `skipped` without aborting the batch.
  */
 export async function readRepertoireSource(
     source: RepertoireImportSource,
@@ -108,6 +134,7 @@ export async function readRepertoireSource(
 
     const games: TreeState[] = [];
     let skipped = 0;
+    let runningNodes = 0;
 
     if (source.kind === "text") {
         let outcome;
@@ -131,20 +158,25 @@ export async function readRepertoireSource(
 
         for (const entry of outcome.games) {
             if (signal?.aborted) throw cancellationError();
-            if (entry.status === "failed") {
-                skipped++;
-                continue;
-            }
-            const parsed = parseRepertoireGameTokens(entry.tokens);
+            const parsed = match(entry)
+                .with({ status: "ok" }, ({ tokens }) => parseRepertoireGameTokens(tokens))
+                .with({ status: "failed" }, () => null)
+                .exhaustive();
             if (!parsed) {
                 skipped++;
                 continue;
             }
-            games.push(parsed);
+            runningNodes = addParsedGame(games, parsed, runningNodes);
         }
     } else {
+        let expectedRevision: string;
         let totalGames: number;
         try {
+            expectedRevision = await tauri.fileRevision(
+                source.file.handle,
+                signal ? { signal } : undefined,
+            );
+            if (signal?.aborted) throw cancellationError();
             totalGames = await tauri.countPgnGames(
                 source.file.handle,
                 signal ? { signal } : undefined,
@@ -167,6 +199,7 @@ export async function readRepertoireSource(
                 totalGames,
                 pageSize: READ_GAMES_PAGE_SIZE,
                 signal,
+                expectedRevision,
             })) {
                 for (const game of page) {
                     if (signal?.aborted) throw cancellationError();
@@ -191,10 +224,18 @@ export async function readRepertoireSource(
                         skipped++;
                         continue;
                     }
-                    games.push(parsed);
+                    runningNodes = addParsedGame(games, parsed, runningNodes);
                 }
             }
         } catch (error) {
+            const category = normalizeError(error).backendCategory;
+            if (
+                category === "invalid-input" ||
+                category === "stale-game" ||
+                category === "conflict"
+            ) {
+                throw fileChangedError(error);
+            }
             classifySourceError(error);
         }
     }

@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: 오프닝 레퍼토리
-summary: 레퍼토리 만들기, 참조 데이터베이스를 기준으로 수순 구축하기, 간격 반복 학습으로 연습하기, 미완성 변형 수순 및 전위 추적하기.
-source: 62b7ff51627518a7
+summary: 레퍼토리 만들기, PGN 가져오기, 참조 데이터베이스를 기준으로 수순 구축하기, 간격 반복 학습으로 연습하기, 미완성 변형 수순·전위·검토 표시 추적하기.
+source: db00ec0860d0fa31
 ---
 
 레퍼토리는 분석 보드에 {{label:Board.Tabs.Practice}} 탭을 추가하는 레퍼토리 유형의 PGN 파일입니다.
 
-레퍼토리를 만들려면 [[page:new-tab]]을 열고 {{label:Home.Card.NewRepertoire.Title}}을(를) 클릭하거나([[page:library]]에서 레퍼토리 파일을 만들 수도 있음) {{label:Common.Name}}을 입력하고 {{label:Common.WHITE}} 또는 {{label:Common.BLACK}}을 선택한 뒤 {{label:Common.Create}}을(를) 클릭하세요.
+레퍼토리를 만들려면 [[page:new-tab]]을 열고 {{label:Home.Card.NewRepertoire.Title}}을(를) 클릭하거나([[page:library]]에서 레퍼토리 파일을 만들 수도 있음) {{label:Common.Name}}을 입력하고 {{label:Common.WHITE}} 또는 {{label:Common.BLACK}}을 선택한 뒤 선택적으로 {{label:Home.Card.NewRepertoire.FromPgn}}에서 PGN을 고르거나 붙여 넣고 {{label:Common.Create}}을(를) 클릭하세요. {{label:Import.SaveToCollection}}을 켜고 파일 유형을 {{label:Files.FileType.Repertoire}}로 설정해 {{label:Home.Card.ImportGame.Title}}에서 PGN을 가져올 수도 있습니다.
 
 {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}에서 레퍼토리를 구축합니다:
+- 열려 있는 레퍼토리에 PGN 파일이나 붙여 넣은 대국을 병합하려면 {{label:Board.Practice.Build.ImportPgn}}을(를) 클릭하세요(참조 데이터베이스 유무와 관계없이 동작합니다).
 - 빌더가 수 빈도와 커버리지를 표시할 수 있도록 [[page:library]]에서 {{label:Databases.Settings.ReferenceDatabase}}을(를) 설정하세요.
 - 비어 있는 레퍼토리에서는 내장된 {{label:Board.Practice.Build.Presets}} 중 하나로 시작하거나 보드에 직접 수를 입력할 수 있습니다.
 - {{label:Board.Practice.Build.SetAsStart}}을(를) 사용해 레퍼토리의 시작 포지션을 지정하세요(또는 기보의 수를 마우스 오른쪽 버튼으로 클릭하고 {{label:Menu.MarkAsStart}} 선택).
@@ -25,3 +26,4 @@ source: 62b7ff51627518a7
 분석 보드의 기보에서:
 - 한 수만 이어진 곁가지 수순은 미완성 분기를 쉽게 찾을 수 있도록 {{label:Notation.OpenVariation}}으로 점선 테두리가 표시됩니다. 다음 미완성 수순으로 이동하려면 {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} 단축키를 누르세요.
 - 같은 레퍼토리의 다른 분기에도 나타나는 포지션이면 수 옆에 {{label:Notation.Transposition}} 아이콘이 표시되며, 클릭하면 다른 분기로 이동합니다.
+- 가져온 PGN에 내 차례의 다른 응수가 포함되어 있으면 가져온 수가 변형 수순으로 추가되고 {{label:Notation.ReviewMove}}로 표시됩니다. 해당 수를 마우스 오른쪽 버튼으로 클릭하고 {{label:Menu.MarkAsReviewed}}를 선택하면 표시가 지워집니다.

@@ -1,0 +1,10 @@
+.cardGroupFieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.cardGroupFieldset:disabled {
+  opacity: 0.5;
+}

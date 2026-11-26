@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Açılış repertuvarları
-summary: Repertuvar oluşturma, referans veritabanına göre kapsam kurma, aralıklı tekrarla çalışma ve açık varyasyonları ve transpozisyonları takip etme.
-source: 62b7ff51627518a7
+summary: Repertuvar oluşturma, PGN içe aktarma, referans veritabanına göre kapsam kurma, aralıklı tekrarla çalışma ve açık varyasyonları, transpozisyonları ve inceleme işaretlerini takip etme.
+source: db00ec0860d0fa31
 ---
 
 Repertuvarlar, analiz tahtasına {{label:Board.Tabs.Practice}} sekmesini ekleyen Repertuvar türündeki PGN dosyalarıdır.
 
-Repertuvar oluşturmak için [[page:new-tab]] sayfasını açın ve {{label:Home.Card.NewRepertoire.Title}} öğesine tıklayın (veya [[page:library]] içinde bir repertuvar dosyası oluşturun). Bir {{label:Common.Name}} girin, {{label:Common.WHITE}} veya {{label:Common.BLACK}} seçin ve {{label:Common.Create}} düğmesine tıklayın.
+Repertuvar oluşturmak için [[page:new-tab]] sayfasını açın ve {{label:Home.Card.NewRepertoire.Title}} öğesine tıklayın (veya [[page:library]] içinde bir repertuvar dosyası oluşturun). Bir {{label:Common.Name}} girin, {{label:Common.WHITE}} veya {{label:Common.BLACK}} seçin, isteğe bağlı olarak {{label:Home.Card.NewRepertoire.FromPgn}} altında bir PGN seçin ya da yapıştırın ve {{label:Common.Create}} düğmesine tıklayın. Ayrıca {{label:Import.SaveToCollection}} açık ve dosya türü {{label:Files.FileType.Repertoire}} olacak şekilde {{label:Home.Card.ImportGame.Title}} üzerinden de PGN içe aktarabilirsiniz.
 
 Repertuvarınızı {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}} altında oluşturun:
+- Açık repertuvara bir PGN dosyasını veya yapıştırılan oyunları birleştirmek için {{label:Board.Practice.Build.ImportPgn}} düğmesine tıklayın (referans veritabanı olsa da olmasa da çalışır).
 - Oluşturucunun hamle sıklıklarını ve kapsamı gösterebilmesi için [[page:library]] içinde bir {{label:Databases.Settings.ReferenceDatabase}} ayarlayın.
 - Boş bir repertuvarda yerleşik {{label:Board.Practice.Build.Presets}} şablonlarından biriyle başlayabilir veya hamleleri tahtaya girebilirsiniz.
 - {{label:Board.Practice.Build.SetAsStart}} düğmesini kullanarak (veya notasyondaki bir hamleye sağ tıklayıp {{label:Menu.MarkAsStart}} seçerek) repertuvarınızın başlangıç konumunu işaretleyin.
@@ -25,3 +26,4 @@ Repertuvarınızı {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Train
 Analiz tahtasındaki notasyonda:
 - Yalnızca bir hamle uzunluğundaki bir yan varyant, tamamlanmamış dalları fark edebilmeniz için {{label:Notation.OpenVariation}} olarak kesikli çerçeveyle gösterilir. Bir sonrakine atlamak için {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} kısayoluna basın.
 - Bir konum aynı repertuvarın başka bir dalında da ortaya çıktığında hamlenin yanında bir {{label:Notation.Transposition}} simgesi görünür; diğer dala atlamak için bu simgeye tıklayın.
+- İçe aktarılan bir PGN kendi tarafınız için farklı bir yanıt içerdiğinde, içe aktarılan hamle bir varyant olarak eklenir ve {{label:Notation.ReviewMove}} şeklinde işaretlenir. İşareti kaldırmak için hamleye sağ tıklayıp {{label:Menu.MarkAsReviewed}} seçeneğini seçin.

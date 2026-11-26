@@ -1,36 +1,21 @@
-import {
-  Button,
-  Checkbox,
-  Divider,
-  FileInput,
-  Group,
-  SimpleGrid,
-  Stack,
-  Text,
-  Textarea,
-  TextInput,
-} from "@mantine/core";
+import { Button, Checkbox, Group, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { type FenError, makeFen, parseFen } from "chessops/fen";
 import { useAtomValue, useStore } from "jotai";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { workspaceErrorMessage } from "../files/workspaceError";
 import { match } from "ts-pattern";
-import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
+import { notifyUnlessCancelled } from "@/components/files/notifyError";
+import { useAbortableAction } from "@/hooks/useAbortableAction";
+import { useSingleFlight } from "@/hooks/useSingleFlight";
 import { addRecentFileAtom } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coachAvailability";
 import { beginFileOpen } from "@/state/fileStructureChange";
 import { parsePGN } from "@/utils/chess";
 import { getChesscomGame } from "@/utils/chess.com/api";
 import { translateChessopsError } from "@/utils/chessops";
-import {
-  createFile,
-  ensureFileWorkspace,
-  getFileGameName,
-  loadFileGame,
-  pickPgnFile,
-} from "@/utils/files";
+import { createFile, ensureFileWorkspace, getFileGameName, loadFileGame } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import { getLichessGame } from "@/utils/lichess/api";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
@@ -40,6 +25,24 @@ import AppModal from "../common/AppModal";
 import GenericCard from "../common/GenericCard";
 import { RetryableLazyPanel } from "../common/PanelErrorBoundary";
 import { FILE_TYPES, type FileMetadata, type FileType } from "../files/file";
+import { createRepertoireFromPgn, submitCreateRepertoireFromPgn } from "./createRepertoireFromPgn";
+import classes from "./ImportModal.module.css";
+import { PgnSourceControl } from "./PgnSourceControl";
+import { RepertoireColorControl } from "./RepertoireColorControl";
+
+function CardGroupFieldset({
+  disabled,
+  children,
+}: {
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset disabled={disabled} className={classes.cardGroupFieldset}>
+      {children}
+    </fieldset>
+  );
+}
 
 /** Testable seam for the "From photo" pane's lazy chunk loader. */
 export const importPhotoPaneLoader = {
@@ -80,9 +83,11 @@ export default function ImportModal({
   const [link, setLink] = useState("");
   const [importType, setImportType] = useState<ImportType>("PGN");
   const [filetype, setFiletype] = useState<FileType>("game");
+  const [color, setColor] = useState<"white" | "black">("white");
   const [inFlightCount, setInFlightCount] = useState(0);
+  const { pending: repertoirePending, run: runRepertoireFlight } = useSingleFlight();
   const [photoReading, setPhotoReading] = useState(false);
-  const loading = inFlightCount > 0;
+  const loading = inFlightCount > 0 || repertoirePending;
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const [fenError, setFenError] = useState<FenError | null>(null);
 
@@ -97,17 +102,11 @@ export default function ImportModal({
   const [error, setError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const store = useStore();
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const { canCancel, abort, isMounted, runAbortable } = useAbortableAction(openModal);
 
   function reportImportError(cause: unknown, fieldError = false) {
     // A tab switch can unmount the owner's page while an import is pending.
-    if (mountedRef.current) {
+    if (isMounted()) {
       const message = workspaceErrorMessage(
         cause,
         cause instanceof Error ? cause.message : String(cause),
@@ -127,15 +126,57 @@ export default function ImportModal({
   ): ReplaceNewTabResult | undefined {
     try {
       return replaceNewTab({ store, ownerId: submittingOwnerId, tab, tree });
-    } catch (error) {
-      notifyUnlessCancelled(t("Common.Error"), error);
+    } catch (err) {
+      notifyUnlessCancelled(t("Common.Error"), err);
       return undefined;
     }
   }
 
   async function handleSubmit() {
     const submittingOwnerId = ownerId;
+    const isRepertoireImport = importType === "PGN" && save && filetype === "repertoire";
+    if (isRepertoireImport) {
+      const trimmedName = filename.trim();
+      if (!trimmedName) {
+        setError(t("Common.RequireName"));
+        return;
+      }
+      if (!file && pgn.trim() === "") return;
+      await runRepertoireFlight(async () => {
+        setError("");
+        setSubmitError("");
+        await submitCreateRepertoireFromPgn({
+          runAbortable,
+          isMounted,
+          t,
+          request: (signal) =>
+            createRepertoireFromPgn({
+              name: trimmedName,
+              color,
+              source: file ? { kind: "file", file } : { kind: "text", pgn },
+              listingCache,
+              setTabs,
+              t,
+              signal,
+              ownerId: submittingOwnerId,
+              store,
+            }),
+          onCreateRefusal: setError,
+          onSourceRefusal: setSubmitError,
+          onComplete: () => {
+            setFile(null);
+            setPgn("");
+            setFilename("");
+            setColor("white");
+            setOpenModal(false);
+          },
+        });
+      });
+      return;
+    }
+
     setInFlightCount((count) => count + 1);
+    setError("");
     setSubmitError("");
     try {
       if (importType === "PGN") {
@@ -234,13 +275,13 @@ export default function ImportModal({
           return;
         }
         const host = gameUrlHost(link);
-        let pgn: string;
+        let linkPgn: string;
         if (host === "chess.com") {
           const res = await getChesscomGame(link);
           if (res === null) {
             return;
           }
-          pgn = res;
+          linkPgn = res;
         } else if (host === "lichess") {
           const excludedPathParts = ["game", "export", "white", "black"];
           const gameId = new URL(link).pathname
@@ -250,13 +291,13 @@ export default function ImportModal({
             setSubmitError(t("Import.UnsupportedGameUrl"));
             return;
           }
-          pgn = await getLichessGame(gameId);
+          linkPgn = await getLichessGame(gameId);
         } else {
           setSubmitError(t("Import.UnsupportedGameUrl"));
           return;
         }
 
-        const tree = await parsePGN(pgn);
+        const tree = await parsePGN(linkPgn);
         replaceImportedTab(
           submittingOwnerId,
           {
@@ -287,47 +328,34 @@ export default function ImportModal({
     } catch (e) {
       reportImportError(e);
     } finally {
-      setInFlightCount((count) => count - 1);
+      if (isMounted()) setInFlightCount((count) => count - 1);
     }
   }
 
   const Input = match(importType)
     .with("PGN", () => (
       <Stack>
-        <div>
-          <FileInput
-            label={t("Common.PGNFile")}
-            description={t("Import.PGN.ClickToSelect")}
-            onClick={() => {
-              void runUnlessCancelled(t("Common.Error"), async () => {
-                const selected = await pickPgnFile();
-                setFile(selected);
-                setFilename(selected?.name || "");
-              });
-            }}
-            value={file ? new File([new Blob()], file.name) : null}
-            onChange={(e) => {
-              if (e === null) {
-                setFile(null);
-                setFilename("");
-              }
-            }}
-            disabled={pgn !== ""}
-          />
-          <Divider pt="xs" label={t("Import.Or")} labelPosition="center" />
-          <Textarea
-            value={pgn}
-            disabled={file !== null}
-            onChange={(event) => setPgn(event.currentTarget.value)}
-            label={t("Common.PGNGame")}
-            data-autofocus
-            rows={8}
-          />
-        </div>
+        <PgnSourceControl
+          file={file}
+          onFileChange={(selected) => {
+            setFile(selected);
+            setFilename(selected?.name || "");
+            if (submitError) setSubmitError("");
+          }}
+          pgn={pgn}
+          onPgnChange={(value) => {
+            setPgn(value);
+            if (submitError) setSubmitError("");
+          }}
+          disabled={loading}
+          autoFocusTextarea
+          rows={8}
+        />
 
         <Checkbox
           label={t("Import.SaveToCollection")}
           checked={save}
+          disabled={loading}
           onChange={(e) => setSave(e.currentTarget.checked)}
         />
 
@@ -337,8 +365,12 @@ export default function ImportModal({
               label={t("Common.Name")}
               placeholder={t("Common.EnterFileName")}
               required
+              disabled={loading}
               value={filename}
-              onChange={(e) => setFilename(e.currentTarget.value)}
+              onChange={(e) => {
+                setFilename(e.currentTarget.value);
+                if (error) setError("");
+              }}
               error={error}
             />
 
@@ -346,17 +378,29 @@ export default function ImportModal({
               {t("Files.FileType")}
             </Text>
 
-            <SimpleGrid cols={3}>
-              {FILE_TYPES.map((v) => (
-                <GenericCard
-                  key={v.value}
-                  id={v.value}
-                  isSelected={filetype === v.value}
-                  setSelected={setFiletype}
-                  Header={<Text ta="center">{t(v.translationKey)}</Text>}
-                />
-              ))}
-            </SimpleGrid>
+            <CardGroupFieldset disabled={loading}>
+              <SimpleGrid cols={3} spacing="xs">
+                {FILE_TYPES.map((v) => (
+                  <GenericCard
+                    key={v.value}
+                    id={v.value}
+                    isSelected={filetype === v.value}
+                    setSelected={(value) => {
+                      if (!loading) setFiletype(value);
+                    }}
+                    Header={
+                      <Text ta="center" size="sm">
+                        {t(v.translationKey)}
+                      </Text>
+                    }
+                  />
+                ))}
+              </SimpleGrid>
+            </CardGroupFieldset>
+
+            {filetype === "repertoire" && (
+              <RepertoireColorControl value={color} onChange={setColor} disabled={loading} />
+            )}
           </>
         )}
       </Stack>
@@ -368,7 +412,7 @@ export default function ImportModal({
         label={t("Import.GameURL")}
         data-autofocus
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleSubmit();
+          if (e.key === "Enter") void handleSubmit();
         }}
       />
     ))
@@ -380,7 +424,7 @@ export default function ImportModal({
         label="FEN"
         data-autofocus
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleSubmit();
+          if (e.key === "Enter") void handleSubmit();
         }}
       />
     ))
@@ -402,7 +446,7 @@ export default function ImportModal({
     .exhaustive();
 
   const disabled = match(importType)
-    .with("PGN", () => !pgn && !file)
+    .with("PGN", () => pgn.trim() === "" && !file)
     .with("Link", () => !link)
     .with("FEN", () => !fen)
     .with("Photo", () => true)
@@ -411,41 +455,35 @@ export default function ImportModal({
   return (
     <AppModal
       opened={openModal}
-      onClose={() => setOpenModal(false)}
+      onClose={() => {
+        if (loading || photoReading) return;
+        setOpenModal(false);
+      }}
       title={t("Home.Card.ImportGame.Title")}
       pending={loading || photoReading}
     >
-      <Group grow mb="sm">
-        <GenericCard
-          id={"PGN"}
-          isSelected={importType === "PGN"}
-          setSelected={setImportType}
-          Header={<Text ta="center">PGN</Text>}
-        />
-
-        <GenericCard
-          id={"Link"}
-          isSelected={importType === "Link"}
-          setSelected={setImportType}
-          Header={<Text ta="center">{t("Import.Online")}</Text>}
-        />
-
-        <GenericCard
-          id={"FEN"}
-          isSelected={importType === "FEN"}
-          setSelected={setImportType}
-          Header={<Text ta="center">FEN</Text>}
-        />
-
-        {coachEnabled && (
-          <GenericCard
-            id={"Photo"}
-            isSelected={importType === "Photo"}
-            setSelected={setImportType}
-            Header={<Text ta="center">{t("Import.FromPhoto")}</Text>}
-          />
-        )}
-      </Group>
+      <CardGroupFieldset disabled={loading}>
+        <Group grow mb="sm">
+          {(
+            [
+              { id: "PGN", label: "PGN" },
+              { id: "Link", label: t("Import.Online") },
+              { id: "FEN", label: "FEN" },
+              ...(coachEnabled ? [{ id: "Photo" as const, label: t("Import.FromPhoto") }] : []),
+            ] satisfies Array<{ id: ImportType; label: string }>
+          ).map((mode) => (
+            <GenericCard<ImportType>
+              key={mode.id}
+              id={mode.id}
+              isSelected={importType === mode.id}
+              setSelected={(value) => {
+                if (!loading) setImportType(value);
+              }}
+              Header={<Text ta="center">{mode.label}</Text>}
+            />
+          ))}
+        </Group>
+      </CardGroupFieldset>
 
       {Input}
 
@@ -456,8 +494,8 @@ export default function ImportModal({
             mt="md"
             radius="md"
             loading={loading}
-            disabled={disabled}
-            onClick={handleSubmit}
+            disabled={loading || disabled}
+            onClick={() => void handleSubmit()}
           >
             {loading ? t("Import.Importing") : t("Home.Card.ImportGame.Button")}
           </Button>
@@ -466,6 +504,12 @@ export default function ImportModal({
             <Text c="danger" size="sm" mt="xs">
               {submitError}
             </Text>
+          )}
+
+          {loading && canCancel && (
+            <Button type="button" variant="default" fullWidth mt="xs" onClick={abort}>
+              {t("Common.Cancel")}
+            </Button>
           )}
         </>
       )}

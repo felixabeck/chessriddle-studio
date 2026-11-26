@@ -1,15 +1,16 @@
 ---
 id: repertoires
 title: Repertori di apertura
-summary: Crea un repertorio, costruisci la copertura rispetto a un database di riferimento, allenati con la ripetizione dilazionata e monitora varianti aperte e trasposizioni.
-source: 62b7ff51627518a7
+summary: Crea un repertorio, importa file PGN, costruisci la copertura rispetto a un database di riferimento, allenati con la ripetizione dilazionata e monitora varianti aperte, trasposizioni e segni di revisione.
+source: db00ec0860d0fa31
 ---
 
 I repertori sono file PGN di tipo Repertorio che aggiungono la scheda {{label:Board.Tabs.Practice}} alla scacchiera di analisi.
 
-Per creare un repertorio, apri [[page:new-tab]] e fai clic su {{label:Home.Card.NewRepertoire.Title}} (oppure crea un file di repertorio in [[page:library]]). Inserisci un {{label:Common.Name}}, scegli {{label:Common.WHITE}} o {{label:Common.BLACK}} e fai clic su {{label:Common.Create}}.
+Per creare un repertorio, apri [[page:new-tab]] e fai clic su {{label:Home.Card.NewRepertoire.Title}} (oppure crea un file di repertorio in [[page:library]]). Inserisci un {{label:Common.Name}}, scegli {{label:Common.WHITE}} o {{label:Common.BLACK}}, seleziona o incolla facoltativamente un PGN sotto {{label:Home.Card.NewRepertoire.FromPgn}} e fai clic su {{label:Common.Create}}. Puoi anche importare un PGN da {{label:Home.Card.ImportGame.Title}} attivando {{label:Import.SaveToCollection}} con tipo file {{label:Files.FileType.Repertoire}}.
 
 Costruisci il tuo repertorio in {{label:Board.Tabs.Practice}} -> {{label:Board.Practice.Build}}:
+- Fai clic su {{label:Board.Practice.Build.ImportPgn}} per unire un file PGN o partite incollate nel repertorio aperto (funziona con o senza database di riferimento).
 - Imposta un {{label:Databases.Settings.ReferenceDatabase}} in [[page:library]] così il costruttore può mostrare frequenze di mossa e copertura.
 - Su un repertorio vuoto puoi partire da uno dei modelli integrati di {{label:Board.Practice.Build.Presets}} oppure inserire mosse sulla scacchiera.
 - Imposta la posizione iniziale del repertorio usando {{label:Board.Practice.Build.SetAsStart}} (oppure fai clic destro su una mossa nella notazione e scegli {{label:Menu.MarkAsStart}}).
@@ -25,3 +26,4 @@ Allenati con il repertorio in {{label:Board.Tabs.Practice}} -> {{label:Board.Pra
 Nella notazione sulla scacchiera di analisi:
 - Una linea secondaria lunga una sola mossa viene incorniciata con bordo tratteggiato come {{label:Notation.OpenVariation}} per aiutarti a individuare rami incompleti. Premi la scorciatoia {{label:Settings.Keybinds.Actions.NEXT_OPEN_VARIATION}} per passare alla successiva.
 - Quando una posizione compare in un altro ramo dello stesso repertorio, accanto alla mossa compare l’icona {{label:Notation.Transposition}}; facci clic sopra per passare all’altro ramo.
+- Quando un PGN importato contiene una risposta diversa per il tuo colore, la mossa importata viene aggiunta come variante e contrassegnata come {{label:Notation.ReviewMove}}. Fai clic destro sulla mossa e scegli {{label:Menu.MarkAsReviewed}} per rimuovere il contrassegno.

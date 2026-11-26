@@ -82,6 +82,7 @@ vi.mock("lucide-react", async (importOriginal) => {
     ...(await importOriginal<typeof import("lucide-react")>()),
     Merge: Icon,
     ArrowUpRight: Icon,
+    Check: Icon,
     Copy: Icon,
     Flag: Icon,
     Grid2x2: Icon,
@@ -1787,6 +1788,112 @@ test("forwards unsure to MoveCell (including inside OpenMoveMenu) and re-renders
 
     await renderWith(false);
     expect(host.querySelector('button[data-notation-unsure="true"]')).toBeNull();
+  } finally {
+    moveCell.useReal = false;
+  }
+});
+
+test("offers Mark as reviewed only when reviewMark is set, clears it in one undo step, and forwards the marker", async () => {
+  const tree = defaultTree();
+  const main = createNode({
+    fen: "main b - - 0 1",
+    move: parseUci("e2e4")!,
+    san: "e4",
+    halfMoves: 1,
+  });
+  const conflict = createNode({
+    fen: "conflict b - - 0 1",
+    move: parseUci("d2d4")!,
+    san: "d4",
+    halfMoves: 1,
+  });
+  conflict.reviewMark = true;
+  tree.root.children.push(main, conflict);
+  const store = createTreeStore(undefined, tree);
+  store.setState({ ...store.getState(), dirty: false });
+
+  moveCell.useReal = true;
+  try {
+    const renderBoth = () =>
+      act(async () => {
+        const rootNode = store.getState().root;
+        const nodeIndex = createNotationNodeIndex(rootNode);
+        const [first, second] = rootNode.children;
+        root.render(
+          <TreeStateContext.Provider value={store}>
+            <WorkspaceTabScope tabId="tab">
+              <CompleteMoveCell
+                node={first}
+                nodeIndex={nodeIndex}
+                root={rootNode}
+                halfMoves={first.halfMoves}
+                move={first.san}
+                fen={first.fen}
+                comment=""
+                annotations={[]}
+                showComments={false}
+              />
+              <CompleteMoveCell
+                node={second}
+                nodeIndex={nodeIndex}
+                root={rootNode}
+                halfMoves={second.halfMoves}
+                move={second.san}
+                fen={second.fen}
+                comment=""
+                annotations={[]}
+                showComments={false}
+              />
+            </WorkspaceTabScope>
+          </TreeStateContext.Provider>,
+        );
+      });
+
+    await renderBoth();
+
+    const buttons = () => [...host.querySelectorAll<HTMLButtonElement>("button[class]")];
+    expect(buttons()[0].hasAttribute("data-notation-review-mark")).toBe(false);
+    expect(buttons()[1].getAttribute("data-notation-review-mark")).toBe("true");
+
+    // Plain move has no Mark as reviewed item.
+    await act(async () => {
+      buttons()[0].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(
+      [...host.querySelectorAll<HTMLButtonElement>('[data-menu-item="true"]')].map(
+        (item) => item.textContent,
+      ),
+    ).not.toContain("Menu.MarkAsReviewed");
+    await act(async () => {
+      buttons()[0].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+    });
+
+    // Marked move shows Mark as reviewed; open menu keeps data-notation-review-mark; clicking clears it in one undo step.
+    await act(async () => {
+      buttons()[1].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(host.querySelector('button[data-notation-review-mark="true"]')).not.toBeNull();
+    const reviewItem = [
+      ...host.querySelectorAll<HTMLButtonElement>('[data-menu-item="true"]'),
+    ].find((item) => item.textContent === "Menu.MarkAsReviewed");
+    expect(reviewItem).toBeDefined();
+    await act(async () => reviewItem!.click());
+
+    expect(store.getState().root.children[1].reviewMark).toBeUndefined();
+    expect(store.getState().dirty).toBe(true);
+    await renderBoth();
+    expect(host.querySelector('button[data-notation-review-mark="true"]')).toBeNull();
+
+    await act(async () => store.getState().undo());
+    expect(store.getState().root.children[1].reviewMark).toBe(true);
+    await renderBoth();
+    expect(host.querySelector('button[data-notation-review-mark="true"]')).not.toBeNull();
   } finally {
     moveCell.useReal = false;
   }

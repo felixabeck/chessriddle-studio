@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { INITIAL_FEN, makeFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
+import type { LexedPgnGame, LexPgnGamesOutcome } from "@/bindings";
 import { errorUnlessCancelled } from "@/platform/errors";
 import { cancellationError } from "@/platform/tauri";
 import { MAX_TREE_DEPTH, MAX_TREE_NODES, PGN_TEXT_MAX } from "@/state/store/tabStorage";
@@ -23,6 +24,7 @@ import {
 const mocks = vi.hoisted(() => ({
     lexPgn: vi.fn(),
     lexPgnGames: vi.fn(),
+    fileRevision: vi.fn(),
     countPgnGames: vi.fn(),
     readGames: vi.fn(),
 }));
@@ -35,6 +37,7 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
             ...actual.tauri,
             lexPgn: mocks.lexPgn,
             lexPgnGames: mocks.lexPgnGames,
+            fileRevision: mocks.fileRevision,
             countPgnGames: mocks.countPgnGames,
             readGames: mocks.readGames,
         },
@@ -44,6 +47,8 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
 beforeEach(() => {
     mocks.lexPgn.mockReset();
     mocks.lexPgnGames.mockReset();
+    mocks.fileRevision.mockReset();
+    mocks.fileRevision.mockResolvedValue("rev1");
     mocks.countPgnGames.mockReset();
     mocks.readGames.mockReset();
 });
@@ -181,6 +186,121 @@ describe("readRepertoireSource (O1)", () => {
             name: "RepertoireImportError",
             code: "file-changed",
         });
+    });
+
+    test("reads fileRevision before countPgnGames and refuses append between counting and page 0 as file-changed", async () => {
+        const order: string[] = [];
+        mocks.fileRevision.mockImplementationOnce(async () => {
+            order.push("fileRevision");
+            return "rev-before-append";
+        });
+        mocks.countPgnGames.mockImplementationOnce(async () => {
+            order.push("countPgnGames");
+            return 1;
+        });
+        mocks.readGames.mockImplementationOnce(async () => {
+            order.push("readGames");
+            return [
+                { pgn: "1. e4 e5 *", stamp: "s0", revision: "rev-after-append", present: true },
+            ];
+        });
+        mocks.lexPgn.mockResolvedValueOnce(sanTokens(["e4", "e5"]));
+
+        await expect(
+            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+        ).rejects.toMatchObject({
+            name: "RepertoireImportError",
+            code: "file-changed",
+        });
+        expect(order).toEqual(["fileRevision", "countPgnGames", "readGames"]);
+        expect(mocks.lexPgn).not.toHaveBeenCalled();
+    });
+
+    test("refuses with too-large as soon as cumulative parsed nodes exceed MAX_TREE_NODES without paging the rest", async () => {
+        const longMoves = Array.from({ length: 50 }, () => ["Nf3", "Nf6", "Ng1", "Ng8"]).flat();
+        const longTokens = sanTokens(longMoves);
+        // Each parsed game has 201 nodes; 500 games = 100_500 > MAX_TREE_NODES (100_000).
+        mocks.countPgnGames.mockResolvedValueOnce(700);
+        const makePage = (count: number) =>
+            Array.from({ length: count }, (_, idx) => ({
+                pgn: `game-${idx}`,
+                stamp: `s-${idx}`,
+                revision: "rev1",
+                present: true,
+            }));
+        mocks.readGames.mockImplementation(async (_handle, start: number, end: number) =>
+            makePage(end - start + 1),
+        );
+        mocks.lexPgn.mockResolvedValue(longTokens);
+
+        await expect(
+            readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+        ).rejects.toMatchObject({
+            name: "RepertoireImportError",
+            code: "too-large",
+        });
+        // Stopped during page 5 (indices 400..499) before fetching page 6 (indices 500..599).
+        expect(mocks.readGames).toHaveBeenCalledTimes(5);
+
+        // Text path also refuses immediately once cumulative nodes exceed MAX_TREE_NODES.
+        mocks.lexPgnGames.mockResolvedValueOnce({
+            status: "games",
+            games: Array.from({ length: 550 }, () => ({ status: "ok", tokens: longTokens })),
+        });
+        await expect(
+            readRepertoireSource({ kind: "text", pgn: "many long games" }),
+        ).rejects.toMatchObject({
+            name: "RepertoireImportError",
+            code: "too-large",
+        });
+    });
+
+    test.each(["invalid-input", "stale-game", "conflict"] as const)(
+        "file change causing %s during readGames paging maps to file-changed (while count stays io)",
+        async (category) => {
+            mocks.fileRevision.mockResolvedValueOnce("rev1");
+            mocks.countPgnGames.mockResolvedValueOnce(5);
+            mocks.readGames.mockRejectedValueOnce({
+                tag: "backend-error",
+                category,
+                message: "file changed during paging",
+            });
+
+            await expect(
+                readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            ).rejects.toMatchObject({
+                name: "RepertoireImportError",
+                code: "file-changed",
+            });
+
+            mocks.fileRevision.mockResolvedValueOnce("rev1");
+            mocks.countPgnGames.mockRejectedValueOnce({
+                tag: "backend-error",
+                category,
+                message: "count failed",
+            });
+
+            await expect(
+                readRepertoireSource({ kind: "file", file: { handle: FILE_HANDLE } }),
+            ).rejects.toMatchObject({
+                name: "RepertoireImportError",
+                code: "io",
+            });
+        },
+    );
+
+    test("LexedPgnGame rejects unsupported status tags at compile time and at runtime", async () => {
+        // @ts-expect-error -- generated LexedPgnGame only permits status "ok" or "failed"
+        const invalidTag: LexedPgnGame = { status: "tokens", tokens: sanTokens(["e4"]) };
+        const invalidOutcome: LexPgnGamesOutcome = {
+            status: "games",
+            games: [invalidTag],
+        };
+        mocks.lexPgnGames.mockResolvedValueOnce(invalidOutcome);
+
+        await expect(readRepertoireSource({ kind: "text", pgn: "1. e4 *" })).rejects.toThrow(
+            /Pattern matching error/,
+        );
     });
 
     test("a file exceeding MAX_REPERTOIRE_IMPORT_GAMES refuses before reading any page", async () => {

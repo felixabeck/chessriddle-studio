@@ -339,6 +339,11 @@ export default defineConfig({
             testMatch: /online-opponent\.spec\.ts/,
             use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
         },
+        {
+            name: "repertoire-pgn-import",
+            testMatch: /repertoire-pgn-import\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
     ],
     webServer: {
         // Invoked through node_modules/.bin rather than `pnpm exec`, so the suite runs

@@ -1,6 +1,8 @@
+import { Result } from "@badrap/result";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { LexPgnGamesOutcome } from "@/bindings";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
 import { hasFileOpenInFlight } from "@/state/fileStructureChange";
@@ -22,9 +24,15 @@ const fixtures = vi.hoisted(() => ({
   },
   createFile: vi.fn(),
   ensureFileWorkspace: vi.fn(),
+  fileRevision: vi.fn(),
   getChesscomGame: vi.fn(),
   getLichessGame: vi.fn(),
+  lexPgn: vi.fn(),
+  lexPgnGames: vi.fn(),
+  countPgnGames: vi.fn(),
+  readGames: vi.fn(),
   loadFileGame: vi.fn(),
+  notificationsShow: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   parsePGN: vi.fn(),
   pickPgnFile: vi.fn(),
@@ -68,7 +76,30 @@ vi.mock("./ImportPhotoPane", () => ({
     </div>
   ),
 }));
-vi.mock("@/utils/chess", () => ({ parsePGN: fixtures.parsePGN }));
+vi.mock("@/utils/chess", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/utils/chess")>();
+  return {
+    ...actual,
+    parsePGN: fixtures.parsePGN,
+  };
+});
+vi.mock("@/platform/tauri", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/platform/tauri")>();
+  return {
+    ...actual,
+    tauri: {
+      ...actual.tauri,
+      lexPgn: fixtures.lexPgn,
+      lexPgnGames: fixtures.lexPgnGames,
+      fileRevision: fixtures.fileRevision,
+      countPgnGames: fixtures.countPgnGames,
+      readGames: fixtures.readGames,
+    },
+  };
+});
+vi.mock("@mantine/notifications", () => ({
+  notifications: { show: fixtures.notificationsShow },
+}));
 vi.mock("@/utils/chess.com/api", () => ({ getChesscomGame: fixtures.getChesscomGame }));
 vi.mock("@/utils/lichess/api", () => ({ getLichessGame: fixtures.getLichessGame }));
 vi.mock("@/utils/tabs", () => ({ replaceNewTab: fixtures.replaceNewTab }));
@@ -159,6 +190,31 @@ vi.mock("@mantine/core", () => ({
     </button>
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SegmentedControl: ({
+    disabled,
+    value,
+    onChange,
+    data,
+  }: {
+    disabled?: boolean;
+    value?: string;
+    onChange?: (value: string) => void;
+    data?: { label: string; value: string }[];
+  }) => (
+    <fieldset aria-label="Color" disabled={disabled}>
+      {(data ?? []).map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          data-testid={`color-${item.value}`}
+          aria-pressed={value === item.value}
+          onClick={() => onChange?.(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </fieldset>
+  ),
   SimpleGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Stack: ({ children, role }: { children: React.ReactNode; role?: string }) => (
     <div role={role}>{children}</div>
@@ -272,6 +328,7 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.resetAllMocks();
   fixtures.coachEnabled = false;
+  fixtures.fileRevision.mockResolvedValue("r1");
   fixtures.store.activeTabId = "owner-tab";
   fixtures.replaceNewTab.mockReturnValue({ kind: "committed", id: "imported-tab" });
   fixtures.pickPgnFile.mockResolvedValue(fixtures.file);
@@ -468,25 +525,28 @@ test("saving an imported PGN copies its source before submitting the reloaded fi
   expect(hasFileOpenInFlight(savedKey)).toBe(false);
 });
 
-test.each([
-  { white: "Dragon System", event: "fertig", name: "Dragon System" },
-  { white: "?", event: "Legacy", name: "Legacy" },
-  { white: "?", event: "?", name: "selected" },
-])("a PGN file saved as Repertoire opens with $name", async ({ white, event, name }) => {
+test("a PGN file saved as Repertoire writes Orientation without loading game 0 first and forwards ownerId/store", async () => {
   const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
-  const savedFile = { ...fixtures.file, metadata: { type: "repertoire", tags: [] } };
-  const tree = defaultTree();
-  tree.headers = { ...tree.headers, white, event, black: "6...Dc7 plan" };
-  fixtures.loadFileGame.mockResolvedValue({
-    tree,
-    pgn: "*",
-    revision: "r1",
-    stamp: "s1",
-    present: true,
-  });
+  const savedFile = {
+    ...fixtures.file,
+    name: "selected",
+    metadata: { type: "repertoire", tags: [] },
+  };
+  fixtures.countPgnGames.mockResolvedValueOnce(2);
+  fixtures.readGames.mockResolvedValueOnce([
+    { pgn: "malformed", stamp: "s0", revision: "r1", present: true, omission: "too-large" },
+    { pgn: "1. e4 c5 *", stamp: "s1", revision: "r1", present: true },
+  ]);
+  fixtures.lexPgn.mockResolvedValueOnce([
+    { type: "San", value: "e4" },
+    { type: "San", value: "c5" },
+  ]);
   fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
   fixtures.createFile.mockResolvedValue({ isErr: false, value: savedFile });
-  await renderModal();
+  fixtures.openFile.mockResolvedValueOnce("tab-id");
+  const setOpenModal = vi.fn();
+
+  await renderModal("new-tab-owner", setOpenModal);
   await chooseFile();
   await act(async () =>
     host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
@@ -494,20 +554,55 @@ test.each([
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
   );
-  await clickSubmit();
-  await vi.waitFor(() => expect(fixtures.replaceNewTab).toHaveBeenCalledOnce());
-  expect(fixtures.createFile).toHaveBeenCalledWith(
-    expect.objectContaining({ filetype: "repertoire" }),
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="color-black"]')!.click(),
   );
-  expect(fixtures.replaceNewTab).toHaveBeenCalledWith(
+  await clickSubmit();
+  await vi.waitFor(() => expect(fixtures.openFile).toHaveBeenCalledOnce());
+
+  expect(fixtures.loadFileGame).not.toHaveBeenCalled();
+  expect(fixtures.createFile).toHaveBeenCalledWith(
     expect.objectContaining({
-      tab: expect.objectContaining({
-        name,
-        gameOrigin: { kind: "file", file: savedFile, gameNumber: 0 },
-      }),
-      tree,
+      filename: "selected.pgn",
+      filetype: "repertoire",
+      content: {
+        kind: "text",
+        pgn: expect.stringContaining('[Orientation "black"]'),
+      },
     }),
   );
+  expect(fixtures.openFile).toHaveBeenCalledWith(savedFile, fixtures.setTabs, {
+    tabName: "selected",
+    ownerId: "new-tab-owner",
+    store: fixtures.store,
+    signal: expect.any(AbortSignal),
+  });
+  expect(fixtures.notificationsShow).toHaveBeenCalledWith(
+    expect.objectContaining({
+      color: "success",
+      title: "Repertoire.Import.SuccessTitle",
+    }),
+  );
+  expect(setOpenModal).toHaveBeenCalledWith(false);
+});
+
+test("repertoire import refusal before createFile keeps ImportModal open with inline error", async () => {
+  fixtures.lexPgnGames.mockResolvedValueOnce({ status: "games", games: [] });
+  const setOpenModal = vi.fn();
+  await renderModal("owner-tab", setOpenModal);
+  await pastePgn("invalid");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Bad Rep");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+
+  expect(fixtures.createFile).not.toHaveBeenCalled();
+  expect(setOpenModal).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Repertoire.Import.Error.NoUsableGames");
 });
 
 test("a rejected game-0 preflight creates no copied file", async () => {
@@ -1066,7 +1161,7 @@ test("shows an import failure inline while the modal is mounted", async () => {
 
 test.each([
   { saveState: "unsaved", filename: expect.stringMatching(/^import-/), filetype: "game" },
-  { saveState: "saved", filename: "Najdorf repertoire", filetype: "repertoire" },
+  { saveState: "saved", filename: "Najdorf repertoire", filetype: "game" },
   {
     saveState: "unsaved after toggling Save",
     filename: expect.stringMatching(/^import-/),
@@ -1087,10 +1182,10 @@ test.each([
         host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
       );
       await setInputValue(input("Common.Name"), "Najdorf repertoire");
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
-      );
       if (saveState === "unsaved after toggling Save") {
+        await act(async () =>
+          host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+        );
         await act(async () =>
           host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
         );
@@ -1113,6 +1208,47 @@ test.each([
     expect(fixtures.openFile).toHaveBeenCalledExactlyOnceWith(fixtures.file, fixtures.setTabs);
   },
 );
+
+test("saved pasted PGN as Repertoire routes through createRepertoireFromPgn with orientation", async () => {
+  const workspace = { id: { id: "workspace" }, kind: "fileWorkspace" } as const;
+  const savedFile = {
+    ...fixtures.file,
+    name: "Najdorf repertoire",
+    metadata: { type: "repertoire", tags: [] },
+  };
+  fixtures.lexPgnGames.mockResolvedValueOnce({
+    status: "games",
+    games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+  } satisfies LexPgnGamesOutcome);
+  fixtures.ensureFileWorkspace.mockResolvedValue(workspace);
+  fixtures.createFile.mockResolvedValue({ isErr: false, value: savedFile });
+  fixtures.openFile.mockResolvedValueOnce("tab-id");
+
+  await renderModal("owner-pasted");
+  await pastePgn('[Event "Pasted"]\n\n1. e4 *');
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Najdorf repertoire");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+
+  expect(fixtures.createFile).toHaveBeenCalledWith(
+    expect.objectContaining({
+      filename: "Najdorf repertoire",
+      filetype: "repertoire",
+      content: { kind: "text", pgn: expect.stringContaining('[Orientation "white"]') },
+    }),
+  );
+  expect(fixtures.openFile).toHaveBeenCalledWith(savedFile, fixtures.setTabs, {
+    tabName: "Najdorf repertoire",
+    ownerId: "owner-pasted",
+    store: fixtures.store,
+    signal: expect.any(AbortSignal),
+  });
+});
 
 test("From photo card is shown only while the Coach switch is on and mounts ImportPhotoPane lazily", async () => {
   fixtures.coachEnabled = false;
@@ -1192,3 +1328,221 @@ test("From photo lazy load failure is isolated by PanelErrorBoundary and recover
     consoleError.mockRestore();
   }
 });
+
+test("repertoire import disables mode cards, file-type cards, and submit while pending and stays single-flight", async () => {
+  fixtures.coachEnabled = true;
+  let capturedSignal: AbortSignal | undefined;
+  let resolveLex!: (value: unknown) => void;
+  fixtures.lexPgnGames.mockImplementation(
+    (_pgn: string, _max: number, options?: { signal?: AbortSignal }) => {
+      capturedSignal = options?.signal;
+      return new Promise((resolve) => {
+        resolveLex = resolve;
+      });
+    },
+  );
+
+  await renderModal();
+  await pastePgn("1. e4 e5 *");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Pending Rep");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  // Two synchronous clicks in one act fire before React re-renders the disabled state.
+  await act(async () => {
+    const button = submitButton();
+    button.click();
+    button.click();
+  });
+  expect(fixtures.lexPgnGames).toHaveBeenCalledOnce();
+
+  expect(capturedSignal?.aborted).toBe(false);
+  for (const selector of [
+    '[data-testid="mode-PGN"]',
+    '[data-testid="mode-Link"]',
+    '[data-testid="mode-FEN"]',
+    '[data-testid="mode-Photo"]',
+    '[data-testid="mode-game"]',
+    '[data-testid="mode-repertoire"]',
+    '[data-testid="mode-other"]',
+  ]) {
+    const button = host.querySelector<HTMLButtonElement>(selector)!;
+    expect(button.matches(":disabled")).toBe(true);
+  }
+
+  const pendingSubmit = Array.from(host.querySelectorAll("button")).find(
+    (btn) => btn.textContent === "Import.Importing",
+  )!;
+  expect(pendingSubmit).toBeDefined();
+  expect(pendingSubmit.disabled).toBe(true);
+  expect(fixtures.lexPgnGames).toHaveBeenCalledOnce();
+
+  // Cancel aborts without showing an error or closing.
+  const cancelBtn = Array.from(host.querySelectorAll("button")).find(
+    (btn) => btn.textContent === "Common.Cancel",
+  )!;
+  expect(cancelBtn).toBeDefined();
+  await act(async () => cancelBtn.click());
+  await act(async () => {
+    resolveLex({
+      status: "games",
+      games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+    } satisfies LexPgnGamesOutcome);
+  });
+  expect(capturedSignal?.aborted).toBe(true);
+  expect(host.textContent).not.toContain("Repertoire.Import.Error");
+  expect(fixtures.createFile).not.toHaveBeenCalled();
+});
+
+test("repertoire import aborts on close and on unmount", async () => {
+  const { cancellationError } = await import("@/platform/tauri");
+  const capturedSignals: AbortSignal[] = [];
+  fixtures.lexPgnGames.mockImplementation(
+    (_pgn: string, _max: number, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) capturedSignals.push(options.signal);
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(cancellationError()));
+      });
+    },
+  );
+
+  // Close (openModal -> false) aborts.
+  const setOpenModal = await renderModal();
+  await pastePgn("1. e4 e5 *");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Close Abort");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+  expect(capturedSignals[0]?.aborted).toBe(false);
+
+  await act(async () => {
+    root.render(
+      <ImportModal
+        ownerId="owner-tab"
+        openModal={false}
+        setOpenModal={setOpenModal}
+        setTabs={fixtures.setTabs}
+      />,
+    );
+  });
+  expect(capturedSignals[0]?.aborted).toBe(true);
+
+  // Unmount aborts on a freshly mounted modal.
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await renderModal();
+  await pastePgn("1. d4 d5 *");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Unmount Abort");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+  expect(capturedSignals[1]?.aborted).toBe(false);
+
+  await act(async () => root.unmount());
+  rootMounted = false;
+  expect(capturedSignals[1]?.aborted).toBe(true);
+});
+
+test("whitespace-only pasted PGN keeps Import button disabled and empty repertoire name is refused on field", async () => {
+  await renderModal();
+  await pastePgn("   \t\n  ");
+  expect(submitButton().disabled).toBe(true);
+
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Valid Name");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  expect(submitButton().disabled).toBe(true);
+
+  await pastePgn("1. e4 *");
+  await setInputValue(input("Common.Name"), "   ");
+  await clickSubmit();
+  expect(host.querySelector('[data-testid="error-Common.Name"]')?.textContent).toBe(
+    "Common.RequireName",
+  );
+  expect(fixtures.lexPgnGames).not.toHaveBeenCalled();
+  expect(fixtures.createFile).not.toHaveBeenCalled();
+});
+
+test("repertoire create-stage refusal shows on the name field while mounted", async () => {
+  fixtures.lexPgnGames.mockResolvedValueOnce({
+    status: "games",
+    games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+  } satisfies LexPgnGamesOutcome);
+  fixtures.ensureFileWorkspace.mockResolvedValueOnce({ id: { id: "ws" }, kind: "fileWorkspace" });
+  fixtures.createFile.mockResolvedValueOnce(Result.err(new Error("name taken or disk failed")));
+
+  await renderModal();
+  await pastePgn("1. e4 *");
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+  );
+  await setInputValue(input("Common.Name"), "Duplicate Name");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+  );
+  await clickSubmit();
+
+  expect(host.querySelector('[data-testid="error-Common.Name"]')?.textContent).toBe(
+    "name taken or disk failed",
+  );
+  expect(fixtures.notifyUnlessCancelled).not.toHaveBeenCalled();
+});
+
+test.each(["Err", "reject"] as const)(
+  "unmounting after create-stage %s refusal notifies through notifyUnlessCancelled instead of dropping it",
+  async (mode) => {
+    const createError = new Error("create stage disk failure");
+    const createDeferred = deferred<unknown>();
+    fixtures.lexPgnGames.mockResolvedValueOnce({
+      status: "games",
+      games: [{ status: "ok", tokens: [{ type: "San", value: "e4" }] }],
+    } satisfies LexPgnGamesOutcome);
+    fixtures.ensureFileWorkspace.mockResolvedValueOnce({ id: { id: "ws" }, kind: "fileWorkspace" });
+    fixtures.createFile.mockReturnValueOnce(createDeferred.promise);
+
+    await renderModal();
+    await pastePgn("1. e4 *");
+    await act(async () =>
+      host.querySelector<HTMLInputElement>('[data-testid="save-to-collection"]')!.click(),
+    );
+    await setInputValue(input("Common.Name"), "Unmount Failure");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="mode-repertoire"]')!.click(),
+    );
+    await clickSubmit();
+    await vi.waitFor(() => expect(fixtures.createFile).toHaveBeenCalledOnce());
+
+    await act(async () => root.unmount());
+    rootMounted = false;
+
+    await act(async () => {
+      if (mode === "Err") createDeferred.resolve(Result.err(createError));
+      else {
+        // reject via next tick after deferred doesn't have reject helper — wrap via rejected promise
+        createDeferred.resolve(Promise.reject(createError));
+      }
+    });
+
+    await vi.waitFor(() => expect(fixtures.notifyUnlessCancelled).toHaveBeenCalledOnce());
+    expect(fixtures.notifyUnlessCancelled).toHaveBeenCalledWith(
+      "Common.Error",
+      createError,
+      "files",
+    );
+  },
+);
