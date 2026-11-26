@@ -29730,3 +29730,17 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
 
 The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geometry and wheel reachability") is not this change: run 45884131582 on the identical code (53b49d13a) passed e2e, and that spec family was already flaky on master (run 45865739811).
+
+### The stacked notation wheel-reachability e2e test timed out on CI on a docs-only commit
+
+* **ID:** f-20261126-14 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** fb0c13b3-338d-462e-a589-2efeb51ee57c
+* **Impact class:** tooling
+* **CI run:** 45884396140
+* **First red:** `26591c43a` (Test run 45884396140, job e2e; a records-only build-ledger commit). The previous Test run 45884131582 on `53b49d13a` passed the e2e job.
+* **Spotted outside diff:** yes — the external-links drain session (`f-20261125-18`) hit it as a red remote before pushing.
+* **Where:** `e2e/notation-hierarchy.spec.ts:766`, project `notation-hierarchy-scaled`, "notation-hierarchy: overflow-only stacked geometry and wheel reachability".
+* **Defect:** the test exceeded its 45000 ms timeout (`Test timeout of 45000ms exceeded.`, 1 failed, 566 passed, job wall 18.4 min). The commit changes no code, so the test is load-sensitive rather than broken by a change; it passed in a local container run of the full suite on the same day (567 passed).
+* **Failure scenario:** job e2e of Test run 45884396140 fails only this test; `pnpm ci:remote:check` then refuses every later code push.
+* **Open question:** what in the wheel-reachability loop scales with runner speed (fixed waits, per-step polling, wheel steps until reachable), and should it wait on a state rather than step counts, or does its budget need a measured increase? Read the trace artefact of run 45884396140 before choosing.
+* **Found by:** Claude Code drain session fb0c13b3-338d-462e-a589-2efeb51ee57c, 2026-11-26, at `pnpm ci:remote:check` before pushing external links.
