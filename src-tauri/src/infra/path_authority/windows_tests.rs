@@ -783,8 +783,11 @@ fn windows_collision_folding_matches_rtl_upcase() {
     );
 }
 
-#[tokio::test]
-async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename() {
+// A plain test: every call below is synchronous, as production runs them on a blocking worker.
+// Inside `#[tokio::test]` a schema upgrade spawned by `connection` would wait on the one runtime
+// thread it blocks (CI run 45808657841 hung there with a partial-schema fixture).
+#[test]
+fn windows_quiesce_drains_sqlite_and_ecsi_before_rename() {
     use tokio_util::sync::CancellationToken;
 
     // 2. Drain a real open SQLite pool AND a real mmapped .ecsi in SearchCache via quiesce_root
@@ -806,14 +809,9 @@ async fn windows_quiesce_drains_sqlite_and_ecsi_before_rename() {
     let db_handle = auth
         .create_database_child(&root, OsStr::new("pooled.db3"))
         .unwrap();
-    {
-        use diesel::{Connection, RunQueryDsl, SqliteConnection};
-        let mut conn =
-            SqliteConnection::establish(src.join("pooled.db3").to_str().unwrap()).unwrap();
-        diesel::sql_query("CREATE TABLE Info (Name TEXT PRIMARY KEY, Value TEXT);")
-            .execute(&mut conn)
-            .unwrap();
-    }
+    // A complete current schema: a partial one would send `connection` into a schema upgrade
+    // that refuses the file.
+    crate::db::create_schema_database_file(&src, "pooled");
 
     let target = auth
         .database_file_target(&db_handle, PathOperation::DatabaseMutate)

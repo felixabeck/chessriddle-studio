@@ -1273,7 +1273,10 @@ static CONVERSION_AFTER_COMMIT: crate::infra::test_hooks::KeyedTestHooks<String>
     crate::infra::test_hooks::KeyedTestHooks::new();
 
 #[cfg(test)]
-fn create_schema_database_file(dir: &std::path::Path, file_stem: &str) -> std::path::PathBuf {
+pub(crate) fn create_schema_database_file(
+    dir: &std::path::Path,
+    file_stem: &str,
+) -> std::path::PathBuf {
     use diesel::connection::SimpleConnection;
 
     let database = dir.join(format!("{file_stem}.db3"));
