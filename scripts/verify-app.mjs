@@ -261,6 +261,7 @@ const screenshotPath = screenshotIndex === -1 ? undefined : process.argv[screens
 const screenshotDirIndex = process.argv.indexOf("--screenshot-dir");
 const screenshotDirectory =
   screenshotDirIndex === -1 ? undefined : process.argv[screenshotDirIndex + 1];
+const externalLinkOnly = process.argv.includes("--external-link");
 const progressContractOnly = process.argv.includes("--progress-contract");
 const fallbackEngineInstallOnly = process.argv.includes("--fallback-engine-install");
 // Installs the catalog engine like --fallback-engine-install, then runs a real game report.
@@ -270,6 +271,7 @@ const timedRunOnly = process.argv.includes("--timed-run");
 const workspaceRestoreOnly = process.argv.includes("--workspace-restore");
 
 export const EXCLUSIVE_FLOW_FLAGS = [
+  "--external-link",
   "--fallback-engine-install",
   "--game-report",
   "--progress-contract",
@@ -282,7 +284,7 @@ export function assertExclusiveFlowModes(argv = process.argv) {
   const selected = EXCLUSIVE_FLOW_FLAGS.filter((flag) => argv.includes(flag));
   if (selected.length > 1) {
     throw new Error(
-      "--fallback-engine-install, --game-report, --progress-contract, --scoresheet-paste, --timed-run and --workspace-restore are mutually exclusive",
+      `${EXCLUSIVE_FLOW_FLAGS.slice(0, -1).join(", ")} and ${EXCLUSIVE_FLOW_FLAGS.at(-1)} are mutually exclusive`,
     );
   }
   return selected[0] ?? null;
@@ -1027,18 +1029,17 @@ async function readActiveTabTree(session) {
   };
 }
 
-/** Open the Info-tab PGN editor, replace the Event header, Update, and wait until the tree is dirty. */
-async function dirtyActiveTreeEventHeader(
+/** Open the Info-tab PGN editor, replace its text, and click Update. */
+async function updateActiveTreePgnInEditor(
   session,
-  event,
+  nextPgnOrBuilder,
   {
     locate = (label, script, args) => reachableStableCoordinates(session, label, script, args),
     wait = (label, script, args = []) => waitFor(label, () => session.execute(script, args)),
     keyboardId = "quit-gate-keyboard",
-    missingHeaderError = "active tree has no Event header",
     beforeRead,
+    readyLabel = "real PGN editor edit",
     diagnoseEditorValue = false,
-    waitForDirty,
   } = {},
 ) {
   const info = await locate(
@@ -1048,10 +1049,12 @@ async function dirtyActiveTreeEventHeader(
   await clickAt(session, info.x, info.y);
   await locate("PGN editor", `document.querySelector('#pgn-editor')`);
   if (beforeRead) await beforeRead();
-  const originalPgn = await session.execute("return document.querySelector('#pgn-editor').value");
-  const eventHeader = /^\[Event "[^"\r\n]*"\]/m;
-  if (!eventHeader.test(originalPgn)) throw new Error(missingHeaderError);
-  const editedPgn = originalPgn.replace(eventHeader, `[Event "${event}"]`);
+  const editedPgn =
+    typeof nextPgnOrBuilder === "function"
+      ? nextPgnOrBuilder(
+          await session.execute("return document.querySelector('#pgn-editor').value"),
+        )
+      : nextPgnOrBuilder;
   const editor = await session.call("POST", "/element", {
     using: "css selector",
     value: "#pgn-editor",
@@ -1101,7 +1104,7 @@ async function dirtyActiveTreeEventHeader(
     if (line) await session.call("POST", `/element/${editorId}/value`, { text: line });
   }
   const editorReady = wait(
-    "real PGN editor Event edit",
+    readyLabel,
     "return document.querySelector('#pgn-editor')?.value === arguments[0]",
     [editedPgn],
   );
@@ -1121,6 +1124,38 @@ async function dirtyActiveTreeEventHeader(
     `[...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Update' && node.parentElement.querySelector('#pgn-editor'))`,
   );
   await clickAt(session, update.x, update.y);
+}
+
+/** Open the Info-tab PGN editor, replace the Event header, Update, and wait until the tree is dirty. */
+async function dirtyActiveTreeEventHeader(
+  session,
+  event,
+  {
+    locate,
+    wait,
+    keyboardId = "quit-gate-keyboard",
+    missingHeaderError = "active tree has no Event header",
+    beforeRead,
+    diagnoseEditorValue = false,
+    waitForDirty,
+  } = {},
+) {
+  await updateActiveTreePgnInEditor(
+    session,
+    (originalPgn) => {
+      const eventHeader = /^\[Event "[^"\r\n]*"\]/m;
+      if (!eventHeader.test(originalPgn)) throw new Error(missingHeaderError);
+      return originalPgn.replace(eventHeader, `[Event "${event}"]`);
+    },
+    {
+      locate,
+      wait,
+      keyboardId,
+      beforeRead,
+      readyLabel: "real PGN editor Event edit",
+      diagnoseEditorValue,
+    },
+  );
   if (waitForDirty) return waitForDirty();
   return waitFor(
     "real PGN Update publishes the unsaved Event edit",
@@ -9313,6 +9348,319 @@ async function verifyScoresheetPaste(profileDirectory, appEnvironment, screensho
   return { spNPassed, spPStatus };
 }
 
+const XDG_OPEN_STUB_LOG_NAME = "xdg-open-calls.log";
+// Allow any asynchronous WebKitGTK navigation attempt after a link click to settle before checking `location.href`.
+const EXTERNAL_LINK_LOCATION_SETTLE_MS = 150;
+// Allow a detached `open::that_detached` child time to append to the stub log before asserting no invocation occurred.
+const EXTERNAL_LINK_STUB_SETTLE_MS = 250;
+
+function shSingleQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+async function installXdgOpenStub(profileDirectory, baseEnv) {
+  const stubDir = join(profileDirectory, "bin");
+  const stubPath = join(stubDir, "xdg-open");
+  const logPath = join(profileDirectory, XDG_OPEN_STUB_LOG_NAME);
+  await mkdir(stubDir, { recursive: true, mode: 0o700 });
+  const script = [
+    "#!/bin/sh",
+    'if [ "$#" -eq 1 ]; then',
+    `  printf '%s\\n' "$1" >> ${shSingleQuote(logPath)}`,
+    "else",
+    `  printf 'UNEXPECTED_ARGC_%s:%s\\n' "$#" "$*" >> ${shSingleQuote(logPath)}`,
+    "fi",
+    "",
+  ].join("\n");
+  await writeFile(stubPath, script, { mode: 0o755 });
+  chmodSync(stubPath, 0o755);
+  return {
+    PATH: baseEnv.PATH ? `${stubDir}:${baseEnv.PATH}` : stubDir,
+  };
+}
+
+async function readXdgOpenStubCalls(logPath) {
+  try {
+    const raw = await readFile(logPath, "utf8");
+    return raw
+      .split("\n")
+      .map((line) => line.replace(/\r$/, ""))
+      .filter((line) => line.length > 0);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function assertStubCallsUnchanged(actual, expected, context) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `stub xdg-open calls changed during ${context}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
+  }
+}
+
+async function invokeIpcRefusal(session, { label, globalName, command, args, assertRejection }) {
+  const outcome = await invokeJsonAndWait(
+    session,
+    label,
+    globalName,
+    `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`,
+  );
+  const rejection = outcome.result?.rejected;
+  if (typeof rejection !== "string" || rejection.length === 0) {
+    throw new Error(`expected ${label} to reject, got ${JSON.stringify(outcome)}`);
+  }
+  assertRejection(rejection);
+  return rejection;
+}
+
+async function verifyExternalLink(profileDirectory, appEnvironment) {
+  const logPath = join(profileDirectory, XDG_OPEN_STUB_LOG_NAME);
+  const expectedStubDir = join(profileDirectory, "bin");
+  const pathEntries = (appEnvironment?.PATH ?? "").split(":");
+  if (pathEntries[0] !== expectedStubDir) {
+    throw new Error(
+      `expected stub directory ${expectedStubDir} first on PATH, got ${appEnvironment?.PATH ?? "(unset)"}`,
+    );
+  }
+
+  const externalLinkCommentUrl = "https://example.invalid/external-link-comment";
+  const seededPgn = [
+    '[Event "verify:external-link"]',
+    '[Site "?"]',
+    '[Date "2026.11.26"]',
+    '[Round "1"]',
+    '[White "A"]',
+    '[Black "B"]',
+    '[Result "*"]',
+    "",
+    `1. e4 { [External check](${externalLinkCommentUrl}) } *`,
+  ].join("\n");
+
+  const session = await Session.open(APP_BINARY);
+  try {
+    const startupOk = await assertion(
+      "EL0 external-link renderer starts on a fresh profile",
+      async () => {
+        await waitFor("external-link renderer startup", () => session.execute(closeControlProbe));
+        await waitFor("Tauri IPC bridge", () =>
+          session.execute("return typeof window.__TAURI_INTERNALS__ === 'object'"),
+        );
+      },
+    );
+
+    let locationBefore = null;
+    await assertion(
+      "EL1 clicking a PGN comment link on an Analysis Board opens exactly that URL via stub xdg-open without changing window location",
+      async () => {
+        if (!startupOk) throw new Error("EL0 renderer startup failed");
+        await clickButton(session, "Analysis Board");
+        await waitFor("Analysis Board to render", () =>
+          session.execute("return !!document.querySelector('cg-board')"),
+        );
+        await updateActiveTreePgnInEditor(session, seededPgn, {
+          keyboardId: "external-link-keyboard",
+          readyLabel: "seeded PGN value in editor",
+        });
+
+        const commentLink = await reachableStableCoordinates(
+          session,
+          "PGN comment external link",
+          `document.querySelector('a[href=' + JSON.stringify(arguments[0]) + ']')`,
+          [externalLinkCommentUrl],
+        );
+        locationBefore = await session.execute("return location.href");
+        await clickAt(session, commentLink.x, commentLink.y);
+
+        const recordedCalls = await waitFor("stub xdg-open to record the clicked URL", async () => {
+          const calls = await readXdgOpenStubCalls(logPath);
+          return calls.length > 0 ? calls : false;
+        });
+        if (recordedCalls.length !== 1 || recordedCalls[0] !== externalLinkCommentUrl) {
+          throw new Error(
+            `expected stub xdg-open to record [${JSON.stringify(externalLinkCommentUrl)}], got ${JSON.stringify(recordedCalls)}`,
+          );
+        }
+        await sleep(EXTERNAL_LINK_LOCATION_SETTLE_MS);
+        const locationAfter = await session.execute("return location.href");
+        if (locationAfter !== locationBefore) {
+          throw new Error(
+            `main window location changed after link click: before=${locationBefore}, after=${locationAfter}`,
+          );
+        }
+        console.log(
+          `  .. stub xdg-open recorded URL: ${recordedCalls[0]} (location unchanged: ${locationBefore})`,
+        );
+      },
+    );
+
+    const baselineCalls = await readXdgOpenStubCalls(logPath);
+
+    await assertion(
+      "EL2 open_external_url refuses file: and javascript: URLs without invoking stub xdg-open",
+      async () => {
+        if (!startupOk) throw new Error("EL0 renderer startup failed");
+        const refusedUrls = [
+          { url: "file:///etc/passwd", globalName: "__verifyExternalLinkFileRefusal" },
+          { url: "javascript:alert(1)", globalName: "__verifyExternalLinkJsRefusal" },
+        ];
+        const refusals = [];
+        for (const { url, globalName } of refusedUrls) {
+          const rejection = await invokeIpcRefusal(session, {
+            label: `open_external_url ${url}`,
+            globalName,
+            command: "open_external_url",
+            args: { url },
+            assertRejection(raw) {
+              let payload;
+              try {
+                payload = JSON.parse(raw);
+              } catch (error) {
+                throw new Error(
+                  `expected JSON ErrorPayload from open_external_url(${url}), got ${raw}`,
+                  { cause: error },
+                );
+              }
+              if (payload?.category !== "invalid-input") {
+                throw new Error(
+                  `expected invalid-input category from open_external_url(${url}), got ${raw}`,
+                );
+              }
+            },
+          });
+          refusals.push({ url, rejection });
+        }
+
+        await sleep(EXTERNAL_LINK_STUB_SETTLE_MS);
+        assertStubCallsUnchanged(
+          await readXdgOpenStubCalls(logPath),
+          baselineCalls,
+          "refused open_external_url invocations",
+        );
+        for (const { url, rejection } of refusals) {
+          console.log(`  .. open_external_url refused ${url}: ${rejection}`);
+        }
+      },
+    );
+
+    await assertion("EL3 plugin:opener|open_url is refused by the ACL", async () => {
+      if (!startupOk) throw new Error("EL0 renderer startup failed");
+      const aclRejection = await invokeIpcRefusal(session, {
+        label: "plugin:opener|open_url ACL probe",
+        globalName: "__verifyExternalLinkAclRefusal",
+        command: "plugin:opener|open_url",
+        args: { url: "https://example.invalid/acl-probe" },
+        assertRejection(raw) {
+          if (!/not allowed by ACL/iu.test(raw)) {
+            throw new Error(`expected plugin:opener|open_url to be refused by ACL, got ${raw}`);
+          }
+        },
+      });
+      await sleep(EXTERNAL_LINK_STUB_SETTLE_MS);
+      assertStubCallsUnchanged(
+        await readXdgOpenStubCalls(logPath),
+        baselineCalls,
+        "ACL-refused plugin:opener|open_url probe",
+      );
+      console.log(`  .. plugin:opener|open_url ACL refusal: ${aclRejection}`);
+    });
+
+    await assertion(
+      'EL4 opener plugin injected click listener is absent on synthetic target="_blank" click',
+      async () => {
+        if (!startupOk) throw new Error("EL0 renderer startup failed");
+        const locationAtStart = locationBefore ?? (await session.execute("return location.href"));
+        try {
+          await session.execute(`
+            document.getElementById('__verify-external-link-synthetic')?.remove();
+            if (window.__verifyExternalLinkListener) {
+              window.removeEventListener('click', window.__verifyExternalLinkListener);
+            }
+            window.__verifyExternalLinkSyntheticClick = null;
+            const anchor = document.createElement('a');
+            anchor.id = '__verify-external-link-synthetic';
+            anchor.href = 'https://example.invalid/synthetic-plugin-probe';
+            anchor.target = '_blank';
+            anchor.rel = 'noreferrer';
+            anchor.textContent = 'Synthetic External Probe';
+            anchor.style.cssText = 'position:fixed;top:16px;left:16px;z-index:999999;padding:8px 12px;background:#fff;color:#000;border:2px solid #000;';
+            const listener = (event) => {
+              const targetAnchor = event.target instanceof Element ? event.target.closest('a') : null;
+              if (targetAnchor !== anchor) return;
+              window.__verifyExternalLinkSyntheticClick = {
+                defaultPreventedOnArrival: event.defaultPrevented,
+                href: anchor.getAttribute('href'),
+              };
+              event.preventDefault();
+            };
+            window.__verifyExternalLinkListener = listener;
+            window.addEventListener('click', listener);
+            document.body.appendChild(anchor);
+            return true;
+          `);
+          const syntheticPoint = await reachableStableCoordinates(
+            session,
+            'synthetic target="_blank" anchor',
+            "document.getElementById('__verify-external-link-synthetic')",
+          );
+          await clickAt(session, syntheticPoint.x, syntheticPoint.y);
+          const observation = await waitFor("synthetic anchor click observation", () =>
+            session.execute("return window.__verifyExternalLinkSyntheticClick || false"),
+          );
+          if (observation.defaultPreventedOnArrival !== false) {
+            throw new Error(
+              `expected defaultPrevented to be false on arrival at post-load window listener, got ${JSON.stringify(observation)}`,
+            );
+          }
+          await sleep(EXTERNAL_LINK_STUB_SETTLE_MS);
+          const afterCalls = await readXdgOpenStubCalls(logPath);
+          assertStubCallsUnchanged(
+            afterCalls,
+            baselineCalls,
+            'synthetic target="_blank" anchor click',
+          );
+          const locationAfter = await session.execute("return location.href");
+          if (locationAfter !== locationAtStart) {
+            throw new Error(
+              `main window location changed on synthetic click: before=${locationAtStart}, after=${locationAfter}`,
+            );
+          }
+          console.log(
+            `  .. opener plugin click listener absent: synthetic target="_blank" click arrived with defaultPrevented=${observation.defaultPreventedOnArrival}, stub calls=${afterCalls.length}`,
+          );
+        } finally {
+          await session
+            .execute(`
+              document.getElementById('__verify-external-link-synthetic')?.remove();
+              if (window.__verifyExternalLinkListener) {
+                window.removeEventListener('click', window.__verifyExternalLinkListener);
+              }
+              delete window.__verifyExternalLinkListener;
+              delete window.__verifyExternalLinkSyntheticClick;
+              return true;
+            `)
+            .catch(() => {});
+        }
+      },
+    );
+
+    if (startupOk) {
+      await assertion("EL-Close external-link application exits cleanly", async () => {
+        const closed = await closeApplicationThroughTitlebar(session, "external-link");
+        if (!closed.gone || closed.survivors.length > 0) {
+          throw new Error(`external-link processes survived close: ${closed.survivors.join(", ")}`);
+        }
+      });
+    }
+  } finally {
+    const quit = await session.quit();
+    if (!quit.released) {
+      console.log(`  .. external-link WebDriver session release returned: ${quit.error}`);
+    }
+  }
+}
+
 async function main() {
   process.on("exit", () => {
     restoreRootPermissionsForCleanup("exit");
@@ -9348,8 +9696,15 @@ async function main() {
     requirePrerequisites(progressContractOnly ? progressApplication : APP_BINARY);
 
     const { socket } = await startCompositor();
-    const { profileDirectory, appEnvironment } = await startDriver({ waylandDisplay: socket });
-    if (progressContractOnly) {
+    const { profileDirectory, appEnvironment } = await startDriver({
+      waylandDisplay: socket,
+      env: externalLinkOnly
+        ? ({ profileDirectory: home, env }) => installXdgOpenStub(home, env)
+        : undefined,
+    });
+    if (externalLinkOnly) {
+      await verifyExternalLink(profileDirectory, appEnvironment);
+    } else if (progressContractOnly) {
       const progressSession = await Session.open(progressApplication);
       try {
         await waitFor("progress renderer startup", () =>

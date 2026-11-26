@@ -197,7 +197,7 @@ export async function startCompositor({ width = 1400, height = 900 } = {}) {
  * move for minutes on 2026-09-23. Ranking `fakeaudiosink` highest makes `autoaudiosink` pick it, so
  * the media pipeline still runs to completion but nothing reaches PipeWire.
  */
-export async function startDriver({ waylandDisplay }) {
+export async function startDriver({ waylandDisplay, env: envOverride } = {}) {
   const output = outputBuffer();
   driverOutput = output;
   const env = {
@@ -225,6 +225,22 @@ export async function startDriver({ waylandDisplay }) {
   env.HOME = profileDirectory;
   for (const name of ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"]) {
     delete env[name];
+  }
+  if (envOverride !== undefined) {
+    if (typeof envOverride !== "function") {
+      throw new TypeError("startDriver env override must be a function");
+    }
+    const resolvedOverride = await envOverride({ profileDirectory, env: { ...env } });
+    if (
+      resolvedOverride === null ||
+      typeof resolvedOverride !== "object" ||
+      Array.isArray(resolvedOverride)
+    ) {
+      throw new TypeError("startDriver env override callback must return a plain object");
+    }
+    for (const [key, value] of Object.entries(resolvedOverride)) {
+      env[key] = String(value);
+    }
   }
   const driver = launch(
     "tauri-driver",

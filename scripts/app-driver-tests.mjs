@@ -175,18 +175,26 @@ test("prerequisites report wl-copy with its wl-clipboard install hint when missi
   );
 });
 
-test("verify-app single-flow modes including --scoresheet-paste are mutually exclusive", () => {
+test("verify-app single-flow modes including --scoresheet-paste and --external-link are mutually exclusive", () => {
   assert.equal(assertExclusiveFlowModes(["node", "scripts/verify-app.mjs"]), null);
   for (const flag of EXCLUSIVE_FLOW_FLAGS) {
     assert.equal(assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", flag]), flag);
   }
   assert.ok(EXCLUSIVE_FLOW_FLAGS.includes("--scoresheet-paste"));
-  for (const other of EXCLUSIVE_FLOW_FLAGS.filter((flag) => flag !== "--scoresheet-paste")) {
-    assert.throws(
-      () =>
-        assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", "--scoresheet-paste", other]),
-      /--scoresheet-paste.*mutually exclusive/u,
-    );
+  assert.ok(EXCLUSIVE_FLOW_FLAGS.includes("--external-link"));
+  for (const targetFlag of ["--scoresheet-paste", "--external-link"]) {
+    const escaped = targetFlag.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const pattern = new RegExp(`${escaped}.*mutually exclusive`, "u");
+    for (const other of EXCLUSIVE_FLOW_FLAGS.filter((flag) => flag !== targetFlag)) {
+      assert.throws(
+        () => assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", targetFlag, other]),
+        pattern,
+      );
+      assert.throws(
+        () => assertExclusiveFlowModes(["node", "scripts/verify-app.mjs", other, targetFlag]),
+        pattern,
+      );
+    }
   }
 });
 
@@ -361,6 +369,91 @@ for (const cpuRendering of [undefined, "0"]) {
     );
   });
 }
+
+test("startDriver passes profileDirectory to env override callback and applies its entries", async (t) => {
+  const spawned = [];
+  let driver;
+  const profiles = [];
+  t.after(async () => {
+    try {
+      await driver?.shutdown();
+      for (const profile of profiles) assert.equal(fs.existsSync(profile), false);
+    } finally {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+  });
+
+  let driverSpawned = false;
+  t.mock.method(childProcess, "spawn", (_cmd, _args, options) => {
+    const child = {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      exitCode: null,
+      signalCode: null,
+    };
+    driverSpawned = true;
+    spawned.push({ child, options });
+    return child;
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    if (!driverSpawned) {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:4444");
+    }
+    return { ok: true, body: null };
+  });
+  syncBuiltinESMExports();
+  driver = await import("./app-driver.mjs?env-override=callback");
+
+  let observedHome;
+  const fnResult = await driver.startDriver({
+    waylandDisplay: "override-display",
+    env: async ({ profileDirectory: home, env: baseEnv }) => {
+      observedHome = home;
+      assert.equal(baseEnv.HOME, home);
+      assert.equal(fs.existsSync(home), true);
+      return {
+        PATH: `${join(home, "bin")}:${baseEnv.PATH ?? ""}`,
+        XDG_CONFIG_HOME: join(home, "custom-xdg"),
+      };
+    },
+  });
+  profiles.push(fnResult.profileDirectory);
+  assert.equal(observedHome, fnResult.profileDirectory);
+  assert.equal(spawned.length, 1);
+  assert.equal(
+    spawned[0].options.env.PATH.startsWith(`${join(fnResult.profileDirectory, "bin")}:`),
+    true,
+  );
+  assert.equal(
+    spawned[0].options.env.XDG_CONFIG_HOME,
+    join(fnResult.profileDirectory, "custom-xdg"),
+  );
+  assert.equal(
+    fnResult.appEnvironment.XDG_CONFIG_HOME,
+    join(fnResult.profileDirectory, "custom-xdg"),
+  );
+
+  for (const [label, invalidReturn] of [
+    ["null", null],
+    ["string", "not-an-object"],
+    ["array", ["not", "an", "object"]],
+  ]) {
+    await driver.shutdown();
+    driverSpawned = false;
+    driver = await import(`./app-driver.mjs?env-override-invalid=${label}`);
+    await assert.rejects(
+      () =>
+        driver.startDriver({
+          waylandDisplay: `override-display-${label}`,
+          env: () => invalidReturn,
+        }),
+      (error) =>
+        error instanceof TypeError &&
+        /startDriver env override callback must return a plain object/u.test(error.message),
+    );
+  }
+});
 
 async function webdriverServer() {
   const server = createServer(async (request, response) => {
