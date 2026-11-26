@@ -1,13 +1,19 @@
-import { createStore } from "jotai";
+import { createStore, Provider } from "jotai";
+import { act, type ComponentProps, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test } from "vitest";
-import { tabsAtom } from "./atoms";
+import { disposeTabAtoms, tabsAtom } from "./atoms";
 import {
     opponentPreparationAtom,
     type StoredOpponentPreparation,
     tabPreparationViewFamily,
 } from "./atoms/preparation";
-import { resolveBoardLayoutKind } from "./boardLayoutKind";
+import { resolveBoardLayoutKind, useAnalysisTabLayoutKind } from "./boardLayoutKind";
+import type { BoardLayoutKind } from "./layoutPresets";
+import { WorkspaceTabScope } from "./tabScope";
 import type { Tab } from "./workspaceTypes";
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function repertoireTab(id: string): Tab {
     return {
@@ -111,5 +117,96 @@ describe("resolveBoardLayoutKind", () => {
         const allocated = Array.from(tabPreparationViewFamily.getParams());
         expect(allocated).not.toContain("closed-tab-id");
         expect(allocated).not.toContain("play-1");
+    });
+});
+
+describe("useAnalysisTabLayoutKind", () => {
+    let container: HTMLDivElement | null = null;
+    let root: Root | null = null;
+
+    afterEach(async () => {
+        if (root) {
+            const mounted = root;
+            root = null;
+            await act(async () => mounted.unmount());
+        }
+        container?.remove();
+        container = null;
+    });
+
+    function mountProbe(store: ReturnType<typeof createStore>) {
+        let observed: BoardLayoutKind | undefined;
+        function Probe({ currentTab }: { currentTab: Tab }) {
+            observed = useAnalysisTabLayoutKind(currentTab);
+            return null;
+        }
+        const render = async (currentTab: Tab) => {
+            if (!container || !root) {
+                container = document.createElement("div");
+                document.body.append(container);
+                root = createRoot(container);
+            }
+            const activeRoot = root;
+            await act(async () => {
+                activeRoot.render(
+                    createElement(
+                        Provider,
+                        { store },
+                        createElement(
+                            WorkspaceTabScope,
+                            { tabId: currentTab.value } as ComponentProps<typeof WorkspaceTabScope>,
+                            createElement(Probe, { currentTab }),
+                        ),
+                    ),
+                );
+            });
+        };
+        return { render, getKind: () => observed };
+    }
+
+    test("tracks repertoire, matching preparation, and replaced preparation inside WorkspaceTabScope", async () => {
+        const store = createStore();
+        const repTab = repertoireTab("rep-hook");
+        const probe = mountProbe(store);
+
+        await probe.render(repTab);
+        expect(probe.getKind()).toBe("repertoire");
+
+        await act(async () => {
+            store.set(opponentPreparationAtom, fakePreparation("prep-1"));
+            store.set(tabPreparationViewFamily("rep-hook"), {
+                preparationId: "prep-1",
+                landing: null,
+                showAllLines: false,
+            });
+        });
+        expect(probe.getKind()).toBe("preparation");
+
+        await act(async () => {
+            store.set(opponentPreparationAtom, fakePreparation("prep-2"));
+        });
+        expect(probe.getKind()).toBe("repertoire");
+
+        const nonRepTab = gameTab("game-hook");
+        await probe.render(nonRepTab);
+        expect(probe.getKind()).toBe("game");
+    });
+
+    test("re-rendering after disposeTabAtoms creates no orphaned tabPreparationViewFamily entry", async () => {
+        const store = createStore();
+        const tabId = "closing-tab";
+        const tab = repertoireTab(tabId);
+        const probe = mountProbe(store);
+
+        await probe.render(tab);
+        expect(Array.from(tabPreparationViewFamily.getParams())).toContain(tabId);
+
+        disposeTabAtoms(tabId);
+        expect(Array.from(tabPreparationViewFamily.getParams())).not.toContain(tabId);
+
+        // Simulate a closing-tab re-render (e.g. inside startTransition) after disposal.
+        await probe.render({ ...tab, name: "Rep (closing)" });
+        expect(probe.getKind()).toBe("repertoire");
+        expect(Array.from(tabPreparationViewFamily.getParams())).not.toContain(tabId);
     });
 });

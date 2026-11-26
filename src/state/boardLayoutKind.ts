@@ -7,6 +7,7 @@ import {
     tabPreparationViewFamily,
 } from "./atoms/preparation";
 import type { BoardLayoutKind } from "./layoutPresets";
+import { useTabAtom } from "./tabScope";
 import type { Tab } from "./workspaceTypes";
 
 /**
@@ -43,10 +44,13 @@ export function resolveBoardLayoutKind(
 }
 
 /**
- * Subscribes to the layout kind of an open analysis `tab`. Call only for open analysis tabs.
+ * Subscribes to the layout kind of an open analysis `tab`. Must be called inside a
+ * `WorkspaceTabScope` for `tab.value` so re-renders after `disposeTabAtoms` cannot recreate an
+ * orphaned `tabPreparationViewFamily` entry.
  */
 export function useAnalysisTabLayoutKind(tab: Tab): BoardLayoutKind {
     const preparation = useAtomValue(opponentPreparationAtom);
-    const view = useAtomValue(tabPreparationViewFamily(tab.value));
+    const preparationViewAtom = useTabAtom(tabPreparationViewFamily);
+    const view = useAtomValue(preparationViewAtom);
     return classifyBoardLayoutKind(tab, preparation?.id ?? null, view);
 }
