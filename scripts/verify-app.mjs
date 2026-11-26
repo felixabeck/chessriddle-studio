@@ -294,6 +294,11 @@ const progressApplication =
   applicationIndex === -1 ? APP_BINARY : process.argv[applicationIndex + 1];
 const expectedProgressGeneration =
   progressGenerationIndex === -1 ? undefined : process.argv[progressGenerationIndex + 1];
+// Browser-side expression for an element's text as assistive technology reads it, mirroring
+// src/tests/accessibleText.ts: aria-hidden subtrees are skipped. Feature buttons and the Library
+// type filter's options carry a decorative aria-hidden emoji since 4aee1135b, so a raw
+// textContent match against their translated word fails.
+const ACCESSIBLE_TEXT = String.raw`((root) => { const walk = (node) => { let text = ''; for (const child of node.childNodes) { if (child.nodeType === Node.TEXT_NODE) text += child.textContent; else if (child.nodeType === Node.ELEMENT_NODE && child.getAttribute('aria-hidden') !== 'true') text += walk(child); } return text; }; return walk(root).trim(); })`;
 const BASE_DIRECTORY_APP_DATA = 14; // @tauri-apps/api BaseDirectory.AppData
 const IPC_PROBE_TIMEOUT_MS = 5_000;
 const INSTANCE_PROBE_TIMEOUT_MS = 15_000;
@@ -2152,7 +2157,7 @@ async function verifySelectedRootPermissions(session, puzzleRoot, engineRoot) {
       session.execute(
         `
     const button = [...document.querySelectorAll('button')].find(node =>
-      (node.textContent.trim() === arguments[0] || node.getAttribute('aria-label') === arguments[0]) && !node.disabled);
+      (${ACCESSIBLE_TEXT}(node) === arguments[0] || node.getAttribute('aria-label') === arguments[0]) && !node.disabled);
     if (!button) return false;
     button.click();
     return true;
@@ -3085,8 +3090,7 @@ async function clickButton(session, name, icon = false) {
   const point = await reachableStableCoordinates(
     session,
     name,
-    // Feature buttons lead with an emoji since 4aee1135b; the text match ignores that prefix.
-    `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : node.textContent.trim().replace(/^[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+/u, '') === arguments[0]))`,
+    `[...document.querySelectorAll('button')].find(node => !node.disabled && (arguments[1] ? (node.getAttribute('aria-label') || '').startsWith(arguments[0]) : ${ACCESSIBLE_TEXT}(node) === arguments[0]))`,
     [name, icon],
   );
   await clickAt(session, point.x, point.y);
@@ -3892,6 +3896,17 @@ async function verifyDatabaseOrientation(session) {
   let previousAutoSave;
   const setAutoSave = async (enabled) => {
     await goToSettings(session);
+    // Auto Save lives in Analysis & notation since fecfa6daa; inactive panels stay mounted hidden.
+    const category = await coordinates(
+      "the Settings Analysis & notation category",
+      `document.querySelector('[role="tab"][data-settings-category="analysis"]')`,
+    );
+    await clickAt(session, category.x, category.y);
+    await wait("the Settings Analysis & notation category to be selected", () =>
+      session.execute(
+        `return document.querySelector('[role="tab"][data-settings-category="analysis"]')?.getAttribute('aria-selected') === 'true'`,
+      ),
+    );
     const checked = await wait("orientation Auto Save control", () =>
       session.execute(`
       const input = document.querySelector('input[aria-label="Auto Save"]');
@@ -7130,7 +7145,7 @@ async function verifyFullApplication(profileDirectory, appEnvironment) {
         const listbox = listboxId && document.getElementById(listboxId);
         if (listbox?.getAttribute('role') !== 'listbox') return null;
         return [...listbox.querySelectorAll('[role="option"]')].find(option =>
-          option.textContent.trim() === 'Repertoire');
+          ${ACCESSIBLE_TEXT}(option) === 'Repertoire');
       })()`,
       [control],
     );
@@ -8417,7 +8432,7 @@ async function verifyTimedRun(profileDirectory, screenshotDirectory) {
         await waitFor("New Tab Train openings action", () =>
           session.execute(`
             return location.pathname === '/' && [...document.querySelectorAll('[data-home-action]')]
-              .some((action) => action.textContent.trim().replace(/^[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+/u, '') === 'Train openings');
+              .some((action) => ${ACCESSIBLE_TEXT}(action) === 'Train openings');
           `),
         );
       });
