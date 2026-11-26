@@ -29679,7 +29679,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The focus-mode board snapshot is stale after the rebase onto the notation toolbar
 
-* **ID:** f-20261126-12 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-12 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45870461446
 * **First red:** `b16a0b3e2` (Test run 45870461446, job e2e; the previous Test run on `136849c62` was green)
@@ -29691,3 +29691,5 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** re-record the snapshot in the container on the rebased tree after checking the new image shows the intended layout.
 * **Proof:** the next Test run's e2e job succeeds.
 * **Found by:** Claude Code (Opus 5.5), focus-mode build push, 2026-11-26
+* **Handled (2026-11-26, Claude Code (Opus 5.5), focus-mode build):** commit `b043c7410` re-records `e2e/focus-mode.spec.ts-snapshots/focus-mode-board-focus-mode.png` in the container on `eb3648c7c`; the new image shows the hidden header, the full-height board, and the board bar, notation frame and Report tab from the two upstream builds. Proof: Test run 45873688892 on `b043c7410` is green in every job, e2e included. Cause on the process side: after rebasing onto `e273f1c46` the focus-mode e2e spec was not rerun in the container before the push.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5012093956015afe4ec6d4613956748add8285b4105c52afb81194abd07f923f","header_sha256":"999069ff485daad00902dd57a5a6d5cba2388a9f8115aa4ae2fb9ce9b3eb657e","header_status":"handled","input_sha256":"d24e3ddb3c5410648ddc77d06f4b6d4091bfffff09ace72193a80529d8a1a912","kind":"mutation-receipt","operation":"4e7e3859c52e827ca048ade0f65d7205caeb3bbdbf569986bf58a569d5bb4973","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-12"],"target":"f-20261126-12","v":1} -->
