@@ -2,7 +2,7 @@
 id: analysis-board
 title: 분석 보드, 변형 수순, 코멘트 및 화살표
 summary: 수 입력, 포지션 편집, 변형 수순 관리, 코멘트 작성, 주석 추가 및 보드에 화살표 그리기.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 [[page:new-tab]]에서 {{label:Home.Card.AnalysisBoard.Title}}을(를) 클릭하거나 [[page:library]]에서 저장된 대국이나 레퍼토리를 열어 분석 보드를 시작하세요.
@@ -17,7 +17,7 @@ source: 9fead5328d0f7506
 - {{label:Board.Database.Save}}: 대국을 라이브러리 파일이나 데이터베이스에 저장합니다.
 - 실행 취소, 다시 실행, 저장 및 보드 뒤집기 버튼.
 
-이전 포지션에서 다른 수를 두면 변형 수순이 만들어집니다. 기보에서 아무 수나 마우스 오른쪽 버튼으로 클릭해 {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} 또는 {{label:Notation.MarkGameEndHere}}을(를) 선택하세요. 기보 헤더 버튼을 사용해 {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, {{label:Notation.HideVariations}} 표시를 전환할 수 있습니다.
+이전 포지션에서 다른 수를 두면 변형 수순이 만들어집니다. 기보에서 아무 수나 마우스 오른쪽 버튼으로 클릭해 {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} 또는 {{label:Notation.MarkGameEndHere}}을(를) 선택하세요. 기보 헤더 버튼을 사용해 {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, {{label:Notation.HideVariations}} 표시를 전환할 수 있습니다.
 
 수에 주석을 달고 코멘트를 작성하려면 {{label:Board.Tabs.Annotate}} 탭을 여세요. 수 평가 기호를 클릭하거나 숫자 1~6 키를 눌러 `!!`, `!`, `!?`, `?!`, `?`, `??`를 전환하고, 형세 및 포지션 평가 기호는 {{label:Annotate.ShowMore}}을(를) 클릭해 확인하세요. 기호 아래의 서식 있는 텍스트 편집기에서 코멘트를 작성하고 인라인 보드 다이어그램을 추가하거나 숨길 수 있습니다.
 

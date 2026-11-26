@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
@@ -17,7 +17,7 @@ Pasek narzędzi obok notacji udostępnia akcje szachownicy:
 - {{label:Board.Database.Save}}: zapisz partię w pliku biblioteki lub w bazie danych.
 - Przyciski cofania, ponawiania, zapisu i odwracania szachownicy.
 
-Zagrania innego ruchu z wcześniejszej pozycji tworzy wariant. Kliknij prawym przyciskiem myszy dowolny ruch w notacji, aby wybrać {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} lub {{label:Notation.MarkGameEndHere}}. Użyj przycisków w nagłówku notacji, aby przełączać {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} i {{label:Notation.HideVariations}}.
+Zagrania innego ruchu z wcześniejszej pozycji tworzy wariant. Kliknij prawym przyciskiem myszy dowolny ruch w notacji, aby wybrać {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} lub {{label:Notation.MarkGameEndHere}}. Użyj przycisków w nagłówku notacji, aby przełączać {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} i {{label:Notation.HideVariations}}.
 
 Aby oceniać ruchy i pisać komentarze, otwórz kartę {{label:Board.Tabs.Annotate}}. Kliknij symbol oceny ruchu (lub naciśnij klawisze od 1 do 6), aby przełączyć `!!`, `!`, `!?`, `?!`, `?` lub `??`, albo kliknij {{label:Annotate.ShowMore}}, aby zobaczyć symbole oceny pozycji. Poniżej symboli użyj edytora tekstu sformatowanego do pisania komentarzy i wstawiania diagramów szachownicy w treści.
 

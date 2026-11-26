@@ -132,6 +132,7 @@ vi.mock("@/state/atoms", async () => {
 vi.mock("@/state/keybinds", async () => {
   const { atom } = await vi.importActual<typeof import("jotai")>("jotai");
   return {
+    firedByNativeMenu: () => false,
     keyMapAtom: atom({
       NEW_TAB: { keys: "mod+t" },
       CLOSE_TAB: { keys: "mod+w" },

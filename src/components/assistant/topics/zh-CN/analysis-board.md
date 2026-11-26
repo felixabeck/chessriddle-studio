@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盘、变例、评注与箭头
 summary: 输入着法、编辑局面、管理变例、撰写评注、添加注释符号以及在棋盘上绘制箭头。
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 在 [[page:new-tab]] 中点击 {{label:Home.Card.AnalysisBoard.Title}}，或在 [[page:library]] 中打开已保存的对局或开局库，即可打开分析棋盘。
@@ -17,7 +17,7 @@ source: 9fead5328d0f7506
 - {{label:Board.Database.Save}}：将对局保存到资料库文件或数据库中。
 - 撤销、重做、保存和翻转棋盘控件。
 
-从较早的局面走出不同的着法会创建一个变例。右键点击记谱中的任意着法，即可执行 {{label:Menu.PromoteVariation}}、{{label:Menu.PromoteToMainLine}}、{{label:Menu.CopyVariationPGN}}、{{label:Menu.DeleteMove}}、{{label:Board.Action.PlayFromHere}}、{{label:Notation.AddDiagram}} 或 {{label:Notation.MarkGameEndHere}}。使用记谱标题栏按钮可切换 {{label:Notation.HideMoves}}、{{label:Notation.TableView}}、{{label:Notation.HideComments}}、{{label:Notation.HideDiagrams}} 和 {{label:Notation.HideVariations}}。
+从较早的局面走出不同的着法会创建一个变例。右键点击记谱中的任意着法，即可执行 {{label:Menu.PromoteVariation}}、{{label:Menu.PromoteToMainLine}}、{{label:Menu.CopyVariationPGN}}、{{label:Menu.DeleteMove}}、{{label:Menu.DeleteVariation}}、{{label:Menu.DeleteMovesAfter}}、{{label:Board.Action.PlayFromHere}}、{{label:Notation.AddDiagram}} 或 {{label:Notation.MarkGameEndHere}}。使用记谱标题栏按钮可切换 {{label:Notation.HideMoves}}、{{label:Notation.TableView}}、{{label:Notation.HideComments}}、{{label:Notation.HideDiagrams}} 和 {{label:Notation.HideVariations}}。
 
 要为着法添加注释并撰写评注，请打开 {{label:Board.Tabs.Annotate}} 标签页。点击着法质量符号（或按数字键 1 到 6）可切换 `!!`、`!`、`!?`、`?!`、`?` 或 `??`，点击 {{label:Annotate.ShowMore}} 可显示局面评估与策略符号。符号下方的富文本编辑器可用于编写格式化的评注并开关行内棋盘局面图。
 

@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tabuleiro de análise, variantes, comentários e setas
 summary: Introduza lances, edite posições, gira variantes, escreva comentários, adicione anotações e desenhe setas no tabuleiro.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Abra um tabuleiro de análise a partir de [[page:new-tab]] clicando em {{label:Home.Card.AnalysisBoard.Title}}, ou abrindo uma partida ou repertório guardado a partir de [[page:library]].
@@ -17,7 +17,7 @@ A barra de ferramentas junto à notação disponibiliza ações para o tabuleiro
 - {{label:Board.Database.Save}}: guardar a partida num ficheiro da biblioteca ou numa base de dados.
 - Controlos para anular, refazer, guardar e rodar o tabuleiro.
 
-Jogar um lance diferente a partir de uma posição anterior cria uma variante. Clique com o botão direito do rato sobre qualquer lance na notação para {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilize os botões no cabeçalho da notação para alternar {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} e {{label:Notation.HideVariations}}.
+Jogar um lance diferente a partir de uma posição anterior cria uma variante. Clique com o botão direito do rato sobre qualquer lance na notação para {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilize os botões no cabeçalho da notação para alternar {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} e {{label:Notation.HideVariations}}.
 
 Para anotar lances e escrever comentários, abra o separador {{label:Board.Tabs.Annotate}}. Clique num símbolo de qualidade de lance (ou prima as teclas 1 a 6) para alternar `!!`, `!`, `!?`, `?!`, `?` ou `??`, ou clique em {{label:Annotate.ShowMore}} para ver símbolos de avaliação e posicionais. Abaixo dos símbolos, utilize o editor de texto formatado para escrever comentários e alternar diagramas de tabuleiro em linha.
 

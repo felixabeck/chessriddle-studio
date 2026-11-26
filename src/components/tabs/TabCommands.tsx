@@ -26,7 +26,7 @@ import {
   pendingGameStartFamily,
   tabsAtom,
 } from "@/state/atoms";
-import { keyMapAtom } from "@/state/keybinds";
+import { firedByNativeMenu, keyMapAtom } from "@/state/keybinds";
 import { pageTabsAtom, type PageTab } from "@/state/pageTabs";
 import { restorePuzzleSession } from "@/state/puzzleSession";
 import { tabStorage } from "@/state/store/tabStorage";
@@ -413,7 +413,10 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   }, [closeActiveOrPage]);
 
   const keyMap = useAtomValue(keyMapAtom);
-  useDocumentHotkeys(keyMap.NEW_TAB.keys, () => newTab(), backgroundHotkeyOptions);
+  useDocumentHotkeys(keyMap.NEW_TAB.keys, () => newTab(), {
+    ...backgroundHotkeyOptions,
+    enabled: !firedByNativeMenu("NEW_TAB"),
+  });
   useHotkeys(
     withKeyboardOwnership([
       [keyMap.CLOSE_TAB.keys, closeActiveOrPage],

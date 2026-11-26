@@ -50,6 +50,7 @@ import { boardTabId, isBoardsPath, isLibraryFamilyPath, pageTabOf } from "./boar
 import { TabActionsMenu } from "./TabActionsMenu";
 import { useTabCommands } from "./TabCommands";
 import classes from "./NavigationRow.module.css";
+import { formatKeymap } from "@/utils/formatKeymap";
 
 const appWindow = getCurrentWebviewWindow();
 const COMPACT_NAVIGATION_ROW_WIDTH_EM = 48;
@@ -145,7 +146,7 @@ function MenuItems({ options }: { options: MenuAction[] }) {
         rightSection={
           option.shortcut && (
             <Text size="xs" c="dimmed">
-              {option.shortcut}
+              {formatKeymap(option.shortcut)}
             </Text>
           )
         }

@@ -44,7 +44,7 @@ import {
   type QuitGateHost,
 } from "@/state/quitGate";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
-import { keyMapAtom } from "@/state/keybinds";
+import { firedByNativeMenu, keyMapAtom, nativeMenuAccelerator } from "@/state/keybinds";
 import { pickPgnFile } from "@/utils/files";
 import { openFile } from "@/utils/openFile";
 import { backgroundHotkeyOptions } from "@/utils/keyboardOwnership";
@@ -88,7 +88,7 @@ async function createMenu(menuActions: MenuGroup[]): Promise<MenuHandle> {
       MenuItem.new({
         id: option.id,
         text: option.label,
-        accelerator: option.shortcut,
+        accelerator: option.shortcut && nativeMenuAccelerator(option.shortcut),
         action: option.action,
       }),
     menu: (items) => Menu.new({ items: items as never }),
@@ -351,7 +351,7 @@ function RootShell() {
     () => {
       void menuCallbacks.openNewFile();
     },
-    backgroundHotkeyOptions,
+    { ...backgroundHotkeyOptions, enabled: !firedByNativeMenu("OPEN_FILE") },
   );
 
   const nativeMenuActions = useMemo(

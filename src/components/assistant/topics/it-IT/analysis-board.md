@@ -2,7 +2,7 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
@@ -17,7 +17,7 @@ La barra degli strumenti accanto alla notazione offre azioni sulla scacchiera:
 - {{label:Board.Database.Save}}: salva la partita in un file della libreria o in un database.
 - Comandi per annullare, ripetere, salvare e ruotare la scacchiera.
 
-Giocare una mossa diversa da una posizione precedente crea una variante. Fai clic con il tasto destro su qualsiasi mossa nella notazione per {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa i pulsanti nell’intestazione della notazione per attivare o disattivare {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} e {{label:Notation.HideVariations}}.
+Giocare una mossa diversa da una posizione precedente crea una variante. Fai clic con il tasto destro su qualsiasi mossa nella notazione per {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa i pulsanti nell’intestazione della notazione per attivare o disattivare {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} e {{label:Notation.HideVariations}}.
 
 Per annotare le mosse e scrivere commenti, apri la scheda {{label:Board.Tabs.Annotate}}. Fai clic su un simbolo di qualità della mossa (o premi i tasti da 1 a 6) per attivare o disattivare `!!`, `!`, `!?`, `?!`, `?` o `??`, oppure fai clic su {{label:Annotate.ShowMore}} per i simboli di valutazione e posizionali. Sotto i simboli, usa l’editor di testo formattato per scrivere commenti e inserire diagrammi della scacchiera nel testo.
 

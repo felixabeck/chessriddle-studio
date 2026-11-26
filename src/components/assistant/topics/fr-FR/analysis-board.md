@@ -2,7 +2,7 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
@@ -17,7 +17,7 @@ La barre d’outils à côté de la notation propose des actions sur l’échiqu
 - {{label:Board.Database.Save}} : enregistrer la partie dans un fichier de la bibliothèque ou une base de données.
 - Boutons pour annuler, rétablir, enregistrer et retourner l’échiquier.
 
-Jouer un autre coup à partir d’une position précédente crée une variante. Faites un clic droit sur n’importe quel coup dans la notation pour accéder à {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilisez les boutons de l’en-tête de la notation pour activer ou désactiver {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} et {{label:Notation.HideVariations}}.
+Jouer un autre coup à partir d’une position précédente crée une variante. Faites un clic droit sur n’importe quel coup dans la notation pour accéder à {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} ou {{label:Notation.MarkGameEndHere}}. Utilisez les boutons de l’en-tête de la notation pour activer ou désactiver {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} et {{label:Notation.HideVariations}}.
 
 Pour annoter des coups et rédiger des commentaires, ouvrez l’onglet {{label:Board.Tabs.Annotate}}. Cliquez sur un symbole de qualité de coup (ou appuyez sur les touches 1 à 6) pour basculer `!!`, `!`, `!?`, `?!`, `?` ou `??`, ou cliquez sur {{label:Annotate.ShowMore}} pour afficher les symboles d’évaluation et de position. Sous les symboles, utilisez l’éditeur de texte enrichi pour rédiger des commentaires mis en forme et insérer des diagrammes d’échiquier dans le texte.
 

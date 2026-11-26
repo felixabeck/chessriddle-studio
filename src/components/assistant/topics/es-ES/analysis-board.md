@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablero de análisis, variantes, comentarios y flechas
 summary: Introduce jugadas, edita posiciones, gestiona variantes, escribe comentarios, añade anotaciones y dibuja flechas en el tablero.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Abre un tablero de análisis desde [[page:new-tab]] haciendo clic en {{label:Home.Card.AnalysisBoard.Title}} o abriendo una partida o repertorio guardado desde [[page:library]].
@@ -17,7 +17,7 @@ La barra de herramientas junto a la notación ofrece acciones de tablero:
 - {{label:Board.Database.Save}}: guarda la partida en un archivo de la biblioteca o en una base de datos.
 - Controles para deshacer, rehacer, guardar y girar el tablero.
 
-Jugar una jugada distinta desde una posición anterior crea una variante. Haz clic derecho sobre cualquier jugada en la notación para usar {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa los botones del encabezado de la notación para alternar {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} y {{label:Notation.HideVariations}}.
+Jugar una jugada distinta desde una posición anterior crea una variante. Haz clic derecho sobre cualquier jugada en la notación para usar {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} o {{label:Notation.MarkGameEndHere}}. Usa los botones del encabezado de la notación para alternar {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} y {{label:Notation.HideVariations}}.
 
 Para anotar jugadas y escribir comentarios, abre la pestaña {{label:Board.Tabs.Annotate}}. Haz clic en un símbolo de calidad de jugada (o pulsa las teclas del 1 al 6) para alternar `!!`, `!`, `!?`, `?!`, `?` o `??`, o haz clic en {{label:Annotate.ShowMore}} para ver símbolos de evaluación y posicionales. Debajo de los símbolos, usa el editor de texto enriquecido para escribir comentarios con formato y activar diagramas integrados en el tablero.
 

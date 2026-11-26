@@ -36,8 +36,10 @@ import {
   getBoardState,
   getEffectiveGameEnd,
   getMemoizedBoardStateMap,
+  getNodeAtPath,
   type TreeNode,
 } from "@/utils/treeReducer";
+import { variationStartPath } from "@/state/store/tree";
 import type { NotationNodeIndex } from "./notationRows";
 import { pathForNotationNode } from "./notationRows";
 import MoveCell, { releasePointerFocus } from "./MoveCell";
@@ -297,6 +299,8 @@ type MoveMenuActions = {
   promote: () => void;
   copy?: () => void;
   delete?: () => void;
+  deleteVariation?: () => void;
+  deleteMovesAfter?: () => void;
 };
 
 function MoveActionItems({
@@ -371,6 +375,24 @@ function MoveActionItems({
           onClick={() => onAction(actions.delete!)}
         >
           {t("Menu.DeleteMove")}
+        </Menu.Item>
+      )}
+      {actions.deleteVariation && (
+        <Menu.Item
+          color="danger"
+          leftSection={<Trash2 size="0.875rem" />}
+          onClick={() => onAction(actions.deleteVariation!)}
+        >
+          {t("Menu.DeleteVariation")}
+        </Menu.Item>
+      )}
+      {actions.deleteMovesAfter && (
+        <Menu.Item
+          color="danger"
+          leftSection={<Trash2 size="0.875rem" />}
+          onClick={() => onAction(actions.deleteMovesAfter!)}
+        >
+          {t("Menu.DeleteMovesAfter")}
         </Menu.Item>
       )}
     </>
@@ -460,6 +482,15 @@ function OpenMoveMenu({
               ? () => actions.deleteMove(path)
               : deletion.canDelete(path)
                 ? () => deletion.delete(path)
+                : undefined,
+            // A live game's tree mirrors the native game, which only takes back the last move.
+            deleteVariation:
+              !deletion && variationStartPath(path)
+                ? () => actions.deleteVariation(path)
+                : undefined,
+            deleteMovesAfter:
+              !deletion && getNodeAtPath(root, path).children.length > 0
+                ? () => actions.deleteMovesAfter(path)
                 : undefined,
           }}
           isGameEnd={isGameEnd}

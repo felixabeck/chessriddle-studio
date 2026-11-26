@@ -2,7 +2,7 @@
 id: analysis-board
 title: Дошка аналізу, варіанти, коментарі та стрілки
 summary: Введення ходів, редагування позицій, керування варіантами, написання коментарів, додавання анотацій і малювання стрілок на дошці.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Відкрийте дошку аналізу зі сторінки [[page:new-tab]], натиснувши {{label:Home.Card.AnalysisBoard.Title}}, або відкривши збережену партію чи репертуар із [[page:library]].
@@ -17,7 +17,7 @@ source: 9fead5328d0f7506
 - {{label:Board.Database.Save}}: зберегти партію у файл бібліотеки або базу даних.
 - Кнопки скасування, повтору, збереження та перевертання дошки.
 
-Якщо зробити інший хід із попередньої позиції, створюється варіант. Клацніть правою кнопкою миші по будь-якому ходу в нотації, щоб вибрати {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Кнопки в заголовку нотації перемикають {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} і {{label:Notation.HideVariations}}.
+Якщо зробити інший хід із попередньої позиції, створюється варіант. Клацніть правою кнопкою миші по будь-якому ходу в нотації, щоб вибрати {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} або {{label:Notation.MarkGameEndHere}}. Кнопки в заголовку нотації перемикають {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} і {{label:Notation.HideVariations}}.
 
 Щоб додавати анотації до ходів і писати коментарі, відкрийте вкладку {{label:Board.Tabs.Annotate}}. Натисніть символ якості ходу (або клавіші від 1 до 6), щоб перемкнути `!!`, `!`, `!?`, `?!`, `?` чи `??`, або натисніть {{label:Annotate.ShowMore}} для оцінкових і позиційних символів. Під символами в текстовому редакторі можна писати форматовані коментарі та перемикати вбудовані діаграми дошки.
 

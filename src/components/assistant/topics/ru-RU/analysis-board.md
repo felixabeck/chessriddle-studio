@@ -2,7 +2,7 @@
 id: analysis-board
 title: Доска анализа, варианты, комментарии и стрелки
 summary: Ввод ходов, редактирование позиций, работа с вариантами, написание комментариев, добавление аннотаций и рисование стрелок на доске.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Откройте доску анализа со страницы [[page:new-tab]], нажав {{label:Home.Card.AnalysisBoard.Title}}, или открыв сохранённую партию либо репертуар из [[page:library]].
@@ -17,7 +17,7 @@ source: 9fead5328d0f7506
 - {{label:Board.Database.Save}}: сохранить партию в файл библиотеки или в базу данных.
 - Кнопки отмены, повтора, сохранения и переворота доски.
 
-Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Кнопки в заголовке нотации позволяют переключать {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} и {{label:Notation.HideVariations}}.
+Если сделать другой ход из более ранней позиции, создаётся вариант. Щёлкните правой кнопкой мыши по любому ходу в нотации, чтобы выбрать {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} или {{label:Notation.MarkGameEndHere}}. Кнопки в заголовке нотации позволяют переключать {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} и {{label:Notation.HideVariations}}.
 
 Чтобы добавлять аннотации к ходам и писать комментарии, откройте вкладку {{label:Board.Tabs.Annotate}}. Нажмите на символ оценки хода (или клавиши от 1 до 6), чтобы переключить `!!`, `!`, `!?`, `?!`, `?` или `??`, либо нажмите {{label:Annotate.ShowMore}} для символов оценки позиции. Под символами расположен текстовый редактор для форматированных комментариев и добавления встроенных диаграмм доски.
 

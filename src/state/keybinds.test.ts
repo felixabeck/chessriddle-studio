@@ -4,7 +4,7 @@ vi.mock("@/components/files/notifyError", () => ({ notifyListenerError: vi.fn() 
 import { notifyListenerError } from "@/components/files/notifyError";
 import { createKeybindStorage } from "./keybinds";
 import { createStore } from "jotai";
-import { keybindLabel, keyMapAtom } from "./keybinds";
+import { firedByNativeMenu, keybindLabel, keyMapAtom } from "./keybinds";
 import type { TFunction } from "i18next";
 
 const defaults = {
@@ -161,4 +161,9 @@ test("no other default shares the open-variation shortcut's key", () => {
         .filter(([, binding]) => binding.keys === current.NEXT_OPEN_VARIATION.keys)
         .map(([id]) => id);
     expect(sharing).toEqual(["NEXT_OPEN_VARIATION"]);
+});
+
+test("off macOS no shortcut is left to a native menu", () => {
+    expect(firedByNativeMenu("NEW_TAB")).toBe(false);
+    expect(firedByNativeMenu("SAVE_FILE")).toBe(false);
 });

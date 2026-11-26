@@ -16,7 +16,7 @@ The toolbar beside the notation provides board actions:
 - {{label:Board.Database.Save}}: save the game to a library file or database.
 - Undo, redo, save, and flip board controls.
 
-Playing a different move from an earlier position creates a variation. Right-click any move in the notation to {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}}, or {{label:Notation.MarkGameEndHere}}. Use the notation header buttons to toggle {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, and {{label:Notation.HideVariations}}.
+Playing a different move from an earlier position creates a variation. Right-click any move in the notation to {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}}, or {{label:Notation.MarkGameEndHere}}. Use the notation header buttons to toggle {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}}, and {{label:Notation.HideVariations}}.
 
 To annotate moves and write comments, open the {{label:Board.Tabs.Annotate}} tab. Click a move-quality symbol (or press keys 1 through 6) to toggle `!!`, `!`, `!?`, `?!`, `?`, or `??`, or click {{label:Annotate.ShowMore}} for evaluation and positional symbols. Below the symbols, use the rich-text editor to write formatted comments and toggle inline board diagrams.
 

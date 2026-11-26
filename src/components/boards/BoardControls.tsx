@@ -24,6 +24,7 @@ import IconAction from "@/components/common/IconAction";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { autoSaveAtom, eraseDrawablesOnClickAtom } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { formatKeymap } from "@/utils/formatKeymap";
 import { usePlayFromHere } from "./usePlayFromHere";
 
 interface BoardControlsProps {
@@ -125,14 +126,14 @@ function BoardControls({
       {allowUndo && (
         <>
           <IconAction
-            label={t("Board.Action.Undo", { key: keyMap.UNDO.keys })}
+            label={t("Board.Action.Undo", { key: formatKeymap(keyMap.UNDO.keys) })}
             onClick={() => undo()}
             disabled={!canUndo}
           >
             <Undo2 size="1.2rem" />
           </IconAction>
           <IconAction
-            label={t("Board.Action.Redo", { key: keyMap.REDO.keys })}
+            label={t("Board.Action.Redo", { key: formatKeymap(keyMap.REDO.keys) })}
             onClick={() => redo()}
             disabled={!canRedo}
           >
@@ -167,7 +168,7 @@ function BoardControls({
 
       {saveFile && (
         <IconAction
-          label={t("Board.Action.SavePGN", { key: keyMap.SAVE_FILE.keys })}
+          label={t("Board.Action.SavePGN", { key: formatKeymap(keyMap.SAVE_FILE.keys) })}
           onClick={() => saveFile()}
           variant={dirty && !autoSave ? "default" : "transparent"}
         >
@@ -181,7 +182,7 @@ function BoardControls({
       )}
       <IconAction
         label={t("Board.Action.FlipBoard", {
-          key: keyMap.SWAP_ORIENTATION.keys,
+          key: formatKeymap(keyMap.SWAP_ORIENTATION.keys),
         })}
         onClick={() => toggleOrientation()}
       >

@@ -41,7 +41,7 @@ import { locateBoardState } from "@/utils/treeReducer";
 import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
 import { readEngineLines } from "../panels/analysis/engineLines";
 import { coachEnabledAtom } from "@/state/coach";
-import { keyMapAtom } from "@/state/keybinds";
+import { firedByNativeMenu, keyMapAtom } from "@/state/keybinds";
 import type { Annotation } from "@/utils/annotation";
 import {
   AddGameContext,
@@ -377,7 +377,9 @@ function BoardAnalysis() {
 
   useHotkeys(
     withKeyboardOwnership([
-      [keyMap.SAVE_FILE.keys, () => requestUserSave()],
+      ...(firedByNativeMenu("SAVE_FILE")
+        ? []
+        : [[keyMap.SAVE_FILE.keys, () => requestUserSave()] satisfies HotkeyItem]),
       [keyMap.CLEAR_SHAPES.keys, () => clearShapes()],
       [keyMap.UNDO.keys, () => store.getState().undo()],
       [keyMap.REDO.keys, () => store.getState().redo()],

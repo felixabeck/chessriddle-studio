@@ -6,7 +6,23 @@ import { atomWithStorage } from "jotai/utils";
 import type { SyncStorage, SyncStringStorage } from "jotai/vanilla/utils/atomWithStorage";
 import { z } from "zod";
 
-const meta = platform() === "macos" ? "cmd" : "ctrl";
+// react-hotkeys-hook knows the Command key only as "meta"; it reads "cmd" as a plain key that
+// never matches, so a "cmd+…" binding never fires. The native menu wants "cmd" instead
+// (`nativeMenuAccelerator`).
+const meta = platform() === "macos" ? "meta" : "ctrl";
+
+/** One modifier token rewritten in a "+"-joined key list, leaving every other token alone. */
+function replaceKeyToken(keys: string, from: string, to: string): string {
+    return keys
+        .split("+")
+        .map((key) => (key === from ? to : key))
+        .join("+");
+}
+
+/** A stored binding as a native menu accelerator, whose parser accepts "cmd" but not "meta". */
+export function nativeMenuAccelerator(keys: string): string {
+    return replaceKeyToken(keys, "meta", "cmd");
+}
 
 type Keybind = {
     name: string;
@@ -134,6 +150,21 @@ const definitions = {
         name: "Delete move",
         keys: "delete",
     },
+    DELETE_VARIATION: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.DELETE_VARIATION"),
+        name: "Delete variation",
+        keys: `${meta}+delete`,
+    },
+    DELETE_MOVES_AFTER: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.DELETE_MOVES_AFTER"),
+        name: "Delete moves after this move",
+        keys: "shift+delete",
+    },
+    PROMOTE_VARIATION: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.PROMOTE_VARIATION"),
+        name: "Promote variation",
+        keys: `${meta}+arrowup`,
+    },
     CYCLE_TABS: {
         labelKey: i18nKey("Settings.Keybinds.Actions.CYCLE_TABS"),
         name: "Cycle tabs",
@@ -250,6 +281,20 @@ export type KeybindActionId = keyof typeof definitions;
 
 export const KEYBIND_ACTION_IDS = Object.keys(definitions) as KeybindActionId[];
 
+const NATIVE_MENU_ACTIONS: ReadonlySet<KeybindActionId> = new Set([
+    "NEW_TAB",
+    "OPEN_FILE",
+    "SAVE_FILE",
+]);
+
+/**
+ * Whether the native macOS menu fires this shortcut as its own accelerator, so a renderer hook
+ * for it would run the action a second time.
+ */
+export function firedByNativeMenu(action: KeybindActionId): boolean {
+    return platform() === "macos" && NATIVE_MENU_ACTIONS.has(action);
+}
+
 // Stored keymaps stay `{ [action]: { name, keys } }`; the label key is never persisted.
 const keys: KeyMap = Object.fromEntries(
     Object.entries(definitions).map(([action, { name, keys }]) => [action, { name, keys }]),
@@ -286,10 +331,15 @@ export function createKeybindStorage(
             persisted.PREVIOUS_BRANCH = { ...defaults.PREVIOUS_BRANCH };
         }
         return Object.fromEntries(
-            Object.entries(defaults).map(([id, fallback]) => [
-                id,
-                persisted[id] ? { ...fallback, ...persisted[id] } : { ...fallback },
-            ]),
+            Object.entries(defaults).map(([id, fallback]) => {
+                const stored = persisted[id];
+                if (!stored) return [id, { ...fallback }];
+                // Earlier builds stored macOS Command bindings as "cmd", which never matched.
+                return [
+                    id,
+                    { ...fallback, ...stored, keys: replaceKeyToken(stored.keys, "cmd", meta) },
+                ];
+            }),
         );
     };
 
@@ -318,7 +368,7 @@ export function createKeybindStorage(
             const normalized = Object.fromEntries(
                 Object.entries(repair(value)).map(([id, binding]) => [
                     id,
-                    { ...binding, keys: binding.keys.replace("meta", meta) },
+                    { ...binding, keys: replaceKeyToken(binding.keys, "meta", meta) },
                 ]),
             );
             try {

@@ -390,6 +390,107 @@ test.each([
   },
 );
 
+test("the move menu offers Delete variation in a side line and Delete following moves before a continuation", async () => {
+  const tree = defaultTree();
+  const mainMove = createNode({
+    fen: "e4 w - - 0 1",
+    move: { from: 12, to: 28 },
+    san: "e4",
+    halfMoves: 1,
+  });
+  const sideMove = createNode({
+    fen: "d4 w - - 0 1",
+    move: { from: 11, to: 27 },
+    san: "d4",
+    halfMoves: 1,
+  });
+  sideMove.children = [
+    createNode({ fen: "d5 b - - 0 1", move: { from: 51, to: 35 }, san: "d5", halfMoves: 2 }),
+  ];
+  tree.root.children = [mainMove, sideMove];
+  const store = createTreeStore();
+  const actions = { deleteVariation: vi.fn(), deleteMovesAfter: vi.fn() };
+  store.setState({ ...store.getState(), ...actions, root: tree.root });
+  const index = createNotationNodeIndex(tree.root);
+  const cell = (node: TreeNode) => (
+    <CompleteMoveCell
+      node={node}
+      nodeIndex={index}
+      root={tree.root}
+      halfMoves={node.halfMoves}
+      move={node.san}
+      fen={node.fen}
+      comment=""
+      annotations={[]}
+      showComments={false}
+      isStart={false}
+      isCurrentVariation={false}
+    />
+  );
+
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <EphemeralTabScope>
+          {cell(mainMove)}
+          {cell(sideMove)}
+        </EphemeralTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+
+  const moves = () => [...host.querySelectorAll<HTMLButtonElement>("[data-move]")];
+  const openMenu = async (move: number) => {
+    await act(async () => {
+      moves()[move].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+    });
+  };
+  const items = () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[data-menu-item="true"]')].map(
+      (button) => button.textContent,
+    );
+
+  await openMenu(0);
+  expect(items()).not.toContain("Menu.DeleteVariation");
+  expect(items()).not.toContain("Menu.DeleteMovesAfter");
+  // A second right-click on the open menu's move closes it.
+  await openMenu(0);
+  expect(host.querySelectorAll('[data-menu="true"]').length).toBe(0);
+
+  for (const [label, action] of [
+    ["Menu.DeleteVariation", actions.deleteVariation],
+    ["Menu.DeleteMovesAfter", actions.deleteMovesAfter],
+  ] as const) {
+    await openMenu(1);
+    await act(async () => {
+      [...host.querySelectorAll<HTMLButtonElement>('[data-menu-item="true"]')]
+        .find((button) => button.textContent === label)!
+        .click();
+    });
+    expect(action).toHaveBeenCalledExactlyOnceWith([1]);
+  }
+
+  // A live game's tree mirrors the native game, so neither entry is offered there.
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <EphemeralTabScope>
+          <MoveDeletionContext.Provider value={{ canDelete: () => true, delete: vi.fn() }}>
+            {cell(mainMove)}
+            {cell(sideMove)}
+          </MoveDeletionContext.Provider>
+        </EphemeralTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+  await openMenu(1);
+  expect(items()).toContain("Menu.DeleteMove");
+  expect(items()).not.toContain("Menu.DeleteVariation");
+  expect(items()).not.toContain("Menu.DeleteMovesAfter");
+});
+
 test.each(["training", "disabled", "default"] as const)(
   "%s capability exposes only its allowed move actions and routes callbacks",
   async (capability) => {

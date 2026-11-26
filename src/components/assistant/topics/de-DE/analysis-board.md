@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, Varianten, Kommentare und Pfeile
 summary: Züge eingeben, Stellungen bearbeiten, Varianten verwalten, Kommentare schreiben, Annotationen setzen und Pfeile auf dem Brett zeichnen.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Öffne ein Analysebrett über [[page:new-tab]] mit einem Klick auf {{label:Home.Card.AnalysisBoard.Title}} oder indem du eine gespeicherte Partie oder ein Repertoire aus [[page:library]] öffnest.
@@ -17,7 +17,7 @@ Die Werkzeugleiste neben der Notation bietet folgende Brett-Aktionen:
 - {{label:Board.Database.Save}}: Die Partie in einer Bibliotheksdatei oder Datenbank speichern.
 - Steuerung für Rückgängig, Wiederholen, Speichern und Brett drehen.
 
-Wenn du in einer früheren Stellung einen anderen Zug spielst, entsteht eine Variante. Klicke mit der rechten Maustaste auf einen Zug in der Notation für {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} oder {{label:Notation.MarkGameEndHere}}. Über die Schaltflächen in der Notationskopfzeile schaltest du {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} und {{label:Notation.HideVariations}} um.
+Wenn du in einer früheren Stellung einen anderen Zug spielst, entsteht eine Variante. Klicke mit der rechten Maustaste auf einen Zug in der Notation für {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} oder {{label:Notation.MarkGameEndHere}}. Über die Schaltflächen in der Notationskopfzeile schaltest du {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} und {{label:Notation.HideVariations}} um.
 
 Um Züge zu bewerten und Kommentare zu schreiben, öffne den Tab {{label:Board.Tabs.Annotate}}. Klicke auf ein Zugbewertungssymbol (oder drücke die Tasten 1 bis 6), um `!!`, `!`, `!?`, `?!`, `?` oder `??` umzuschalten, oder klicke auf {{label:Annotate.ShowMore}} für Stellungs- und Bewertungssymbole. Darunter kannst du mit dem Rich-Text-Editor formatierte Kommentare verfassen und Inline-Brettdiagramme einfügen.
 

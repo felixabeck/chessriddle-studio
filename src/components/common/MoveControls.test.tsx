@@ -35,6 +35,9 @@ const settings = vi.hoisted(() => ({
     PREVIOUS_BRANCHING: "shift+arrowleft",
     NEXT_OPEN_VARIATION: "u",
     DELETE_MOVE: "delete",
+    DELETE_VARIATION: "ctrl+delete",
+    DELETE_MOVES_AFTER: "shift+delete",
+    PROMOTE_VARIATION: "ctrl+arrowup",
   },
 }));
 
@@ -817,6 +820,70 @@ test("readOnly keeps Delete harmless even with a provided move deletion", () => 
 
   expect(deletion.delete).not.toHaveBeenCalled();
   expect(store.getState().root.children).toHaveLength(1);
+});
+
+test("Ctrl+Delete removes the whole side line and leaves the plain Delete binding unfired", () => {
+  const tree = defaultTree();
+  tree.root.children = [
+    fixtureNode("e4", { children: [fixtureNode("e5", { halfMoves: 2 })] }),
+    fixtureNode("d4", { children: [fixtureNode("d5", { halfMoves: 2 })] }),
+  ];
+  tree.position = [1, 0];
+  store = createTreeStore(undefined, tree);
+  render();
+
+  press("Delete", { ctrlKey: true });
+
+  let state = store.getState();
+  expect(state.root.children.map((child) => child.san)).toEqual(["e4"]);
+  expect(state.root.children[0].children.map((child) => child.san)).toEqual(["e5"]);
+  expect(state.position).toEqual([]);
+  // One edit: had Delete also fired, a single undo would bring back d4 without d5.
+  act(() => store.getState().undo());
+  state = store.getState();
+  expect(state.root.children[1].children.map((child) => child.san)).toEqual(["d5"]);
+});
+
+test("Shift+Delete removes the moves after the cursor and keeps the cursor move", () => {
+  store = middleGameStore();
+  render();
+
+  press("Delete", { shiftKey: true });
+
+  const state = store.getState();
+  expect(state.root.children.map((child) => child.san)).toEqual(["e4"]);
+  expect(state.root.children[0].children).toEqual([]);
+  expect(state.position).toEqual([0]);
+});
+
+test("Ctrl+ArrowUp promotes the cursor's variation without jumping to the branch start", () => {
+  store = middleGameStore();
+  store.getState().goToMove([0, 1]);
+  render();
+
+  press("ArrowUp", { ctrlKey: true });
+
+  const state = store.getState();
+  expect(state.root.children[0].children.map((child) => child.san)).toEqual(["c5", "e5"]);
+  expect(state.position).toEqual([0, 0]);
+});
+
+test.each([
+  ["a live game's move deletion", { deletion: { canDelete: () => true, delete: vi.fn() } }],
+  ["readOnly", { readOnly: true }],
+] as const)("%s keeps the variation edit keys harmless", (_label, renderOptions) => {
+  store = middleGameStore();
+  store.getState().goToMove([0, 1]);
+  store.setState({ dirty: false });
+  render(renderOptions);
+  const before = store.getState().root;
+
+  press("Delete", { ctrlKey: true });
+  press("Delete", { shiftKey: true });
+  press("ArrowUp", { ctrlKey: true });
+
+  expect(store.getState().root).toBe(before);
+  expect(store.getState().dirty).toBe(false);
 });
 
 test("opening a real commentary citation suspends background Delete and ArrowLeft", async () => {

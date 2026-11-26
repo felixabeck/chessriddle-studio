@@ -1926,6 +1926,102 @@ test("deleting a sibling rebases deep cursor and repertoire start to the same no
     expect(boardStateMap["deep-c w - -"]).toBeUndefined();
 });
 
+test("deleteVariation removes a nested side line from its first move", () => {
+    const store = nestedPracticePathStore();
+    store.getState().goToMove([0, 2, 1]);
+    const kept = getNodeAtPath(store.getState().root, [0, 2, 0]);
+
+    store.getState().deleteVariation([0, 2, 1]);
+
+    const state = store.getState();
+    expect(getNodeAtPath(state.root, [0, 2]).children).toEqual([kept]);
+    expect(state.position).toEqual([0, 2]);
+    expect(state.dirty).toBe(true);
+});
+
+test("deleteVariation from deeper in a side line removes it from its first move", () => {
+    const store = nestedPracticePathStore();
+    store.getState().goToMove([0, 3, 0]);
+
+    store.getState().deleteVariation([0, 3, 0]);
+
+    const state = store.getState();
+    expect(getNodeAtPath(state.root, [0]).children.map((child) => child.fen)).toEqual([
+        "a-0 w - - 0 1",
+        "a-1 w - - 0 1",
+        "a-2 w - - 0 1",
+    ]);
+    expect(state.position).toEqual([0]);
+});
+
+test("deleteVariation on the main line changes nothing", () => {
+    const store = nestedPracticePathStore();
+    store.getState().goToMove([0, 0, 0]);
+    store.setState({ dirty: false });
+    const before = store.getState().root;
+
+    store.getState().deleteVariation([0, 0, 0]);
+
+    expect(store.getState().root).toBe(before);
+    expect(store.getState().dirty).toBe(false);
+});
+
+test("promoteVariation on the main line leaves the game unmodified", () => {
+    const store = nestedPracticePathStore();
+    store.setState({ dirty: false });
+    const before = store.getState().root;
+
+    store.getState().promoteVariation([0, 0, 0]);
+
+    expect(store.getState().root).toBe(before);
+    expect(store.getState().dirty).toBe(false);
+});
+
+test("deleteMovesAfter keeps the move, clears targets after it and is one undo step", () => {
+    const { store, deepA, deepB } = threeBranchStore();
+    store.getState().goToMove([1, 0]);
+    store.getState().setStart([1, 0]);
+
+    store.getState().deleteMovesAfter([1]);
+
+    let state = store.getState();
+    expect(state.root.children[1].children).toEqual([]);
+    expect(state.root.children[1].fen).toBe("b w - - 0 1");
+    expect(state.position).toEqual([1]);
+    expect(state.headers.start).toBeUndefined();
+    expect(getNodeAtPath(state.root, [0, 0])).toBe(deepA);
+
+    store.getState().undo();
+
+    state = store.getState();
+    expect(getNodeAtPath(state.root, [1, 0])).toEqual(deepB);
+    expect(state.position).toEqual([1, 0]);
+});
+
+test("deleteMovesAfter keeps a target outside the cleared moves", () => {
+    const { store, deepC } = threeBranchStore();
+    store.getState().goToMove([2, 0]);
+
+    store.getState().deleteMovesAfter([1]);
+
+    expect(store.getState().position).toEqual([2, 0]);
+    expect(getNodeAtPath(store.getState().root, [2, 0])).toBe(deepC);
+});
+
+test("deleteMovesAfter with a stale path never clears an ancestor's moves", () => {
+    const { store } = threeBranchStore();
+    store.setState({ dirty: false });
+    const before = store.getState().root;
+
+    // [1, 5] resolves only to "b", which has a move after it that must survive.
+    store.getState().deleteMovesAfter([1, 5]);
+    store.getState().deleteMovesAfter([2, 0, 3]);
+
+    expect(store.getState().root).toBe(before);
+    expect(store.getState().root.children[1].children).toHaveLength(1);
+    expect(store.getState().dirty).toBe(false);
+});
+
 test("deleting a target subtree clears only targets inside it", () => {
     const { store, deepA } = threeBranchStore();
     store.getState().goToMove([1, 0]);

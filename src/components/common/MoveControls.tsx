@@ -38,6 +38,9 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
   const start = useStore(store, (s) => s.goToStart);
   const end = useStore(store, (s) => s.goToEnd);
   const deleteMove = useStore(store, (s) => s.deleteMove);
+  const deleteVariation = useStore(store, (s) => s.deleteVariation);
+  const deleteMovesAfter = useStore(store, (s) => s.deleteMovesAfter);
+  const promoteVariation = useStore(store, (s) => s.promoteVariation);
   const deletion = useContext(MoveDeletionContext);
   const startBranch = useStore(store, (s) => s.goToBranchStart);
   const endBranch = useStore(store, (s) => s.goToBranchEndOrNextLine);
@@ -109,6 +112,18 @@ function MoveControls({ readOnly }: { readOnly?: boolean }) {
     }),
     shortcutOptions(),
   );
+  // A live game provides `deletion`: its tree mirrors the native game, so these edits stay off,
+  // and a disabled key keeps its default action.
+  const lineEditOptions = shortcutOptions(!readOnly && !deletion);
+  const editCurrentLine = (edit: (path: number[]) => void) =>
+    navigate(() => edit(store.getState().position));
+  useHotkeys(keyMap.DELETE_VARIATION.keys, editCurrentLine(deleteVariation), lineEditOptions);
+  useHotkeys(keyMap.DELETE_MOVES_AFTER.keys, editCurrentLine(deleteMovesAfter), lineEditOptions);
+  // preventDefault: the modified arrow must not also scroll the notation.
+  useHotkeys(keyMap.PROMOTE_VARIATION.keys, editCurrentLine(promoteVariation), {
+    ...lineEditOptions,
+    preventDefault: true,
+  });
   // While the list is open, only bare ArrowUp/ArrowDown select, whatever the branch key bindings.
   // preventDefault: a no-op press at the main line end must not scroll the notation instead.
   useHotkeys(keyMap.GO_TO_BRANCH_START.keys, branchNavigation(startBranch), {

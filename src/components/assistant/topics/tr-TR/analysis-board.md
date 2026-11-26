@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analiz tahtası, varyasyonlar, yorumlar ve oklar
 summary: Hamle girme, konum düzenleme, varyasyonları yönetme, yorum yazma, açıklama ekleme ve tahta üzerinde oklar çizme.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 [[page:new-tab]] üzerinden {{label:Home.Card.AnalysisBoard.Title}} öğesine tıklayarak veya [[page:library]] sayfasından kayıtlı bir oyun ya da repertuvar açarak bir analiz tahtası açın.
@@ -17,7 +17,7 @@ Notasyonun yanındaki araç çubuğu tahta eylemleri sunar:
 - {{label:Board.Database.Save}}: oyunu bir kütüphane dosyasına veya veritabanına kaydedin.
 - Geri alma, yineleme, kaydetme ve tahtayı çevirme denetimleri.
 
-Önceki bir konumdan farklı bir hamle oynamak yeni bir varyasyon oluşturur. Notasyondaki herhangi bir hamleye sağ tıklayarak {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} veya {{label:Notation.MarkGameEndHere}} seçeneklerini kullanın. {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} ve {{label:Notation.HideVariations}} görünümlerini açıp kapatmak için notasyon başlığındaki düğmeleri kullanın.
+Önceki bir konumdan farklı bir hamle oynamak yeni bir varyasyon oluşturur. Notasyondaki herhangi bir hamleye sağ tıklayarak {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} veya {{label:Notation.MarkGameEndHere}} seçeneklerini kullanın. {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} ve {{label:Notation.HideVariations}} görünümlerini açıp kapatmak için notasyon başlığındaki düğmeleri kullanın.
 
 Hamlelere açıklama eklemek ve yorum yazmak için {{label:Board.Tabs.Annotate}} sekmesini açın. `!!`, `!`, `!?`, `?!`, `?` veya `??` sembollerini değiştirmek için bir hamle kalitesi sembolüne tıklayın (ya da 1 ile 6 arasındaki tuşlara basın); değerlendirme ve konumsal semboller için {{label:Annotate.ShowMore}} düğmesine tıklayın. Sembollerin altında biçimlendirilmiş yorumlar yazmak ve satır içi tahta diyagramlarını açıp kapatmak için zengin metin düzenleyicisini kullanın.
 

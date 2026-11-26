@@ -154,6 +154,10 @@ export interface TreeStoreState extends TreeState {
         changeHeaders?: boolean;
     }) => MoveSequenceResult;
     deleteMove: (path?: number[]) => void;
+    /** Deletes the whole side line `path` lies in, from its first move; a no-op on the main line. */
+    deleteVariation: (path: number[]) => void;
+    /** Deletes every move after `path`, keeping the move itself. */
+    deleteMovesAfter: (path: number[]) => void;
     promoteVariation: (path: number[]) => void;
     promoteToMainline: (path: number[]) => void;
     copyPgn: () => Promise<boolean>;
@@ -481,6 +485,8 @@ type TreeMutationActions = Pick<
     | "appendMove"
     | "makeMoves"
     | "deleteMove"
+    | "deleteVariation"
+    | "deleteMovesAfter"
     | "promoteVariation"
     | "promoteToMainline"
     | "continueScoresheet"
@@ -796,9 +802,39 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                     deleteMove(state, path ?? state.position);
                 }),
             ),
+        deleteVariation: (path) =>
+            set(
+                produce((state) => {
+                    const start = variationStartPath(path);
+                    if (!start) return;
+                    state.dirty = true;
+                    deleteMove(state, start);
+                }),
+            ),
+        deleteMovesAfter: (path) =>
+            set(
+                produce((state) => {
+                    // getNodeAtPath falls back to the deepest resolved node; a stale path must not
+                    // clear an ancestor's moves.
+                    if (getResolvedPathLength(state.root, path) !== path.length) return;
+                    const node = getNodeAtPath(state.root, path);
+                    if (node.children.length === 0) return;
+                    state.dirty = true;
+                    node.children = [];
+                    rebaseTrackedPaths(
+                        state,
+                        (target) =>
+                            target.length > path.length && isPrefix(path, target)
+                                ? undefined
+                                : target,
+                        { position: path, start: undefined, practicePath: path },
+                    );
+                }),
+            ),
         promoteVariation: (path) =>
             set(
                 produce((state) => {
+                    if (!variationStartPath(path)) return;
                     state.dirty = true;
                     promoteVariation(state, path);
                 }),
@@ -1109,6 +1145,8 @@ const UNDOABLE_EDITS = [
     "appendMove",
     "makeMoves",
     "deleteMove",
+    "deleteVariation",
+    "deleteMovesAfter",
     "promoteVariation",
     "promoteToMainline",
     "continueScoresheet",
@@ -1599,13 +1637,21 @@ function deleteMove(state: TreeStoreState, path: number[]) {
     });
 }
 
-function promoteVariation(state: TreeStoreState, path: number[]): number[] {
-    // get last element different from 0
+/**
+ * The path of the first move of the side line `path` lies in, or `null` when `path` is on the
+ * main line. The side line starts at the last index that is not the first child.
+ */
+export function variationStartPath(path: number[]): number[] | null {
     const i = path.findLastIndex((v) => v !== 0);
-    if (i === -1) return path;
+    return i === -1 ? null : path.slice(0, i + 1);
+}
 
-    const v = path[i];
-    const promotablePath = path.slice(0, i);
+function promoteVariation(state: TreeStoreState, path: number[]): number[] {
+    const start = variationStartPath(path);
+    if (!start) return path;
+
+    const v = start[start.length - 1];
+    const promotablePath = start.slice(0, -1);
     const node = getNodeAtPath(state.root, promotablePath);
     if (!node) return path;
     node.children.unshift(node.children.splice(v, 1)[0]);

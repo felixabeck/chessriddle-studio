@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, varianter, kommentarer og piler
 summary: Legg inn trekk, rediger stillinger, håndter varianter, skriv kommentarer, legg til annotasjoner og tegn piler på brettet.
-source: 9fead5328d0f7506
+source: 55f6c4572027d33b
 ---
 
 Åpne et analysebrett fra [[page:new-tab]] ved å klikke {{label:Home.Card.AnalysisBoard.Title}}, eller ved å åpne et lagret parti eller repertoar fra [[page:library]].
@@ -17,7 +17,7 @@ Verktøylinjen ved siden av notasjonen gir tilgang til bretthandlinger:
 - {{label:Board.Database.Save}}: lagre partiet i en biblioteksfil eller database.
 - Kontroller for å angre, gjøre om, lagre og snu brettet.
 
-Å spille et annet trekk fra en tidligere stilling oppretter en variant. Høyreklikk på et hvilket som helst trekk i notasjonen for å velge {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} eller {{label:Notation.MarkGameEndHere}}. Bruk knappene i overskriften til notasjonen for å slå av/på {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} og {{label:Notation.HideVariations}}.
+Å spille et annet trekk fra en tidligere stilling oppretter en variant. Høyreklikk på et hvilket som helst trekk i notasjonen for å velge {{label:Menu.PromoteVariation}}, {{label:Menu.PromoteToMainLine}}, {{label:Menu.CopyVariationPGN}}, {{label:Menu.DeleteMove}}, {{label:Menu.DeleteVariation}}, {{label:Menu.DeleteMovesAfter}}, {{label:Board.Action.PlayFromHere}}, {{label:Notation.AddDiagram}} eller {{label:Notation.MarkGameEndHere}}. Bruk knappene i overskriften til notasjonen for å slå av/på {{label:Notation.HideMoves}}, {{label:Notation.TableView}}, {{label:Notation.HideComments}}, {{label:Notation.HideDiagrams}} og {{label:Notation.HideVariations}}.
 
 For å annotere trekk og skrive kommentarer åpner du fanen {{label:Board.Tabs.Annotate}}. Klikk et trekkvurderingssymbol (eller trykk tastene 1 til 6) for å slå `!!`, `!`, `!?`, `?!`, `?` eller `??` av/på, eller klikk {{label:Annotate.ShowMore}} for vurderings- og stillingssymboler. Under symbolene bruker du tekstbehandleren til å skrive formaterte kommentarer og slå av/på innebygde brettdiagrammer.
 

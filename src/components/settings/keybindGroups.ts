@@ -52,7 +52,16 @@ export const KEYBIND_GROUPS = [
     {
         id: "editing",
         emoji: emojiOf("editing"),
-        actions: ["UNDO", "REDO", "DELETE_MOVE", "CLEAR_SHAPES", "SWAP_ORIENTATION"],
+        actions: [
+            "UNDO",
+            "REDO",
+            "PROMOTE_VARIATION",
+            "DELETE_MOVE",
+            "DELETE_VARIATION",
+            "DELETE_MOVES_AFTER",
+            "CLEAR_SHAPES",
+            "SWAP_ORIENTATION",
+        ],
     },
     {
         id: "annotations",
