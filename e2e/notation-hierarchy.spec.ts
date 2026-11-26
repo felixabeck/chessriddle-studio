@@ -788,10 +788,12 @@ test("notation-hierarchy: overflow-only stacked geometry and wheel reachability"
     await page.getByRole("button", { name: "Open game", exact: true }).click();
     await expect(page).toHaveURL("/");
     await assertStackedBoardGeometry(page, "320x720/200%");
-    for (const id of ["left", "topRight", "bottomRight"]) {
-        await expect
-            .poll(() =>
-                page.locator(`#${id}`).evaluate((element) => {
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                ["left", "topRight", "bottomRight"].every((id) => {
+                    const element = document.getElementById(id);
+                    if (!element) return false;
                     const bounds = element.getBoundingClientRect();
                     let ancestor = element.parentElement;
                     while (ancestor) {
@@ -805,9 +807,9 @@ test("notation-hierarchy: overflow-only stacked geometry and wheel reachability"
                     }
                     return true;
                 }),
-            )
-            .toBe(true);
-    }
+            ),
+        )
+        .toBe(true);
     await wheelBoardStackTo(page, page.locator("#topRight"));
     const analysis = page.locator("#topRight").getByRole("tab", { name: "Analysis", exact: true });
     await expect(analysis).toBeInViewport();
@@ -830,20 +832,57 @@ test("notation-hierarchy: overflow-only stacked geometry and wheel reachability"
     const x = viewportBox.x + viewportBox.width / 2;
     const y = Math.max(viewportBox.y, stackBox.y) + 30;
     await page.mouse.move(x, y);
-    for (let step = 0; step < 200; step++) {
-        if (
-            (await move.count()) &&
-            (await move.evaluate((element) => {
-                const box = element.getBoundingClientRect();
-                return element.contains(
-                    document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+
+    const readWheelProgress = (previousTop?: number) =>
+        viewport.evaluate((element, prevTop) => {
+            const button = [...element.querySelectorAll("button")].find(
+                (candidate) =>
+                    (candidate.getAttribute("aria-label") ?? candidate.textContent?.trim()) ===
+                    "e4",
+            );
+            let ready = false;
+            if (button) {
+                const box = button.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                    box.x + box.width / 2,
+                    box.y + box.height / 2,
                 );
-            }))
-        )
-            break;
-        await page.mouse.wheel(0, 500);
-        await page.waitForTimeout(30);
+                ready = hit !== null && button.contains(hit);
+            }
+            const remaining = Math.max(
+                0,
+                element.scrollHeight - element.clientHeight - element.scrollTop,
+            );
+            return {
+                ready,
+                remaining,
+                scrollTop: element.scrollTop,
+                scrollHeight: element.scrollHeight,
+                advanced: prevTop === undefined ? false : element.scrollTop > prevTop,
+            };
+        }, previousTop);
+
+    for (let step = 0; step < 40; step++) {
+        const state = await readWheelProgress();
+        if (state.ready) break;
+        const delta = Math.max(4000, Math.min(8000, state.remaining));
+        await page.mouse.wheel(0, delta);
+        await expect
+            .poll(
+                async () => {
+                    const next = await readWheelProgress(state.scrollTop);
+                    return next.ready || next.advanced || next.scrollHeight > state.scrollHeight;
+                },
+                { timeout: 2000, intervals: [20, 50, 100] },
+            )
+            .toBe(true);
     }
+    await expect
+        .poll(async () => (await readWheelProgress()).ready, {
+            timeout: 5000,
+            intervals: [20, 50, 100],
+        })
+        .toBe(true);
     await expect(move).toBeInViewport();
     const moveBox = (await move.boundingBox())!;
     await page.mouse.click(moveBox.x + moveBox.width / 2, moveBox.y + moveBox.height / 2);
