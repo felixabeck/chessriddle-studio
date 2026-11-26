@@ -29660,7 +29660,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### The notation table-view snapshot differs in CI after the notation toolbar push
 
-* **ID:** f-20261126-11 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-11 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45863777370
 * **First red:** `766e1b9b3` (Test run 45863777370; the previous Test run 45847464024 on `0882310da` was green); run 45864086450 on `5ba311de9` fails the same way
@@ -29672,6 +29672,9 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** find what renders differently in CI after the View-menu toggle (diff image in the run's `frontend-browser-audit` artifact) and make the spec settle it before the screenshot, or correct the snapshot if the committed one is the outlier.
 * **Proof:** the next Test run's `e2e` job succeeds.
 * **Found by:** Claude Code (Opus 5.5), notation-toolbar build push, 2026-11-26
+
+2026-11-26, `eb3648c7c` fixes the cause: `scrollNotationToIndex` stopped after one check two frames in, before the taller table rows were measured on a slow runner, so the current move was not centred and the table snapshot differed. Verification now continues until the target matches and the list height has held still for three checks (within the existing ten attempts) and reads the total size before the offset. The committed snapshots stay as they were. Proof: four new unit tests that fail against the old behaviour and a swapped read order; local container repeats under 16 CPU busy loops 10 passed; Test run 45871416941 on `eb3648c7c` passed `notation-hierarchy` (its only red was the focus-mode snapshot, f-20261126-12); Test run 45873688892 on `b043c7410` fully green.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"66859d0fc472c6fb17a6873bc3a26541076c1ad25800152d5b4a15caa37439d0","header_sha256":"3ecca24c45f05581ee31cfe2df40b2b71ef1af2b0c0c0eb7cc1a4dd3c7a1d3bc","header_status":"handled","input_sha256":"fc4116725c9142855086ddce324ac1f475596faea0780b1f0021292b50b7e8f3","kind":"mutation-receipt","operation":"7c38f36f9d6c9daf9e853656736cd7538b78f5b0cfdfe975415906f28cf51530","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-11"],"target":"f-20261126-11","v":1} -->
 
 ---
 
