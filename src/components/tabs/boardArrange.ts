@@ -3,11 +3,15 @@ import {
     arrangementLeaves,
     type BoardAreaId,
     type BoardArrangement,
+    canTakeOutEngine,
     canTakeOutPanel,
+    engineIdFromArea,
     type HideableAreaId,
+    isEngineArea,
     isPanelArea,
     placeArea,
     type PlacementSide,
+    returnEngineArea,
     returnPanelArea,
     shownArrangement,
 } from "@/state/boardArrangement";
@@ -39,7 +43,7 @@ export const PLACEMENT_SIDES: readonly PlacementSide[] = ["top", "left", "right"
 /**
  * Computes every target for moving `area` whose resulting shown arrangement fits `width` at
  * `rootFont`. Returns targets in reading order across the displayed leaves, followed by "Back into
- * the tabs" when `area` is a detached panel area.
+ * the tabs" / return when `area` is a detached panel or engine area.
  */
 export function validArrangeTargets({
     area,
@@ -61,7 +65,13 @@ export function validArrangeTargets({
     const displayedLeaves = arrangementLeaves(displayed);
     const inTree = displayedLeaves.includes(area);
     if (!inTree) {
-        if (!isPanelArea(area) || !canTakeOutPanel(stored, area)) return [];
+        if (isPanelArea(area)) {
+            if (!canTakeOutPanel(stored, area)) return [];
+        } else if (isEngineArea(area)) {
+            if (!canTakeOutEngine(stored, area)) return [];
+        } else {
+            return [];
+        }
     }
 
     const targets: ArrangeTarget[] = [];
@@ -77,8 +87,10 @@ export function validArrangeTargets({
         }
     }
 
-    if (inTree && isPanelArea(area)) {
-        const nextStored = returnPanelArea(stored, area);
+    if (inTree && (isPanelArea(area) || isEngineArea(area))) {
+        const nextStored = isPanelArea(area)
+            ? returnPanelArea(stored, area)
+            : returnEngineArea(stored, area);
         if (nextStored !== stored) {
             const nextShown = shownArrangement(nextStored, hiddenAreas);
             if (arrangementFitsWidth(nextShown, width, rootFont)) {
@@ -203,7 +215,15 @@ export function previewBoxForTarget(
 }
 
 /** Localized display name of a board area (uses literal keys for i18n extraction). */
-export function areaDisplayName(t: TFunction, area: BoardAreaId): string {
+export function areaDisplayName(
+    t: TFunction,
+    area: BoardAreaId,
+    resolveEngineName?: (engineId: string) => string | undefined,
+): string {
+    if (isEngineArea(area)) {
+        const name = resolveEngineName?.(engineIdFromArea(area))?.trim();
+        return name || t("Common.Engine");
+    }
     switch (area) {
         case "left":
             return t("Board.Area.Board");
@@ -225,7 +245,11 @@ export function areaDisplayName(t: TFunction, area: BoardAreaId): string {
 }
 
 /** Localized accessible label for a placement target (uses literal keys for i18n extraction). */
-export function arrangeTargetLabel(t: TFunction, target: ArrangeTarget): string {
+export function arrangeTargetLabel(
+    t: TFunction,
+    target: ArrangeTarget,
+    resolveEngineName?: (engineId: string) => string | undefined,
+): string {
     if (target.kind === "return") {
         return t("Board.Arrange.BackIntoTabs");
     }
@@ -265,7 +289,7 @@ export function arrangeTargetLabel(t: TFunction, target: ArrangeTarget): string 
                 return t("Board.Arrange.BelowTabs");
         }
     }
-    const area = areaDisplayName(t, target.target);
+    const area = areaDisplayName(t, target.target, resolveEngineName);
     switch (target.side) {
         case "left":
             return t("Board.Arrange.LeftOf", { area });

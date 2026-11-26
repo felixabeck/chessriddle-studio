@@ -1,11 +1,14 @@
 import { describe, expect, test } from "vitest";
 import {
     defaultBoardArrangement,
+    engineAreaId,
+    placeArea,
     type BoardAreaId,
     type BoardArrangement,
     type PanelAreaId,
 } from "@/state/boardArrangement";
 import {
+    areaDisplayName,
     arrangeTargetLabel,
     hitTestArrangeTarget,
     nearestEdge,
@@ -274,5 +277,61 @@ describe("nearestEdge, hitTestArrangeTarget and previewBoxForTarget", () => {
             "Board.Arrange.RightOf(Board.Tabs.Database)",
         );
         expect(arrangeTargetLabel(t, { kind: "return" })).toBe("Board.Arrange.BackIntoTabs");
+    });
+
+    test("validArrangeTargets and labels support engine leaves up to the cap", () => {
+        const eng = engineAreaId("legacy-engine-identity:sf");
+        const base = defaultBoardArrangement();
+        const pullOutTargets = validArrangeTargets({
+            area: eng,
+            stored: base,
+            displayed: base,
+            hiddenAreas: EMPTY_SET,
+            width: 1440,
+            rootFont: 16,
+        });
+        expect(pullOutTargets.length).toBeGreaterThan(0);
+        expect(pullOutTargets.some((t) => t.kind === "return")).toBe(false);
+
+        const withEng = placeArea(base, eng, "left", "bottom");
+        const inTreeTargets = validArrangeTargets({
+            area: eng,
+            stored: withEng,
+            displayed: withEng,
+            hiddenAreas: EMPTY_SET,
+            width: 1440,
+            rootFont: 16,
+        });
+        expect(inTreeTargets.at(-1)).toEqual({ kind: "return" });
+
+        // At cap 4, a 5th engine has no valid targets.
+        let atCap = base;
+        for (const id of ["e1", "e2", "e3", "e4"]) {
+            atCap = placeArea(atCap, engineAreaId(id), "left", "bottom");
+        }
+        expect(
+            validArrangeTargets({
+                area: engineAreaId("e5"),
+                stored: atCap,
+                displayed: atCap,
+                hiddenAreas: EMPTY_SET,
+                width: 1440,
+                rootFont: 16,
+            }),
+        ).toEqual([]);
+
+        const t = ((key: string, opts?: { area?: string }) =>
+            opts?.area ? `${key}(${opts.area})` : key) as unknown as import("i18next").TFunction;
+        expect(
+            areaDisplayName(t, eng, (id) =>
+                id === "legacy-engine-identity:sf" ? "Stockfish" : undefined,
+            ),
+        ).toBe("Stockfish");
+        expect(areaDisplayName(t, eng)).toBe("Common.Engine");
+        expect(
+            arrangeTargetLabel(t, { kind: "place", target: eng, side: "bottom" }, (id) =>
+                id === "legacy-engine-identity:sf" ? "Stockfish" : undefined,
+            ),
+        ).toBe("Board.Arrange.Below(Stockfish)");
     });
 });

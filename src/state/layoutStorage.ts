@@ -4,12 +4,14 @@ import { z } from "zod";
 import type { SyncStorage, SyncStringStorage } from "jotai/vanilla/utils/atomWithStorage";
 import { warn } from "@/platform/native";
 import {
+    applyRetiredEngineCarryOver,
     type BaseAreaId,
     type BoardArrangement,
     boardArrangementSchema,
     computeCarryOverArrangement,
     defaultBoardArrangement,
     type LegacyLayoutValues,
+    type RetiredEngineValues,
     windowsStateSchema,
 } from "./boardArrangement";
 import {
@@ -45,6 +47,19 @@ export const LEGACY_LAYOUT_KEYS = [
     LEGACY_LAYOUT_KEY_MAP.detachedExplorerHeights,
 ] as const;
 
+const RETIRED_ENGINE_KEY_MAP = {
+    detachedEngine: "detached-engine",
+    detachedEnginePlacement: "detached-engine-placement",
+    detachedEngineLines: "detached-engine-lines",
+} as const;
+
+/** Retired pinned-engine localStorage keys carried over into the arrangement and removed. */
+export const RETIRED_ENGINE_KEYS = [
+    RETIRED_ENGINE_KEY_MAP.detachedEngine,
+    RETIRED_ENGINE_KEY_MAP.detachedEnginePlacement,
+    RETIRED_ENGINE_KEY_MAP.detachedEngineLines,
+] as const;
+
 export function defaultWindowsState(): WindowsState {
     return {
         currentNode: {
@@ -76,8 +91,9 @@ export function createBoardArrangementStorage(
     storage: SyncStringStorage = localStorage,
 ): SyncStorage<BoardArrangement> {
     // Jotai with `getOnInit` calls `getItem` at atom creation and again at first mount; memoize a
-    // throwing read, a failed carry-over write, or a failed repair write of an invalid value for
-    // this session until a subsequent `setItem` or `removeItem` clears it.
+    // throwing read, a failed carry-over write, a failed repair write of an invalid value, or a
+    // failed obsolete-key removal for this session until a subsequent `setItem` or `removeItem`
+    // clears it.
     const sessionFallback = new Map<string, BoardArrangement>();
 
     return {
@@ -97,70 +113,110 @@ export function createBoardArrangementStorage(
                 return initialValue;
             }
 
+            let baseArrangement: BoardArrangement;
+            let hasLegacyLayoutValues = false;
+
             if (storedValue !== null) {
-                return parseAndRepairStoredValue(
+                let repairFailed = false;
+                baseArrangement = parseAndRepairStoredValue(
                     storage,
                     key,
                     storedValue,
                     boardArrangementSchema,
                     initialValue,
-                    (fallback) => sessionFallback.set(key, fallback),
+                    (fallback) => {
+                        repairFailed = true;
+                        sessionFallback.set(key, fallback);
+                    },
                 );
+                if (repairFailed) {
+                    return baseArrangement;
+                }
+            } else {
+                let legacy: LegacyLayoutValues;
+                try {
+                    legacy = {
+                        windowsState: storage.getItem(WINDOWS_STATE_KEY),
+                        panelsBesideNotation: storage.getItem(
+                            LEGACY_LAYOUT_KEY_MAP.panelsBesideNotation,
+                        ),
+                        boardBesideSplits: storage.getItem(LEGACY_LAYOUT_KEY_MAP.boardBesideSplits),
+                        detachedExplorer: storage.getItem(LEGACY_LAYOUT_KEY_MAP.detachedExplorer),
+                        detachedExplorerPlacement: storage.getItem(
+                            LEGACY_LAYOUT_KEY_MAP.detachedExplorerPlacement,
+                        ),
+                        detachedExplorerHeights: storage.getItem(
+                            LEGACY_LAYOUT_KEY_MAP.detachedExplorerHeights,
+                        ),
+                    };
+                } catch (error) {
+                    warn(`Unable to read legacy layout values for ${key}`);
+                    reportPreferenceStorageFailure("read", error);
+                    sessionFallback.set(key, initialValue);
+                    return initialValue;
+                }
+
+                const { arrangement, hasLegacyValues } = computeCarryOverArrangement(legacy);
+                baseArrangement = hasLegacyValues ? arrangement : initialValue;
+                hasLegacyLayoutValues = hasLegacyValues;
             }
 
-            let legacy: LegacyLayoutValues;
+            let retiredEngine: RetiredEngineValues;
             try {
-                legacy = {
-                    windowsState: storage.getItem(WINDOWS_STATE_KEY),
-                    panelsBesideNotation: storage.getItem(
-                        LEGACY_LAYOUT_KEY_MAP.panelsBesideNotation,
+                retiredEngine = {
+                    detachedEngine: storage.getItem(RETIRED_ENGINE_KEY_MAP.detachedEngine),
+                    detachedEnginePlacement: storage.getItem(
+                        RETIRED_ENGINE_KEY_MAP.detachedEnginePlacement,
                     ),
-                    boardBesideSplits: storage.getItem(LEGACY_LAYOUT_KEY_MAP.boardBesideSplits),
-                    detachedExplorer: storage.getItem(LEGACY_LAYOUT_KEY_MAP.detachedExplorer),
-                    detachedExplorerPlacement: storage.getItem(
-                        LEGACY_LAYOUT_KEY_MAP.detachedExplorerPlacement,
-                    ),
-                    detachedExplorerHeights: storage.getItem(
-                        LEGACY_LAYOUT_KEY_MAP.detachedExplorerHeights,
+                    detachedEngineLines: storage.getItem(
+                        RETIRED_ENGINE_KEY_MAP.detachedEngineLines,
                     ),
                 };
             } catch (error) {
-                warn(`Unable to read legacy layout values for ${key}`);
+                warn(`Unable to read retired engine layout values for ${key}`);
                 reportPreferenceStorageFailure("read", error);
-                sessionFallback.set(key, initialValue);
-                return initialValue;
+                sessionFallback.set(key, baseArrangement);
+                return baseArrangement;
             }
 
-            const { arrangement, hasLegacyValues } = computeCarryOverArrangement(legacy);
-            if (!hasLegacyValues) {
-                return initialValue;
-            }
+            const engineCarryOver = applyRetiredEngineCarryOver(baseArrangement, retiredEngine);
+            const finalArrangement = engineCarryOver.arrangement;
+            const needsWrite = hasLegacyLayoutValues || engineCarryOver.changed;
 
-            try {
-                storage.setItem(key, JSON.stringify(arrangement));
-            } catch (error) {
-                reportPreferenceStorageFailure("save", error);
-                sessionFallback.set(key, arrangement);
-                return arrangement;
-            }
-
-            const failedRemovals: string[] = [];
-            let firstRemovalError: unknown;
-            for (const legacyKey of LEGACY_LAYOUT_KEYS) {
+            if (needsWrite) {
                 try {
-                    storage.removeItem(legacyKey);
+                    storage.setItem(key, JSON.stringify(finalArrangement));
                 } catch (error) {
-                    if (failedRemovals.length === 0) {
-                        firstRemovalError = error;
-                    }
-                    failedRemovals.push(legacyKey);
+                    reportPreferenceStorageFailure("save", error);
+                    sessionFallback.set(key, finalArrangement);
+                    return finalArrangement;
                 }
             }
-            if (failedRemovals.length > 0) {
-                warn(`Unable to remove legacy layout keys: ${failedRemovals.join(", ")}`);
-                reportPreferenceStorageFailure("save", firstRemovalError);
+
+            const keysToRemove: string[] = [
+                ...(hasLegacyLayoutValues ? LEGACY_LAYOUT_KEYS : []),
+                ...(engineCarryOver.hasRetiredKeys ? RETIRED_ENGINE_KEYS : []),
+            ];
+            if (keysToRemove.length > 0) {
+                const failedRemovals: string[] = [];
+                let firstRemovalError: unknown;
+                for (const obsoleteKey of keysToRemove) {
+                    try {
+                        storage.removeItem(obsoleteKey);
+                    } catch (error) {
+                        if (failedRemovals.length === 0) {
+                            firstRemovalError = error;
+                        }
+                        failedRemovals.push(obsoleteKey);
+                    }
+                }
+                if (failedRemovals.length > 0) {
+                    warn(`Unable to remove legacy layout keys: ${failedRemovals.join(", ")}`);
+                    reportPreferenceStorageFailure("save", firstRemovalError);
+                    sessionFallback.set(key, finalArrangement);
+                }
             }
-            return arrangement;
+            return finalArrangement;
         },
         setItem(key, value) {
             try {

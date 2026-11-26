@@ -959,10 +959,10 @@ test("compact Shortcuts stack each action above its key instead of a two-column 
   expect(panel.textContent).toContain("Settings.Keybinds.Actions.NEW_TAB");
 });
 
-test("Reset layout in Analysis / Layout & Saving restores default arrangement and shows hidden tabs without touching windowsState, engine bar or tab selection", async () => {
+test("Reset layout in Analysis / Layout & Saving restores default arrangement (clearing engine areas) and shows hidden tabs without touching windowsState or tab selection", async () => {
   const { ANALYSIS_BOARD_LAYOUT_KEY, ANALYSIS_TABS_HIDDEN_KEY, WINDOWS_STATE_KEY } =
     await import("@/state/layoutStorage");
-  const { defaultBoardArrangement } = await import("@/state/boardArrangement");
+  const { defaultBoardArrangement, engineAreaId } = await import("@/state/boardArrangement");
   const { tabFamily } = await import("@/state/atoms");
 
   const customWindows = JSON.stringify({ currentNode: "left" });
@@ -970,15 +970,12 @@ test("Reset layout in Analysis / Layout & Saving restores default arrangement an
     ANALYSIS_BOARD_LAYOUT_KEY,
     JSON.stringify({
       direction: "row",
-      first: "left",
+      first: { direction: "column", first: "left", second: engineAreaId("eng-1") },
       second: { direction: "row", first: "bottomRight", second: "topRight" },
     }),
   );
   localStorage.setItem(WINDOWS_STATE_KEY, customWindows);
   localStorage.setItem(ANALYSIS_TABS_HIDDEN_KEY, "true");
-  localStorage.setItem("detached-engine", JSON.stringify("eng-1"));
-  localStorage.setItem("detached-engine-lines", JSON.stringify(2));
-  localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
 
   const { host, atoms } = await renderSettingsPage();
   atoms.set(tabFamily("tab-1"), "database");
@@ -1001,9 +998,6 @@ test("Reset layout in Analysis / Layout & Saving restores default arrangement an
   );
   expect(localStorage.getItem(ANALYSIS_TABS_HIDDEN_KEY)).toBe("false");
   expect(localStorage.getItem(WINDOWS_STATE_KEY)).toBe(customWindows);
-  expect(localStorage.getItem("detached-engine")).toBe(JSON.stringify("eng-1"));
-  expect(localStorage.getItem("detached-engine-lines")).toBe(JSON.stringify(2));
-  expect(localStorage.getItem("detached-engine-placement")).toBe(JSON.stringify("board"));
   expect(atoms.get(tabFamily("tab-1"))).toBe("database");
 });
 

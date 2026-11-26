@@ -86,7 +86,7 @@ import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import paneClasses from "../common/PaneTabs.module.css";
 import classes from "./BoardAnalysis.module.css";
 import { COMPACT_PANE_TABS_WIDTH_EM } from "./paneTabs";
-import { BoardArrangementContext, boardAreaTargetId } from "../tabs/BoardTabLayout";
+import { BoardArrangementContext } from "../tabs/BoardTabLayout";
 
 /** Testable seam for the Photo panel's lazy chunk loader. */
 export const scoresheetPhotoPanelLoader = {
@@ -155,6 +155,7 @@ function BoardAnalysis() {
   const compactTabs = useScaledMaxWidth(COMPACT_PANE_TABS_WIDTH_EM);
   const {
     shownPanelAreas,
+    getAreaTarget,
     arrangingAvailable,
     canTakeOut,
     returnPanel,
@@ -567,7 +568,7 @@ function BoardAnalysis() {
       <EvalListener />
       <FilePositionIndexSync />
       <PreparationLandingConsumer />
-      <Portal target="#left" style={{ height: "100%" }}>
+      <Portal target={getAreaTarget("left")} style={{ height: "100%" }}>
         <Stack
           h="100%"
           gap="xs"
@@ -593,7 +594,11 @@ function BoardAnalysis() {
           </div>
         </Stack>
       </Portal>
-      <Portal target="#topRight" className={paneClasses.root} style={{ height: "100%" }}>
+      <Portal
+        target={getAreaTarget("topRight")}
+        className={paneClasses.root}
+        style={{ height: "100%" }}
+      >
         <Stack h="100%" gap="xs" className={paneClasses.root}>
           {!tabsHidden && <DetachedEval placement="tabs" />}
           <Paper
@@ -719,7 +724,7 @@ function BoardAnalysis() {
       ).map((panel) => {
         const { title, Icon } = panelMeta[panel];
         return (
-          <Portal key={panel} target={`#${boardAreaTargetId(panel)}`} style={{ height: "100%" }}>
+          <Portal key={panel} target={getAreaTarget(panel)} style={{ height: "100%" }}>
             <PanelArea
               panel={panel}
               title={title}
@@ -734,7 +739,7 @@ function BoardAnalysis() {
           </Portal>
         );
       })}
-      <Portal target="#bottomRight" style={{ height: "100%" }}>
+      <Portal target={getAreaTarget("bottomRight")} style={{ height: "100%" }}>
         {editingMode ? (
           <EditingCard
             boardRef={boardRef}

@@ -177,9 +177,15 @@ vi.mock("@mantine/core", async (importOriginal) => {
         {children}
       </div>
     ),
-    // The Portal stand-in names its destination so panel areas can be asserted by target id.
-    Portal: ({ children, target }: { children?: ReactNode; target?: string }) => (
-      <div data-portal-target={target}>{children}</div>
+    // The Portal stand-in names its destination element's area so panel areas can be asserted.
+    Portal: ({ children, target }: { children?: ReactNode; target?: HTMLElement | string }) => (
+      <div
+        data-portal-target={
+          typeof target === "string" ? target : (target?.dataset.boardArea ?? target?.id)
+        }
+      >
+        {children}
+      </div>
     ),
     Stack: stack,
     Tabs,
@@ -597,8 +603,19 @@ describe("BoardAnalysis", () => {
       registeredReturnListener?.(panel);
       returnPanel(panel);
     };
+    const areaTargets = new Map<string, HTMLDivElement>();
+    const getAreaTarget = (area: string) => {
+      let el = areaTargets.get(area);
+      if (!el) {
+        el = document.createElement("div");
+        el.dataset.boardArea = area;
+        areaTargets.set(area, el);
+      }
+      return el;
+    };
     const ctx: BoardArrangementContextValue = {
       shownPanelAreas: shownSet,
+      getAreaTarget,
       arrangingAvailable: true,
       canTakeOut: (panel) => {
         if (shownSet.has(panel)) return false;
@@ -658,12 +675,12 @@ describe("BoardAnalysis", () => {
     expect(panels()[0].closest('[role="tabpanel"]')).not.toBeNull();
     expect(selected()).toBe("Board.Tabs.Database");
 
-    // Shown as an area: mounted once in #board-area-database, removed from the strip, stored choice untouched.
+    // Shown as an area: mounted once in its target element, removed from the strip, stored choice untouched.
     await renderWithArrangement(["database"], returnPanel);
     expect(panels()).toHaveLength(1);
     expect(panels()[0].closest('[role="tabpanel"]')).toBeNull();
     const area = container.querySelector(
-      '[data-portal-target="#board-area-database"] [data-panel-area="database"]',
+      '[data-portal-target="database"] [data-panel-area="database"]',
     )!;
     expect(area).not.toBeNull();
     expect(area.textContent).toContain("Board.Tabs.Database");
@@ -879,8 +896,8 @@ describe("BoardAnalysis", () => {
     expect(hide).not.toBeNull();
     await act(async () => hide.click());
     expect(setTabsHidden).toHaveBeenCalledExactlyOnceWith(true);
-    const notationPortal = () => container.querySelector('[data-portal-target="#bottomRight"]')!;
-    const stripPortal = () => container.querySelector('[data-portal-target="#topRight"]')!;
+    const notationPortal = () => container.querySelector('[data-portal-target="bottomRight"]')!;
+    const stripPortal = () => container.querySelector('[data-portal-target="topRight"]')!;
     const showButton = () =>
       notationPortal().querySelector<HTMLButtonElement>(
         'button[aria-label="Board.Arrange.ShowTabs"]',

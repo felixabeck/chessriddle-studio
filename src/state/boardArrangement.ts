@@ -13,10 +13,17 @@ export type PanelAreaId = (typeof PANEL_AREA_IDS)[number];
 export const ALWAYS_PRESENT_PANEL_IDS = ["analysis", "database", "annotate", "info"] as const;
 
 export const BOARD_AREA_IDS = [...BASE_AREA_IDS, ...PANEL_AREA_IDS] as const;
-export type BoardAreaId = (typeof BOARD_AREA_IDS)[number];
+export type StaticBoardAreaId = (typeof BOARD_AREA_IDS)[number];
 
-/** Areas that can be left out of the shown arrangement: panel areas and the tab strip. */
-export type HideableAreaId = PanelAreaId | "topRight";
+export const ENGINE_AREA_PREFIX = "engine:";
+export type EngineAreaId = `${typeof ENGINE_AREA_PREFIX}${string}`;
+/** Maximum number of engine windows that can be pulled out into the arrangement at once. */
+export const MAX_ENGINE_AREAS = 4;
+
+export type BoardAreaId = StaticBoardAreaId | EngineAreaId;
+
+/** Areas that can be left out of the shown arrangement: panel areas, engine areas, and the tab strip. */
+export type HideableAreaId = PanelAreaId | EngineAreaId | "topRight";
 
 export type BoardArrangement = MosaicNode<BoardAreaId>;
 
@@ -28,12 +35,17 @@ export interface MosaicTreeBounds {
 }
 
 const WINDOWS_STATE_BOUNDS: MosaicTreeBounds = { maxNodes: 5, maxDepth: 2 };
-// The strip rule caps a valid arrangement at 7 leaves (3 base + 3 always-present + coach): at most 13 nodes and depth 6.
-const ARRANGEMENT_BOUNDS: MosaicTreeBounds = { maxNodes: 13, maxDepth: 6 };
+// Maximum leaves: all base areas, all panels minus the one required in the strip, plus up to MAX_ENGINE_AREAS engines.
+const MAX_ARRANGEMENT_LEAVES =
+    BASE_AREA_IDS.length + (PANEL_AREA_IDS.length - 1) + MAX_ENGINE_AREAS;
+const ARRANGEMENT_BOUNDS: MosaicTreeBounds = {
+    maxNodes: 2 * MAX_ARRANGEMENT_LEAVES - 1,
+    maxDepth: MAX_ARRANGEMENT_LEAVES - 1,
+};
 
 const BASE_AREA_SET: ReadonlySet<BaseAreaId> = new Set(BASE_AREA_IDS);
 const PANEL_AREA_SET: ReadonlySet<PanelAreaId> = new Set(PANEL_AREA_IDS);
-const BOARD_AREA_SET: ReadonlySet<BoardAreaId> = new Set(BOARD_AREA_IDS);
+const STATIC_BOARD_AREA_SET: ReadonlySet<StaticBoardAreaId> = new Set(BOARD_AREA_IDS);
 const MOSAIC_NODE_KEYS: ReadonlySet<string> = new Set([
     "direction",
     "first",
@@ -51,9 +63,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export function validateMosaicTree<Leaf extends string>(
     value: unknown,
-    allowedLeaves: ReadonlySet<Leaf>,
+    allowedLeaves: ReadonlySet<Leaf> | ((candidate: string) => candidate is Leaf),
     bounds: MosaicTreeBounds,
 ): Set<Leaf> | null {
+    const isAllowed =
+        typeof allowedLeaves === "function"
+            ? allowedLeaves
+            : (candidate: string): candidate is Leaf => allowedLeaves.has(candidate as Leaf);
     const pending: Array<{ node: unknown; depth: number }> = [{ node: value, depth: 0 }];
     const leaves = new Set<Leaf>();
     let nodeCount = 0;
@@ -65,8 +81,8 @@ export function validateMosaicTree<Leaf extends string>(
         if (++nodeCount > bounds.maxNodes || depth > bounds.maxDepth) return null;
 
         if (typeof node === "string") {
-            if (!allowedLeaves.has(node as Leaf)) return null;
-            const leaf = node as Leaf;
+            if (!isAllowed(node)) return null;
+            const leaf = node;
             if (leaves.has(leaf)) return null;
             leaves.add(leaf);
             continue;
@@ -115,17 +131,42 @@ export function isPanelArea(id: string): id is PanelAreaId {
     return PANEL_AREA_SET.has(id as PanelAreaId);
 }
 
+/** Builds the board area id for an engine from its immutable engine id. */
+export function engineAreaId(engineId: string): EngineAreaId {
+    return `${ENGINE_AREA_PREFIX}${engineId}`;
+}
+
+/** Whether `id` is a valid engine area leaf (`engine:<non-empty>`). */
+export function isEngineArea(id: string): id is EngineAreaId {
+    return id.startsWith(ENGINE_AREA_PREFIX) && id.length > ENGINE_AREA_PREFIX.length;
+}
+
+/** Extracts the immutable engine id from an engine area leaf (engine ids may contain `:`). */
+export function engineIdFromArea(area: EngineAreaId): string {
+    return area.slice(ENGINE_AREA_PREFIX.length);
+}
+
+export function isBoardAreaId(id: string): id is BoardAreaId {
+    return STATIC_BOARD_AREA_SET.has(id as StaticBoardAreaId) || isEngineArea(id);
+}
+
 /**
  * Whether `value` is a valid analysis board arrangement: valid bounded Mosaic tree over area
- * ids, every base area present once, and at least one always-present panel left in the tab strip.
+ * ids, every base area present once, at least one always-present panel left in the tab strip,
+ * and at most `MAX_ENGINE_AREAS` engine leaves.
  */
 export function isValidBoardArrangement(value: unknown): value is BoardArrangement {
-    const leaves = validateMosaicTree(value, BOARD_AREA_SET, ARRANGEMENT_BOUNDS);
+    const leaves = validateMosaicTree(value, isBoardAreaId, ARRANGEMENT_BOUNDS);
     if (!leaves) return false;
     for (const base of BASE_AREA_IDS) {
         if (!leaves.has(base)) return false;
     }
-    return ALWAYS_PRESENT_PANEL_IDS.some((panel) => !leaves.has(panel));
+    if (!ALWAYS_PRESENT_PANEL_IDS.some((panel) => !leaves.has(panel))) return false;
+    let engineCount = 0;
+    for (const leaf of leaves) {
+        if (isEngineArea(leaf)) engineCount += 1;
+    }
+    return engineCount <= MAX_ENGINE_AREAS;
 }
 
 export const boardArrangementSchema = z.custom<BoardArrangement>(isValidBoardArrangement);
@@ -152,12 +193,24 @@ export function arrangementPanelAreas(node: BoardArrangement): PanelAreaId[] {
     return arrangementLeaves(node).filter(isPanelArea);
 }
 
+export function arrangementEngineAreas(node: BoardArrangement): EngineAreaId[] {
+    return arrangementLeaves(node).filter(isEngineArea);
+}
+
 /** Whether `panel` is in the tab strip and can be taken out without breaking the strip rule. */
 export function canTakeOutPanel(arrangement: BoardArrangement, panel: PanelAreaId): boolean {
     const leaves = new Set(arrangementLeaves(arrangement));
     if (leaves.has(panel)) return false;
     leaves.add(panel);
     return ALWAYS_PRESENT_PANEL_IDS.some((id) => !leaves.has(id));
+}
+
+/** Whether `area` is a valid engine leaf not yet in the arrangement and below `MAX_ENGINE_AREAS`. */
+export function canTakeOutEngine(arrangement: BoardArrangement, area: EngineAreaId): boolean {
+    if (!isEngineArea(area)) return false;
+    const engineAreas = arrangementEngineAreas(arrangement);
+    if (engineAreas.includes(area)) return false;
+    return engineAreas.length < MAX_ENGINE_AREAS;
 }
 
 function removeLeaf<Leaf extends string>(
@@ -225,8 +278,12 @@ export function placeArea(
         const removed = removeLeaf(arrangement, area);
         if (removed === null) return arrangement;
         base = removed;
+    } else if (isPanelArea(area)) {
+        if (!canTakeOutPanel(arrangement, area)) return arrangement;
+    } else if (isEngineArea(area)) {
+        if (!canTakeOutEngine(arrangement, area)) return arrangement;
     } else {
-        if (!isPanelArea(area) || !canTakeOutPanel(arrangement, area)) return arrangement;
+        return arrangement;
     }
 
     return replaceLeaf(base, target, splitTarget(area, target, side));
@@ -240,6 +297,59 @@ export function returnPanelArea(
     if (!isPanelArea(panel)) return arrangement;
     const removed = removeLeaf(arrangement, panel);
     return removed ?? arrangement;
+}
+
+/** Returns a detached engine area back to the Engines panel by removing its leaf. */
+export function returnEngineArea(
+    arrangement: BoardArrangement,
+    area: EngineAreaId,
+): BoardArrangement {
+    if (!isEngineArea(area)) return arrangement;
+    const removed = removeLeaf(arrangement, area);
+    return removed ?? arrangement;
+}
+
+export interface EnginePresence {
+    id: string;
+    loaded?: boolean;
+}
+
+/**
+ * Engine leaves in `arrangement` whose engine is not currently loaded (or while the engine list
+ * has not loaded yet). Passed to `shownArrangement` and `applyShownSplits` so unloaded engines
+ * stay in the stored tree without showing empty tiles.
+ */
+export function hiddenEngineAreas(
+    arrangement: BoardArrangement,
+    engines: readonly EnginePresence[] | undefined,
+): EngineAreaId[] {
+    const engineAreas = arrangementEngineAreas(arrangement);
+    if (engineAreas.length === 0) return [];
+    if (engines === undefined) return engineAreas;
+    const loadedIds = new Set(engines.filter((engine) => engine.loaded).map((engine) => engine.id));
+    return engineAreas.filter((area) => !loadedIds.has(engineIdFromArea(area)));
+}
+
+/**
+ * Prunes engine leaves whose id is absent from a successfully loaded engine list (deleted
+ * engines). Never prunes when `engines` is `undefined` (list absent or not yet loaded).
+ */
+export function pruneMissingEngineAreas(
+    arrangement: BoardArrangement,
+    engines: readonly EnginePresence[] | undefined,
+): BoardArrangement {
+    if (engines === undefined) return arrangement;
+    const engineAreas = arrangementEngineAreas(arrangement);
+    if (engineAreas.length === 0) return arrangement;
+    const knownIds = new Set(engines.map((engine) => engine.id));
+    let current = arrangement;
+    for (const area of engineAreas) {
+        if (!knownIds.has(engineIdFromArea(area))) {
+            const next = removeLeaf(current, area);
+            if (next !== null) current = next;
+        }
+    }
+    return current;
 }
 
 /** The arrangement shown without the areas in `hiddenAreas`; the stored tree keeps them. */
@@ -302,10 +412,10 @@ export function applyShownSplits(
         : { direction: stored.direction, first, second, splitPercentage };
 }
 
-const LEGACY_EXPLORER_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
-type LegacyExplorerPlacement = (typeof LEGACY_EXPLORER_PLACEMENTS)[number];
-const legacyExplorerPlacementSchema = z.enum(LEGACY_EXPLORER_PLACEMENTS);
-const CARRIED_DATABASE_SHARE = 30;
+const CARRIED_PLACEMENTS = ["tabs", "notation", "belowNotation", "board"] as const;
+type CarriedPlacement = (typeof CARRIED_PLACEMENTS)[number];
+const carriedPlacementSchema = z.enum(CARRIED_PLACEMENTS);
+const CARRIED_AREA_SHARE = 30;
 
 /** Raw string values already read from storage for the legacy layout keys and `windowsState`. */
 export interface LegacyLayoutValues {
@@ -336,9 +446,46 @@ function parseStoredJson<Value>(
     }
 }
 
+function insertCarriedArea(
+    arrangement: BoardArrangement,
+    area: BoardAreaId,
+    placement: CarriedPlacement,
+): BoardArrangement {
+    switch (placement) {
+        case "tabs":
+            return replaceLeaf(arrangement, "topRight", {
+                direction: "column",
+                first: area,
+                second: "topRight",
+                splitPercentage: CARRIED_AREA_SHARE,
+            });
+        case "notation":
+            return replaceLeaf(arrangement, "bottomRight", {
+                direction: "column",
+                first: area,
+                second: "bottomRight",
+                splitPercentage: CARRIED_AREA_SHARE,
+            });
+        case "belowNotation":
+            return replaceLeaf(arrangement, "bottomRight", {
+                direction: "column",
+                first: "bottomRight",
+                second: area,
+                splitPercentage: 100 - CARRIED_AREA_SHARE,
+            });
+        case "board":
+            return replaceLeaf(arrangement, "left", {
+                direction: "column",
+                first: "left",
+                second: area,
+                splitPercentage: 100 - CARRIED_AREA_SHARE,
+            });
+    }
+}
+
 function insertCarriedDatabase(
     arrangement: BoardArrangement,
-    placement: LegacyExplorerPlacement,
+    placement: CarriedPlacement,
     beside: boolean,
 ): BoardArrangement {
     if (placement === "tabs" && beside && typeof arrangement !== "string") {
@@ -349,40 +496,11 @@ function insertCarriedDatabase(
                 direction: "column",
                 first: "database",
                 second: arrangement.second,
-                splitPercentage: CARRIED_DATABASE_SHARE,
+                splitPercentage: CARRIED_AREA_SHARE,
             },
         };
     }
-    switch (placement) {
-        case "tabs":
-            return replaceLeaf(arrangement, "topRight", {
-                direction: "column",
-                first: "database",
-                second: "topRight",
-                splitPercentage: CARRIED_DATABASE_SHARE,
-            });
-        case "notation":
-            return replaceLeaf(arrangement, "bottomRight", {
-                direction: "column",
-                first: "database",
-                second: "bottomRight",
-                splitPercentage: CARRIED_DATABASE_SHARE,
-            });
-        case "belowNotation":
-            return replaceLeaf(arrangement, "bottomRight", {
-                direction: "column",
-                first: "bottomRight",
-                second: "database",
-                splitPercentage: 100 - CARRIED_DATABASE_SHARE,
-            });
-        case "board":
-            return replaceLeaf(arrangement, "left", {
-                direction: "column",
-                first: "left",
-                second: "database",
-                splitPercentage: 100 - CARRIED_DATABASE_SHARE,
-            });
-    }
+    return insertCarriedArea(arrangement, "database", placement);
 }
 
 /**
@@ -438,10 +556,62 @@ export function computeCarryOverArrangement(legacy: LegacyLayoutValues): CarryOv
     const detachedExplorer = parseStoredJson(legacy.detachedExplorer, z.boolean()) === true;
     if (detachedExplorer) {
         const placement =
-            parseStoredJson(legacy.detachedExplorerPlacement, legacyExplorerPlacementSchema) ??
-            "tabs";
+            parseStoredJson(legacy.detachedExplorerPlacement, carriedPlacementSchema) ?? "tabs";
         arrangement = insertCarriedDatabase(arrangement, placement, beside);
     }
 
     return { arrangement, hasLegacyValues: true };
+}
+
+/** Raw string values already read from storage for the retired pinned-engine keys. */
+export interface RetiredEngineValues {
+    detachedEngine: string | null;
+    detachedEnginePlacement: string | null;
+    detachedEngineLines: string | null;
+}
+
+export interface EngineCarryOverResult {
+    arrangement: BoardArrangement;
+    /** Whether at least one of the three retired pinned-engine keys was present in storage. */
+    hasRetiredKeys: boolean;
+    /** Whether inserting the carried-over engine leaf changed `arrangement`. */
+    changed: boolean;
+}
+
+/**
+ * Applies the one-time carry-over of the retired pinned-engine keys onto `arrangement`.
+ * Leaves `arrangement` unchanged when no valid non-empty engine id is stored, the leaf is already
+ * present, the engine cap is reached, or the resulting tree fails validation.
+ */
+export function applyRetiredEngineCarryOver(
+    arrangement: BoardArrangement,
+    retired: RetiredEngineValues,
+): EngineCarryOverResult {
+    const hasRetiredKeys =
+        retired.detachedEngine !== null ||
+        retired.detachedEnginePlacement !== null ||
+        retired.detachedEngineLines !== null;
+
+    if (!hasRetiredKeys) {
+        return { arrangement, hasRetiredKeys: false, changed: false };
+    }
+
+    const engineId = parseStoredJson(retired.detachedEngine, z.string().min(1));
+    if (engineId === undefined) {
+        return { arrangement, hasRetiredKeys: true, changed: false };
+    }
+
+    const area = engineAreaId(engineId);
+    if (!canTakeOutEngine(arrangement, area)) {
+        return { arrangement, hasRetiredKeys: true, changed: false };
+    }
+
+    const placement =
+        parseStoredJson(retired.detachedEnginePlacement, carriedPlacementSchema) ?? "tabs";
+    const candidate = insertCarriedArea(arrangement, area, placement);
+    if (!isValidBoardArrangement(candidate)) {
+        return { arrangement, hasRetiredKeys: true, changed: false };
+    }
+
+    return { arrangement: candidate, hasRetiredKeys: true, changed: true };
 }

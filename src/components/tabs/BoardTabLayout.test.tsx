@@ -70,6 +70,8 @@ import {
 } from "@/state/layoutStorage";
 import {
   defaultBoardArrangement,
+  engineAreaId,
+  placeArea,
   type BoardArrangement,
   type PanelAreaId,
 } from "@/state/boardArrangement";
@@ -1219,4 +1221,76 @@ test("placing Escape cancels when focus is on body, and does not steal Escape fr
   });
   expect(container.querySelector('[data-testid="board-arrange-placing"]')).toBeNull();
   expect(document.activeElement).toBe(stripGrip);
+});
+
+test("exposes element portal targets for base, panel and special-char engine leaves, restores focus safely, and drops removed engine targets in the same render", async () => {
+  const specialEngine = engineAreaId('legacy-engine-identity:sf"16\\x');
+  const withEngine = placeArea(defaultBoardArrangement(), specialEngine, "left", "bottom");
+  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withEngine));
+
+  let observedTargetInRender: HTMLElement | undefined;
+  function EnginePortalConsumer() {
+    const ctx = useContext(BoardArrangementContext);
+    const engineTarget = ctx.getAreaTarget(specialEngine);
+    observedTargetInRender = engineTarget;
+    return engineTarget ? (
+      <Portal target={engineTarget}>
+        <button type="button" data-arrange-grip={specialEngine}>
+          engine-grip
+        </button>
+      </Portal>
+    ) : null;
+  }
+
+  measured.width = 1400;
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider>
+          <BoardTabLayout arrangeable>
+            <StatefulConsumer />
+            <ArrangementProbe />
+            <EnginePortalConsumer />
+          </BoardTabLayout>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+
+  const engineTarget = latestContext!.getAreaTarget(specialEngine);
+  expect(engineTarget).toBeInstanceOf(HTMLDivElement);
+  expect(engineTarget?.id).toBe("");
+  expect(engineTarget?.dataset.boardArea).toBe(specialEngine);
+  expect(observedTargetInRender).toBe(engineTarget);
+  expect(latestContext!.getAreaTarget("left")).toBe(document.getElementById("left"));
+  expect(latestContext!.getAreaTarget("database")).toBe(
+    document.getElementById(boardAreaTargetId("database")),
+  );
+
+  const grip = engineTarget!.querySelector<HTMLButtonElement>("button")!;
+  expect(grip).not.toBeNull();
+  expect(grip.textContent).toBe("engine-grip");
+
+  // Cancelling keyboard placing on an engine area whose id contains `:`, `"` and `\` restores focus without selector errors.
+  await act(async () => latestContext!.startPlacing(specialEngine, specialEngine));
+  expect(container.querySelector('[data-testid="board-arrange-placing"]')).not.toBeNull();
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(grip);
+
+  // Removing the engine leaf drops its target during that same render and leaves no hidden host for it.
+  await act(async () => store.set(boardArrangementAtom, defaultBoardArrangement()));
+  expect(observedTargetInRender).toBeUndefined();
+  expect(latestContext!.getAreaTarget(specialEngine)).toBeUndefined();
+  const hiddenHostSlots = [...container.querySelectorAll("[hidden] [data-board-slot]")].map((el) =>
+    el.getAttribute("data-board-slot"),
+  );
+  expect(hiddenHostSlots).not.toContain(specialEngine);
+  const remainingEngineTargets = [
+    ...container.querySelectorAll<HTMLElement>("[data-board-area]"),
+  ].filter((el) => el.dataset.boardArea === specialEngine);
+  expect(remainingEngineTargets).toEqual([]);
 });

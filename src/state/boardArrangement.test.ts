@@ -1,18 +1,29 @@
 import { describe, expect, test } from "vitest";
 import {
+    applyRetiredEngineCarryOver,
     applyShownSplits,
+    arrangementEngineAreas,
     arrangementLeaves,
     arrangementPanelAreas,
     type BoardArrangement,
     boardArrangementSchema,
+    canTakeOutEngine,
     canTakeOutPanel,
     computeCarryOverArrangement,
     defaultBoardArrangement,
+    engineAreaId,
+    engineIdFromArea,
+    hiddenEngineAreas,
     type HideableAreaId,
+    isEngineArea,
     isValidBoardArrangement,
     type LegacyLayoutValues,
+    MAX_ENGINE_AREAS,
     type PanelAreaId,
     placeArea,
+    pruneMissingEngineAreas,
+    type RetiredEngineValues,
+    returnEngineArea,
     returnPanelArea,
     shownArrangement,
     validateMosaicTree,
@@ -1008,5 +1019,405 @@ describe("computeCarryOverArrangement", () => {
             hasLegacyValues: true,
         });
         expect(isValidBoardArrangement(result.arrangement)).toBe(true);
+    });
+});
+
+function emptyRetiredEngine(overrides: Partial<RetiredEngineValues> = {}): RetiredEngineValues {
+    return {
+        detachedEngine: null,
+        detachedEnginePlacement: null,
+        detachedEngineLines: null,
+        ...overrides,
+    };
+}
+
+describe("engine leaves: validation, bounds, place/return, hide and prune", () => {
+    test("accepts engine leaves up to MAX_ENGINE_AREAS (including ids with ':') and rejects a fifth or empty id", () => {
+        expect(MAX_ENGINE_AREAS).toBe(4);
+        const colonId = "legacy-engine-identity:stockfish:16";
+        const colonArea = engineAreaId(colonId);
+        expect(isEngineArea(colonArea)).toBe(true);
+        expect(engineIdFromArea(colonArea)).toBe(colonId);
+        expect(isEngineArea("engine:")).toBe(false);
+        expect(isEngineArea("analysis")).toBe(false);
+
+        // Empty engine id rejected by validation, canTakeOutEngine and placeArea.
+        const withEmptyEngine = {
+            direction: "row",
+            first: { direction: "column", first: "left", second: "engine:" },
+            second: { direction: "column", first: "topRight", second: "bottomRight" },
+        };
+        expect(isValidBoardArrangement(withEmptyEngine)).toBe(false);
+        expect(boardArrangementSchema.safeParse(withEmptyEngine).success).toBe(false);
+        const base = defaultBoardArrangement();
+        expect(canTakeOutEngine(base, "engine:" as `engine:${string}`)).toBe(false);
+        expect(placeArea(base, "engine:" as `engine:${string}`, "left", "bottom")).toBe(base);
+
+        // Up to 4 engine leaves can be placed; the 5th is refused, while moving an existing one works.
+        let arr = base;
+        const ids = [colonId, "eng-2", "eng-3", "eng-4"];
+        for (const id of ids) {
+            const area = engineAreaId(id);
+            expect(canTakeOutEngine(arr, area)).toBe(true);
+            arr = placeArea(arr, area, "left", "bottom");
+            expect(isValidBoardArrangement(arr)).toBe(true);
+        }
+        expect(arrangementEngineAreas(arr)).toEqual([...ids].reverse().map(engineAreaId));
+
+        const fifth = engineAreaId("eng-5");
+        expect(canTakeOutEngine(arr, fifth)).toBe(false);
+        expect(placeArea(arr, fifth, "left", "bottom")).toBe(arr);
+
+        // Manually constructing a 5-engine tree fails validation.
+        const fiveEngines: BoardArrangement = {
+            direction: "row",
+            first: { direction: "column", first: "left", second: fifth },
+            second: {
+                direction: "column",
+                first: {
+                    direction: "row",
+                    first: engineAreaId("eng-1"),
+                    second: engineAreaId("eng-2"),
+                },
+                second: {
+                    direction: "row",
+                    first: {
+                        direction: "column",
+                        first: engineAreaId("eng-3"),
+                        second: engineAreaId("eng-4"),
+                    },
+                    second: { direction: "column", first: "topRight", second: "bottomRight" },
+                },
+            },
+        };
+        expect(isValidBoardArrangement(fiveEngines)).toBe(false);
+
+        // Moving an already-present engine while at cap 4 is allowed.
+        const moved = placeArea(arr, colonArea, "topRight", "top");
+        expect(moved).not.toBe(arr);
+        expect(isValidBoardArrangement(moved)).toBe(true);
+
+        // Returning an engine leaf removes it and opens a slot below the cap.
+        const returned = returnEngineArea(moved, colonArea);
+        expect(arrangementEngineAreas(returned)).not.toContain(colonArea);
+        expect(isValidBoardArrangement(returned)).toBe(true);
+        expect(canTakeOutEngine(returned, fifth)).toBe(true);
+        // Returning an absent engine leaf is a no-op.
+        expect(returnEngineArea(returned, colonArea)).toBe(returned);
+    });
+
+    test("accepts maximum derived bounds (3 base + 4 panels + 4 engines in a depth-10 comb)", () => {
+        const leaves = [
+            "left",
+            "topRight",
+            "bottomRight",
+            "analysis",
+            "database",
+            "annotate",
+            "coach",
+            engineAreaId("e1"),
+            engineAreaId("e2"),
+            engineAreaId("e3"),
+            engineAreaId("e4"),
+        ] as const;
+        const comb = leaves
+            .slice(0, -1)
+            .reduceRight<BoardArrangement>(
+                (acc, leaf) => ({ direction: "row", first: leaf, second: acc }),
+                leaves[leaves.length - 1],
+            );
+        expect(isValidBoardArrangement(comb)).toBe(true);
+    });
+
+    test("two engines with the same name or same path stay two distinct leaves by immutable id", () => {
+        const sameNameOrPath = [
+            { id: "id-a", name: "Stockfish", path: "/bin/sf", loaded: true },
+            { id: "id-b", name: "Stockfish", path: "/bin/sf", loaded: true },
+        ];
+        let arr = placeArea(
+            defaultBoardArrangement(),
+            engineAreaId(sameNameOrPath[0].id),
+            "left",
+            "bottom",
+        );
+        arr = placeArea(arr, engineAreaId(sameNameOrPath[1].id), "topRight", "top");
+        expect(arrangementEngineAreas(arr)).toEqual([engineAreaId("id-a"), engineAreaId("id-b")]);
+        expect(hiddenEngineAreas(arr, sameNameOrPath)).toEqual([]);
+        expect(pruneMissingEngineAreas(arr, sameNameOrPath)).toBe(arr);
+        // Unloading only id-a hides id-a without affecting id-b.
+        expect(
+            hiddenEngineAreas(arr, [{ ...sameNameOrPath[0], loaded: false }, sameNameOrPath[1]]),
+        ).toEqual([engineAreaId("id-a")]);
+    });
+
+    test("displayed arrangement hides unloaded engines while keeping them stored and preserving splits", () => {
+        const engA = engineAreaId("eng-a");
+        const engB = engineAreaId("eng-b");
+        const stored: BoardArrangement = {
+            direction: "row",
+            splitPercentage: 50,
+            first: {
+                direction: "column",
+                splitPercentage: 70,
+                first: "left",
+                second: engA,
+            },
+            second: {
+                direction: "column",
+                splitPercentage: 30,
+                first: engB,
+                second: {
+                    direction: "column",
+                    splitPercentage: 45,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        };
+
+        // Unloaded eng-a is hidden in shownArrangement, loaded eng-b stays visible.
+        const hidden = new Set<HideableAreaId>(
+            hiddenEngineAreas(stored, [
+                { id: "eng-a", loaded: false },
+                { id: "eng-b", loaded: true },
+            ]),
+        );
+        expect([...hidden]).toEqual([engA]);
+        const shown = shownArrangement(stored, hidden);
+        expect(arrangementLeaves(shown)).toEqual(["left", engB, "topRight", "bottomRight"]);
+        // Stored tree still retains eng-a.
+        expect(arrangementLeaves(stored)).toContain(engA);
+
+        // Divider drag on shown writes back without losing eng-a or its 70 % split.
+        const dragged: BoardArrangement = {
+            direction: "row",
+            splitPercentage: 60,
+            first: "left",
+            second: {
+                direction: "column",
+                splitPercentage: 30,
+                first: engB,
+                second: {
+                    direction: "column",
+                    splitPercentage: 55,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        };
+        const updated = applyShownSplits(stored, dragged, hidden);
+        expect(updated).toEqual({
+            direction: "row",
+            splitPercentage: 60,
+            first: {
+                direction: "column",
+                splitPercentage: 70,
+                first: "left",
+                second: engA,
+            },
+            second: {
+                direction: "column",
+                splitPercentage: 30,
+                first: engB,
+                second: {
+                    direction: "column",
+                    splitPercentage: 55,
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        });
+
+        // While the engine list is undefined (not yet loaded), all engine leaves are hidden.
+        expect(hiddenEngineAreas(stored, undefined)).toEqual([engA, engB]);
+    });
+
+    test("pruneMissingEngineAreas prunes only with a loaded list lacking the id, never with undefined", () => {
+        const engA = engineAreaId("eng-a");
+        const engB = engineAreaId("eng-b");
+        const stored = placeArea(
+            placeArea(defaultBoardArrangement(), engA, "left", "bottom"),
+            engB,
+            "topRight",
+            "top",
+        );
+
+        // Absent/unloaded list: never prunes.
+        expect(pruneMissingEngineAreas(stored, undefined)).toBe(stored);
+        // Unloaded engine still in the list: never prunes.
+        expect(
+            pruneMissingEngineAreas(stored, [
+                { id: "eng-a", loaded: false },
+                { id: "eng-b", loaded: false },
+            ]),
+        ).toBe(stored);
+        // Deleted engine absent from a loaded list: pruned.
+        const pruned = pruneMissingEngineAreas(stored, [{ id: "eng-b", loaded: true }]);
+        expect(arrangementEngineAreas(pruned)).toEqual([engB]);
+        expect(isValidBoardArrangement(pruned)).toBe(true);
+        // Empty loaded list: prunes all engine leaves.
+        expect(arrangementEngineAreas(pruneMissingEngineAreas(stored, []))).toEqual([]);
+    });
+});
+
+describe("applyRetiredEngineCarryOver", () => {
+    test.each([
+        [
+            null,
+            {
+                direction: "row",
+                first: "left",
+                second: {
+                    direction: "column",
+                    first: {
+                        direction: "column",
+                        first: "engine:eng-1",
+                        second: "topRight",
+                        splitPercentage: 30,
+                    },
+                    second: "bottomRight",
+                },
+            },
+        ],
+        [
+            '"tabs"',
+            {
+                direction: "row",
+                first: "left",
+                second: {
+                    direction: "column",
+                    first: {
+                        direction: "column",
+                        first: "engine:eng-1",
+                        second: "topRight",
+                        splitPercentage: 30,
+                    },
+                    second: "bottomRight",
+                },
+            },
+        ],
+        [
+            '"notation"',
+            {
+                direction: "row",
+                first: "left",
+                second: {
+                    direction: "column",
+                    first: "topRight",
+                    second: {
+                        direction: "column",
+                        first: "engine:eng-1",
+                        second: "bottomRight",
+                        splitPercentage: 30,
+                    },
+                },
+            },
+        ],
+        [
+            '"belowNotation"',
+            {
+                direction: "row",
+                first: "left",
+                second: {
+                    direction: "column",
+                    first: "topRight",
+                    second: {
+                        direction: "column",
+                        first: "bottomRight",
+                        second: "engine:eng-1",
+                        splitPercentage: 70,
+                    },
+                },
+            },
+        ],
+        [
+            '"board"',
+            {
+                direction: "row",
+                first: {
+                    direction: "column",
+                    first: "left",
+                    second: "engine:eng-1",
+                    splitPercentage: 70,
+                },
+                second: {
+                    direction: "column",
+                    first: "topRight",
+                    second: "bottomRight",
+                },
+            },
+        ],
+        [
+            '"nowhere"',
+            {
+                direction: "row",
+                first: "left",
+                second: {
+                    direction: "column",
+                    first: {
+                        direction: "column",
+                        first: "engine:eng-1",
+                        second: "topRight",
+                        splitPercentage: 30,
+                    },
+                    second: "bottomRight",
+                },
+            },
+        ],
+    ] as const)(
+        "carries over retired pinned engine for placement %s at 30 %%",
+        (placement, expected) => {
+            const result = applyRetiredEngineCarryOver(
+                defaultBoardArrangement(),
+                emptyRetiredEngine({
+                    detachedEngine: JSON.stringify("eng-1"),
+                    detachedEnginePlacement: placement,
+                }),
+            );
+            expect(result).toEqual({
+                arrangement: expected,
+                hasRetiredKeys: true,
+                changed: true,
+            });
+            expect(isValidBoardArrangement(result.arrangement)).toBe(true);
+        },
+    );
+
+    test.each(["null", '""', "{bad", "123", "true", "{}"])(
+        "treats detached-engine=%s as absent while still flagging retired keys",
+        (raw) => {
+            const base = defaultBoardArrangement();
+            const result = applyRetiredEngineCarryOver(
+                base,
+                emptyRetiredEngine({ detachedEngine: raw, detachedEnginePlacement: '"board"' }),
+            );
+            expect(result).toEqual({ arrangement: base, hasRetiredKeys: true, changed: false });
+        },
+    );
+
+    test("leaves arrangement unchanged when engine leaf is already present or cap 4 is reached", () => {
+        const withEng1 = placeArea(
+            defaultBoardArrangement(),
+            engineAreaId("eng-1"),
+            "left",
+            "bottom",
+        );
+        expect(
+            applyRetiredEngineCarryOver(
+                withEng1,
+                emptyRetiredEngine({ detachedEngine: JSON.stringify("eng-1") }),
+            ),
+        ).toEqual({ arrangement: withEng1, hasRetiredKeys: true, changed: false });
+
+        let atCap = defaultBoardArrangement();
+        for (const id of ["e1", "e2", "e3", "e4"]) {
+            atCap = placeArea(atCap, engineAreaId(id), "left", "bottom");
+        }
+        expect(
+            applyRetiredEngineCarryOver(
+                atCap,
+                emptyRetiredEngine({ detachedEngine: JSON.stringify("e5") }),
+            ),
+        ).toEqual({ arrangement: atCap, hasRetiredKeys: true, changed: false });
     });
 });

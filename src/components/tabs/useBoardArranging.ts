@@ -60,11 +60,11 @@ type PendingFocus =
 
 function readTileRects(
     displayed: BoardArrangement,
-    targets: Record<BoardAreaId, HTMLDivElement>,
+    targets: ReadonlyMap<BoardAreaId, HTMLDivElement>,
 ): Map<BoardAreaId, RectBox> {
     const rects = new Map<BoardAreaId, RectBox>();
     for (const id of arrangementLeaves(displayed)) {
-        const el = targets[id];
+        const el = targets.get(id);
         if (!el || !el.isConnected) continue;
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) rects.set(id, rect);
@@ -98,7 +98,7 @@ export function useBoardArranging({
 }: {
     enabled: boolean;
     layoutRef: RefObject<HTMLDivElement | null>;
-    targets: Record<BoardAreaId, HTMLDivElement>;
+    targets: ReadonlyMap<BoardAreaId, HTMLDivElement>;
     storedArrangement: BoardArrangement;
     displayedArrangement: BoardArrangement;
     hiddenAreas: ReadonlySet<HideableAreaId>;
@@ -252,13 +252,17 @@ export function useBoardArranging({
         if (placingRequest !== null) return;
         const pending = pendingFocusRef.current;
         if (!pending) return;
-        const selector =
-            pending.kind === "grip"
-                ? `[data-arrange-grip="${pending.area}"]`
-                : `[role="tab"][data-panel-tab="${pending.panel}"]`;
         const tryFocus = () => {
             const root = layoutRef.current ?? document;
-            const target = root.querySelector<HTMLElement>(selector);
+            // Match dataset directly rather than interpolating area ids (which may contain `:`) into a CSS selector.
+            const target =
+                pending.kind === "grip"
+                    ? (Array.from(root.querySelectorAll<HTMLElement>("[data-arrange-grip]")).find(
+                          (el) => el.dataset.arrangeGrip === pending.area,
+                      ) ?? null)
+                    : (Array.from(
+                          root.querySelectorAll<HTMLElement>('[role="tab"][data-panel-tab]'),
+                      ).find((el) => el.dataset.panelTab === pending.panel) ?? null);
             if (!target) return false;
             pendingFocusRef.current = null;
             target.focus();

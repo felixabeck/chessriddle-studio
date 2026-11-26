@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,6 +15,7 @@ import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useElementWidth } from "@/hooks/useElementWidth";
 import {
   applyShownSplits,
+  arrangementEngineAreas,
   arrangementLeaves,
   arrangementPanelAreas,
   BASE_AREA_IDS,
@@ -21,12 +23,14 @@ import {
   type BoardAreaId,
   canTakeOutPanel,
   type HideableAreaId,
+  isEngineArea,
   isPanelArea,
   type PanelAreaId,
   placeArea,
   type PlacementSide,
   returnPanelArea,
   shownArrangement,
+  type StaticBoardAreaId,
 } from "@/state/boardArrangement";
 import { coachEnabledAtom } from "@/state/coach";
 import {
@@ -47,14 +51,26 @@ const COACH_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach"]);
 const TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["topRight"]);
 const COACH_AND_TABS_HIDDEN: ReadonlySet<HideableAreaId> = new Set(["coach", "topRight"]);
 
-/** DOM id of the portal destination for a board area. Base areas keep their existing ids. */
-export function boardAreaTargetId(area: BoardAreaId): string {
+/** DOM id of the portal destination for a static board area. Base areas keep their existing ids. */
+export function boardAreaTargetId(area: StaticBoardAreaId): string {
   return isPanelArea(area) ? `board-area-${area}` : area;
+}
+
+function createAreaTarget(id: BoardAreaId): HTMLDivElement {
+  const element = document.createElement("div");
+  if (!isEngineArea(id)) {
+    element.id = boardAreaTargetId(id);
+  }
+  element.dataset.boardArea = id;
+  element.className = classes.portalTarget;
+  return element;
 }
 
 export interface BoardArrangementContextValue {
   /** Panel areas currently shown as their own tiles on the board. */
   shownPanelAreas: ReadonlySet<PanelAreaId>;
+  /** Portal destination element owned by the layout mount for `area`. */
+  getAreaTarget: (area: BoardAreaId) => HTMLElement | undefined;
   /** Whether the analysis board's own arrangement is currently displayed and arrangeable. */
   arrangingAvailable: boolean;
   /** Whether `panel` is in the strip and can be taken out without breaking the strip rule. */
@@ -77,6 +93,7 @@ export interface BoardArrangementContextValue {
 
 export const BoardArrangementContext = createContext<BoardArrangementContextValue>({
   shownPanelAreas: EMPTY_PANEL_SET,
+  getAreaTarget: () => undefined,
   arrangingAvailable: false,
   canTakeOut: () => false,
   returnPanel: () => undefined,
@@ -99,7 +116,11 @@ function TargetHost({ target, direct = false }: { target: HTMLDivElement; direct
   return direct ? (
     <span hidden ref={attach} />
   ) : (
-    <div ref={attach} className={`mosaic-tile ${classes.targetHost}`} data-board-slot={target.id} />
+    <div
+      ref={attach}
+      className={`mosaic-tile ${classes.targetHost}`}
+      data-board-slot={target.id || target.dataset.boardArea}
+    />
   );
 }
 
@@ -144,17 +165,32 @@ export default function BoardTabLayout({
 
   // React owns the hosts, while this mount owns the portal destinations.
   // Moving destinations preserves Mantine's one-time target lookup and child state.
-  const [targets] = useState(
-    () =>
-      Object.fromEntries(
-        BOARD_AREA_IDS.map((id) => {
-          const element = document.createElement("div");
-          element.id = boardAreaTargetId(id);
-          element.dataset.boardArea = id;
-          element.className = classes.portalTarget;
-          return [id, element];
-        }),
-      ) as Record<BoardAreaId, HTMLDivElement>,
+  const [targets] = useState<Map<BoardAreaId, HTMLDivElement>>(
+    () => new Map(BOARD_AREA_IDS.map((id) => [id, createAreaTarget(id)])),
+  );
+  const storedEngineAreas = useMemo(
+    () => arrangementEngineAreas(storedArrangement),
+    [storedArrangement],
+  );
+  const activeAreaIds = useMemo<ReadonlySet<BoardAreaId>>(
+    () => new Set<BoardAreaId>([...BOARD_AREA_IDS, ...storedEngineAreas]),
+    [storedEngineAreas],
+  );
+  for (const engineArea of storedEngineAreas) {
+    if (!targets.has(engineArea)) {
+      targets.set(engineArea, createAreaTarget(engineArea));
+    }
+  }
+  useEffect(() => {
+    for (const id of [...targets.keys()]) {
+      if (!activeAreaIds.has(id)) targets.delete(id);
+    }
+  }, [targets, activeAreaIds]);
+
+  const getAreaTarget = useCallback(
+    (area: BoardAreaId): HTMLElement | undefined =>
+      activeAreaIds.has(area) ? targets.get(area) : undefined,
+    [targets, activeAreaIds],
   );
 
   const registerReturnListener = useCallback((listener: ((panel: PanelAreaId) => void) | null) => {
@@ -202,6 +238,7 @@ export default function BoardTabLayout({
   const arrangementContext = useMemo<BoardArrangementContextValue>(
     () => ({
       shownPanelAreas,
+      getAreaTarget,
       arrangingAvailable: useArrangement,
       canTakeOut,
       returnPanel,
@@ -214,6 +251,7 @@ export default function BoardTabLayout({
     }),
     [
       shownPanelAreas,
+      getAreaTarget,
       useArrangement,
       canTakeOut,
       returnPanel,
@@ -240,13 +278,16 @@ export default function BoardTabLayout({
         {stacked ? (
           <div className={classes.boardStack}>
             {BASE_AREA_IDS.map((id) => (
-              <TargetHost key={id} target={targets[id]} />
+              <TargetHost key={id} target={targets.get(id)!} />
             ))}
           </div>
         ) : useArrangement ? (
           <Mosaic<BoardAreaId>
             key="arrangement"
-            renderTile={(id) => <TargetHost target={targets[id]} direct />}
+            renderTile={(id) => {
+              const target = targets.get(id);
+              return target ? <TargetHost target={target} direct /> : <></>;
+            }}
             value={displayedArrangement}
             onChange={(next) => {
               if (next === null) return;
@@ -257,16 +298,18 @@ export default function BoardTabLayout({
         ) : (
           <Mosaic<ViewId>
             key="mosaic"
-            renderTile={(id) => <TargetHost target={targets[id]} direct />}
+            renderTile={(id) => <TargetHost target={targets.get(id)!} direct />}
             value={windowsState.currentNode}
             onChange={(currentNode) => setWindowsState({ currentNode })}
             resize={resize}
           />
         )}
         <div hidden>
-          {BOARD_AREA_IDS.filter((id) => !shown.includes(id)).map((id) => (
-            <TargetHost key={id} target={targets[id]} />
-          ))}
+          {[...targets.entries()]
+            .filter(([id]) => activeAreaIds.has(id) && !shown.includes(id))
+            .map(([id, target]) => (
+              <TargetHost key={id} target={target} />
+            ))}
         </div>
         {useArrangement && (
           <BoardArrangeOverlay
