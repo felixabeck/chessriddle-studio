@@ -138,8 +138,9 @@ const SANS = [
 const FOLLOW_MARGIN_PX = 96;
 const FOLLOW_MARGIN_PANEL_DIVISOR = 4;
 const LAYOUT_TOLERANCE_PX = 2;
-// Settle frames GameNotation may still spend after a turn before the list holds still.
-const SETTLE_FRAMES = 6;
+// Frames to wait after a step: with reduced motion the turn lands at once and GameNotation's
+// settle check needs at most its three stable checks.
+const SETTLE_FRAMES = 3;
 
 const tokens: Token[] = [
     { type: "Header", value: { tag: "Event", value: "Follow scroll" } },
@@ -189,6 +190,15 @@ async function followState(page: Page, frames = SETTLE_FRAMES): Promise<FollowSt
     }, frames);
 }
 
+async function followTop(page: Page) {
+    return page.evaluate(
+        () =>
+            [...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport")].find(
+                (element) => element.querySelector('[data-index="0"]'),
+            )?.scrollTop ?? null,
+    );
+}
+
 function margin(height: number) {
     return Math.min(FOLLOW_MARGIN_PX, Math.floor(height / FOLLOW_MARGIN_PANEL_DIVISOR));
 }
@@ -209,12 +219,68 @@ function moveText(ply: number) {
     return new RegExp(square.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 }
 
-async function stepTo(page: Page, key: "ArrowRight" | "ArrowLeft", ply: number, label: string) {
-    await page.keyboard.press(key);
-    await expect(
-        page.locator('[data-notation-current="true"] button').first(),
-        `${label}: current move`,
-    ).toHaveText(moveText(ply));
+type WalkStep = FollowState & { text: string; scrollHeight: number };
+
+/**
+ * Steps through the moves inside the page: each step dispatches the navigation key to the
+ * document (where the app's hotkeys listen), waits for the current move to change, lets the
+ * follow scroll settle and reads the geometry. One round trip for the whole walk keeps it at a
+ * few seconds even in WebKit on the CI runner, where a round trip per step took minutes
+ * (f-20261127-23).
+ */
+async function walk(page: Page, key: "ArrowRight" | "ArrowLeft", steps: number) {
+    return page.evaluate(
+        async ({ key, steps, settleFrames }) => {
+            const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+            const viewport = [
+                ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
+            ].find((element) => element.querySelector("[data-index]"))!;
+            const current = () =>
+                viewport.querySelector<HTMLElement>('[data-notation-current="true"]');
+            const result: WalkStep[] = [];
+            for (let step = 0; step < steps; step += 1) {
+                const before = current();
+                const beforeText = before?.textContent ?? null;
+                const target = document.activeElement ?? document.body;
+                for (const type of ["keydown", "keyup"]) {
+                    target.dispatchEvent(
+                        new KeyboardEvent(type, {
+                            key,
+                            code: key,
+                            bubbles: true,
+                            cancelable: true,
+                        }),
+                    );
+                }
+                let waited = 0;
+                // Wait for a rendered current move that differs from the one before the key (at the
+                // start position there was none).
+                const changed = () => {
+                    const now = current();
+                    return now !== null && (now !== before || now.textContent !== beforeText);
+                };
+                while (!changed()) {
+                    if (++waited > 120)
+                        throw new Error(`step ${step + 1}: the current move did not change`);
+                    await frame();
+                }
+                for (let i = 0; i < settleFrames; i += 1) await frame();
+                const cell = current()!;
+                const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+                const bounds = cell.getBoundingClientRect();
+                result.push({
+                    text: cell.textContent ?? "",
+                    top: viewport.scrollTop,
+                    height: viewport.clientHeight,
+                    cellTop: bounds.top - viewportTop,
+                    cellBottom: bounds.bottom - viewportTop,
+                    scrollHeight: viewport.scrollHeight,
+                });
+            }
+            return result;
+        },
+        { key, steps, settleFrames: SETTLE_FRAMES },
+    );
 }
 
 for (const view of ["table", "inline"] as const) {
@@ -222,7 +288,8 @@ for (const view of ["table", "inline"] as const) {
         page,
         mockScenario,
     }) => {
-        // About 160 steps with a settle wait each take ~45 s in WebKit, the default limit.
+        // 160 steps of four to five frames each: ~22 s locally in WebKit, about three times that on
+        // the CI runner, so the walk gets the slow-test limit (f-20261127-23).
         test.slow();
         await page.emulateMedia({ reducedMotion: "reduce" });
         await openLongGame(page, mockScenario);
@@ -230,17 +297,17 @@ for (const view of ["table", "inline"] as const) {
         // Focus the page outside the notation (the top-left corner of the window) for the keys.
         await page.mouse.click(5, 5);
 
+        const forward = await walk(page, "ArrowRight", SANS.length);
         let previous: FollowState | null = null;
         let turns = 0;
-        for (let ply = 1; ply <= SANS.length; ply += 1) {
-            await stepTo(page, "ArrowRight", ply, `forward ${ply}`);
-            const state = await followState(page);
+        forward.forEach((state, index) => {
+            const ply = index + 1;
+            expect(state.text, `forward ${ply}: current move`).toMatch(moveText(ply));
             expectVisible(state, `forward ${ply}`);
             if (previous && Math.abs(state.top - previous.top) > LAYOUT_TOLERANCE_PX) {
                 turns += 1;
                 // A forward turn puts the move one margin below the top edge (or the list ends).
-                const atEnd =
-                    state.top + state.height >= (await scrollHeight(page)) - LAYOUT_TOLERANCE_PX;
+                const atEnd = state.top + state.height >= state.scrollHeight - LAYOUT_TOLERANCE_PX;
                 if (!atEnd) {
                     expect(state.cellTop, `forward ${ply}: turned to the top margin`).toBeCloseTo(
                         margin(state.height),
@@ -249,15 +316,16 @@ for (const view of ["table", "inline"] as const) {
                 }
             }
             previous = state;
-        }
+        });
         // Re-centring would move the list on every row; page turns move it a few times only.
         expect(turns, "forward page turns").toBeGreaterThan(0);
         expect(turns, "forward page turns").toBeLessThan(SANS.length / 6);
 
+        const backward = await walk(page, "ArrowLeft", 40);
         let backTurns = 0;
-        for (let ply = SANS.length - 1; ply >= SANS.length - 40; ply -= 1) {
-            await stepTo(page, "ArrowLeft", ply, `backward ${ply}`);
-            const state = await followState(page);
+        backward.forEach((state, index) => {
+            const ply = SANS.length - 1 - index;
+            expect(state.text, `backward ${ply}: current move`).toMatch(moveText(ply));
             expectVisible(state, `backward ${ply}`);
             if (Math.abs(state.top - previous!.top) > LAYOUT_TOLERANCE_PX) {
                 backTurns += 1;
@@ -269,26 +337,28 @@ for (const view of ["table", "inline"] as const) {
                 }
             }
             previous = state;
-        }
+        });
         expect(backTurns, "backward page turns").toBeLessThan(40 / 4);
         if (view === "table") expect(backTurns, "backward page turns").toBeGreaterThan(0);
 
         // A click on the next move once it sits fully visible in the bottom margin does not scroll
         // (a one-ply step that a key press would turn the page for).
+        // The forward walk's first turn came from the ply that first entered the bottom margin.
+        // Walk back to the start and up to the ply before it; that ply's successor then sits in
+        // the margin with the list still at the top.
+        const clickPly = forward.findIndex((state) => state.top > LAYOUT_TOLERANCE_PX) + 1;
+        expect(clickPly, "the forward walk turned the page").toBeGreaterThan(1);
         await page.mouse.click(5, 5);
         await page.keyboard.press("Shift+ArrowUp");
-        let clickPly = 0;
-        let next: NextMove | null = null;
-        for (let ply = 1; ply < SANS.length; ply += 1) {
-            await followState(page);
-            next = await nextMove(page);
-            if (next && next.bottom > next.height - margin(next.height)) {
-                clickPly = ply;
-                break;
-            }
-            await stepTo(page, "ArrowRight", ply, `to the margin ${ply}`);
-        }
+        // Back at the start: no current move, the list at the top with row 0 mounted.
+        await expect(page.locator('[data-notation-current="true"]')).toHaveCount(0);
+        await expect.poll(async () => (await followTop(page)) ?? -1).toBe(0);
+        await walk(page, "ArrowRight", clickPly - 1);
+        const next = await nextMove(page);
         expect(next, "the next move reached the bottom margin").not.toBeNull();
+        expect(next!.bottom, "the next move is in the bottom margin").toBeGreaterThan(
+            next!.height - margin(next!.height),
+        );
         expect(next!.bottom, "the next move is fully visible").toBeLessThanOrEqual(next!.height);
         const beforeClick = await followState(page);
         await page.mouse.click(next!.x, next!.y);
@@ -351,13 +421,4 @@ async function nextMove(page: Page): Promise<NextMove | null> {
             height: viewport.clientHeight,
         };
     });
-}
-
-async function scrollHeight(page: Page) {
-    return page.evaluate(
-        () =>
-            [...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport")].find(
-                (element) => element.querySelector("[data-index]"),
-            )!.scrollHeight,
-    );
 }
