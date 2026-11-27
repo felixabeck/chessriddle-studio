@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ArtifactPublication, PathRef } from "@/bindings";
 import { assertAccountExportTicketOrder } from "@/utils/tests/accountExportTicketOrder";
-import { parsePgn, startingPosition } from "chessops/pgn";
+import { parseComment, parsePgn, startingPosition } from "chessops/pgn";
 import { parseSan } from "chessops/san";
 import i18n from "@/i18n";
 import chess960Fixture from "./fixtures/live-960-101679677427.json";
@@ -174,6 +174,52 @@ describe("getChesscomGame", () => {
             game_type: "live",
             game_id: "101679677427",
         });
+    });
+
+    test("puts each live move's remaining clock on that move", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(JSON.stringify(chess960Fixture));
+
+        const { game } = replay(await getChesscomGame(gameURL));
+        const clocks = [...game.moves.mainline()].map(
+            (node) => parseComment(node.comments?.join(" ") ?? "").clock,
+        );
+
+        // moveTimestamps has 86 entries for 85 plies; the trailing one has no move and is dropped.
+        expect(clocks).toHaveLength(85);
+        expect(clocks.slice(0, 4)).toEqual([170.7, 178.4, 167.5, 177.6]);
+        expect(clocks.at(-1)).toBe(57.7);
+    });
+
+    test("accepts a list with exactly one clock per move", async () => {
+        mocks.getPublicChessComJson.mockResolvedValue(
+            JSON.stringify({
+                game: { moveList: "mC0K", pgnHeaders: {}, moveTimestamps: "1199,1192" },
+            }),
+        );
+
+        const { game } = replay(await getChesscomGame(gameURL));
+
+        expect(
+            [...game.moves.mainline()].map(
+                (node) => parseComment(node.comments?.join(" ") ?? "").clock,
+            ),
+        ).toEqual([119.9, 119.2]);
+    });
+
+    test.each([
+        ["a daily game", "https://www.chess.com/game/daily/123", "1199,1192"],
+        ["a list shorter than the moves", gameURL, "1199"],
+        ["an unreadable list", gameURL, "1199,abc"],
+        ["a list that is not text", gameURL, [1199, 1192]],
+    ])("adds no clocks for %s", async (_name, url, moveTimestamps: unknown) => {
+        mocks.getPublicChessComJson.mockResolvedValue(
+            JSON.stringify({ game: { moveList: "mC0K", pgnHeaders: {}, moveTimestamps } }),
+        );
+
+        const pgn = await getChesscomGame(url);
+
+        expect(replay(pgn).sans).toEqual(["e4", "e5"]);
+        expect(pgn).not.toContain("%clk");
     });
 
     test("replays a from-position game using its FEN", async () => {

@@ -2,7 +2,14 @@ import { tauri, withDownloadTicket } from "@/platform/tauri";
 import { notifications } from "@mantine/notifications";
 import { X } from "lucide-react";
 import { error } from "@/platform/native";
-import { ChildNode, defaultGame, makePgn, type PgnNodeData, startingPosition } from "chessops/pgn";
+import {
+  ChildNode,
+  defaultGame,
+  makeComment,
+  makePgn,
+  type PgnNodeData,
+  startingPosition,
+} from "chessops/pgn";
 import { makeSan } from "chessops/san";
 import { z } from "zod";
 import type { ArtifactPublication, PathRef } from "@/bindings";
@@ -123,8 +130,25 @@ const chessComGameSchema = z.object({
   game: z.object({
     moveList: z.string(),
     pgnHeaders: z.record(z.string(), z.union([z.string(), z.number()])),
+    // Read leniently: an unexpected value only costs the clocks, never the game.
+    moveTimestamps: z.unknown().optional(),
   }),
 });
+
+/**
+ * A live game's remaining clock after each ply, in seconds, from chess.com's `moveTimestamps`:
+ * comma-separated tenths of a second, the mover's clock after that ply (1199 is 1:59.9, the same
+ * value chess.com's own PGN writes as `[%clk 0:01:59.9]`). The list carries one extra trailing entry,
+ * the clock of the side to move when the game ended, which has no move to sit on and is dropped by
+ * the caller. Daily games have no such list. An unreadable list yields no clocks at all rather than
+ * clocks on the wrong moves.
+ */
+function liveClocks(gameType: string, moveTimestamps: unknown): number[] {
+  if (gameType !== "live" || typeof moveTimestamps !== "string" || !moveTimestamps) return [];
+  const tenths = moveTimestamps.split(",");
+  if (!tenths.every((value) => /^\d+$/.test(value))) return [];
+  return tenths.map((value) => Number(value) / 10);
+}
 
 /** A chess.com game response that cannot be turned into a game. `message` is the log line. */
 export class ChessComGameResponseError extends Error {}
@@ -147,6 +171,7 @@ export async function fetchChessComGamePgn(gameType: string, gameId: string): Pr
   }
 
   const moveList = gameData.data.game.moveList;
+  const clocks = liveClocks(gameType, gameData.data.game.moveTimestamps);
   const pgnHeaders = gameData.data.game.pgnHeaders;
   const headers = new Map(Object.entries(pgnHeaders).map(([k, v]) => [k, v.toString()]));
   const start = startingPosition(headers);
@@ -158,8 +183,10 @@ export async function fetchChessComGamePgn(gameType: string, gameId: string): Pr
   const game = defaultGame<PgnNodeData>(() => headers);
   const chess = start.value;
 
+  const moves = moveList.match(/.{1,2}/g) ?? [];
+  const clocked = clocks.length >= moves.length;
   let lastNode = game.moves;
-  for (const move of moveList.match(/.{1,2}/g) ?? []) {
+  for (const [ply, move] of moves.entries()) {
     const m = decodeTCN(move);
     if (!chess.isLegal(m)) {
       throw new ChessComGameResponseError(`Illegal move in Chess.com game: ${move}`);
@@ -167,6 +194,7 @@ export async function fetchChessComGamePgn(gameType: string, gameId: string): Pr
     lastNode.children.push(
       new ChildNode({
         san: makeSan(chess, m),
+        ...(clocked ? { comments: [makeComment({ clock: clocks[ply] })] } : {}),
       }),
     );
     chess.play(m);
