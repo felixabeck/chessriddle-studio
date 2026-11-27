@@ -29849,3 +29849,17 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Failure scenario:** every push to master is red on the `rust` job, so `ci:remote:check` refuses further pushes and the backend coverage ratchet is not measured.
 * **Fix direction:** raise `RUST_COVERAGE_TOOLCHAIN` (and its mirrors) to a nightly whose rustc is at least 1.92 with working branch coverage, run the backend coverage gate locally, and handle any coverage measurement change through the writer guard (docs/coverage.md), never by lowering floors.
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The backend coverage baseline now records current counts, and run-to-run variance of a few covered lines can turn CI red on unchanged code
+
+* **ID:** f-20261127-04 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **Where:** `backend-coverage-baselines.json` (rewritten 2026-11-27 under d-20261127-03), `scripts/coverage-report.mjs` (`assertBaseline`), `pnpm coverage:backend:check` in the CI `rust` job.
+* **Defect:** before d-20261127-03 the backend baseline held September counts far below the measurement (e.g. app-infrastructure lines 7450/9180 against a measured 17189/19961), so only the ratios bound and the suite's nondeterminism never mattered. The rewrite records current counts. Two local runs of the same tree on `nightly-2025-10-15` differed by one covered line and one covered branch in app-infrastructure (17186 vs 17185 lines, 2620 vs 2619 branches); a single-run baseline made the second run red. The baseline was therefore written from a conservative merge of both runs (a record counts as covered only when both runs covered it), but a CI runner can still miss a record both local runs covered.
+* **Failure scenario:** a push that does not touch backend code gets a red `rust` job ("app-infrastructure lines regressed: N-1/T, baseline N/T"), and `ci:remote:check` then blocks every following push until someone rewrites the baseline.
+* **Fix direction:** give the backend ratchet an explicit variance policy measured from repeated runs (for example a per-metric tolerance of the observed run-to-run spread, or a baseline written from the minimum of several CI artifacts), recorded as a decision; or make the nondeterministic tests deterministic. Never clear a red by rewriting the baseline without that decision.
+* **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, repair of f-20261127-03, 2026-11-27.
