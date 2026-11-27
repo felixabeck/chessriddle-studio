@@ -32,7 +32,7 @@
     {
       "id": "app-infrastructure",
       "source": "backend",
-      "minimumCoverage": { "lines": 81, "functions": 73, "branches": 47 },
+      "minimumCoverage": { "lines": 81, "functions": 66, "branches": 47 },
       "paths": [
         "src-tauri/src/main.rs",
         "src-tauri/src/keyed_leaf_store.rs",

@@ -3,9 +3,9 @@
 # dependency/toolchain maintenance, update this one pin deliberately, fix promoted
 # lints, and run the complete Rust gates plus binding and release-build proof.
 # The backend coverage gate additionally needs the separately pinned
-# `nightly-2025-06-01` toolchain, which `scripts/rust-branch-coverage.mjs` selects
-# explicitly with `cargo +nightly-2025-06-01`; install it with
-#   rustup toolchain install nightly-2025-06-01 --profile minimal --component llvm-tools-preview
+# `nightly-2025-10-15` toolchain, which `scripts/rust-branch-coverage.mjs` selects
+# explicitly with `cargo +nightly-2025-10-15`; install it with
+#   rustup toolchain install nightly-2025-10-15 --profile minimal --component llvm-tools-preview
 [toolchain]
 channel = "1.98.0"
 components = ["rustfmt", "clippy", "llvm-tools"]

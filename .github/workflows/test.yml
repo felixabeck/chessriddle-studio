@@ -288,7 +288,7 @@ jobs:
         run: cargo install cargo-llvm-cov --version 0.8.7 --locked
 
       - name: Install pinned Rust coverage toolchain
-        run: rustup toolchain install nightly-2025-06-01 --profile minimal --component llvm-tools-preview
+        run: rustup toolchain install nightly-2025-10-15 --profile minimal --component llvm-tools-preview
 
       - name: Run Rust tests with coverage
         run: pnpm test:coverage:backend

@@ -9,6 +9,7 @@ import { workflowSteps } from "./check-gate-routing.mjs";
 import { checkToolVersionParity, discoverToolVersions } from "./check-tool-version-parity.mjs";
 import { gitInit } from "./test-git-init.mjs";
 import { testTempRoots } from "./test-temp-root.mjs";
+import { RUST_COVERAGE_TOOLCHAIN } from "./toolchain-versions.mjs";
 
 const temporaryRoot = testTempRoots(after);
 
@@ -890,7 +891,7 @@ test("reports all pre-Phase-3 checker finding paths through CLI fixtures", async
     mutateCheckedInFileAndRunCli(
       subtest,
       ".github/workflows/test.yml",
-      (text) => text.replace("nightly-2025-06-01", "nightly-2025-06-02"),
+      (text) => text.replace("nightly-2025-10-15", "nightly-2025-10-16"),
       "nightly toolchain mismatch",
     ),
   );
@@ -931,7 +932,8 @@ test("rejects every floating, partial, nightly, or prerelease Rust channel", asy
     "beta",
     "nightly",
     "1.98",
-    "nightly-2025-06-01",
+    // The coverage pin itself, so only the stable-channel rule can reject it.
+    RUST_COVERAGE_TOOLCHAIN,
     "1.98.0-beta.1",
   ]) {
     await t.test(channel, (subtest) =>

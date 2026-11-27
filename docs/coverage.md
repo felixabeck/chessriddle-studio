@@ -105,6 +105,15 @@ own `#[cfg(test)]` code, which inflated most areas by 15 to 30 points (`f-202608
 exact-count baseline catches changes above those floors; new security or IPC surfaces require
 focused tests before the baseline is refreshed.
 
+On 2026-11-27, `d-20261127-03` moved the coverage toolchain from `nightly-2025-06-01` to
+`nightly-2025-10-15` (LLVM 21) because hayro needs rustc 1.92 (`f-20261127-03`). That llvm-cov
+exports one `FN` record per generic instantiation and fewer `BRDA` records, so the backend
+baseline was rewritten through the writer guard from a conservative merge of two local runs
+(a record counts as covered only when both runs covered it; they differed by one line and one
+branch, `f-20261127-04`), and the
+app-infrastructure function floor was re-derived from it, 73 → 66 %; the other floors are
+unchanged.
+
 After adding coverage, deliberately refresh the frontend baseline so the new gains become
 binding. First require a green full coverage run against the existing baseline. Obtain the
 `frontend-coverage` LCOV artifact from a successful `Test` run in `felixabeck/chessriddle-studio`,
