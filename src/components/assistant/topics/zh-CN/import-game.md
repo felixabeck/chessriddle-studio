@@ -2,7 +2,7 @@
 id: import-game
 title: 导入对局
 summary: 从 PGN 文件、粘贴的 PGN 文本、Lichess 或 Chess.com 链接、FEN 局面，或手写记录纸的照片或 PDF 扫描件导入对局。
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 要导入对局或局面，请打开 [[page:new-tab]] 并点击 {{label:Home.Card.ImportGame.Button}} 以打开 {{label:Home.Card.ImportGame.Title}} 对话框。您也可以直接通过 {{label:Menu.File}} -> {{label:Menu.File.OpenFile}}（或 {{label:Settings.Keybinds.Actions.OPEN_FILE}} 快捷键）打开 PGN 文件。
@@ -22,4 +22,6 @@ source: 85ee9b055c7abe34
 - Studio 会按标准国际象棋规则从初始局面校验每一步棋，并在一个新的未保存分析标签页中打开对局，棋盘旁配有 {{label:Board.Tabs.Photo}} 面板。
 - 存疑或经过修正的着法会在棋谱中标为不确定。在 {{label:Board.Tabs.Photo}} 面板中逐一查看，并在核对后点击 {{label:Scoresheet.MarkAsChecked}}。如果您在中途修改了着法或从中断处继续，可点击 {{label:Scoresheet.ContinueWithSheet}} 自动续演记录纸上的后续合法着法。标记会一直保留，直到每一步棋被修正或标记为已核对为止；{{label:Board.Tabs.Photo}} 面板也可以像其他面板一样从标签页中拖出并摆放。
 - 使用常规保存流程（{{label:Menu.File}} -> {{label:Common.Save}}、保存按钮或 {{label:Board.Database.Save}}）将对局保存到文件或数据库。
-- 照片仅保存在内存中（最多保留 4 个已打开标签页），不会写入磁盘；重新加载或重启后，对局与核对标记仍会保留，您可在 {{label:Board.Tabs.Photo}} 面板中使用 {{label:Scoresheet.LoadPhotoAgain}} 重新查看照片而无需再次发送。
+- 对局一经导入，Studio 就会将照片保存在这台电脑上。当您将对局保存到 PGN 文件或数据库时，对局会保留对照片的引用，因此每次打开该对局时，{{label:Board.Tabs.Photo}} 面板都会再次显示这些照片。照片绝不会上传，棋库同步也不会发送它们。
+- 如果某张照片不在这台电脑上（例如从另一台电脑复制过来的 PGN 文件），面板会给出提示，您可以通过 {{label:Scoresheet.LoadPhotoAgain}} 重新附加照片，而不会发送到任何地方。
+- 不再被任何 Studio 已知对局引用的照片会在一天后移除，因此复制到 Studio 外部的对局只会保留对其照片的引用。

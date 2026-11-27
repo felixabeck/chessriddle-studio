@@ -2,7 +2,7 @@
 id: import-game
 title: Importowanie partii
 summary: Importuj partię z pliku PGN, wklejonego tekstu PGN, adresu URL z Lichess lub Chess.com, pozycji FEN albo zdjęć lub skanów PDF ręcznie zapisanego blankietu partii.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Aby zaimportować partię lub pozycję, otwórz [[page:new-tab]] i kliknij {{label:Home.Card.ImportGame.Button}}, aby otworzyć okno {{label:Home.Card.ImportGame.Title}}. Możesz też otworzyć plik PGN bezpośrednio przez {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (lub skrót {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -22,4 +22,6 @@ Aby zaimportować za pomocą **{{label:Import.FromPhoto}}**:
 - Studio sprawdza każde posunięcie zgodnie ze standardowymi zasadami szachów od pozycji początkowej i otwiera partię w nowej niezapisanej karcie analizy z panelem {{label:Board.Tabs.Photo}} obok szachownicy.
 - Wątpliwe lub poprawione posunięcia są oznaczone w zapisie jako niepewne. Przejdź przez nie w panelu {{label:Board.Tabs.Photo}} i klikaj {{label:Scoresheet.MarkAsChecked}} po sprawdzeniu każdego posunięcia. Jeśli poprawisz posunięcie w środku partii lub wznowisz po zatrzymaniu, kliknij {{label:Scoresheet.ContinueWithSheet}}, aby odtworzyć kolejne legalne posunięcia z blankietu. Oznaczenia pozostają, dopóki każde posunięcie nie zostanie poprawione lub oznaczone jako sprawdzone, a panel {{label:Board.Tabs.Photo}} można wyciągnąć z kart i umieścić jak pozostałe panele.
 - Zapisz partię do pliku lub bazy danych zwykłą metodą zapisu ({{label:Menu.File}} -> {{label:Common.Save}}, przycisk zapisu lub {{label:Board.Database.Save}}).
-- Zdjęcia są przechowywane wyłącznie w pamięci (dla maksymalnie 4 otwartych kart) i nie trafiają na dysk; po przeładowaniu lub ponownym uruchomieniu partia i oznaczenia weryfikacji pozostają, a zdjęcie możesz ponownie wyświetlić bez wysyłania przyciskiem {{label:Scoresheet.LoadPhotoAgain}} w panelu {{label:Board.Tabs.Photo}}.
+- Studio zapisuje zdjęcia na tym komputerze od razu po zaimportowaniu partii. Gdy zapiszesz partię w pliku PGN lub bazie danych, zachowuje ona odwołanie do nich, dzięki czemu panel {{label:Board.Tabs.Photo}} wyświetla je ponownie przy każdym otwarciu partii. Zdjęcia nigdy nie są wysyłane na serwer, a synchronizacja biblioteki ich nie przesyła.
+- Jeśli zdjęcia nie ma na tym komputerze (na przykład gdy plik PGN skopiowano z innego komputera), panel informuje o tym, a przycisk {{label:Scoresheet.LoadPhotoAgain}} ponownie je dołącza bez wysyłania gdziekolwiek.
+- Zdjęcia, do których nie odwołuje się już żadna znana Studio partia, są usuwane po jednym dniu, dlatego partia skopiowana poza Studio zachowuje jedynie odwołanie do swoich zdjęć.

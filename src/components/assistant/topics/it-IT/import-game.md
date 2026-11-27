@@ -2,7 +2,7 @@
 id: import-game
 title: Importare una partita
 summary: Importa una partita da un file PGN, da testo PGN incollato, da un URL di Lichess o Chess.com, da una posizione FEN oppure da foto o scansioni PDF di un formulario manoscritto.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Per importare una partita o una posizione, apri [[page:new-tab]] e fai clic su {{label:Home.Card.ImportGame.Button}} per aprire la finestra {{label:Home.Card.ImportGame.Title}}. Puoi anche aprire un file PGN direttamente da {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (o con la scorciatoia {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -22,4 +22,6 @@ Per importare con **{{label:Import.FromPhoto}}**:
 - Studio controlla ogni mossa secondo le regole standard degli scacchi dalla posizione iniziale e apre la partita in una nuova scheda di analisi non salvata con il pannello {{label:Board.Tabs.Photo}} accanto alla scacchiera.
 - Le mosse incerte o corrette vengono segnalate nella notazione. Scorrile nel pannello {{label:Board.Tabs.Photo}} e fai clic su {{label:Scoresheet.MarkAsChecked}} dopo averle verificate. Se correggi una mossa nel mezzo o prosegui dopo un punto di arresto, fai clic su {{label:Scoresheet.ContinueWithSheet}} per riprodurre le successive mosse legali del formulario. I contrassegni restano finché ogni mossa non viene corretta o segnata come verificata, e il pannello {{label:Board.Tabs.Photo}} può essere trascinato fuori dalle schede e posizionato come gli altri pannelli.
 - Salva la partita in un file o database con il normale flusso di salvataggio ({{label:Menu.File}} -> {{label:Common.Save}}, il pulsante di salvataggio o {{label:Board.Database.Save}}).
-- Le foto restano solo in memoria (fino a 4 schede aperte) e non vengono salvate su disco; dopo un ricaricamento o un riavvio la partita e i contrassegni restano, e puoi usare {{label:Scoresheet.LoadPhotoAgain}} nel pannello {{label:Board.Tabs.Photo}} per rivedere la foto senza inviarla.
+- Studio salva le foto su questo computer non appena la partita viene importata. Quando salvi la partita in un file PGN o in un database, conserva un riferimento ad esse, così il pannello {{label:Board.Tabs.Photo}} le mostra di nuovo ogni volta che la partita viene aperta. Le foto non vengono mai caricate online e la sincronizzazione della libreria non le invia.
+- Se una foto non è su questo computer (ad esempio un file PGN copiato da un altro computer), il pannello lo segnala e {{label:Scoresheet.LoadPhotoAgain}} la riallega senza inviarla da nessuna parte.
+- Le foto a cui non fa più riferimento alcuna partita nota a Studio vengono rimosse dopo un giorno, quindi una partita copiata fuori da Studio conserva solo un riferimento alle proprie foto.

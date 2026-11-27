@@ -2,7 +2,7 @@
 id: import-game
 title: Importere et parti
 summary: Importer et parti fra en PGN-fil, innlimt PGN-tekst, en Lichess- eller Chess.com-URL, en FEN-stilling eller bilder eller PDF-skanninger av et håndskrevet noteringsskjema.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 For å importere et parti eller en stilling åpner du [[page:new-tab]] og klikker {{label:Home.Card.ImportGame.Button}} for å åpne dialogen {{label:Home.Card.ImportGame.Title}}. Du kan også åpne en PGN-fil direkte fra {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (eller hurtigtasten {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -22,4 +22,6 @@ Slik importerer du med **{{label:Import.FromPhoto}}**:
 - Studio kontrollerer hvert trekk mot vanlige sjakkregler fra utgangsstillingen og åpner partiet i en ny ulagret analysefane med panelet {{label:Board.Tabs.Photo}} ved siden av brettet.
 - Usikre eller rettede trekk markeres som usikre i notasjonen. Gå gjennom dem i {{label:Board.Tabs.Photo}}-panelet og klikk {{label:Scoresheet.MarkAsChecked}} etter hvert som du bekrefter hvert trekk. Hvis du retter et trekk underveis eller vil fortsette etter et stopp-punkt, klikker du {{label:Scoresheet.ContinueWithSheet}} for å spille inn de neste lovlige trekkene fra skjemaet. Markeringene blir værende til hvert trekk er rettet eller markert som kontrollert, og {{label:Board.Tabs.Photo}}-panelet kan dras ut av fanene og plasseres som de andre panelene.
 - Lagre partiet i en fil eller database med vanlig lagring ({{label:Menu.File}} -> {{label:Common.Save}}, lagre-knappen eller {{label:Board.Database.Save}}).
-- Bilder lagres bare i minnet (for opptil 4 åpne faner) og skrives ikke til disk; etter ny innlasting eller omstart beholdes partiet og gjennomgangsmarkeringene, og du kan bruke {{label:Scoresheet.LoadPhotoAgain}} i {{label:Board.Tabs.Photo}}-panelet for å vise bildet igjen uten å sende det.
+- Studio lagrer bildene på denne datamaskinen så snart partiet er importert. Når du lagrer partiet i en PGN-fil eller en database, beholder det en referanse til dem, slik at {{label:Board.Tabs.Photo}}-panelet viser dem igjen hver gang partiet åpnes. Bilder lastes aldri opp, og biblioteksynkroniseringen sender dem ikke.
+- Hvis et bilde ikke finnes på denne datamaskinen (for eksempel en PGN-fil kopiert fra en annen datamaskin), gir panelet beskjed om det, og {{label:Scoresheet.LoadPhotoAgain}} legger det til igjen uten å sende det noe sted.
+- Bilder som ikke lenger refereres til av noe parti Studio kjenner til, fjernes etter én dag, så et parti kopiert utenfor Studio beholder bare en referanse til bildene sine.

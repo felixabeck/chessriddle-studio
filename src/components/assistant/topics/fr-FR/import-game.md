@@ -2,7 +2,7 @@
 id: import-game
 title: Importer une partie
 summary: Importez une partie depuis un fichier PGN, un texte PGN collé, une URL Lichess ou Chess.com, une position FEN ou des photos ou scans PDF d’une feuille de partie manuscrite.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Pour importer une partie ou une position, ouvrez [[page:new-tab]] et cliquez sur {{label:Home.Card.ImportGame.Button}} afin d’ouvrir la boîte de dialogue {{label:Home.Card.ImportGame.Title}}. Vous pouvez aussi ouvrir un fichier PGN directement depuis {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (ou avec le raccourci {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -22,4 +22,6 @@ Pour importer avec **{{label:Import.FromPhoto}}** :
 - Studio vérifie chaque coup selon les règles standard des échecs depuis la position initiale et ouvre la partie dans un nouvel onglet d’analyse non enregistré avec le panneau {{label:Board.Tabs.Photo}} à côté de l’échiquier.
 - Les coups douteux ou corrigés sont signalés comme incertains dans la notation. Parcourez-les dans le panneau {{label:Board.Tabs.Photo}} et cliquez sur {{label:Scoresheet.MarkAsChecked}} après vérification. Si vous corrigez un coup au milieu de la partie ou poursuivez après un arrêt, cliquez sur {{label:Scoresheet.ContinueWithSheet}} pour rejouer les coups légaux suivants de la feuille. Les marques restent jusqu’à ce que chaque coup soit corrigé ou marqué comme vérifié, et le panneau {{label:Board.Tabs.Photo}} peut être glissé hors des onglets et placé comme les autres panneaux.
 - Enregistrez la partie dans un fichier ou une base de données par la méthode habituelle ({{label:Menu.File}} -> {{label:Common.Save}}, le bouton d’enregistrement ou {{label:Board.Database.Save}}).
-- Les photos restent uniquement en mémoire (jusqu’à 4 onglets ouverts) et ne sont pas enregistrées sur disque ; après un rechargement ou un redémarrage, la partie et ses marques de révision sont conservées et vous pouvez utiliser {{label:Scoresheet.LoadPhotoAgain}} dans le panneau {{label:Board.Tabs.Photo}} pour afficher de nouveau la photo sans l’envoyer.
+- Studio stocke les photos sur cet ordinateur dès l’importation de la partie. Lorsque vous enregistrez la partie dans un fichier PGN ou une base de données, celle-ci conserve une référence vers elles, de sorte que le panneau {{label:Board.Tabs.Photo}} les affiche de nouveau à chaque ouverture de la partie. Les photos ne sont jamais téléversées et la synchronisation de bibliothèque ne les envoie pas.
+- Si une photo ne se trouve pas sur cet ordinateur (par exemple un fichier PGN copié depuis un autre ordinateur), le panneau l’indique et {{label:Scoresheet.LoadPhotoAgain}} permet de la rattacher sans l’envoyer nulle part.
+- Les photos auxquelles aucune partie connue de Studio ne fait plus référence sont supprimées au bout d’un jour ; une partie copiée hors de Studio ne conserve donc qu’une référence vers ses photos.

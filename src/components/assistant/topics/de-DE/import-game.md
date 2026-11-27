@@ -2,7 +2,7 @@
 id: import-game
 title: Partie importieren
 summary: Importiere eine Partie aus einer PGN-Datei, eingefügtem PGN-Text, einer Lichess- oder Chess.com-URL, einer FEN-Stellung oder Fotos oder PDF-Scans eines handgeschriebenen Partieformulars.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Um eine Partie oder Stellung zu importieren, öffne [[page:new-tab]] und klicke auf {{label:Home.Card.ImportGame.Button}}, um den Dialog {{label:Home.Card.ImportGame.Title}} zu öffnen. Du kannst eine PGN-Datei auch direkt über {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (oder das Tastenkürzel {{label:Settings.Keybinds.Actions.OPEN_FILE}}) öffnen.
@@ -22,4 +22,6 @@ So importierst du mit **{{label:Import.FromPhoto}}**:
 - Studio prüft jeden Zug ab der Grundstellung nach den Standard-Schachregeln und öffnet die Partie in einem neuen, ungesicherten Analyse-Tab mit dem Bereich {{label:Board.Tabs.Photo}} neben dem Brett.
 - Unsichere oder korrigierte Züge sind in der Notation markiert. Springe im Bereich {{label:Board.Tabs.Photo}} durch diese Züge und klicke nach der Prüfung jeweils auf {{label:Scoresheet.MarkAsChecked}}. Wenn du einen Zug mittendrin korrigierst oder nach einem Stopp weitermachst, spiele die folgenden legalen Züge des Formulars mit {{label:Scoresheet.ContinueWithSheet}} nach. Die Markierungen bleiben erhalten, bis jeder Zug korrigiert oder als geprüft markiert ist, und der Bereich {{label:Board.Tabs.Photo}} lässt sich wie die anderen Bereiche aus den Tabs herausziehen und frei platzieren.
 - Sichere die Partie über den normalen Speicherweg in eine Datei oder Datenbank ({{label:Menu.File}} -> {{label:Common.Save}}, die Speichern-Schaltfläche oder {{label:Board.Database.Save}}).
-- Fotos bleiben nur im Arbeitsspeicher (für bis zu 4 geöffnete Tabs) und werden nicht auf der Festplatte gespeichert; nach einem Neuladen oder Neustart bleiben Partie und Prüfmarkierungen erhalten, und du kannst das Foto über {{label:Scoresheet.LoadPhotoAgain}} im Bereich {{label:Board.Tabs.Photo}} erneut anzeigen, ohne es zu senden.
+- Studio legt die Fotos auf diesem Computer ab, sobald die Partie importiert wurde. Wenn du die Partie in einer PGN-Datei oder einer Datenbank sicherst, behält sie einen Verweis darauf, sodass der Bereich {{label:Board.Tabs.Photo}} sie bei jedem Öffnen der Partie wieder anzeigt. Fotos werden niemals hochgeladen, und die Bibliothekssynchronisierung sendet sie nicht.
+- Befindet sich ein Foto nicht auf diesem Computer (zum Beispiel bei einer von einem anderen Computer kopierten PGN-Datei), weist der Bereich darauf hin, und {{label:Scoresheet.LoadPhotoAgain}} hängt es wieder an, ohne es irgendwohin zu senden.
+- Fotos, auf die keine Studio bekannte Partie mehr verweist, werden nach einem Tag entfernt; eine außerhalb von Studio kopierte Partie behält daher nur einen Verweis auf ihre Fotos.

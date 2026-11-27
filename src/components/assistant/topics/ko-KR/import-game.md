@@ -2,7 +2,7 @@
 id: import-game
 title: 대국 불러오기
 summary: PGN 파일, 붙여넣은 PGN 텍스트, Lichess 또는 Chess.com URL, FEN 포지션, 또는 손글씨 기보 사진이나 PDF 스캔에서 대국 불러오기.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 대국이나 포지션을 불러오려면 [[page:new-tab]]을 열고 {{label:Home.Card.ImportGame.Button}}을(를) 클릭하여 {{label:Home.Card.ImportGame.Title}} 대화상자를 여세요. {{label:Menu.File}} -> {{label:Menu.File.OpenFile}}(또는 {{label:Settings.Keybinds.Actions.OPEN_FILE}} 단축키)로 PGN 파일을 직접 열 수도 있습니다.
@@ -22,4 +22,6 @@ PGN, {{label:Import.Online}}, FEN에서는 {{label:Home.Card.ImportGame.Button}}
 - 스튜디오는 시작 포지션부터 표준 체스 규칙에 따라 모든 수를 확인하고, 보드 옆에 {{label:Board.Tabs.Photo}} 패널이 열린 새 미저장 분석 탭으로 대국을 엽니다.
 - 불확실하거나 수정된 수는 기보에 불확실 표시로 나타납니다. {{label:Board.Tabs.Photo}} 패널에서 이동하며 확인한 뒤 {{label:Scoresheet.MarkAsChecked}}를 클릭하세요. 중간 수를 고쳤거나 중단 지점 이후를 이어가려면 {{label:Scoresheet.ContinueWithSheet}}를 클릭해 기보의 남은 합법 수를 한 번에 재생할 수 있습니다. 각 수를 고치거나 확인 완료로 표시할 때까지 표시는 유지되며, {{label:Board.Tabs.Photo}} 패널은 탭에서 끌어내어 다른 패널처럼 배치할 수 있습니다.
 - 일반 저장 흐름({{label:Menu.File}} -> {{label:Common.Save}}, 저장 버튼 또는 {{label:Board.Database.Save}})으로 검토한 대국을 파일이나 데이터베이스에 저장하세요.
-- 사진은 메모리에만 보관되며(최대 4개의 열린 탭) 디스크에 저장되지 않습니다. 다시 불러오거나 재시작한 뒤에도 대국과 검토 표시는 유지되며, {{label:Board.Tabs.Photo}} 패널의 {{label:Scoresheet.LoadPhotoAgain}}으로 전송 없이 사진을 다시 볼 수 있습니다.
+- 스튜디오는 대국을 불러오는 즉시 사진을 이 컴퓨터에 저장합니다. PGN 파일이나 데이터베이스에 대국을 저장하면 사진에 대한 참조가 함께 남아, 대국을 다시 열 때마다 {{label:Board.Tabs.Photo}} 패널에 사진이 다시 표시됩니다. 사진은 업로드되지 않으며 라이브러리 동기화도 이를 전송하지 않습니다.
+- 사진이 이 컴퓨터에 없는 경우(예: 다른 컴퓨터에서 복사한 PGN 파일), 패널에 해당 안내가 표시되며 {{label:Scoresheet.LoadPhotoAgain}}을(를) 사용하면 어디에도 전송하지 않고 사진을 다시 연결합니다.
+- 스튜디오가 알고 있는 어떤 대국에서도 더 이상 참조하지 않는 사진은 하루가 지나면 삭제되므로, 스튜디오 밖으로 복사한 대국에는 사진에 대한 참조만 남습니다.

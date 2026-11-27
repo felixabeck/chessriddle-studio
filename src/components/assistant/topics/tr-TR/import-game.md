@@ -2,7 +2,7 @@
 id: import-game
 title: Oyun içe aktarma
 summary: PGN dosyasından, yapıştırılan PGN metninden, Lichess veya Chess.com bağlantısından, FEN konumundan ya da el yazısı notasyon kağıdının fotoğraflarından veya PDF taramalarından oyun içe aktarın.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Bir oyunu veya konumu içe aktarmak için [[page:new-tab]] sayfasını açın ve {{label:Home.Card.ImportGame.Title}} iletişim kutusunu açmak üzere {{label:Home.Card.ImportGame.Button}} düğmesine tıklayın. Ayrıca {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} yolunu (veya {{label:Settings.Keybinds.Actions.OPEN_FILE}} kısayolunu) kullanarak doğrudan bir PGN dosyası açabilirsiniz.
@@ -22,4 +22,6 @@ PGN, {{label:Import.Online}} ve FEN için oyunu geçerli sekmeye yüklemek üzer
 - Studio her hamleyi başlangıç konumundan standart satranç kurallarına göre kontrol eder ve oyunu tahtanın yanında {{label:Board.Tabs.Photo}} panelinin açık olduğu kaydedilmemiş yeni bir analiz sekmesinde açar.
 - Şüpheli veya düzeltilen hamleler notasyonda belirsiz olarak işaretlenir. {{label:Board.Tabs.Photo}} panelinde bunlar arasında gezinin ve her hamleyi doğruladıkça {{label:Scoresheet.MarkAsChecked}} düğmesine tıklayın. Ortada bir hamleyi düzeltir veya durma noktasının ardından devam ederseniz kağıttaki sonraki yasal hamleleri oynatmak için {{label:Scoresheet.ContinueWithSheet}} düğmesine tıklayın. İşaretler her hamle düzeltilene veya doğrulandı olarak işaretlenene kadar kalır ve {{label:Board.Tabs.Photo}} paneli sekmelerden sürüklenip diğer paneller gibi yerleştirilebilir.
 - Oyunu normal kaydetme akışıyla ({{label:Menu.File}} -> {{label:Common.Save}}, kaydet düğmesi veya {{label:Board.Database.Save}}) bir dosyaya veya veritabanına kaydedin.
-- Fotoğraflar yalnızca bellekte tutulur (en fazla 4 açık sekme için) ve diske kaydedilmez; yeniden yükleme veya yeniden başlatma sonrasında oyun ile inceleme işaretleri kalır ve {{label:Board.Tabs.Photo}} panelindeki {{label:Scoresheet.LoadPhotoAgain}} seçeneğiyle fotoğrafı göndermeden yeniden görüntüleyebilirsiniz.
+- Studio, oyun içe aktarılır aktarılmaz fotoğrafları bu bilgisayarda saklar. Oyunu bir PGN dosyasına veya veritabanına kaydettiğinizde, oyun bunlara bir başvuru tutar; böylece oyun her açıldığında {{label:Board.Tabs.Photo}} paneli fotoğrafları yeniden gösterir. Fotoğraflar hiçbir zaman yüklenmez ve kütüphane senkronizasyonu bunları göndermez.
+- Bir fotoğraf bu bilgisayarda yoksa (örneğin başka bir bilgisayardan kopyalanan bir PGN dosyasında), panel bunu bildirir ve {{label:Scoresheet.LoadPhotoAgain}} düğmesi fotoğrafı hiçbir yere göndermeden yeniden ekler.
+- Studio’nun bildiği hiçbir oyun tarafından artık başvurusu kalmayan fotoğraflar bir gün sonra silinir; bu nedenle Studio dışına kopyalanan bir oyun yalnızca fotoğraflarına ait bir başvuru taşır.

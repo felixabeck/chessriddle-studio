@@ -2,7 +2,7 @@
 id: import-game
 title: Importar uma partida
 summary: Importe uma partida a partir de um ficheiro PGN, texto PGN colado, um URL do Lichess ou Chess.com, uma posição FEN ou fotografias ou digitalizações PDF de uma folha de partida manuscrita.
-source: 85ee9b055c7abe34
+source: bf71b9a270c61e30
 ---
 
 Para importar uma partida ou posição, abra [[page:new-tab]] e clique em {{label:Home.Card.ImportGame.Button}} para abrir a janela {{label:Home.Card.ImportGame.Title}}. Também pode abrir um ficheiro PGN diretamente através de {{label:Menu.File}} -> {{label:Menu.File.OpenFile}} (ou do atalho {{label:Settings.Keybinds.Actions.OPEN_FILE}}).
@@ -22,4 +22,6 @@ Para importar com **{{label:Import.FromPhoto}}**:
 - O Studio verifica cada lance segundo as regras padrão do xadrez a partir da posição inicial e abre a partida num novo separador de análise não guardado com o painel {{label:Board.Tabs.Photo}} ao lado do tabuleiro.
 - Os lances duvidosos ou corrigidos ficam marcados como incertos na notação. Percorra-os no painel {{label:Board.Tabs.Photo}} e clique em {{label:Scoresheet.MarkAsChecked}} à medida que confirma cada lance. Se corrigir um lance a meio ou prosseguir após uma paragem, clique em {{label:Scoresheet.ContinueWithSheet}} para reproduzir os lances legais seguintes da folha. As marcas mantêm-se até cada lance ser corrigido ou marcado como verificado, e o painel {{label:Board.Tabs.Photo}} pode ser arrastado para fora dos separadores e colocado como os outros painéis.
 - Guarde a partida num ficheiro ou base de dados através do fluxo normal ({{label:Menu.File}} -> {{label:Common.Save}}, o botão guardar ou {{label:Board.Database.Save}}).
-- As fotografias ficam apenas em memória (até 4 separadores abertos) e não são guardadas em disco; após recarregar ou reiniciar, a partida e as marcas de revisão mantêm-se e pode usar {{label:Scoresheet.LoadPhotoAgain}} no painel {{label:Board.Tabs.Photo}} para voltar a ver a fotografia sem a enviar.
+- O Studio guarda as fotografias neste computador assim que a partida é importada. Quando guarda a partida num ficheiro PGN ou numa base de dados, esta mantém uma referência para elas, pelo que o painel {{label:Board.Tabs.Photo}} volta a mostrá-las sempre que a partida for aberta. As fotografias nunca são carregadas e a sincronização da biblioteca não as envia.
+- Se uma fotografia não estiver neste computador (por exemplo, um ficheiro PGN copiado de outro computador), o painel indica-o e {{label:Scoresheet.LoadPhotoAgain}} volta a anexá-la sem a enviar para lado nenhum.
+- As fotografias que deixarem de ser referenciadas por qualquer partida conhecida pelo Studio são removidas passado um dia, pelo que uma partida copiada para fora do Studio mantém apenas uma referência às suas fotografias.
