@@ -15393,3 +15393,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Keeps d-20261124-34's one start contract and uses the close path that already reclaims storage. Reversal path: drop the consume call; the New Tab remains after a reuse start.
 * **Decided by:** Grok drain adopt of plan c8da0721, full auto, 2026-11-27 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"5154d2e90310c90555b199f019957e5d9995b34f9f7ad7ccd9bf12774f6e8c58","input_sha256":"180b5640a2680dd48d18fe1861ac5154fa7cc73bb4c84047c4e1bce07459418d","kind":"mutation-receipt","operation":"aa1910cbba6744b00c106f1951a68f55dcc7510f51c5bbf74f97b79e2c282919","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-07"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-08 — After opening a game from All mode, should returning to Library reset to the first chunk?
+
+* **Question:** After opening a game from All mode, should returning to Library reset to the first chunk?
+* **Governs:** f-20261127-13
+* **Chosen:** Keep loaded All-mode rows when the Games list stays mounted. The e2e test loads until the target row exists and does not require a remount reset to "Showing 100 of 250". Sort still restarts at the top because identity changes.
+* **Rejected:** Force a remount or generation bump on every leave so the list always returns to the first 100-row chunk (loses the user's place when they open a game and come back). Persist extra chunks outside the hook so remount also keeps 250 (frontend-state product change beyond this e2e-gate repair).
+* **Reason:** extraState in useDatabaseListQuery is component state; when DatabaseView stays mounted across a fast Library round-trip the loaded chunks are the live list, and that is the useful behaviour. The CI failure was the test assuming a remount. Reversal path: restore the "Showing 100 of 250" asserts and add a generation bump on leave.
+* **Decided by:** Grok drain a9595a38-9fa5-484b-a802-6c5d84aa6d1a, 2026-11-27 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"7b70092971098f2ac030ef530f53bf1593faade02e47b980874a139b1f30aa4c","input_sha256":"aa3061533f4c40408f61b123f3bf7dfd9310975d51064fd34401ca1f8ba6f867","kind":"mutation-receipt","operation":"4a2434095b572249cb1cde0b9abeb0fce2d5dcd4bf23b94a0f316dd9a928c51d","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-08"],"target":"decisions-ledger","v":1} -->
