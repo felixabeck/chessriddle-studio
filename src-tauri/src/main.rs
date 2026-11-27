@@ -2074,6 +2074,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (),
             )
             .map_err(|error| format!("path authority initialization failed: {error}"))?;
+            let scoresheet_photo_sweep_enabled = app_data_locked;
             authority.set_engine_image_sweep_root(app_data_locked.then_some(app_data));
             let legacy_migrations =
                 crate::infra::path_authority::with_app_default_lookups(app.handle(), |lookups| {
@@ -2089,6 +2090,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .pgn_path_authority
                 .install(authority)
                 .map_err(|_| "path authority lock poisoned")?;
+            app.manage(coach::ScoresheetPhotoSweep::start(
+                app.handle(),
+                app.state::<AppState>().pgn_path_authority.clone(),
+                app.state::<AppState>().folder_switch.clone(),
+                scoresheet_photo_sweep_enabled,
+            ));
             if !pending_legacy_migrations.is_empty() {
                 let migration_state = app.state::<AppState>().inner().clone();
                 let migration_dirs =
@@ -2261,6 +2268,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // handing its link to an instance that is leaving.
                         if let Some(handoff) = app_handle.try_state::<GameLinkHandoff>() {
                             handoff.shutdown().await;
+                        }
+                        if let Some(sweep) = app_handle.try_state::<coach::ScoresheetPhotoSweep>() {
+                            sweep.shutdown().await;
                         }
                         let state = app_handle.state::<AppState>();
                         state.folder_switch.cancel_migrations();

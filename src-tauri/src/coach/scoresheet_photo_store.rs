@@ -273,7 +273,7 @@ fn read_validated_in_dir(
 /// Validates and stores 1–4 JPEG data URLs inside `app_data_dir`'s `scoresheet-photos` root,
 /// returning their SHA-256 hex ids in input order.
 #[cfg(test)]
-fn store_photos_in_app_data(
+pub(super) fn store_photos_in_app_data(
     app_data_dir: &AppDataDir,
     photos: &[String],
 ) -> Result<Vec<String>, PhotoStoreError> {

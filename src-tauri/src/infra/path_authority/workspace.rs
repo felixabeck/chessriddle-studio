@@ -966,6 +966,121 @@ impl PathAuthority {
         let authorized = resolve_visible_default_dir(lookups, default_kind)?;
         Ok(native_shell_path(authorized.path()))
     }
+
+    /// Snapshot of every currently registered PGN workspace, PGN file, database root, and
+    /// database file in this authority. Used by the scoresheet photo sweep so every registered
+    /// target is opened back through the authority, never by a stored path.
+    pub(crate) fn photo_sweep_snapshot(&self) -> Result<PhotoSweepAuthoritySnapshot, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Database) {
+            return Err(Self::interrupted_move_root_error());
+        }
+        let mut snapshot = PhotoSweepAuthoritySnapshot::default();
+        for (id, entry) in &self.persistent {
+            if self.pending_unpersisted_removals.contains(id) {
+                continue;
+            }
+            if entry.stored.target_is_dir {
+                if entry.stored.operations.contains(&PathOperation::ReadPgn) {
+                    snapshot
+                        .pgn_workspaces
+                        .push(FileWorkspaceHandle::new(entry.stored.id.clone()));
+                }
+                if entry
+                    .stored
+                    .operations
+                    .contains(&PathOperation::DatabaseRead)
+                {
+                    snapshot
+                        .database_roots
+                        .push(DatabaseRootHandle::new(entry.stored.id.clone()));
+                }
+            } else {
+                if entry.stored.operations.contains(&PathOperation::ReadPgn) {
+                    snapshot
+                        .pgn_files
+                        .push(FileWorkspaceHandle::new(entry.stored.id.clone()));
+                }
+                if entry
+                    .stored
+                    .operations
+                    .contains(&PathOperation::DatabaseRead)
+                {
+                    snapshot
+                        .database_files
+                        .push(DatabaseHandle::new(entry.stored.id.clone()));
+                }
+            }
+        }
+        Ok(snapshot)
+    }
+
+    pub(crate) fn open_pgn_workspace_for_sweep(
+        &mut self,
+        handle: &FileWorkspaceHandle,
+    ) -> Result<SweepDirectory, Error> {
+        self.open_registered_dir_for_sweep(handle.path_ref(), PathOperation::ReadPgn)
+    }
+
+    pub(crate) fn open_database_root_for_sweep(
+        &mut self,
+        handle: &DatabaseRootHandle,
+    ) -> Result<SweepDirectory, Error> {
+        if self.has_unresolved_journal(FolderSwitchKind::Database) {
+            return Err(Self::interrupted_move_root_error());
+        }
+        self.open_registered_dir_for_sweep(handle.path_ref(), PathOperation::DatabaseRead)
+    }
+
+    fn open_registered_dir_for_sweep(
+        &mut self,
+        id: &PathRef,
+        operation: PathOperation,
+    ) -> Result<SweepDirectory, Error> {
+        let mut resolved = self.resolve(id, operation, &[])?;
+        let path = resolved
+            .target()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| Error::Conflict("registered directory target is unavailable".into()))?;
+        let directory = resolved
+            .take_directory()
+            .ok_or_else(|| Error::InvalidInput("path capability is not a directory".into()))?;
+        let identity = opened_file_identity(&directory)?;
+        Ok(SweepDirectory {
+            directory,
+            identity,
+            path,
+        })
+    }
+}
+
+/// Read-only descriptor for a registered workspace or database root opened through
+/// [`PathAuthority`] for mark-and-sweep enumeration. Carries no write or removal capability.
+pub(crate) struct SweepDirectory {
+    directory: fs::File,
+    identity: (u64, u64),
+    path: PathBuf,
+}
+
+impl SweepDirectory {
+    pub(crate) fn descriptor(&self) -> &fs::File {
+        &self.directory
+    }
+
+    pub(crate) fn identity(&self) -> (u64, u64) {
+        self.identity
+    }
+
+    pub(crate) fn database_target(&self, leaf: &OsStr) -> Result<DatabaseFileTarget, Error> {
+        database_target_in(&self.directory, &self.path, leaf)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PhotoSweepAuthoritySnapshot {
+    pub(crate) pgn_workspaces: Vec<FileWorkspaceHandle>,
+    pub(crate) pgn_files: Vec<FileWorkspaceHandle>,
+    pub(crate) database_roots: Vec<DatabaseRootHandle>,
+    pub(crate) database_files: Vec<DatabaseHandle>,
 }
 
 fn folder_leaf_display_name(stored: &StoredEntry) -> String {

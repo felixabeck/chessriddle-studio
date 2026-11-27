@@ -950,14 +950,7 @@ impl AuthorizedDir {
     }
 
     pub(crate) fn database_target(&self, leaf: &OsStr) -> Result<DatabaseFileTarget, Error> {
-        crate::infra::fs::single_leaf(leaf)?;
-        let metadata = crate::infra::fs::probe_regular_file_at(self.directory.as_file(), leaf)?;
-        Ok(DatabaseFileTarget::assemble(
-            self.directory.as_file().try_clone()?,
-            leaf.to_os_string(),
-            metadata.identity,
-            self.path.join(leaf),
-        ))
+        database_target_in(self.directory.as_file(), &self.path, leaf)
     }
     /// Whether startup's pathname still names this retained directory.
     pub(crate) fn resides_at(&self, location: &DefaultRootLocation) -> Result<bool, Error> {
@@ -1072,6 +1065,21 @@ impl AuthorizedDir {
         }
         crate::infra::fs::open_or_create_regular_at(&parent, leaf)
     }
+}
+
+pub(super) fn database_target_in(
+    directory: &fs::File,
+    dir_path: &Path,
+    leaf: &OsStr,
+) -> Result<DatabaseFileTarget, Error> {
+    crate::infra::fs::single_leaf(leaf)?;
+    let metadata = crate::infra::fs::probe_regular_file_at(directory, leaf)?;
+    Ok(DatabaseFileTarget::assemble(
+        directory.try_clone()?,
+        leaf.to_os_string(),
+        metadata.identity,
+        dir_path.join(leaf),
+    ))
 }
 
 struct RetainedWorkspaceTarget {
@@ -2889,6 +2897,117 @@ fn authorize_existing_dir(path: &Path) -> Result<AuthorizedDir, Error> {
     })
 }
 
+#[derive(Clone, Copy)]
+enum DefaultDirOpenMode {
+    Create,
+    OpenExisting { writable: bool },
+}
+
+/// Opens or creates one fixed child directory leaf no-follow under `parent`, returning its
+/// descriptor and canonical on-disk path (or `Ok(None)` when absent under `OpenExisting`).
+fn open_default_child_dir(
+    parent: &fs::File,
+    parent_path: &Path,
+    leaf_name: &str,
+    mode: DefaultDirOpenMode,
+) -> Result<Option<(fs::File, PathBuf)>, Error> {
+    let leaf = OsStr::new(leaf_name);
+    let requested = parent_path.join(leaf);
+    let opened = match mode {
+        DefaultDirOpenMode::Create => crate::infra::fs::ensure_directory_at(parent, leaf)
+            .map_err(|error| default_root_refusal(&requested, error))?,
+        DefaultDirOpenMode::OpenExisting { writable } => {
+            match crate::infra::fs::open_directory_at(parent, leaf, writable) {
+                Ok(opened) => opened,
+                Err(error) if error.is_missing_entry() => return Ok(None),
+                Err(error) => return Err(default_root_refusal(&requested, error)),
+            }
+        }
+    };
+    // An existing leaf in another case (case-insensitive NTFS or APFS) keeps its on-disk
+    // spelling, which every child below this root is re-proved under.
+    let path = parent_path.join(
+        on_disk_child_name(parent, leaf_name, &opened)
+            .map_err(|error| default_root_refusal(&requested, error))?,
+    );
+    Ok(Some((opened, path)))
+}
+
+fn app_owned_default_dir(
+    app_data_dir: &AppDataDir,
+    root: AppOwnedDefaultRoot,
+    mode: DefaultDirOpenMode,
+) -> Result<Option<AuthorizedDir>, Error> {
+    let Some((opened, path)) = open_default_child_dir(
+        &app_data_dir.directory,
+        app_data_dir.as_path(),
+        root.leaf(),
+        mode,
+    )?
+    else {
+        return Ok(None);
+    };
+    let identity = opened_file_identity(&opened)?;
+    let directory = VerifiedDir::new(opened, identity)?;
+    #[cfg(unix)]
+    if matches!(mode, DefaultDirOpenMode::Create) {
+        if let Some(private_mode) = root.private_mode() {
+            rustix::fs::fchmod(
+                directory.as_file(),
+                rustix::fs::Mode::from_raw_mode(private_mode),
+            )
+            .map_err(|error| Error::Io(Box::new(error.into())))?;
+        }
+    }
+    Ok(Some(AuthorizedDir {
+        directory,
+        identity,
+        path,
+    }))
+}
+
+fn home_owned_default_dir(
+    home: &HomeDir,
+    kind: VisibleDefaultKind,
+    mode: DefaultDirOpenMode,
+) -> Result<Option<AuthorizedDir>, Error> {
+    let create = matches!(mode, DefaultDirOpenMode::Create);
+    let studio_name = OsStr::new(home.studio_leaf());
+    let studio_path = home.as_path().join(studio_name);
+    let studio = if create {
+        crate::infra::fs::ensure_directory_at(&home.directory, studio_name)
+            .map_err(|error| default_root_refusal(&studio_path, error))?
+    } else {
+        match crate::infra::fs::open_directory_at(&home.directory, studio_name, false) {
+            Ok(studio) => studio,
+            Err(error) if error.is_missing_entry() => return Ok(None),
+            Err(error) => return Err(default_root_refusal(&studio_path, error)),
+        }
+    };
+    #[cfg(test)]
+    if create {
+        HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook();
+            }
+        });
+    }
+    let studio_on_disk = on_disk_child_name(&home.directory, home.studio_leaf(), &studio)
+        .map_err(|error| default_root_refusal(&studio_path, error))?;
+    let studio_path = home.as_path().join(studio_on_disk);
+    let Some((opened, path)) = open_default_child_dir(&studio, &studio_path, kind.leaf(), mode)?
+    else {
+        return Ok(None);
+    };
+    let identity = opened_file_identity(&opened)?;
+    let directory = VerifiedDir::new(opened, identity)?;
+    Ok(Some(AuthorizedDir {
+        directory,
+        identity,
+        path,
+    }))
+}
+
 /// Materialise one of the application's own default root directories under `app_data_dir`.
 /// Both halves of the path are fixed by the types: the leaf per variant, the parent by
 /// [`AppDataDir`]'s constructor. No caller can therefore name a directory the application does
@@ -2908,28 +3027,8 @@ pub(crate) fn ensure_app_owned_default_dir(
     app_data_dir: &AppDataDir,
     root: AppOwnedDefaultRoot,
 ) -> Result<AuthorizedDir, Error> {
-    let leaf = OsStr::new(root.leaf());
-    let requested = app_data_dir.as_path().join(leaf);
-    let opened = crate::infra::fs::ensure_directory_at(&app_data_dir.directory, leaf)
-        .map_err(|error| default_root_refusal(&requested, error))?;
-    // An existing leaf in another case (case-insensitive NTFS or APFS) keeps its on-disk
-    // spelling, which every child below this root is re-proved under.
-    let path = app_data_dir.as_path().join(
-        on_disk_child_name(&app_data_dir.directory, root.leaf(), &opened)
-            .map_err(|error| default_root_refusal(&requested, error))?,
-    );
-    let identity = opened_file_identity(&opened)?;
-    let directory = VerifiedDir::new(opened, identity)?;
-    #[cfg(unix)]
-    if let Some(mode) = root.private_mode() {
-        rustix::fs::fchmod(directory.as_file(), rustix::fs::Mode::from_raw_mode(mode))
-            .map_err(|error| Error::Io(Box::new(error.into())))?;
-    }
-    Ok(AuthorizedDir {
-        directory,
-        identity,
-        path,
-    })
+    app_owned_default_dir(app_data_dir, root, DefaultDirOpenMode::Create)?
+        .ok_or_else(|| Error::Conflict("app-owned default directory was not created".into()))
 }
 
 /// Materialise one visible default folder under the OS home: first the studio folder
@@ -2941,34 +3040,40 @@ pub(crate) fn ensure_home_owned_default_dir(
     home: &HomeDir,
     kind: VisibleDefaultKind,
 ) -> Result<AuthorizedDir, Error> {
-    let studio_name = OsStr::new(home.studio_leaf());
-    let studio_path = home.as_path().join(studio_name);
-    let studio = crate::infra::fs::ensure_directory_at(&home.directory, studio_name)
-        .map_err(|error| default_root_refusal(&studio_path, error))?;
-    #[cfg(test)]
-    HOME_DEFAULT_AFTER_STUDIO_OPEN_HOOK.with(|slot| {
-        if let Some(hook) = slot.borrow_mut().take() {
-            hook();
-        }
-    });
-    let studio_on_disk = on_disk_child_name(&home.directory, home.studio_leaf(), &studio)
-        .map_err(|error| default_root_refusal(&studio_path, error))?;
-    let studio_path = home.as_path().join(studio_on_disk);
-    let leaf = kind.leaf();
-    let requested = studio_path.join(leaf);
-    let opened = crate::infra::fs::ensure_directory_at(&studio, OsStr::new(leaf))
-        .map_err(|error| default_root_refusal(&requested, error))?;
-    let path = studio_path.join(
-        on_disk_child_name(&studio, leaf, &opened)
-            .map_err(|error| default_root_refusal(&requested, error))?,
-    );
-    let identity = opened_file_identity(&opened)?;
-    let directory = VerifiedDir::new(opened, identity)?;
-    Ok(AuthorizedDir {
-        directory,
-        identity,
-        path,
-    })
+    home_owned_default_dir(home, kind, DefaultDirOpenMode::Create)?
+        .ok_or_else(|| Error::Conflict("home default directory was not created".into()))
+}
+
+/// Opens an existing app-owned default directory no-follow without creating it.
+/// Returns `Ok(None)` when the leaf does not exist; any other error (symlink, non-directory,
+/// permission error, I/O error) is returned so fail-closed callers can abort.
+/// Callers that remove leaves inside the directory pass `writable = true` so Windows parent
+/// directory flushes (`FlushFileBuffers`) succeed.
+pub(crate) fn open_existing_app_owned_default_dir(
+    app_data_dir: &AppDataDir,
+    root: AppOwnedDefaultRoot,
+    writable: bool,
+) -> Result<Option<AuthorizedDir>, Error> {
+    app_owned_default_dir(
+        app_data_dir,
+        root,
+        DefaultDirOpenMode::OpenExisting { writable },
+    )
+}
+
+/// Read-only counterpart of [`resolve_visible_default_dir`]: opens the visible home default
+/// folder without creating it. Returns `Ok(None)` when absent, and fails closed if the home
+/// directory cannot be resolved or if the studio/kind leaf is unreadable.
+pub(crate) fn open_existing_visible_default_dir(
+    lookups: &DefaultDirLookups<'_>,
+    kind: VisibleDefaultKind,
+) -> Result<Option<AuthorizedDir>, Error> {
+    let home = (lookups.home)()?;
+    home_owned_default_dir(
+        &home,
+        kind,
+        DefaultDirOpenMode::OpenExisting { writable: false },
+    )
 }
 
 /// The on-disk name of `opened`, a directory just opened no-follow as `name` in `parent`.

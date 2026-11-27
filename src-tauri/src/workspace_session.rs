@@ -33,7 +33,7 @@ pub(crate) const WORKSPACE_SESSION_NAMES_MAX: usize = 1024;
 
 pub(crate) const WORKSPACE_LEAF_KEY: &str = "workspace";
 pub(crate) const PAGE_TABS_LEAF_KEY: &str = "page-tabs";
-const QUARANTINE_PREFIX: &str = "quarantine-";
+pub(crate) const QUARANTINE_PREFIX: &str = "quarantine-";
 const STORE_LABEL: &str = "workspace session";
 const STORE_CONFIG: LeafStoreConfig = LeafStoreConfig {
     label: STORE_LABEL,

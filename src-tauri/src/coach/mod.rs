@@ -27,6 +27,7 @@ pub(crate) mod scoresheet;
 pub(crate) mod scoresheet_pdf;
 pub(crate) mod scoresheet_photo;
 pub(crate) mod scoresheet_photo_store;
+pub(crate) mod scoresheet_photo_sweep;
 pub(crate) mod sse;
 pub(crate) mod stats;
 #[cfg(test)]
@@ -54,6 +55,7 @@ pub(crate) use self::scoresheet_photo::{
     ScoresheetPhoto, ScoresheetPhotoBatch, ScoresheetPhotosDropped,
 };
 pub(crate) use self::scoresheet_photo_store::{PhotoStoreError, StoredPhotoRead};
+pub(crate) use self::scoresheet_photo_sweep::ScoresheetPhotoSweep;
 use self::{
     accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
