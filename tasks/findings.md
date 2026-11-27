@@ -30142,3 +30142,19 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
   * `e2e/board-keyboard.spec.ts:943` board-keyboard (487 px)
   * `e2e/board-keyboard.spec.ts:1150` variation-chooser (487 px)
 * **Fix:** re-record those snapshots in `pnpm test:e2e:container` after reading each diff; do not re-record natively. Product clock-times behaviour stays.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Library type convert leaves Recent files on the old sidecar type
+
+* **ID:** f-20261127-19 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 742a2ecb-679d-4ed9-918e-0e7a546387a9
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes, during pre-commit review of f-20261127-10
+* **Where:** `src/components/files/useFileWorkspace.ts` patches `tabsAtom` after a sidecar type or name write, but `recentFilesAtom` / `localStorage["recent-files"]` (written by `openFile` in `src/utils/openFile.ts`) keeps the old `metadata` and `name`. `projectLibrary` in `src/components/library/libraryData.ts` can fall back to that Recent entry before `useWorkspaceListing` resolves, and `libraryFileMetadata` seeds `type: "game"` when metadata is missing.
+* **Failure scenario:** a player opens sample.pgn as a game, closes the tab, converts it to Repertoire in Library, then opens a New Tab and picks the file from Recent before the workspace listing has refreshed. The new tab is created as a game, so Practice stays hidden until the file is opened from the listing.
+* **Fix:** after a successful type or name write, update matching Recent-file records the same way open tabs are patched, or refuse to seed a tab from Recent when the live listing already has a different type.
+* **Related:** f-20261127-10 syncs open-tab `gameOrigin.file` and deliberately leaves Recent files to this follow-up.
+* **Found by:** Grok drain session 742a2ecb-679d-4ed9-918e-0e7a546387a9, 2026-11-27
