@@ -29779,12 +29779,15 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### The Annotate panel fails axe: the comment editor carries aria-multiline without a textbox role, and the "Show more annotations" button sits inside a separator
 
-* **ID:** f-20261126-17 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-17 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 
 * **Impact class:** ux
 * **Spotted outside diff:** the saved-layouts build (2026-11-26) gives fresh repertoire tabs a preset with Annotate as its own area; the full-page `assertAccessible()` of `e2e/repertoire-pgn-import.spec.ts` then reported axe violations on the visible Annotate panel. The spec now seeds the two-pane default layout because it tests the import.
 * **Failure scenario:** with the Annotate panel visible, axe reports (1) `aria-allowed-attr` / `aria-prohibited-attr` on the TipTap editor `<div contenteditable aria-label="Comment" aria-multiline="true" class="tiptap ProseMirror">` (aria-multiline and aria-label are not allowed on a div without `role="textbox"`), and (2) `nested-interactive` on a Mantine `Divider` with label (`role="separator"`) that contains the button "Show more annotations". Screen-reader users get an unnamed editable region and a button inside a separator. Felix's 2026-11-26 screenshot shows the panel as its own area, so it is an everyday view.
 * **Open question:** none; give the editor `role="textbox"` (keeping aria-multiline and its label), and move the "Show more annotations" button out of the Divider label; prove with a full-page `assertAccessible()` on a tab with Annotate as its own area.
+
+Fixed in 602a01175: the TipTap comment editor gets role="textbox" (keeping aria-label and aria-multiline), and the "Show more annotations" button moved out of the Divider label into a row between two rules. Proven by unit tests (AnnotationEditor role, no button inside any separator) and the full-page assertAccessible() in e2e/saved-layouts.spec.ts, which now runs with Annotate as its own area (Game review preset).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"038649888361f9ff7c9b0f554797fc2177b3da09a7ce528717530d38dcc63fcc","header_sha256":"a73aaa87b5df0029d8cbc4f1bfedd67e7760377d73ac83d141c34bf55411514e","header_status":"handled","input_sha256":"107063aa9a120fd33c27f6376a54c6c97d203b3aeca930d407212ff947b0fef5","kind":"mutation-receipt","operation":"3cb580d3731ccdb40e2e7113e45190687e7ff91ef47fc266216c9b52673c56d7","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-17"],"target":"f-20261126-17","v":1} -->
 
 ---
 
