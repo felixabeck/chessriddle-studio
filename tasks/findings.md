@@ -29959,3 +29959,19 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Where:** `src-tauri/src/db/mod.rs` test `production_database_delete_error_tail_survives_command_caller_drop`: two `tokio::time::timeout(Duration::from_secs(2), …)` polling waits (deletion waiting, then `operations.outstanding_labels()` empty).
 * **Failure scenario:** job `rust-macos-test` of Test run 45946902032 on master `87cba9c4b` (that push changed only TypeScript and ledgers; the same Rust code passed on `89acfdcfc` one run earlier) failed with `called Result::unwrap() on an Err value: Elapsed(())` at `src/db/mod.rs:6323`, the 2 s wait for the operation tail to drain; 4084 other tests passed, the suite took 532 s. The waits assert eventual completion, not latency, so 2 s of wall clock on a loaded hosted runner is a timing assertion.
 * **Fix:** replace both 2 s liveness bounds in this test with a generous outer bound (30 s) used only to fail a genuine stall, as f-20261108-08 and f-20261109-06 did for the same class; keep every assertion.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The saved-layouts More-menu snapshot predates the New analysis item and turned master e2e red
+
+* **ID:** f-20261127-12 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 3ba7ff5f-9a7e-4158-823c-3b12ca3ff36c
+
+* **Impact class:** tooling
+* **CI run:** 45969736439
+* **Repair owner:** 3ba7ff5f-9a7e-4158-823c-3b12ca3ff36c on tuxedo-felix, 2026-11-27T09:35:02Z
+* **Where:** `e2e/saved-layouts.spec.ts` snapshot `saved-layouts-more-menu.png`.
+* **Failure scenario:** job `e2e` of Test run 45969736439 on master `2e9857da7` (New analysis, rebased onto the saved-layouts work) failed: the board's More menu screenshot was 306x436 instead of 306x388, because the menu now starts with "New analysis" and a divider. The rebase proof ran only the new-analysis and async-errors e2e projects; 579 other tests passed.
+* **Fix:** re-record `saved-layouts-more-menu.png` in the Playwright container after reading the diff (only the added item and divider may move).
