@@ -30330,3 +30330,20 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 * **Fix:** inspect actual vs expected in the CI artifacts; re-record in `pnpm test:e2e:container` if the live dialog is correct, or restore the missing height if the product dialog lost layout. Do not re-record natively.
 * **Proof:** `pnpm test:e2e:container --project=online-opponent --project=online-opponent-narrow --grep "imports an online-only opponent"` fails on `online-opponent-download-count.png` before the fix and passes after it.
 * **Found by:** Grok, f-20261126-16 drain CI wait, 2026-11-27
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Unnamed Mantine Progress bars outside ResultBar fail axe aria-progressbar-name
+
+* **ID:** f-20261127-26 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 425223d4-8f8f-4ebb-b079-97973c6bfedc
+* **Impact class:** ux
+* **Spotted outside diff:** yes, review-root-cause of f-20261127-20
+* **Where:** `src/components/panels/practice/RepertoireInfo.tsx` (coverage `<Progress>`), `src/components/panels/practice/PracticePanel.tsx` (`Progress.Section` for learned progress), `src/components/panels/database/DatabaseLoader.tsx`, `src/components/home/Databases.tsx`, `src/components/common/ProgressButton.tsx` (unnamed `role="progressbar"` inside a `<Button>`).
+* **Defect:** Mantine `Progress` / `Progress.Section` render `role="progressbar"` without an accessible name unless `aria-label` is supplied. f-20261127-20 names ResultBar segments; these sibling bars stay anonymous.
+* **Failure scenario:** Open Practice with coverage shown, start a database search (DatabaseLoader), or run a catalog download (ProgressButton): axe `aria-progressbar-name` fails on those bars. Screen readers announce a percentage with no name for what is measured.
+* **Fix:** Give each bar an accessible name from the adjacent visible label (coverage, learned progress, search status, download). ProgressButton can reuse its button label.
+* **Related:** f-20261127-20 (ResultBar segments; Root `-`, so named here). f-20261029-08 (ScoreBubble WDL sections).
+* **Found by:** Grok drain session 425223d4-8f8f-4ebb-b079-97973c6bfedc, 2026-11-27
