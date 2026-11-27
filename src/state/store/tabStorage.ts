@@ -410,8 +410,9 @@ function migrateLegacyNode(
             retainHydratedDrawings(migrated, shapes);
         } else if (typeof node.commands === "string") {
             const { text, shapes } = extractPgnDrawings(node.commands);
-            const nextCommands = shapes.length > 0 ? text.trim() : node.commands;
+            let nextCommands = node.commands;
             if (shapes.length > 0) {
+                nextCommands = text.trim();
                 migrated.commands = nextCommands;
                 retainHydratedDrawings(migrated, shapes);
             }

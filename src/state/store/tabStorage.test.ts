@@ -810,6 +810,19 @@ test.each(["legacy", "current"])(
     },
 );
 
+test("keeps padded non-drawing commands and existing shapes when hydration finds no drawings", () => {
+    const tree = structuredClone(defaultTree());
+    const commands = "  [%opaque keep]  ";
+    const shapes: DrawShape[] = [{ orig: "a1", dest: "a1", brush: "green" }];
+    tree.root.commands = commands;
+    tree.root.shapes = shapes;
+    persistTree("no-drawing-commands", tree);
+    const read = new TabStorageRepository().read<StoredTreeForTest>("no-drawing-commands")!;
+    expect(read.state.root.commands).toBe(commands);
+    expect(read.state.root.shapes).toEqual(shapes);
+    expect(migrateTreeForStorage(read.state)).toEqual(read.state);
+});
+
 test.each(["legacy", "current"])(
     "hydrates %s drawings with two existing matching arrows and keeps exactly two across reads and migration",
     (format) => {
