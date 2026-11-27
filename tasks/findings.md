@@ -29925,3 +29925,32 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Failure scenario:** `e2e/saved-layouts.spec.ts:52` ("per-kind presets, kind isolation, save/replace, menus, shortcuts, rename, delete, and Reset") runs every layout flow in one test under the default 45 000 ms timeout. Its CI durations were 43.4 s (ca435e7d9), 35.7 s (d4bab9a49), then 53.8 s and 52.8 s: both red runs hit "Test timeout of 45000ms exceeded" at the last step, `preserveStorageForReload` (`page.reload: net::ERR_ABORTED`, spec line 302). Every other Test job is green, and 573 other e2e tests pass.
 * **Open question:** none; give this one multi-flow test an explicit budget (`test.setTimeout`, precedent `e2e/chessriddle-training.spec.ts:1486`).
 * **Repair owner:** 04e8f621-d458-405a-a102-f7eee9b6e626 on tuxedo-felix, 2026-11-26T23:31:35Z
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The rust coverage job cannot build the scoresheet PDF crates: `hayro` 0.9 needs rustc 1.92, the coverage toolchain is rustc 1.89
+
+* **ID:** f-20261127-08 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** build · **Blocked:** none
+* **Filed from:** 3511b5d8-0463-430c-b57e-e3059e396b65
+
+* **Impact class:** tooling
+* **CI run:** 45914524821 (head f94c29fcb, job `rust` 140230452015); the older run 45914319302 at 518ed403d has the same `rust` failure. Last green Test run 45912138377 at 5bd2b095b.
+* **Where:** `src-tauri/Cargo.toml:89` (`hayro = "0.9.0"`, added by the scoresheet PDF import build), `scripts/toolchain-versions.mjs:1` (`RUST_COVERAGE_TOOLCHAIN = "nightly-2025-06-01"`), `.github/workflows/test.yml:291`, `rust-toolchain.toml:6-8`.
+* **Defect:** the `rust` job's coverage step runs `cargo +nightly-2025-06-01 test ... --target-dir .../llvm-cov-target`, and cargo refuses: `rustc 1.89.0-nightly is not supported by the following packages: hayro@0.9.0 requires rustc 1.92` (also hayro-ccitt 0.5.0, hayro-cmap 0.1.1, hayro-font 0.5.0, hayro-interpret 0.9.0, hayro-jbig2 0.4.0, hayro-jpeg2000 0.5.0, hayro-postscript 0.2.0). Local push gates do not run the coverage toolchain, so the push went out green.
+* **Failure scenario:** every push to master since the scoresheet PDF import has a red `rust` Test job, and `pnpm ci:remote:check` refuses every later code push until this is repaired.
+* **Open question:** bump the pinned coverage nightly to one whose rustc is at least 1.92 (touches the tool-version parity check and may move the backend coverage baselines, `docs/coverage.md`), or pin the hayro crates to versions whose MSRV the coverage toolchain meets (if any still provide the scoresheet PDF rendering)?
+* **Found by:** Claude Code (Opus 5.5), drain session 3511b5d8-0463-430c-b57e-e3059e396b65 (f-20261126-18 push), 2026-11-27, from `pnpm ci:remote:check` and the job log.
+
+### A database delete test gives the background tail a fixed 2 seconds to drain and turned master CI red on the loaded macOS runner
+
+* **ID:** f-20261127-09 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 3511b5d8-0463-430c-b57e-e3059e396b65
+
+* **Impact class:** tooling
+* **CI run:** 45946902032
+* **Repair owner:** 3511b5d8-0463-430c-b57e-e3059e396b65 on tuxedo-felix, 2026-11-27T06:13:46Z
+* **Where:** `src-tauri/src/db/mod.rs` test `production_database_delete_error_tail_survives_command_caller_drop`: two `tokio::time::timeout(Duration::from_secs(2), …)` polling waits (deletion waiting, then `operations.outstanding_labels()` empty).
+* **Failure scenario:** job `rust-macos-test` of Test run 45946902032 on master `87cba9c4b` (that push changed only TypeScript and ledgers; the same Rust code passed on `89acfdcfc` one run earlier) failed with `called Result::unwrap() on an Err value: Elapsed(())` at `src/db/mod.rs:6323`, the 2 s wait for the operation tail to drain; 4084 other tests passed, the suite took 532 s. The waits assert eventual completion, not latency, so 2 s of wall clock on a loaded hosted runner is a timing assertion.
+* **Fix:** replace both 2 s liveness bounds in this test with a generous outer bound (30 s) used only to fail a genuine stall, as f-20261108-08 and f-20261109-06 did for the same class; keep every assertion.
