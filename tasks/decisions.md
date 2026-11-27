@@ -15549,3 +15549,40 @@ Former private decision identifier: d-20261029-14
 * **Reason:** User feedback 2026-11-27 asked for OpeningTree-style "XXX von XXXX Partien geladen"; Felix approved the recommendation and ordered a reviewed build (plan tasks/plans/2026-11-27-download-game-count.md, agy plan review converged in 3 rounds). Reversal path: drop the `count` field and the shared component, restore ImportProgress's bare bar and AccountCard's percentage text.
 * **Decided by:** Claude Code build session, 2026-11-27 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"ef9f16b13d4125d3218dc393f5ebb532df655a712d8c57503c14474b1f363e8d","input_sha256":"97311f9ca9314685321c5913526334496d8c363115f755feb3edbfbd276d3299","kind":"mutation-receipt","operation":"282063620568ea63d50fc2094f79482b9a7db5b04ab9b5cfc70f9aab862791dd","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-22"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-26 — Where do Database chrome icons live when the panel is a tile versus a tab?
+
+* **Question:** Database's settings gear sits on a second body row under the tile title, unlike Engine and Notation. Where do the gear and the new games-collapse control live?
+* **Governs:** -
+* **Chosen:** On a pulled-out Database tile they occupy `PanelArea`'s `PanelHeader` actions, before the return-to-tabs X, via a chrome slot the panel fills. When Database is still a tab, the same icons stay on the panel's chrome row because there is no `PanelHeader`. `PanelHeader` is the only panel-window header; `PanelArea` stops hard-coding only the X.
+* **Rejected:** A second header component; putting Database icons on the shared tab strip; always keeping the gear in the body even on a tile.
+* **Reason:** Felix (2026-11-27): gear belongs on the first header line like Engine and Notation; one central header filled per panel. Reversal path: drop `PanelArea` extra `actions` and keep the icons in `DatabasePanel`'s body.
+* **Decided by:** Grok full auto, 2026-11-27, Felix's unification request · **Superseded-by:** -
+
+### d-20261127-27 — How does the Database games region hide, and what is the default?
+
+* **Question:** Felix does not want the matching-games list taking space while he reads move statistics. How does hiding it work?
+* **Governs:** -
+* **Chosen:** A header chevron hides the games section and the split divider; statistics fill the body. The choice is an app-wide boolean (`explorer-games-collapsed`, default expanded) next to `explorerHeaderCollapsedAtom`. The control exists only while stats and games both show (`showSplitStats`). Partial position search (games only) does not hide the list. Expanding restores the remembered stats height without rewriting it while collapsed.
+* **Rejected:** Hiding only the Notation column; restoring the Statistics/Games switch; a Settings-page toggle; defaulting to collapsed.
+* **Reason:** Felix confirmed he meant the whole games region and accepted collapsing it. Default expanded avoids surprising anyone who uses the list; one click remembers it. Reversal path: remove the atom and always render the games section.
+* **Decided by:** Grok full auto, 2026-11-27, Felix's confirmation · **Superseded-by:** -
+
+### d-20261127-28 — Does Engine use PanelHeader in the same run as Database?
+
+* **Question:** Felix asked to unify all panel windows on one header. Engine currently draws a custom header in `BestMoves`. Same run or later?
+* **Governs:** -
+* **Chosen:** Same run, second phase. `BestMoves` renders `PanelHeader` with optional `leading` / `status` / `progress`. Window mode stays outside `PanelArea`. Panel-mode reorder grip stays a menu in `leading` because it is not start-placing.
+* **Rejected:** Leaving Engine on a parallel header; wrapping the engine window in `PanelArea`.
+* **Reason:** Felix: "unify all of this". Engine's live depth and progress need extra optional slots, not a second header. Reversal path: keep `BestMoves` custom header markup.
+* **Decided by:** Grok full auto, 2026-11-27 · **Superseded-by:** -
+
+### d-20261127-29 — Where does Position: Exact sit once the gear leaves the body row?
+
+* **Question:** After the gear moves to the tile header, the remaining body row can be only "Position: Exact" plus empty space. Where does that control go?
+* **Governs:** -
+* **Chosen:** On the expanded sources row with Compare/Add column and the database selectors, so there is no sparse controls row under the title.
+* **Rejected:** Leaving Position on its own full-width row; putting Position in `PanelHeader`.
+* **Reason:** The empty space Felix pointed at is that sparse row. Position needs width and a dialog, so it stays in the body but not alone on a line. Reversal path: restore the separate controls `Group` above `.sources`.
+* **Decided by:** Grok full auto, 2026-11-27 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"40765d95b6afd132bb22b21dd52a382b6bc846757e989aa9b128547536a7d0c5","input_sha256":"272be868ff23db30e230376a331643d3930b5c409bf19f30039a3bee38b5a3d0","kind":"mutation-receipt","operation":"e5290df9a7e76ae9304b8e5b1d34c3904b8ea7351f94e299c110acb83c6a3e43","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-26","d-20261127-27","d-20261127-28","d-20261127-29"],"target":"decisions-ledger","v":1} -->
