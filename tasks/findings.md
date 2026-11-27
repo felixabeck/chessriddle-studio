@@ -30069,3 +30069,18 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Failure scenario:** When the Dim theme (`data-mantine-color-scheme="dark"` + `data-cf-theme-variant="dim"`) is active on the analysis board's panel tabs, axe `color-contrast` reports 3.71:1 (`#d0b26d` on `#5a5347`, expected 4.5:1) on the active `.tab[data-active]` label.
 * **Evidence:** Observed during `pnpm test:e2e:container` in the new `game-report-dim` project on `e2e/game-report.spec.ts` (`#mantine-*-tab-report > .mantine-Tabs-tabLabel`).
 * **Fix direction:** Adjust `.tab[data-active]` foreground/background mix in `src/styles/Tabs.module.css` (or Dim surface mix) so the active tab text meets >= 4.5:1 against its computed Dim background.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### `pnpm verify:app --game-report` GR2 times out on the Report tab because the default Game review layout has already taken Report out of the strip
+
+* **ID:** f-20261127-14 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
+* **Impact class:** tooling
+* **Spotted outside diff:** yes; the Game review mosaic that removes Report from the strip is `d963ddc24` (2026-11-27 06:49), already on handover HEAD `1c47282b1`. This game-review build does not change `src/state/layoutPresets.ts` or `scripts/verify-app.mjs`.
+* **Failure scenario:** `pnpm verify:app --game-report` installs Stockfish (FE1–FE8) and plays scholar's mate (GR1), then GR2 resizes the window to 1400×1000 and looks for `[role="tab"]` whose `textContent.trim()` is `"Report"` (`scripts/verify-app.mjs` ~8262–8270). At that size `BoardTabLayout` applies the default `preset:game` mosaic (`src/state/layoutPresets.ts` `preset:game`, Report as its own area beside `topRight`), so `shownPanelAreas` contains `"report"` and the strip omits the Report tab (`BoardAnalysis.tsx` `!shownPanelAreas.has("report")`). The Report pane is already on screen with its Generate-report empty state; there is no Report tab to click. Observed 2026-11-27 on release binary `7c33dee92`: GR2 `timed out waiting for the Report tab` after Analysis was found; a follow-up off-screen dump at 1400×1000 showed the mosaic with a Report pane titled "Report" and tabs Analysis/Coach/Info only.
+* **Fix direction:** teach GR2 to drive the already-visible Report pane at 1400×1000 (click Generate report in that pane, or the pane header) and keep a strip-tab fallback for the stacked layout below the mosaic floor. Do not put Report back into the tab strip at that size: the mosaic is Felix's Game review layout. `scripts/verify-app.mjs` stays unchanged in the game-review build that found this.
+* **Proof:** `pnpm verify:app --game-report --screenshot <path>` on a release build of a fresh profile: GR1–GR6 pass, the screenshot shows the generated report (provenance, both accuracy cards, 3...Nf6?? in key moments), and the script is the only change unless a later product change removes the mosaic Report pane.
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"fa3e8468df2b153cd1be5d637c041a9453ca7d908385e1ae5820c03d0a7fd474","input_sha256":"784072469695de73a8da3c08b9b5ea2068d4750c666e653eb89695fbf3e1ba2c","kind":"mutation-receipt","operation":"b0e24dc28af3ca4091eaf039070c64418a30b52fb79314da0f9f8fdee3ea6a56","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-14"],"target":"f-20261127-14","v":1} -->
