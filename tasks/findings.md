@@ -30065,13 +30065,16 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 
 ### Active tab label in Dim scheme fails axe `color-contrast` (3.71:1)
 
-* **ID:** f-20261127-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-11 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
 
 * **Where:** `src/styles/Tabs.module.css:19-23` (`.tab[data-active]` inside `.list` with `background: var(--cf-surface-inset)`).
 * **Failure scenario:** When the Dim theme (`data-mantine-color-scheme="dark"` + `data-cf-theme-variant="dim"`) is active on the analysis board's panel tabs, axe `color-contrast` reports 3.71:1 (`#d0b26d` on `#5a5347`, expected 4.5:1) on the active `.tab[data-active]` label.
 * **Evidence:** Observed during `pnpm test:e2e:container` in the new `game-report-dim` project on `e2e/game-report.spec.ts` (`#mantine-*-tab-report > .mantine-Tabs-tabLabel`).
 * **Fix direction:** Adjust `.tab[data-active]` foreground/background mix in `src/styles/Tabs.module.css` (or Dim surface mix) so the active tab text meets >= 4.5:1 against its computed Dim background.
+
+Handled. `.tab[data-active]` now uses `color: var(--cf-foreground)` so the label meets 4.5:1 on the 10% gold pill over Dim inset (measured 6.35:1; gold mix was 3.71:1). The gold cue stays in the 10% fill and 20% border. DESIGN.md Tabs row records it. Proof: `src/styles/theme.test.ts` token math in light/dark/dim; `e2e/game-report.spec.ts` `assertAccessible()` with no exclude and `assertClockAndTabContrast` `paintedText` on the selected Report tab. Commit `c81535d99`. Rejected: keeping gold text (Dim 3.72:1; 50% mix only 4.58, too tight). Sibling Accordion/Combobox/Menu/TrainingSettings gold-on-10% pills filed during review (inbox during this run).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5a1a1e6496a698090dd53a73c07e0292052bba51a10231da84ff7b0b3c56c54e","header_sha256":"160d84c391d634b5c921dad4818d9366929195965389eeb5332b9dd964087772","header_status":"handled","input_sha256":"7dfa141422cb8a218a16e7d9cefa92c976ebea63b82adc55799d4aedc2b9c745","kind":"mutation-receipt","operation":"95d244cec53267aac77d141af6131fc18990ab1eeffa207bae7e05d2e11318ea","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-11"],"target":"f-20261127-11","v":1} -->
 
 ---
 
