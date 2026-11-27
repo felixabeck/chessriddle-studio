@@ -29712,7 +29712,7 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 
 ### Changing a PGN file's type to Repertoire in the Library leaves it training as White
 
-* **ID:** f-20261126-10 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-10 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes, during the repertoire PGN import build (2026-11-26)
 * **Where:** `src/components/files/useFileWorkspace.ts` `setFileType` (Library → Edit metadata → type); colour read at `src/components/panels/practice/PracticePanel.tsx:556` and `src/components/panels/practice/RepertoireInfo.tsx:103` as `headers.orientation || "white"`
@@ -29720,6 +29720,8 @@ Filed from session 227f6d73-c407-46b2-82dd-e71bcfc3e506 (release 1.3.0 follow-up
 * **Fix:** ask for the colour when the type becomes Repertoire and write it as the `Orientation` header, or show the trained colour with a switch in Practice.
 * **Open question:** none; the repertoire PGN import build fixes the import paths only.
 * **Found by:** Claude Code (Opus 5.5), repertoire PGN import build, 2026-11-26
+* **Closed:** 2026-11-27, commit `84fd6ae79`. Library Edit metadata asks White/Black when the type is repertoire and writes `[Orientation]` on each present game before the sidecar type change, so Practice trains as the chosen colour. Default White without reading an existing tag. Compact dialogs stack the control below 14rem. Rejected: seeding colour from a stored tag (would clobber Black on a no-op confirm); open-tab sidecar type sync (filed separately; assignment forbade inventing it). Proof: `vitest run FilesPage.test.tsx` 203 passed; `vitest related` 563 passed; `pnpm test:e2e:container --project=async-errors --project=database-files --grep="Files refusal|metadata-only editing"` 17 passed after re-recording `workspace-refusal-metadata-retained-320-200-en-US.png` and `workspace-refusal-metadata-retained-320-200-de-DE.png`.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"b6edb02a5bd153e81c6e84fe63ac5636dbbd329ad9e26caf6fb8f4e1d156342c","header_sha256":"22f3e86c16a2ff61bd827dd625cee9769e996954da5b65c3472dd951a29ac5b6","header_status":"handled","input_sha256":"570beaae3076d12ee719ff1a5c7c4f469704dd198316f6b3c553b4c29682f3c0","kind":"mutation-receipt","operation":"db9375871c9f9b92c8d88aca3783ff905da6984a5d18e9f8004e0deff870398f","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-10"],"target":"f-20261126-10","v":1} -->
 
 ---
 
