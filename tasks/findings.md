@@ -30236,3 +30236,22 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 * **Related:** f-20261127-15 (board clocks; Root `-`, named here). f-20261124-02 handled the same opacity-on-text defect for analysis moves after the game end (d-20261124-04).
 * **Proof:** `paintedText` / ancestor opacity chain of 1 and `contrastRatio >= 4.5` on one dimmed Practice move row, one dimmed BestMoves stats group, and one GameSelector `.index` in light/dark/dim.
 * **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Follow-scroll WebKit e2e walk exceeds its timeout on the CI runner and turned master Test red
+
+* **ID:** f-20261127-23 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** notation-follow-scroll direct run (Claude Code), 2026-11-27
+* **Impact class:** behaviour
+* **CI run:** 46046820962
+* **First red:** Test run 46046820962 on `b1ddba515` (feat(notation): turn the page instead of re-centring on every move), job `e2e`: `[notation-follow-scroll-webkit] inline view …` timed out (135 s, test.slow()); run 46047948562 on `45e9f37b2` timed out both the table and inline WebKit walks. The clock-times and game-references failures in the same job were already red on `f15964a6b` (run 46045214092) and are not part of this streak.
+* **Failure scenario:** `e2e/notation-follow-scroll.spec.ts` walks 160 plies with a real key press, a toHaveText wait and a six-frame settle read per ply; WebKit in the CI container needs about 0.85 s per ply (2.4 min), locally ~45 s.
+* **Where:** `e2e/notation-follow-scroll.spec.ts:221` (the table and inline walk test).
+* **Defect:** the walk's cost scales with plies × per-step round trips and is not bounded below the CI runner's speed.
+* **Fix:** walk the plies inside the page (one evaluate dispatching the navigation keys and reading the geometry per step with a short settle), keep the real mouse click and the held-key run, so the walk costs seconds in both browsers.
+* **Proof:** container run of the spec in Chromium and WebKit well under the default timeout; reverting GameNotation.tsx to the centring behaviour still fails the walk assertions.
+* **Found by:** Claude Code, notation-follow-scroll push CI wait, 2026-11-27
+* **Repair owner:** notation-follow-scroll direct run (Claude Code) on tuxedo-atlas, 2026-11-27T18:45:56Z
