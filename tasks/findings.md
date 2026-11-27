@@ -29775,7 +29775,7 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### The Info panel's chapter accordion nests the "Add game" button inside the accordion trigger button
 
-* **ID:** f-20261126-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-16 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 
 * **Impact class:** ux
 * **Spotted outside diff:** while writing `e2e/saved-layouts.spec.ts` in the saved-layouts build (2026-11-26), a full-page `assertAccessible()` on a fresh opponent-preparation tab reported axe `nested-interactive`; the spec now checks the layout dialogs only (commit 640daa931).
@@ -29783,13 +29783,26 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Open question:** none; move the action out of the trigger (e.g. `Accordion.Control`'s sibling or Mantine's `chevron`-adjacent slot) so trigger and action are separate focusable controls, then run a full-page `assertAccessible()` on a file-backed tab.
 
 Handled. `IconAction` "Add game" is a sibling of `Accordion.Control` inside a header `Group`, so trigger and action are separate focusable controls. `stopPropagation` is gone. Unit test `Add game sits outside the chapter accordion trigger` asserts the button is not inside the control, Add game does not expand the accordion, and the trigger still expands. Opponent-prep e2e runs full-page `assertAccessible()` on a file-backed tab. Repertoire-preset snapshot re-recorded for the `[title][chevron][+]` header order. Commit `21e140b18`. Review (agy, r1, role normal): correctness, root-cause, tests, code-quality, minimalism all APPROVED. Skipped joiners f-20261127-07 and f-20261127-18 (do not share `GameSelectorAccordion.tsx`). GameRow `role="option"` nested IconActions filed during review (inbox during this run).
-<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5b0b0a322d268cce0c0ce29e4aea0ec435117531c9d548d123b8ca0aafeb6b28","header_sha256":"22595b6f87b544e0b40a82d2ea96951041e81a5cba6446bf2e2f42d2bf6ef812","header_status":"open","input_sha256":"589877aa179a85ea8bab61832c7247b2f3c39861a44fe40e1848ce1fbd6fb4ab","kind":"mutation-receipt","operation":"29be91915aa0ae4a994da9f94e2b26031b53dc93aa9a3305e619fcf25347b869","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5b0b0a322d268cce0c0ce29e4aea0ec435117531c9d548d123b8ca0aafeb6b28","header_sha256":"0e0f46f6fd2f1ca60a00428d0fa95e4458ca3c5f91d58ce2a103698c9a29b3b7","header_status":"handled","input_sha256":"589877aa179a85ea8bab61832c7247b2f3c39861a44fe40e1848ce1fbd6fb4ab","kind":"mutation-receipt","operation":"29be91915aa0ae4a994da9f94e2b26031b53dc93aa9a3305e619fcf25347b869","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
 
 Hosted Test e2e red after the close push. First red run 46045214092 on f15964a6b, job 140662650460. Two snapshots still showed the old Add-game/chevron order: clock-times-info.png (31 pixels, `#topRight` Info accordion header) and citations-notation.png (32 pixels, full-page). The saved-layouts opponent-prep and repertoire-preset proofs stayed green. Repair: re-record those two container snapshots.
 
 * **CI run:** 46045214092
 * **Repair owner:** 9ad74528-5b1f-469f-8d37-d61946986fb6 on tuxedo-felix, 2026-11-27T18:27:52Z
-<!-- ledger-meta {"command":"set-header","effect_lines":4,"effect_sha256":"e898624d4c5bac7f9ed40a578dc95cac4458a7ac55b9379bbdb7ef018528fc4d","header_sha256":"22595b6f87b544e0b40a82d2ea96951041e81a5cba6446bf2e2f42d2bf6ef812","header_status":"open","input_sha256":"abc3050d4a7872d39b60784c8f0278917d58e5ba7b0d929a1b763e6e4f294f72","kind":"mutation-receipt","operation":"48af9fc073e91a69fe760751e760ccd1120f2bd72f6dc13588864e79d90d5c33","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":4,"effect_sha256":"e898624d4c5bac7f9ed40a578dc95cac4458a7ac55b9379bbdb7ef018528fc4d","header_sha256":"0e0f46f6fd2f1ca60a00428d0fa95e4458ca3c5f91d58ce2a103698c9a29b3b7","header_status":"handled","input_sha256":"abc3050d4a7872d39b60784c8f0278917d58e5ba7b0d929a1b763e6e4f294f72","kind":"mutation-receipt","operation":"48af9fc073e91a69fe760751e760ccd1120f2bd72f6dc13588864e79d90d5c33","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
+
+Handled again after own-red Test e2e 46045214092 (job 140662650460) on f15964a6b. The Accordion.Control sibling split already landed; four remaining Info-header snapshots still showed [title][+][chevron]. Re-recorded in the Playwright container:
+
+- clock-times-info-clock-times.png (CI 31 px)
+- clock-times-info-custom-clock-times.png (same test, not reached on CI)
+- citations-notation-game-references.png (CI 32 px)
+- citations-missing-320-game-references.png (same test, not reached on CI)
+
+citations-choice-320.png is unchanged: the dialog covers the accordion header. Pixel diffs at channel-delta>=40 sit only in the header icon region. Non-update `pnpm test:e2e:container --project=clock-times --project=game-references --grep "Annotate clock entry|formatted notation"`: 2 passed. Review (agy, repair r1, role normal): correctness NOT APPLICABLE (PNG-only), root-cause APPROVED, tests APPROVED. Skipped joiners f-20261127-07 and f-20261127-18 (do not share GameSelectorAccordion.tsx). GameRow nested-interactive remains in the inbox.
+
+* **CI run:** 46045214092
+* **Repair owner:** 9ad74528-5b1f-469f-8d37-d61946986fb6 on tuxedo-felix, 2026-11-27T18:27:52Z
+<!-- ledger-meta {"command":"close","effect_lines":11,"effect_sha256":"12407294a30a66cecf50f54264fb0b40c84679dd2776abf609a29d90b0b93845","header_sha256":"0e0f46f6fd2f1ca60a00428d0fa95e4458ca3c5f91d58ce2a103698c9a29b3b7","header_status":"handled","input_sha256":"976fe0a867634be2c2df401399fcbe6bb0f65f959f4bf0f3af14fdb63cffb443","kind":"mutation-receipt","operation":"efa69d525aa75f2c1459b8e7f20c841473374d071f489ed09c660fc2352708e3","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
 
 ---
 
