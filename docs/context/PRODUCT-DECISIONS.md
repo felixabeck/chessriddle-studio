@@ -276,6 +276,8 @@ finding ids and date.
 - **Superseded in part (2026-11-21):** Settings, Accounts and Engines no longer appear as a
   temporary item; they stay open as tabs until closed ("2026-11-21 — Accounts, Engines and
   Settings stay open as tabs until closed").
+- **Later state (noted 2026-11-27):** the File menu item "Save to file or database" was renamed
+  to "Save a copy…" ("2026-11-27 — Save-to of the current game updates it; copy is named a copy").
 - **Date:** 2026-11-20.
 
 ## 2026-11-21 — Accounts, Engines and Settings stay open as tabs until closed
@@ -610,6 +612,9 @@ finding ids and date.
   bundle decisions `d-20261125-37` to `d-20261125-39` and `d-20261125-50` in `tasks/decisions.md`; the privacy text is
   ChessRiddle commit `7757a40b7`.
 - **Date:** 2026-11-25.
+- **Later state (noted 2026-11-27):** P2 no longer holds: scoresheet photos persist with the
+  game (`d-20261126-34`). P3: PDF scoresheet pages are in scope; Felix ordered PDF support on
+  2026-11-26 (`d-20261127-01`). HEIC remains out.
 
 ## 2026-11-25 — The analysis board is arranged by dragging; the Assistant gets a draggable width
 
@@ -645,6 +650,8 @@ finding ids and date.
   `d-20261125-65`, and the Photo tab staying in the tab strip as `d-20261125-66`, in
   `tasks/decisions.md`; plan `tasks/plans/2026-11-25-board-layout-arrange.md`.
 - **Date:** 2026-11-25.
+- **Later state (noted 2026-11-27):** Photo joins the arranged analysis-board areas;
+  `d-20261126-36` supersedes `d-20261125-66`.
 
 ## 2026-11-27 — Settings remembers its view while its tab stays open
 
@@ -726,4 +733,13 @@ finding ids and date.
 - **Ruled out:** Leaving Database's gear on a sparse second line under the tile header, hiding only the Notation column, restoring the old Statistics/Games switch, or adding a Settings-page toggle for the games list.
 - **Felix's reason:** Database was inconsistent with Engine and Notation, leaving empty space on the top header line; he asked for one central header component reused across panel windows, putting settings and header options on the first line, and collapsing the whole games region so move statistics can use the full height ("Yes, I think it's sensible to unify all of this. And then also make the changes to the database window that we talked about before.").
 - **Technical record:** `d-20261127-26`, `d-20261127-27`, `d-20261127-28`, and `d-20261127-30` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-panel-header-unify.md`.
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — Save-to of the current game updates it; copy is named a copy
+
+- **Question:** Opening a database game, editing info, and using “In Datenbank speichern” produced a second identical game because autosave had already written the origin silently. Should that be fixed, and how, given a suggestion of an “Infos gespeichert” popup?
+- **Choice:** Fix it. The copy action becomes “Save a copy…” / “Als Kopie speichern…” (keybind name “Save a copy” / “Als Kopie speichern”). Picking the current origin database or file in that dialog updates the existing game. File → Save stays in-place. Autosave stays on with silent success. A quiet Saved / Saving… state lives in the board chrome Save slot. FileFreshnessGate “Save my version as a new game” stays the explicit duplicate.
+- **Ruled out:** A popup or toast on every autosave or header keystroke. A second “add as a new game” button inside the copy dialog.
+- **Felix's reason:** User feedback described the duplicate-game trap. Felix: “Alright, do everything as you recommend.” The recommendation was the copy rename, same-origin in-place update, and quiet chrome indicator.
+- **Technical record:** `d-20261127-33` through `d-20261127-37` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-save-copy-and-saved-indicator.md`.
 - **Date:** 2026-11-27.
