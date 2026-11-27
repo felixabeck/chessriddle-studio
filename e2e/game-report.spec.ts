@@ -98,6 +98,10 @@ async function openReportTab(
         commands: filesWorkspaceCommands([[filesWorkspaceFixture.pgnFile]], {
             ...pgnFileCommands,
             ...gameReportCommands(REPORT),
+            list_file_workspace: {
+                result: { entries: [filesWorkspaceFixture.pgnFile], unread: [] },
+            },
+            get_opening_from_fens: { result: "King's Pawn Game" },
             ...(analyzeDelay ? { analyze_game: { result: REPORT, delay: analyzeDelay } } : {}),
             write_game: { result: { stamp: "e".repeat(64), revision: "e2e-pgn-revision" } },
             lex_pgn: {
@@ -126,6 +130,7 @@ async function openReportTab(
     await page.getByRole("tab", { name: "Report", exact: true }).click();
     const panel = page.getByRole("tabpanel", { name: "Report", exact: true });
     await expect(panel.getByText(/This game has no evaluations yet/)).toBeVisible();
+    await expect(panel.getByText("Opening: King's Pawn Game")).toBeVisible();
     if (test.info().project.name === "game-report-dim") {
         await expect(page.locator("html")).toHaveAttribute("data-cf-theme-variant", "dim");
     }
@@ -226,6 +231,7 @@ test("game report: a run fills the Report tab from the native result", async ({
     await expect(panel.getByText("Win chance", { exact: true })).toBeVisible();
     await expect(panel.getByTestId("report-time-strip")).toBeVisible();
     await expect(panel.getByTestId("report-time-bar")).toHaveCount(7);
+    await expect(panel.getByText("Opening: King's Pawn Game")).toBeVisible();
 
     const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
     const analyze = invocations.find(({ command }) => command === "analyze_game");

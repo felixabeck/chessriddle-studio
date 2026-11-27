@@ -13,7 +13,9 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { Scoreboard } from "./Scoreboard";
 import ReportPanel from "./ReportPanel";
 import { TimeStrip } from "./TimeStrip";
-import { disposeTabAtoms, reviewFocusFamily } from "@/state/atoms";
+import { openingNameCache } from "@/hooks/useOpeningName";
+import { disposeTabAtoms, fileWorkspaceAtom, reviewFocusFamily, sessionsAtom } from "@/state/atoms";
+import type { RepertoireSnapshot } from "@/state/repertoireIndex";
 import {
   type AnnotationCounts,
   type GameStats,
@@ -21,7 +23,7 @@ import {
   reportRootFingerprint,
 } from "@/utils/chess";
 import { getMoveTimeUsage } from "@/utils/gameReview";
-import { defaultTree } from "@/utils/treeReducer";
+import { defaultTree, getBoardState } from "@/utils/treeReducer";
 
 const zeroCounts: AnnotationCounts = {
   "!!": 0,
@@ -33,10 +35,20 @@ const zeroCounts: AnnotationCounts = {
 };
 
 const mocks = vi.hoisted(() => ({
-  t: (key: string, options?: Record<string, unknown>) =>
-    options && "move" in options ? `${key}:${String(options.move)}` : key,
+  t: (key: string, options?: Record<string, unknown>) => {
+    if (!options) return key;
+    if ("opening" in options) return `${key}:${String(options.opening)}`;
+    if ("played" in options && "repertoire" in options && "file" in options && "move" in options) {
+      return `${key}:${String(options.move)}:${String(options.played)}:${String(options.repertoire)}:${String(options.file)}`;
+    }
+    if ("move" in options) return `${key}:${String(options.move)}`;
+    return key;
+  },
   cancelAnalysis: vi.fn(),
   getProgress: vi.fn().mockResolvedValue(null),
+  getOpeningFromFens: vi.fn().mockResolvedValue(""),
+  refreshRepertoireIndex: vi.fn().mockResolvedValue(undefined),
+  readRepertoireIndex: vi.fn().mockReturnValue(null),
   notifyUnlessCancelled: vi.fn(),
   chartProps: null as null | {
     isAnalysing: boolean;
@@ -58,7 +70,12 @@ vi.mock("@/platform/tauri", () => ({
   tauri: {
     cancelAnalysis: mocks.cancelAnalysis,
     getProgress: mocks.getProgress,
+    getOpeningFromFens: mocks.getOpeningFromFens,
   },
+}));
+vi.mock("@/state/repertoireIndex", () => ({
+  refreshRepertoireIndex: mocks.refreshRepertoireIndex,
+  readRepertoireIndex: mocks.readRepertoireIndex,
 }));
 vi.mock("@/hooks/useProgress", () => ({
   useProgress: () => ({
@@ -99,6 +116,10 @@ beforeEach(() => {
   root = createRoot(host);
   atoms = createAtomStore();
   store = createTreeStore();
+  openingNameCache.clear();
+  mocks.getOpeningFromFens.mockReset().mockResolvedValue("");
+  mocks.refreshRepertoireIndex.mockReset().mockResolvedValue(undefined);
+  mocks.readRepertoireIndex.mockReset().mockReturnValue(null);
 });
 
 afterEach(async () => {
@@ -491,7 +512,7 @@ const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
   { eager: true, import: "default" },
 );
 
-const phase2And3FiniteKeys = [
+const phase2To4FiniteKeys = [
   "Board.Analysis.Opening",
   "Board.Analysis.Middlegame",
   "Board.Analysis.Endgame",
@@ -516,9 +537,14 @@ const phase2And3FiniteKeys = [
   "Board.Analysis.Report.MistakeKind.MissesWin",
   "Board.Analysis.Report.NextMoment",
   "Board.Analysis.Report.NoMomentsForSide",
+  "Board.Analysis.Report.Novelty",
+  "Board.Analysis.Report.Opening",
   "Board.Analysis.Report.PreviousMoment",
   "Board.Analysis.Report.Provenance",
   "Board.Analysis.Report.Regenerate",
+  "Board.Analysis.Report.RepertoireFollowed",
+  "Board.Analysis.Report.RepertoireIncomplete",
+  "Board.Analysis.Report.RepertoireLeft",
   "Board.Analysis.Report.Summary.BalancedAgainBlack",
   "Board.Analysis.Report.Summary.BalancedAgainWhite",
   "Board.Analysis.Report.Summary.StayedBalanced",
@@ -910,7 +936,7 @@ test("mistake-kind labels from review facts disappear when the summary fingerpri
 test("ships all 16 locales", () => expect(Object.keys(catalogues)).toHaveLength(16));
 
 test.each(Object.entries(catalogues))(
-  "every phase 2 and 3 finite message resolves without fallback in %s",
+  "every phase 2 to 4 finite message resolves without fallback in %s",
   async (_path, catalogue) => {
     const instance = createInstance();
     await instance.init({
@@ -920,7 +946,7 @@ test.each(Object.entries(catalogues))(
       nsSeparator: false,
       resources: { test: catalogue },
     });
-    for (const key of phase2And3FiniteKeys) {
+    for (const key of phase2To4FiniteKeys) {
       expect({
         key,
         value: catalogue.translation[key],
@@ -935,6 +961,10 @@ test.each(Object.entries(catalogues))(
           engine: "Stockfish",
           limit: "depth 18",
           date: "Nov 27, 2026",
+          opening: "King's Pawn Game",
+          played: "Qh5",
+          repertoire: "Nf3, Bc4",
+          file: "White Repertoire",
         }),
       }).toEqual({
         key,
@@ -945,3 +975,233 @@ test.each(Object.entries(catalogues))(
     }
   },
 );
+
+test("O6 opening block looks up the mainline-end opening, hides non-text/empty answers, links novelty, and focuses deviation/followed/partial repertoire notes", async () => {
+  // 1. e4 e5 2. Qh5 (novelty NAG 146, deviation from repertoire [Nf3, Bc4]) with reportLine sibling Nf3
+  store.getState().makeMoves({ payload: ["e4", "e5", "Qh5"], mainline: true });
+  store.getState().goToMove([0, 0]);
+  store.getState().makeMoves({ payload: ["Nf3"] });
+  store.getState().goToMove([0]); // Cursor sits at 1. e4, NOT the mainline end!
+  const beforeQh5Fen = store.getState().root.children[0].children[0].fen;
+  const afterE4Fen = store.getState().root.children[0].fen;
+
+  store.setState((state) => {
+    const e4 = state.root.children[0];
+    const e5 = e4.children[0];
+    const [qh5, nf3] = e5.children;
+    return {
+      headers: { ...state.headers, orientation: "white" as const },
+      root: {
+        ...state.root,
+        children: [
+          {
+            ...e4,
+            children: [
+              {
+                ...e5,
+                children: [
+                  { ...qh5, nags: [146] },
+                  { ...nf3, reportLine: true },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+  });
+
+  // 1) Opening name lookup uses mainline-end FENs (4 FENs: root, e4, e5, Qh5), not cursor (2 FENs).
+  mocks.getOpeningFromFens.mockResolvedValue("King's Pawn Game");
+
+  // 2) Settled complete repertoire snapshot with Nf3, Bc4 after 1. e4 e5.
+  const ws = { id: { id: "ws-1" }, kind: "fileWorkspace" as const };
+  const snapshot: RepertoireSnapshot = {
+    partial: false,
+    partialReason: null,
+    files: [
+      {
+        workspaceKey: "ws-1",
+        file: {
+          type: "file",
+          name: "White Rep",
+          numGames: 1,
+          lastModified: 0,
+          handle: ws,
+          metadata: { type: "repertoire", tags: [] },
+        },
+        partial: false,
+        chapters: [
+          {
+            chapter: 0,
+            headers: { orientation: "white", start: undefined, white: "", black: "", event: "" },
+            nodes: [
+              {
+                boardState: getBoardState(store.getState().root.fen),
+                parent: -1,
+                san: null,
+                path: [],
+                halfMoves: 0,
+                hasContinuation: true,
+              },
+              {
+                boardState: getBoardState(afterE4Fen),
+                parent: 0,
+                san: "e4",
+                path: [0],
+                halfMoves: 1,
+                hasContinuation: true,
+              },
+              {
+                boardState: getBoardState(beforeQh5Fen),
+                parent: 1,
+                san: "e5",
+                path: [0, 0],
+                halfMoves: 2,
+                hasContinuation: true,
+              },
+              {
+                boardState: "after-nf3",
+                parent: 2,
+                san: "Nf3",
+                path: [0, 0, 0],
+                halfMoves: 3,
+                hasContinuation: false,
+              },
+              {
+                boardState: "after-bc4",
+                parent: 2,
+                san: "Bc4",
+                path: [0, 0, 1],
+                halfMoves: 3,
+                hasContinuation: false,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  atoms.set(fileWorkspaceAtom, ws);
+  atoms.set(sessionsAtom, []);
+  mocks.readRepertoireIndex.mockReturnValue(snapshot);
+
+  await renderReport();
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  // Mainline-end FEN count is 4 (root + 3 moves), even though board cursor is at [0].
+  expect(mocks.getOpeningFromFens).toHaveBeenCalledTimes(1);
+  expect(mocks.getOpeningFromFens.mock.calls[0][0]).toHaveLength(4);
+  expect(host.querySelector('[data-testid="report-opening"]')?.textContent).toBe(
+    "Board.Analysis.Report.Opening:King's Pawn Game",
+  );
+
+  // Clicking the novelty focuses its before-position ([0, 0], playedSan "Qh5", betterSan "Nf3").
+  const noveltyBtn = host.querySelector<HTMLButtonElement>('[data-testid="report-novelty"]')!;
+  expect(noveltyBtn.textContent).toBe("Board.Analysis.Report.Novelty:2. Qh5");
+  await act(async () => noveltyBtn.click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(atoms.get(reviewFocusFamily("tab-1"))).toEqual({
+    documentId: store.getState().documentId,
+    path: [0, 0],
+    fen: beforeQh5Fen,
+    summaryCreatedAt: null,
+    playedSan: "Qh5",
+    betterSan: "Nf3",
+  });
+
+  // Clicking the repertoire deviation focuses before-path with first repertoire SAN as betterSan.
+  const devBtn = host.querySelector<HTMLButtonElement>('[data-testid="report-repertoire-note"]')!;
+  expect(devBtn.getAttribute("data-repertoire-kind")).toBe("deviation");
+  expect(devBtn.textContent).toBe("Board.Analysis.Report.RepertoireLeft:2:Qh5:Nf3, Bc4:White Rep");
+  await act(async () => store.getState().goToStart());
+  await act(async () => devBtn.click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(atoms.get(reviewFocusFamily("tab-1"))).toEqual({
+    documentId: store.getState().documentId,
+    path: [0, 0],
+    fen: beforeQh5Fen,
+    summaryCreatedAt: null,
+    playedSan: "Qh5",
+    betterSan: "Nf3",
+  });
+
+  // Followed repertoire link focuses before-path with playedSan and betterSan null.
+  await act(async () => {
+    store.setState((state) => {
+      const e4 = state.root.children[0];
+      const e5 = e4.children[0];
+      const qh5 = e5.children[0];
+      return {
+        root: {
+          ...state.root,
+          children: [{ ...e4, children: [{ ...e5, children: [{ ...qh5, san: "Nf3" }] }] }],
+        },
+      };
+    });
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const followedBtn = host.querySelector<HTMLButtonElement>(
+    '[data-testid="report-repertoire-note"]',
+  )!;
+  expect(followedBtn.getAttribute("data-repertoire-kind")).toBe("followed");
+  expect(followedBtn.textContent).toBe("Board.Analysis.Report.RepertoireFollowed:2");
+  await act(async () => store.getState().goToStart());
+  await act(async () => followedBtn.click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(atoms.get(reviewFocusFamily("tab-1"))).toEqual({
+    documentId: store.getState().documentId,
+    path: [0, 0],
+    fen: beforeQh5Fen,
+    summaryCreatedAt: null,
+    playedSan: "Nf3",
+    betterSan: null,
+  });
+
+  // Partial index hides deviation/followed and shows the muted incomplete-index line.
+  mocks.readRepertoireIndex.mockReturnValue({
+    ...snapshot,
+    partial: true,
+    partialReason: "bound-reached",
+  });
+  await act(async () => {
+    atoms.set(fileWorkspaceAtom, { id: { id: "ws-2" }, kind: "fileWorkspace" });
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const partialEl = host.querySelector('[data-testid="report-repertoire-note"]')!;
+  expect(partialEl.getAttribute("data-repertoire-kind")).toBe("partial");
+  expect(partialEl.textContent).toBe("Board.Analysis.Report.RepertoireIncomplete");
+
+  // Non-text opening answer + no novelty + no repertoire => opening block omitted completely.
+  openingNameCache.clear();
+  mocks.getOpeningFromFens.mockResolvedValue([]);
+  mocks.readRepertoireIndex.mockReturnValue(null);
+  await act(async () => {
+    store.setState((state) => {
+      const e4 = state.root.children[0];
+      const e5 = e4.children[0];
+      const nf3 = e5.children[0];
+      return {
+        root: {
+          ...state.root,
+          children: [{ ...e4, children: [{ ...e5, children: [{ ...nf3, nags: [] }] }] }],
+        },
+      };
+    });
+    atoms.set(fileWorkspaceAtom, null);
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(host.querySelector('[data-testid="report-opening-block"]')).toBeNull();
+});

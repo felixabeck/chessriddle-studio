@@ -104,31 +104,45 @@ vi.mock("@/platform/tauri", () => ({
     startProgress: mocks.startProgress,
     analyzeGame: mocks.analyzeGame,
     prepareAnalysis: mocks.prepareAnalysis,
+    getOpeningFromFens: vi.fn().mockResolvedValue(""),
   },
 }));
-vi.mock("@/state/atoms", async () => ({
-  activeTabAtom: mocks.activeTabAtom,
-  reportModalOpenFamily: () => mocks.reportModalOpenAtom,
-  matchesReviewFocus: () => false,
-  reviewFocusFamily: () => mocks.reviewFocusAtom,
-  enginesAtom: mocks.enginesAtom,
-  referenceDbAtom: (await import("jotai")).atom(null),
-}));
-vi.mock("jotai", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("jotai")>()),
-  useAtomValue: (atom: symbol) => {
-    if (atom === mocks.activeTabAtom) return "tab-1";
-    if (atom === mocks.enginesAtom) return mocks.engines;
-    if (atom === mocks.referenceDbAtom) return null;
-    return undefined;
-  },
-  useAtom: (atom: symbol) => {
-    if (atom === mocks.reportModalOpenAtom) return [mocks.reportingMode, mocks.setReportingMode];
-    if (atom === mocks.reviewFocusAtom) return [mocks.reviewFocus, mocks.setReviewFocus];
-    return [mocks.reportSettings, mocks.setReportSettings];
-  },
-}));
+vi.mock("@/state/atoms", async () => {
+  const { atom } = await import("jotai");
+  return {
+    activeTabAtom: mocks.activeTabAtom,
+    reportModalOpenFamily: () => mocks.reportModalOpenAtom,
+    matchesReviewFocus: () => false,
+    reviewFocusFamily: () => mocks.reviewFocusAtom,
+    enginesAtom: mocks.enginesAtom,
+    referenceDbAtom: atom(null),
+    fileWorkspaceAtom: atom(null),
+    sessionsAtom: atom([]),
+  };
+});
+vi.mock("jotai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("jotai")>();
+  return {
+    ...actual,
+    useAtomValue: (target: unknown) => {
+      if (target === mocks.activeTabAtom) return "tab-1";
+      if (target === mocks.enginesAtom) return mocks.engines;
+      if (typeof target === "symbol") return undefined;
+      return actual.useAtomValue(target as Parameters<typeof actual.useAtomValue>[0]);
+    },
+    useAtom: (target: unknown) => {
+      if (target === mocks.reportModalOpenAtom)
+        return [mocks.reportingMode, mocks.setReportingMode];
+      if (target === mocks.reviewFocusAtom) return [mocks.reviewFocus, mocks.setReviewFocus];
+      return [mocks.reportSettings, mocks.setReportSettings];
+    },
+  };
+});
 vi.mock("jotai/utils", () => ({ atomWithStorage: () => mocks.reportSettingsAtom }));
+vi.mock("@/state/repertoireIndex", () => ({
+  refreshRepertoireIndex: vi.fn().mockResolvedValue(undefined),
+  readRepertoireIndex: vi.fn().mockReturnValue(null),
+}));
 vi.mock("@/components/files/notifyError", () => ({
   notifyUnlessCancelled: mocks.notifyUnlessCancelled,
 }));

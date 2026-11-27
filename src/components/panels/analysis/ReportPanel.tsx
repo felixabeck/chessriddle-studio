@@ -26,6 +26,7 @@ import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import { reportEngineFailure } from "./engineFailure";
 import { buildKeyMomentItems, type KeyMomentItem, KeyMoments } from "./KeyMoments";
+import { OpeningBlock, type ReviewFocusRequest } from "./OpeningBlock";
 import ReportModal from "./ReportModal";
 import { Scoreboard } from "./Scoreboard";
 import { TimeStrip } from "./TimeStrip";
@@ -150,8 +151,8 @@ function ReportPanel() {
   const goToMove = useStore(store, (s) => s.goToMove);
   const goToAnnotation = useStore(store, (s) => s.goToAnnotation);
   const moves = useMemo(() => getMainLine(root), [root]);
-  const summaryCurrent =
-    !!summary && summary.fingerprint === reportRootFingerprint(root.fen, moves);
+  const fingerprint = useMemo(() => reportRootFingerprint(root.fen, moves), [root.fen, moves]);
+  const summaryCurrent = !!summary && summary.fingerprint === fingerprint;
   const hasMoves = root.children.length > 0;
 
   const momentItems = useMemo(
@@ -185,20 +186,32 @@ function ReportPanel() {
     );
   }, [activeReviewFocus, momentItems]);
 
-  const focusMoment = useCallback(
-    (item: KeyMomentItem) => {
+  const focusReviewPosition = useCallback(
+    (target: ReviewFocusRequest) => {
       const current = store.getState();
       setReviewFocus({
         documentId: current.documentId,
-        path: item.beforePath,
-        fen: item.beforeFen,
+        path: target.beforePath,
+        fen: target.beforeFen,
         summaryCreatedAt: current.report.summary?.createdAt ?? null,
+        playedSan: target.playedSan,
+        betterSan: target.betterSan,
+      });
+      goToMove(target.beforePath);
+    },
+    [goToMove, setReviewFocus, store],
+  );
+
+  const focusMoment = useCallback(
+    (item: KeyMomentItem) => {
+      focusReviewPosition({
+        beforePath: item.beforePath,
+        beforeFen: item.beforeFen,
         playedSan: item.moment.san,
         betterSan: item.betterLine[0] ?? null,
       });
-      goToMove(item.beforePath);
     },
-    [goToMove, setReviewFocus, store],
+    [focusReviewPosition],
   );
 
   const modal = (
@@ -304,6 +317,15 @@ function ReportPanel() {
               )}
             </Paper>
           </div>
+
+          <OpeningBlock
+            root={root}
+            headers={headers}
+            fingerprint={fingerprint}
+            facts={summary?.facts}
+            summaryCurrent={summaryCurrent}
+            onFocusPosition={focusReviewPosition}
+          />
 
           {momentItems.length > 0 && (
             <KeyMoments

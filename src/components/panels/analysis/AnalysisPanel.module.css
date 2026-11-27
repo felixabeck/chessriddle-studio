@@ -431,3 +431,38 @@
 .betterLineText {
   overflow-wrap: anywhere;
 }
+
+/* Opening, novelty and repertoire block (O6). */
+.openingBlock {
+  min-width: 0;
+}
+
+.openingText {
+  line-height: 1.5;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+.openingLink {
+  display: inline;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.5;
+  color: var(--cf-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border-radius: var(--cf-radius-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .openingLink:hover {
+    text-decoration-thickness: 2px;
+  }
+}
+
+.openingLink:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: 2px;
+}
