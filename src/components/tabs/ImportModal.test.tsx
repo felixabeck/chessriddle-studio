@@ -6,12 +6,14 @@ import type { LexPgnGamesOutcome } from "@/bindings";
 import { tabStorage } from "@/state/store/tabStorage";
 import { defaultTree } from "@/utils/treeReducer";
 import { hasFileOpenInFlight } from "@/state/fileStructureChange";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 
 const fixtures = vi.hoisted(() => ({
   atoms: {
     addRecentFile: Symbol("add-recent-file"),
     coachEnabled: Symbol("coach-enabled"),
+    fontSize: Symbol("font-size"),
   },
   coachEnabled: false,
   file: {
@@ -47,7 +49,10 @@ const fixtures = vi.hoisted(() => ({
   openFile: vi.fn(),
 }));
 
-vi.mock("@/state/atoms", () => ({ addRecentFileAtom: fixtures.atoms.addRecentFile }));
+vi.mock("@/state/atoms", () => ({
+  addRecentFileAtom: fixtures.atoms.addRecentFile,
+  fontSizeAtom: fixtures.atoms.fontSize,
+}));
 vi.mock("@/state/coachAvailability", () => ({
   coachEnabledAtom: fixtures.atoms.coachEnabled,
 }));
@@ -55,7 +60,11 @@ vi.mock("jotai", async (original) => ({
   ...(await original<typeof import("jotai")>()),
   useStore: () => fixtures.store,
   useAtomValue: (atom: unknown) =>
-    atom === fixtures.atoms.coachEnabled ? fixtures.coachEnabled : undefined,
+    atom === fixtures.atoms.coachEnabled
+      ? fixtures.coachEnabled
+      : atom === fixtures.atoms.fontSize
+        ? 100
+        : undefined,
 }));
 vi.mock("./ImportPhotoPane", () => ({
   default: ({
@@ -237,6 +246,7 @@ vi.mock("@mantine/core", () => ({
 import ImportModal, { importPhotoPaneLoader } from "./ImportModal";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+installResizeObserverStub();
 
 const link = "https://www.chess.com/game/live/123";
 const linkPgn = '[Event "Online game"]\n\n1. e4 *';

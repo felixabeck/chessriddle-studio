@@ -8,12 +8,14 @@ import {
 } from "@/platform/errors";
 import { runUnlessCancelled } from "@/components/files/notifyError";
 import { notifications } from "@mantine/notifications";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR, { useSWRConfig } from "swr";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom } from "@/state/atoms";
+import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom, tabsAtom } from "@/state/atoms";
+import { fileGameHasBlockingOpenTab } from "@/utils/fileGameWrite";
+import { readFileGame, setFileGameOrientation } from "@/utils/files";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { durabilityUncertainMessage } from "../common/ConfirmModal";
 import type { Entry, UsableEntry, FileType } from "./file";
@@ -74,9 +76,11 @@ export function useFileWorkspace(
     const picker = useSingleFlight();
     const [workspace, setWorkspace] = useAtom(fileWorkspaceAtom);
     const [, setWorkspaceDisplayName] = useAtom(fileWorkspaceDisplayNameAtom);
+    const tabs = useAtomValue(tabsAtom);
     const [action, setAction] = useState<FileAction | null>(null);
     const [name, setName] = useState("");
     const [fileType, setFileType] = useState<FileType>("other");
+    const [repertoireColor, setRepertoireColor] = useState<"white" | "black">("white");
     const [actionError, setActionError] = useState("");
     const [trashed, setTrashed] = useState<TrashTarget | null>(null);
     const [uncertainTrashName, setUncertainTrashName] = useState<string | null>(null);
@@ -121,6 +125,7 @@ export function useFileWorkspace(
     useEffect(() => {
         setAction(null);
         setMoveTarget(null);
+        setRepertoireColor("white");
         setActionError("");
         setSubmitting(false);
         setMoving(false);
@@ -246,6 +251,7 @@ export function useFileWorkspace(
         setMoveTarget(null);
         setName(editing ? selected!.name : "");
         if (selected?.type === "file") setFileType(selected.metadata.type);
+        if (next === fileAction.edit) setRepertoireColor("white");
         setAction(next);
     }
     function createFile() {
@@ -443,10 +449,29 @@ export function useFileWorkspace(
             return;
         const chosenType =
             action === fileAction.edit ? fileType : source ? source.metadata.type : "other";
-        if (editing && source && nameUnchanged && chosenType === source.metadata.type) {
+        const typeUnchanged = !source || chosenType === source.metadata.type;
+        const convertingToRepertoire =
+            action === fileAction.edit &&
+            !!source &&
+            chosenType === "repertoire" &&
+            source.metadata.type !== "repertoire";
+        const nonDefaultColor =
+            action === fileAction.edit &&
+            chosenType === "repertoire" &&
+            repertoireColor !== "white";
+        const needsOrientationWrite = convertingToRepertoire || nonDefaultColor;
+        if (editing && source && nameUnchanged && typeUnchanged && !nonDefaultColor) {
             closePresentation();
             setName("");
             return;
+        }
+        if (needsOrientationWrite && source) {
+            for (let index = 0; index < source.numGames; index += 1) {
+                if (fileGameHasBlockingOpenTab(tabs, source.handle, index)) {
+                    setActionError(t("Files.LineSection.UnsavedTab"));
+                    return;
+                }
+            }
         }
         await runMutation(
             owner,
@@ -465,23 +490,45 @@ export function useFileWorkspace(
                 if (action === fileAction.folder)
                     await tauri.createWorkspaceDirectory(owner.workspace, parent, name);
                 if (editing && source) {
-                    const metadata = {
-                        type: chosenType,
-                        tags: source.metadata.tags,
-                    };
-                    if (nameUnchanged)
-                        await tauri.writeWorkspaceFileMetadata(
-                            owner.workspace,
-                            source.handle,
-                            metadata,
-                        );
-                    else
-                        await tauri.renameWorkspaceFile(
-                            owner.workspace,
-                            source.handle,
-                            name,
-                            metadata,
-                        );
+                    if (needsOrientationWrite) {
+                        for (let index = 0; index < source.numGames; index += 1) {
+                            let game: Awaited<ReturnType<typeof readFileGame>>;
+                            try {
+                                game = await readFileGame(source.handle, index);
+                            } catch (cause) {
+                                if (normalizeError(cause).backendCategory === "resource-limit")
+                                    continue;
+                                throw cause;
+                            }
+                            if (!game.present || game.omission) continue;
+                            await setFileGameOrientation(
+                                source.handle,
+                                index,
+                                repertoireColor,
+                                game.stamp,
+                                game.revision,
+                            );
+                        }
+                    }
+                    if (!nameUnchanged || !typeUnchanged) {
+                        const metadata = {
+                            type: chosenType,
+                            tags: source.metadata.tags,
+                        };
+                        if (nameUnchanged)
+                            await tauri.writeWorkspaceFileMetadata(
+                                owner.workspace,
+                                source.handle,
+                                metadata,
+                            );
+                        else
+                            await tauri.renameWorkspaceFile(
+                                owner.workspace,
+                                source.handle,
+                                name,
+                                metadata,
+                            );
+                    }
                 }
             },
             setSubmitting,
@@ -585,6 +632,8 @@ export function useFileWorkspace(
         setName,
         fileType,
         setFileType,
+        repertoireColor,
+        setRepertoireColor,
         actionError,
         submitting,
         submitAction,

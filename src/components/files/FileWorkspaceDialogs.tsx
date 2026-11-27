@@ -1,10 +1,11 @@
 import { libraryButtonProps } from "@/components/library/presentation";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { Button, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
+import { Box, Button, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import AppModal from "../common/AppModal";
 import ConfirmModal from "../common/ConfirmModal";
+import { RepertoireColorControl } from "../tabs/RepertoireColorControl";
 import { FILE_TYPES, type FileType } from "./file";
 import type { FileWorkspace } from "./useFileWorkspace";
 
@@ -27,6 +28,7 @@ export function FileWorkspaceDialogs({ files }: { files: FileWorkspace }) {
         opened={files.action !== null}
         fullScreen={compactDialog}
         onClose={files.closePresentation}
+        pending={files.submitting}
         title={
           files.action === "edit"
             ? t("Files.EditMetadata")
@@ -60,6 +62,15 @@ export function FileWorkspaceDialogs({ files }: { files: FileWorkspace }) {
               }}
               data={fileTypeOptions}
             />
+          )}
+          {files.action === "edit" && files.fileType === "repertoire" && (
+            <Box miw={0}>
+              <RepertoireColorControl
+                value={files.repertoireColor}
+                onChange={files.setRepertoireColor}
+                disabled={files.submitting}
+              />
+            </Box>
           )}
           <Button
             miw={0}

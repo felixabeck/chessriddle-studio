@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { LexPgnGamesOutcome } from "@/bindings";
 import { tauri, TauriCommandError } from "@/platform/tauri";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 
 const fixtures = vi.hoisted(() => ({
   countPgnGames: vi.fn(),
@@ -26,6 +27,7 @@ const fixtures = vi.hoisted(() => ({
 vi.mock("@/state/atoms", () => ({
   activeTabAtom: Symbol("active-tab"),
   addRecentFileAtom: Symbol("add-recent-file"),
+  fontSizeAtom: Symbol("font-size"),
   tabFamily: () => Symbol("tab-family"),
   tabsAtom: Symbol("tabs"),
 }));
@@ -76,6 +78,7 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => fixtures.navigate 
 vi.mock("jotai", async (original) => ({
   ...(await original<typeof import("jotai")>()),
   useAtom: (atom: symbol) => (atom.description === "tabs" ? [[], fixtures.setTabs] : [[], vi.fn()]),
+  useAtomValue: (atom: symbol) => (atom.description === "font-size" ? 100 : undefined),
   useSetAtom: () => vi.fn(),
   useStore: () => ({ set: fixtures.storeSet }),
 }));
@@ -160,6 +163,7 @@ import { RepertoireImportError } from "@/utils/repertoireImport";
 const actualFiles = await vi.importActual<typeof import("@/utils/files")>("@/utils/files");
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+installResizeObserverStub();
 
 let container: HTMLDivElement;
 let root: Root;

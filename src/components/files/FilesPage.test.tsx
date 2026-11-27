@@ -2,6 +2,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { ErrorCategory } from "@/bindings";
 import englishCatalogue from "@/translation/en-US.json";
@@ -23,10 +24,13 @@ const mocks = vi.hoisted(() => ({
   createWorkspaceDirectory: vi.fn(),
   renameWorkspaceFile: vi.fn(),
   writeWorkspaceFileMetadata: vi.fn(),
+  readGame: vi.fn(),
+  setGameOrientation: vi.fn(),
   issueFileWorkspace: vi.fn(),
   setWorkspace: vi.fn(),
   setWorkspaceDisplayName: vi.fn(),
   notify: vi.fn(),
+  tabs: [] as Array<unknown>,
   data: [] as Array<unknown> | undefined,
   cardMounts: [] as string[],
   error: undefined as unknown,
@@ -37,6 +41,7 @@ const stateAtoms = vi.hoisted(() => ({
   fileWorkspaceAtom: {},
   fileWorkspaceDisplayNameAtom: {},
   fontSizeAtom: {},
+  tabsAtom: {},
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -55,6 +60,8 @@ vi.mock("@/platform/tauri", async () => {
       createWorkspaceDirectory: mocks.createWorkspaceDirectory,
       renameWorkspaceFile: mocks.renameWorkspaceFile,
       writeWorkspaceFileMetadata: mocks.writeWorkspaceFileMetadata,
+      readGame: mocks.readGame,
+      setGameOrientation: mocks.setGameOrientation,
       issueFileWorkspace: mocks.issueFileWorkspace,
     },
   };
@@ -62,15 +69,19 @@ vi.mock("@/platform/tauri", async () => {
 vi.mock("jotai", async (original) => ({
   ...(await original<typeof import("jotai")>()),
   useAtomValue: (atom: object) => {
-    if (atom !== stateAtoms.fontSizeAtom) throw new Error("Unexpected atom");
-    return 100;
+    if (atom === stateAtoms.fontSizeAtom) return 100;
+    if (atom === stateAtoms.tabsAtom) return mocks.tabs;
+    throw new Error("Unexpected atom");
   },
   useAtom: (atom: object) =>
     atom === stateAtoms.fileWorkspaceAtom
       ? [mocks.workspace === undefined ? workspace : mocks.workspace, mocks.setWorkspace]
       : ["", mocks.setWorkspaceDisplayName],
 }));
-vi.mock("@/state/atoms", () => stateAtoms);
+vi.mock("@/state/atoms", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/state/atoms")>()),
+  ...stateAtoms,
+}));
 vi.mock("swr", async () => {
   const actual = await vi.importActual<typeof import("swr")>("swr");
   return {
@@ -185,6 +196,31 @@ vi.mock("@mantine/core", async (importOriginal) => {
     ScrollArea: {
       Autosize: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
     },
+    SegmentedControl: ({
+      disabled,
+      value,
+      onChange,
+      data,
+    }: {
+      disabled?: boolean;
+      value?: string;
+      onChange?: (value: string) => void;
+      data?: { label: string; value: string }[];
+    }) => (
+      <fieldset aria-label="Color" disabled={disabled}>
+        {(data ?? []).map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            data-testid={`color-${item.value}`}
+            aria-pressed={value === item.value}
+            onClick={() => onChange?.(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
+    ),
     Select: ({
       "aria-label": ariaLabel,
       label,
@@ -1197,6 +1233,7 @@ test("a folder parent stays bound across an unrelated selection change", async (
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub();
+installResizeObserverStub();
 
 let container: HTMLDivElement;
 let root: Root;
@@ -1243,6 +1280,7 @@ beforeEach(async () => {
   mocks.language = "en-US";
   mocks.realSWR = false;
   mocks.workspace = undefined;
+  mocks.tabs = [];
   mocks.data = [entry, destination];
   mocks.cardMounts = [];
   mocks.error = undefined;
@@ -1260,6 +1298,9 @@ beforeEach(async () => {
   mocks.createWorkspaceDirectory.mockResolvedValue(undefined);
   mocks.renameWorkspaceFile.mockResolvedValue(undefined);
   mocks.writeWorkspaceFileMetadata.mockResolvedValue(undefined);
+  mocks.readGame.mockResolvedValue({ pgn: "*", stamp: "stamp", revision: "rev", present: true });
+  mocks.setGameOrientation.mockResolvedValue({ stamp: "stamp2", revision: "rev2" });
+  sessionStorage.clear();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -2143,9 +2184,15 @@ function setDialogType(value: string) {
   });
 }
 
+function colorButton(side: "white" | "black") {
+  return container.querySelector<HTMLButtonElement>(
+    `[role="dialog"] [data-testid="color-${side}"]`,
+  );
+}
+
 describe("metadata and rename submissions", () => {
   test.each(["sample", " study", "study ", " "])(
-    "untouched listed name %s writes only metadata and preserves tags",
+    "untouched listed name %s writes orientation then metadata and preserves tags",
     async (name) => {
       const selected = { ...entry, name, metadata: { type: "game", tags: ["original", "tag"] } };
       mocks.data = [selected, destination];
@@ -2160,6 +2207,38 @@ describe("metadata and rename submissions", () => {
       );
       setDialogType("repertoire");
       await act(async () => dialogButton("Confirm").click());
+      expect(mocks.readGame).toHaveBeenCalledTimes(2);
+      expect(mocks.readGame).toHaveBeenNthCalledWith(1, entry.handle, 0, undefined);
+      expect(mocks.readGame).toHaveBeenNthCalledWith(2, entry.handle, 1, undefined);
+      expect(mocks.setGameOrientation).toHaveBeenCalledTimes(2);
+      expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+        1,
+        entry.handle,
+        0,
+        "white",
+        "stamp",
+        "rev",
+      );
+      expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+        2,
+        entry.handle,
+        1,
+        "white",
+        "stamp",
+        "rev",
+      );
+      expect(mocks.readGame.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.setGameOrientation.mock.invocationCallOrder[0],
+      );
+      expect(mocks.setGameOrientation.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.readGame.mock.invocationCallOrder[1],
+      );
+      expect(mocks.readGame.mock.invocationCallOrder[1]).toBeLessThan(
+        mocks.setGameOrientation.mock.invocationCallOrder[1],
+      );
+      expect(mocks.setGameOrientation.mock.invocationCallOrder[1]).toBeLessThan(
+        mocks.writeWorkspaceFileMetadata.mock.invocationCallOrder[0],
+      );
       expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledOnce();
       expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledWith(workspace, entry.handle, {
         type: "repertoire",
@@ -2170,6 +2249,309 @@ describe("metadata and rename submissions", () => {
       expect(container.querySelector('[role="dialog"]')).toBeNull();
     },
   );
+
+  test("repertoire colour control is hidden for game, visible for repertoire, and resets to white on reopen", async () => {
+    click("Select sample file");
+    click("Files.EditMetadata");
+    expect(colorButton("white")).toBeNull();
+    expect(colorButton("black")).toBeNull();
+
+    setDialogType("repertoire");
+    expect(colorButton("white")?.getAttribute("aria-pressed")).toBe("true");
+    expect(colorButton("black")?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => colorButton("black")!.click());
+    expect(colorButton("black")?.getAttribute("aria-pressed")).toBe("true");
+
+    click("Close dialog");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    expect(colorButton("white")?.getAttribute("aria-pressed")).toBe("true");
+    expect(colorButton("black")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("picking Black when converting to repertoire writes black sequentially and skips absent or oversized games", async () => {
+    mocks.data = [{ ...entry, numGames: 4 }, destination];
+    await rerender();
+    mocks.readGame
+      .mockResolvedValueOnce({ pgn: "*", stamp: "s0", revision: "r0", present: true })
+      .mockRejectedValueOnce(commandError("resource-limit", "too large"))
+      .mockResolvedValueOnce({ pgn: "*", stamp: "s2", revision: "r2", present: false })
+      .mockResolvedValueOnce({ pgn: "*", stamp: "s3", revision: "r3", present: true });
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => colorButton("black")!.click());
+    await act(async () => dialogButton("Confirm").click());
+
+    expect(mocks.readGame).toHaveBeenCalledTimes(4);
+    expect(mocks.setGameOrientation).toHaveBeenCalledTimes(2);
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      1,
+      entry.handle,
+      0,
+      "black",
+      "s0",
+      "r0",
+    );
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      2,
+      entry.handle,
+      3,
+      "black",
+      "s3",
+      "r3",
+    );
+    expect(mocks.setGameOrientation.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.readGame.mock.invocationCallOrder[1],
+    );
+    expect(mocks.setGameOrientation.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.writeWorkspaceFileMetadata.mock.invocationCallOrder[0],
+    );
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledWith(workspace, entry.handle, {
+      type: "repertoire",
+      tags: [],
+    });
+  });
+
+  test("converting a 0-game file to repertoire skips orientation writes and writes metadata", async () => {
+    mocks.data = [{ ...entry, numGames: 0 }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledWith(workspace, entry.handle, {
+      type: "repertoire",
+      tags: [],
+    });
+  });
+
+  test("already-repertoire file with unchanged name, type, and default white no-ops without IPC", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "repertoire", tags: ["keep"] } }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    expect(colorButton("white")?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("already-repertoire file with only Black selected writes orientation without metadata IPC", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "repertoire", tags: ["keep"] } }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    await act(async () => colorButton("black")!.click());
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).toHaveBeenCalledTimes(2);
+    expect(mocks.setGameOrientation).toHaveBeenCalledTimes(2);
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      1,
+      entry.handle,
+      0,
+      "black",
+      "stamp",
+      "rev",
+    );
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      2,
+      entry.handle,
+      1,
+      "black",
+      "stamp",
+      "rev",
+    );
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("blocking unsaved open tab blocks conversion without IPC and shows UnsavedTab", async () => {
+    const tabId = "unsaved-repertoire-conversion-tab";
+    sessionStorage.setItem(tabId, "corrupt-uninspectable-entry");
+    mocks.tabs = [
+      {
+        value: tabId,
+        name: "Unsaved",
+        type: "analysis",
+        gameOrigin: {
+          kind: "file",
+          file: entry,
+          gameNumber: 1,
+        },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Files.LineSection.UnsavedTab",
+    );
+  });
+
+  test("blocking unsaved open tab blocks changing repertoire colour to Black without IPC and shows UnsavedTab", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "repertoire", tags: ["keep"] } }, destination];
+    const tabId = "unsaved-repertoire-color-tab";
+    sessionStorage.setItem(tabId, "corrupt-uninspectable-entry");
+    mocks.tabs = [
+      {
+        value: tabId,
+        name: "Unsaved",
+        type: "analysis",
+        gameOrigin: {
+          kind: "file",
+          file: entry,
+          gameNumber: 1,
+        },
+      },
+    ];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    await act(async () => colorButton("black")!.click());
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toBe(
+      "Files.LineSection.UnsavedTab",
+    );
+  });
+
+  test("picking Black on a repertoire file then switching type to game writes only game metadata", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "repertoire", tags: ["keep"] } }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    await act(async () => colorButton("black")!.click());
+    setDialogType("game");
+    expect(colorButton("white")).toBeNull();
+    expect(colorButton("black")).toBeNull();
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledExactlyOnceWith(
+      workspace,
+      entry.handle,
+      {
+        type: "game",
+        tags: ["keep"],
+      },
+    );
+    expect(mocks.mutate).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("Rename on a repertoire file hides colour buttons and no-ops when unchanged", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "repertoire", tags: ["keep"] } }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Rename");
+    expect(colorButton("white")).toBeNull();
+    expect(colorButton("black")).toBeNull();
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.readGame).not.toHaveBeenCalled();
+    expect(mocks.setGameOrientation).not.toHaveBeenCalled();
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("converting to repertoire while renaming writes orientation sequentially then renames with original tags", async () => {
+    mocks.data = [{ ...entry, metadata: { type: "game", tags: ["original", "tag"] } }, destination];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    await setDialogName("renamed-repertoire");
+    setDialogType("repertoire");
+    await act(async () => colorButton("black")!.click());
+    await act(async () => dialogButton("Confirm").click());
+
+    expect(mocks.readGame).toHaveBeenCalledTimes(2);
+    expect(mocks.setGameOrientation).toHaveBeenCalledTimes(2);
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      1,
+      entry.handle,
+      0,
+      "black",
+      "stamp",
+      "rev",
+    );
+    expect(mocks.setGameOrientation).toHaveBeenNthCalledWith(
+      2,
+      entry.handle,
+      1,
+      "black",
+      "stamp",
+      "rev",
+    );
+    expect(mocks.readGame.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setGameOrientation.mock.invocationCallOrder[0],
+    );
+    expect(mocks.setGameOrientation.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.readGame.mock.invocationCallOrder[1],
+    );
+    expect(mocks.readGame.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.setGameOrientation.mock.invocationCallOrder[1],
+    );
+    expect(mocks.setGameOrientation.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.renameWorkspaceFile.mock.invocationCallOrder[0],
+    );
+    expect(mocks.renameWorkspaceFile).toHaveBeenCalledExactlyOnceWith(
+      workspace,
+      entry.handle,
+      "renamed-repertoire",
+      {
+        type: "repertoire",
+        tags: ["original", "tag"],
+      },
+    );
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.mutate).toHaveBeenCalledOnce();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("orientation write rejection skips metadata, keeps dialog open, and surfaces error", async () => {
+    mocks.setGameOrientation.mockRejectedValueOnce(commandError("io", "private diagnostic"));
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => colorButton("black")!.click());
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.setGameOrientation).toHaveBeenCalledOnce();
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toBe(
+      refusalCopy["Files.OperationFailed"],
+    );
+    expect(container.textContent).not.toContain("private diagnostic");
+  });
 
   test("changed name and type rename with the chosen type and original tags", async () => {
     mocks.data = [{ ...entry, metadata: { type: "game", tags: ["keep"] } }, destination];
@@ -2195,6 +2577,8 @@ describe("metadata and rename submissions", () => {
       await act(async () => dialogButton("Confirm").click());
       expect(mocks.renameWorkspaceFile).not.toHaveBeenCalled();
       expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+      expect(mocks.readGame).not.toHaveBeenCalled();
+      expect(mocks.setGameOrientation).not.toHaveBeenCalled();
       expect(mocks.mutate).not.toHaveBeenCalled();
       expect(container.querySelector('[role="dialog"]')).toBeNull();
     },
