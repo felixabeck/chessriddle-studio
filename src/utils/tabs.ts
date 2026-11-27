@@ -178,6 +178,48 @@ export function rebindFileTabsAfterStructureChange({
     );
     return { matched, saved };
 }
+
+/** After a Library sidecar type or name write, keep open tabs on the same handle in sync. */
+export function patchFileTabsSidecar({
+    setTabs,
+    fileKey,
+    name,
+    metadata,
+}: {
+    setTabs: SetTabs;
+    fileKey: string;
+    name: string;
+    metadata: FileMetadata["metadata"];
+}): boolean {
+    return setTabs((tabs) =>
+        tabs.map((tab) => {
+            const origin = tab.gameOrigin;
+            if (
+                origin.kind !== "file" &&
+                origin.kind !== "temp_file" &&
+                origin.kind !== "fileDraft"
+            )
+                return tab;
+            if (fileWorkspaceKey(origin.file.handle) !== fileKey) return tab;
+            const file = origin.file;
+            if (
+                file.name === name &&
+                file.metadata.type === metadata.type &&
+                file.metadata.tags.length === metadata.tags.length &&
+                file.metadata.tags.every((tag, index) => tag === metadata.tags[index])
+            )
+                return tab;
+            return {
+                ...tab,
+                gameOrigin: {
+                    ...origin,
+                    file: { ...file, name, metadata },
+                },
+            };
+        }),
+    );
+}
+
 /** Acknowledges the canonical persisted successor before workspace observers run. */
 export type UpdateTab = (
     tabId: string,

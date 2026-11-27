@@ -31,6 +31,13 @@ const mocks = vi.hoisted(() => ({
   setWorkspaceDisplayName: vi.fn(),
   notify: vi.fn(),
   tabs: [] as Array<unknown>,
+  setTabs: (update: unknown) => {
+    mocks.tabs =
+      typeof update === "function"
+        ? (update as (tabs: Array<unknown>) => Array<unknown>)(mocks.tabs)
+        : (update as Array<unknown>);
+    return true;
+  },
   data: [] as Array<unknown> | undefined,
   cardMounts: [] as string[],
   error: undefined as unknown,
@@ -71,6 +78,10 @@ vi.mock("jotai", async (original) => ({
   useAtomValue: (atom: object) => {
     if (atom === stateAtoms.fontSizeAtom) return 100;
     if (atom === stateAtoms.tabsAtom) return mocks.tabs;
+    throw new Error("Unexpected atom");
+  },
+  useSetAtom: (atom: object) => {
+    if (atom === stateAtoms.tabsAtom) return mocks.setTabs;
     throw new Error("Unexpected atom");
   },
   useAtom: (atom: object) =>
@@ -2611,6 +2622,230 @@ describe("metadata and rename submissions", () => {
     expect(mocks.createWorkspaceDirectory).not.toHaveBeenCalled();
     expect(mocks.mutate).not.toHaveBeenCalled();
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  test("converting type updates open file and fileDraft tabs on that handle", async () => {
+    const other = {
+      ...entry,
+      handle: { id: { id: "other-entry-token" }, kind: "fileWorkspace" as const },
+      name: "other.pgn",
+    };
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+      {
+        value: "open-draft",
+        name: "Draft",
+        type: "analysis",
+        gameOrigin: { kind: "fileDraft", file: entry },
+      },
+      {
+        value: "other-file",
+        name: "Other",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: other, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledOnce();
+    expect(mocks.tabs).toEqual([
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: {
+          kind: "file",
+          file: { ...entry, metadata: { type: "repertoire", tags: [] } },
+          gameNumber: 0,
+        },
+      },
+      {
+        value: "open-draft",
+        name: "Draft",
+        type: "analysis",
+        gameOrigin: {
+          kind: "fileDraft",
+          file: { ...entry, metadata: { type: "repertoire", tags: [] } },
+        },
+      },
+      {
+        value: "other-file",
+        name: "Other",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: other, gameNumber: 0 },
+      },
+    ]);
+  });
+
+  test("renaming updates open tab file names and keeps type", async () => {
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 1 },
+      },
+    ];
+    click("Select sample file");
+    click("Rename");
+    await setDialogName("renamed.pgn");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.renameWorkspaceFile).toHaveBeenCalledOnce();
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: {
+        kind: "file",
+        file: { name: "renamed.pgn", metadata: { type: "game", tags: [] }, lastModified: 1 },
+      },
+    });
+  });
+
+  test("a refused metadata write leaves open tab type unchanged", async () => {
+    mocks.writeWorkspaceFileMetadata.mockRejectedValueOnce(new Error("write denied"));
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledOnce();
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { metadata: { type: "game" } } },
+    });
+  });
+
+  test("durability-uncertain metadata still patches open tabs", async () => {
+    mocks.writeWorkspaceFileMetadata.mockRejectedValueOnce(
+      commandError(
+        "durability",
+        "Committed but durability uncertain: workspace sidecar replacement",
+      ),
+    );
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { metadata: { type: "repertoire" } } },
+    });
+  });
+
+  test("unmount before sidecar write resolves still patches open tabs", async () => {
+    const write = deferred<undefined>();
+    mocks.writeWorkspaceFileMetadata.mockReturnValueOnce(write.promise);
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledOnce();
+    await act(async () => root.render(<div>Unmounted</div>));
+    await act(async () => write.resolve(undefined));
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { metadata: { type: "repertoire" } } },
+    });
+  });
+
+  test("listing refresh failure after metadata write still patches open tabs", async () => {
+    mocks.mutate.mockRejectedValueOnce(new Error("list unavailable"));
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledOnce();
+    expect(mocks.mutate).toHaveBeenCalledOnce();
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { metadata: { type: "repertoire" } } },
+    });
+  });
+
+  test("converting repertoire to game updates open tab type", async () => {
+    const repertoire = { ...entry, metadata: { type: "repertoire" as const, tags: ["keep"] } };
+    mocks.data = [repertoire, destination];
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: repertoire, gameNumber: 0 },
+      },
+    ];
+    await rerender();
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("game");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.writeWorkspaceFileMetadata).toHaveBeenCalledExactlyOnceWith(
+      workspace,
+      entry.handle,
+      { type: "game", tags: ["keep"] },
+    );
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { metadata: { type: "game", tags: ["keep"] } } },
+    });
+  });
+
+  test("edit that changes name and type updates both on the open tab", async () => {
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 0 },
+      },
+    ];
+    click("Select sample file");
+    click("Files.EditMetadata");
+    setDialogType("repertoire");
+    await setDialogName("renamed.pgn");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.renameWorkspaceFile).toHaveBeenCalledExactlyOnceWith(
+      workspace,
+      entry.handle,
+      "renamed.pgn",
+      { type: "repertoire", tags: [] },
+    );
+    expect(mocks.writeWorkspaceFileMetadata).not.toHaveBeenCalled();
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: {
+        file: { name: "renamed.pgn", metadata: { type: "repertoire", tags: [] } },
+      },
+    });
   });
 
   test.each([true, false])(

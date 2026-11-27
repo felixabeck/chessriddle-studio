@@ -8,13 +8,14 @@ import {
 } from "@/platform/errors";
 import { runUnlessCancelled } from "@/components/files/notifyError";
 import { notifications } from "@mantine/notifications";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR, { useSWRConfig } from "swr";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom, tabsAtom } from "@/state/atoms";
 import { fileGameHasBlockingOpenTab } from "@/utils/fileGameWrite";
+import { patchFileTabsSidecar } from "@/utils/tabs";
 import { readFileGame, setFileGameOrientation } from "@/utils/files";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { durabilityUncertainMessage } from "../common/ConfirmModal";
@@ -77,6 +78,7 @@ export function useFileWorkspace(
     const [workspace, setWorkspace] = useAtom(fileWorkspaceAtom);
     const [, setWorkspaceDisplayName] = useAtom(fileWorkspaceDisplayNameAtom);
     const tabs = useAtomValue(tabsAtom);
+    const setTabs = useSetAtom(tabsAtom);
     const [action, setAction] = useState<FileAction | null>(null);
     const [name, setName] = useState("");
     const [fileType, setFileType] = useState<FileType>("other");
@@ -515,19 +517,33 @@ export function useFileWorkspace(
                             type: chosenType,
                             tags: source.metadata.tags,
                         };
-                        if (nameUnchanged)
-                            await tauri.writeWorkspaceFileMetadata(
-                                owner.workspace,
-                                source.handle,
+                        const applySidecarPatch = () =>
+                            patchFileTabsSidecar({
+                                setTabs,
+                                fileKey: fileWorkspaceKey(source.handle),
+                                name: nameUnchanged ? source.name : name,
                                 metadata,
-                            );
-                        else
-                            await tauri.renameWorkspaceFile(
-                                owner.workspace,
-                                source.handle,
-                                name,
-                                metadata,
-                            );
+                            });
+                        try {
+                            if (nameUnchanged)
+                                await tauri.writeWorkspaceFileMetadata(
+                                    owner.workspace,
+                                    source.handle,
+                                    metadata,
+                                );
+                            else
+                                await tauri.renameWorkspaceFile(
+                                    owner.workspace,
+                                    source.handle,
+                                    name,
+                                    metadata,
+                                );
+                            applySidecarPatch();
+                        } catch (cause) {
+                            if (normalizeError(cause).backendCategory === "durability")
+                                applySidecarPatch();
+                            throw cause;
+                        }
                     }
                 }
             },
