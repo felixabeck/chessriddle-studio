@@ -15702,3 +15702,42 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Felix 2026-11-27: the dark gold current-move wash was too quiet and the blue unfinished-variation dash did not fit; he framed a picker as a nice-to-have. Grok and agy (google.high) agreed to retune the defaults. Felix then chose option A. Contrast floor is `theme.test.ts` "the open-variation mark reads as text…" and "every mark hue reaches 4.5:1…". Reversal path: restore the 20% ring in `MoveCell.module.css` and the `chart-6` mixes in `schemeVariables` (`src/styles/theme.ts`).
 * **Decided by:** Grok, on Felix's option A, 2026-11-27 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"04d84eb4eb34aca081ff460d2dad954e422789bb88b3dd2f2c2327299bdaa369","input_sha256":"96e0bbf554930e03469b284de83964af641fb086472ec5b4e7046ad77af6da48","kind":"mutation-receipt","operation":"0c0e8db3f55dc3b952002255e3a16f9d60c3973672b3f4f5ba9362b8ac20d111","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-32"],"target":"decisions-ledger","v":1} -->
+
+## 2026-11-28 — recorded through the decisions lock
+
+### d-20261128-01 — Should over-cap, empty, or too-large game databases default to selected in Library sync?
+
+* **Question:** Should a game database that already fails the cheap GameCount, size, or empty gate at first appearance default to selected in the Sync with ChessRiddle list?
+* **Governs:** -
+* **Chosen:** Insert it unselected. Mega Database and other over-cap or empty databases stay unchecked, so the Library button does not become Attention on every launch. The user may still check an over-cap row; then TooManyGames Attention is intended.
+* **Rejected:** Select every database the way every PGN is selected. That would fire Attention for anyone who has Mega Database installed.
+* **Reason:** Felix asked to tick databases in the same list as repertoires. Default-selecting Mega would make that list shout on every launch. Unselected at first appearance keeps the quiet default; a deliberate check is the Attention path. Reversal path: default-select all databases.
+* **Decided by:** Grok full auto, library-sync-databases build · **Superseded-by:** -
+
+### d-20261128-02 — Should library-sync-state.json bump STATE_VERSION when SyncEntry gains a source field?
+
+* **Question:** Should `library-sync-state.json` bump `STATE_VERSION` when `SyncEntry` gains `source: File | Database`?
+* **Governs:** -
+* **Chosen:** Keep `STATE_VERSION` at 1. Add `source` with `#[serde(default)] = File` so existing v1 state still loads and sync stays on.
+* **Rejected:** Bump to 2. Other versions load as off, which would silently turn sync off for every current user.
+* **Reason:** Additive discriminator with a File default is enough to keep File entries matching File candidates. A version bump is a user-visible reset, not a schema necessity. Reversal path: bump `STATE_VERSION` and accept that existing state loads as off.
+* **Decided by:** Grok full auto, library-sync-databases build · **Superseded-by:** -
+
+### d-20261128-03 — Should Library sync list collection-root indexes as well as Databases-folder children?
+
+* **Question:** Should Library sync list linked-collection indexes under the Collections root in addition to standalone databases under `active_database_root`?
+* **Governs:** -
+* **Chosen:** List only `active_database_root` children. Collection indexes stay out of the candidate list.
+* **Rejected:** Also walk Collections. That would duplicate account-linked PGN that is already excluded, or upload the SQLite index of a linked Library file.
+* **Reason:** Felix's product is standalone game databases next to repertoires. Linked collections already have a PGN truth file; the index is not a second Library file. Account-linked downloaded histories stay excluded. Reversal path: also walk Collections with an explicit identity rule for index vs PGN.
+* **Decided by:** Grok full auto, library-sync-databases build · **Superseded-by:** -
+
+### d-20261128-04 — Should this Studio run also change the ChessRiddle website API or privacy text?
+
+* **Question:** Should the Studio Library-sync-databases work also edit the ChessRiddle website API, privacy disclosure, or `p-20261124-01`?
+* **Governs:** -
+* **Chosen:** No website API or privacy edit in this run. Studio still uploads PGN. Website follow-up lives in chess-tactics-app.
+* **Rejected:** A parallel chess-tactics-app change in the same session.
+* **Reason:** The website already accepts `kind=games` and privacy already says Studio sends the selected PGN files. The stale product line that game databases do not sync is a website-docs follow-up, not a Studio blocker. Reversal path: amend `p-20261124-01` and privacy in chess-tactics-app in a separate run.
+* **Decided by:** Grok full auto, library-sync-databases build · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"64b070f91e5f3f0a2e4908c7a2100676c2118aecb41fe87c2e52f378baa6e638","input_sha256":"b28d15a885094f4daace40f7f92295db081385e984f72595107eca6fdd4e4833","kind":"mutation-receipt","operation":"1f169ed457d1a5ca9bf3b20f196540c60269b0e0558ec8afbfdaba83104834f2","options":{"section":null},"request_id_sha256":null,"results":["d-20261128-01","d-20261128-02","d-20261128-03","d-20261128-04"],"target":"decisions-ledger","v":1} -->
