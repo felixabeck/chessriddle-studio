@@ -34,6 +34,13 @@ import InfoPanel from "./InfoPanel";
 import { FileChapterSwitchProvider } from "@/components/boards/FileChapterSwitch";
 import { TabCommandsProvider } from "@/components/tabs/TabCommands";
 import classes from "./InfoPanel.module.css";
+import gameSelectorClasses from "./GameSelector.module.css";
+
+function dimmedIdea(title: Element) {
+  return [...title.querySelectorAll('[style*="dimmed"]')].find(
+    (el) => !el.classList.contains(gameSelectorClasses.index),
+  )?.textContent;
+}
 
 const mocks = vi.hoisted(() => ({
   deleteGame: vi.fn(),
@@ -554,7 +561,7 @@ describe("InfoPanel game loading and cancellation", () => {
     for (const title of [heading, row()]) {
       expect(title.textContent).toContain("Dragon System");
       expect(title.textContent).toContain("6...Dc7 plan");
-      expect(title.querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+      expect(dimmedIdea(title)).toBe("6...Dc7 plan");
     }
     expect(jotaiStore.get(currentTabAtom)?.name).toBe("Dragon System");
     await act(async () => {
@@ -665,7 +672,7 @@ describe("InfoPanel game loading and cancellation", () => {
       });
     }
     expect(previousRow().textContent).toContain("Dragon System");
-    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    expect(dimmedIdea(previousRow())).toBe("6...Dc7 plan");
     const pageReads = mocks.readGames.mock.calls.length;
     await act(async () =>
       container.querySelector<HTMLElement>('[data-line-index="1"] [role="option"]')!.click(),
@@ -683,7 +690,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
     expect(previousRow().getAttribute("aria-selected")).toBe("false");
     expect(previousRow().textContent).toContain("Dragon System");
-    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    expect(dimmedIdea(previousRow())).toBe("6...Dc7 plan");
     expect(previousRow().textContent).not.toContain("Old line");
     expect(previousRow().textContent).not.toContain("Old idea");
     expect(mocks.notify).not.toHaveBeenCalled();
@@ -698,7 +705,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
     expect(previousRow().getAttribute("aria-selected")).toBe("false");
     expect(previousRow().textContent).toContain("Old line");
-    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("Old idea");
+    expect(dimmedIdea(previousRow())).toBe("Old idea");
     expect(previousRow().textContent).not.toContain("Dragon System");
     expect(previousRow().textContent).not.toContain("6...Dc7 plan");
     expect(mocks.notify).not.toHaveBeenCalled();
@@ -733,7 +740,7 @@ describe("InfoPanel game loading and cancellation", () => {
 
     await act(async () => reread.resolve(savedRows));
     expect(previousRow().textContent).toContain("Dragon System");
-    expect(previousRow().querySelector('[style*="dimmed"]')?.textContent).toBe("6...Dc7 plan");
+    expect(dimmedIdea(previousRow())).toBe("6...Dc7 plan");
     expect(previousRow().textContent).not.toContain("Old line");
     expect(previousRow().textContent).not.toContain("Old idea");
     expect(mocks.notify).not.toHaveBeenCalled();

@@ -122,6 +122,7 @@ function ProgressButton({
               pos="absolute"
               h="100%"
               value={progress}
+              aria-label={label}
               className={classes.progress}
               classNames={{ section: classes.fill }}
               radius="sm"

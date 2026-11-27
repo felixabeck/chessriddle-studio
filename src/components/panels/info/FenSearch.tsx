@@ -77,7 +77,7 @@ export default function FenSearch({ currentFen: currentFenInput }: { currentFen?
       <Group wrap="nowrap">
         <div>
           <Text size="sm">{item.name}</Text>
-          <Text size="xs" opacity={0.65}>
+          <Text size="xs" c="dimmed">
             {item.fen}
           </Text>
         </div>

@@ -536,7 +536,7 @@ function GameRow({
           setPage(index);
         }}
       >
-        <Text fz="xs" className={classes.index}>
+        <Text fz="xs" c="dimmed" className={classes.index}>
           {formatNumber(index + 1)}
         </Text>
         <Text fz="sm" truncate flex={1} lh="sm">

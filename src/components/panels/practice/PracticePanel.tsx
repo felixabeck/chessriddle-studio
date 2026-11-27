@@ -372,7 +372,13 @@ function PracticePanel() {
                             })}
                           </Text>
                           <Progress.Root size="sm">
-                            <Progress.Section value={(stats.learned / stats.total) * 100} />
+                            <Progress.Section
+                              value={(stats.learned / stats.total) * 100}
+                              aria-label={t("Board.Practice.LearnedProgress", {
+                                learned: stats.learned,
+                                total: stats.total,
+                              })}
+                            />
                           </Progress.Root>
                           <SimpleGrid cols={3} spacing="xs">
                             <Paper p="xs" withBorder radius="sm">

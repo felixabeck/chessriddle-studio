@@ -59,20 +59,22 @@ function AnalysisRow({
   );
 
   return (
-    <Table.Tr
-      ref={ref}
-      className={classes.line}
-      inert={inert}
-      opacity={inert ? 0.5 : 1}
-      style={{ verticalAlign: "top" }}
-    >
+    <Table.Tr ref={ref} className={classes.line} inert={inert} style={{ verticalAlign: "top" }}>
       <Table.Td width={chessdb ? undefined : 62}>
         {chessdb ? (
           <Tooltip label={chessdb.note}>
             <Flex align="center" gap="xs" wrap="nowrap">
               {scoreBubble}
-              {mark && <Text fw={700}>{mark}</Text>}
-              {Number.isFinite(winrate) && <Text size="sm">{winrate.toFixed(1)}%</Text>}
+              {mark && (
+                <Text fw={700} c={inert ? "dimmed" : undefined}>
+                  {mark}
+                </Text>
+              )}
+              {Number.isFinite(winrate) && (
+                <Text size="sm" c={inert ? "dimmed" : undefined}>
+                  {winrate.toFixed(1)}%
+                </Text>
+              )}
             </Flex>
           </Tooltip>
         ) : (

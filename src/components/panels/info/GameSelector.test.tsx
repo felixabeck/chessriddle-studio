@@ -8,6 +8,7 @@ import { cancellationError } from "@/platform/tauri";
 import { catalogueI18n } from "@/tests/catalogues";
 import { fontSizeAtom } from "@/state/atoms";
 import GameSelector, { type GameSelectorRow } from "./GameSelector";
+import classes from "./GameSelector.module.css";
 
 const translation = vi.hoisted(() => ({ t: (value: string) => value }));
 const mocks = vi.hoisted(() => ({
@@ -105,8 +106,23 @@ vi.mock("@mantine/core", () => ({
     fz: _fz,
     flex: _flex,
     lh: _lh,
+    c,
+    style,
+    opacity,
     ...props
-  }: any) => <Component {...props}>{children}</Component>,
+  }: any) => (
+    <Component
+      {...props}
+      c={c}
+      style={{
+        ...style,
+        ...(c === "dimmed" ? { color: "var(--mantine-color-dimmed)" } : {}),
+        ...(opacity !== undefined ? { opacity } : {}),
+      }}
+    >
+      {children}
+    </Component>
+  ),
   Tooltip: ({ children }: any) => <>{children}</>,
 }));
 
@@ -333,7 +349,9 @@ test.each([
     expect(row.textContent).not.toContain("?");
     expect(row.textContent).not.toContain(" - ");
     expect(observed.get(0)?.idea).toBe(idea);
-    const dimmed = row.querySelector('[c="dimmed"]');
+    const dimmed = [...row.querySelectorAll('[c="dimmed"]')].find(
+      (el) => !el.classList.contains(classes.index),
+    );
     expect(dimmed?.textContent).toBe(idea ?? (white === "?" ? name : undefined));
   },
 );
@@ -1596,4 +1614,15 @@ test.each(["saved-unconfirmed", "refresh"])("%s reloads the list from the file",
   await click(button);
   expect(mocks.readGames).toHaveBeenCalled();
   expect(host.textContent).toContain("Loaded game");
+});
+
+test("row index uses the index CSS module class with dimmed colour and no opacity dimming", async () => {
+  await act(async () => renderSelector(new Map([[0, { name: "First" }]]), vi.fn()));
+  const row = host.querySelector('[role="option"]')!;
+  const indexEl = row.querySelector("p")!;
+  expect(indexEl.textContent).toBe("1");
+  expect(indexEl.classList.contains(classes.index)).toBe(true);
+  expect(indexEl.style.opacity).toBe("");
+  expect(indexEl.style.color).toBe("var(--mantine-color-dimmed)");
+  expect(getComputedStyle(indexEl).opacity).not.toBe("0.5");
 });

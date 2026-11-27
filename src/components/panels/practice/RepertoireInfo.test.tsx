@@ -257,6 +257,9 @@ test.each(["Save", "autosave"])(
     // Coverage must follow the move's meaning at its newly derived path.
     expect(renderedCoverage("d4")).toBe("3");
     expect(renderedCoverage("e4")).toBe("100");
+    expect(
+      moveRow("e4").querySelectorAll('[role="progressbar"]').item(3)?.getAttribute("aria-label"),
+    ).toBe("Board.Practice.Build.YourCoverage");
     expect(host.textContent).not.toContain("Board.Practice.Build.Loading");
     const result = await mocks.computeTreeCoverage.mock.results.at(-1)!.value;
     expect([...result.coverageMap.entries()]).toEqual(
@@ -1742,4 +1745,52 @@ test("Import PGN button renders on a non-empty tree both with and without refere
   await vi.waitFor(() =>
     expect(document.body.textContent).toContain("Board.Practice.Build.ImportPgnTitle"),
   );
+});
+
+test("rare opponent move row dims its SAN via Mantine dimmed colour instead of button opacity", async () => {
+  const builder = createTreeStore();
+  expect(builder.getState().makeMoves({ payload: ["e4"] }).success).toBe(true);
+  const initial = builder.getState();
+  const afterE4Fen = getBoardState(initial.root.children[0].fen);
+  const dbMoves = {
+    moves: [
+      { move: "e5", white: 50, draw: 0, black: 0 },
+      { move: "c5", white: 2, draw: 0, black: 0 },
+    ],
+    total: 52,
+  };
+  mocks.fetchPositionMoves.mockResolvedValue(dbMoves);
+  mocks.computeTreeCoverage.mockResolvedValue({
+    ...emptyCoverage,
+    dbMovesMap: new Map([[afterE4Fen, dbMoves]]),
+  });
+
+  const store = await renderRepertoireInfo(initial, "rare-move-dimmed");
+  await act(async () => store.set(coverageMinGamesAtom, 10));
+
+  const rareToggle = [...host.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Board.Practice.Build.RareMoves"),
+  )!;
+  expect(rareToggle).toBeDefined();
+  await act(async () => rareToggle.click());
+
+  const findOpponentRow = (san: string) =>
+    [...host.querySelectorAll("button")].find((button) =>
+      [...button.querySelectorAll("p")].some((label) => label.textContent === `1... ${san}`),
+    )!;
+
+  const relevantRow = findOpponentRow("e5");
+  const rareRow = findOpponentRow("c5");
+  expect(relevantRow).toBeDefined();
+  expect(rareRow).toBeDefined();
+
+  expect(rareRow.style.opacity).toBe("");
+  expect(rareRow.getAttribute("style") ?? "").not.toContain("opacity");
+  const rareSan = [...rareRow.querySelectorAll("p")].find((p) => p.textContent === "1... c5")!;
+  expect(rareSan.style.color).toBe("var(--mantine-color-dimmed)");
+
+  const relevantSan = [...relevantRow.querySelectorAll("p")].find(
+    (p) => p.textContent === "1... e5",
+  )!;
+  expect(relevantSan.style.color).toBe("");
 });

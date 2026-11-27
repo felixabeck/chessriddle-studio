@@ -15,7 +15,13 @@ function DatabaseLoader({ progressId, label }: { progressId: string; label: stri
         {label}
         {reported ? ` ${Math.round(progress)}%` : ""}
       </Text>
-      <Progress animated={!reported} value={reported ? progress : 100} size="xs" mt="xs" />
+      <Progress
+        animated={!reported}
+        value={reported ? progress : 100}
+        size="xs"
+        mt="xs"
+        aria-label={label}
+      />
     </>
   );
 }

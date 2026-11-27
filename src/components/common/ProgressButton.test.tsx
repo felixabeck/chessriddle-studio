@@ -72,7 +72,11 @@ vi.mock("@mantine/core", () => ({
     </button>
   ),
   Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Progress: ({ value }: { value: number }) => <output data-testid="progress">{value}</output>,
+  Progress: (props: { value: number; "aria-label"?: string }) => (
+    <output data-testid="progress" aria-label={props["aria-label"]}>
+      {props.value}
+    </output>
+  ),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -562,6 +566,9 @@ test.each([
   });
 
   expect(host.querySelector("[data-testid='progress']") !== null).toBe(hasBar);
+  expect(host.querySelector("[data-testid='progress']")?.getAttribute("aria-label") ?? null).toBe(
+    hasBar ? "Running" : null,
+  );
 });
 
 test("retained wire success shows finalization only while owned, including after rejected clear and remount", async () => {

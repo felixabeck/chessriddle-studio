@@ -384,7 +384,15 @@ function Databases() {
                 <Loader color="gold" type="bars" />
               </ThemeIcon>
               <Title order={3}>{t("Home.Databases.ProcessingGames")}</Title>
-              <Progress w="100%" value={currentProgress} animated striped size="md" radius="xl" />
+              <Progress
+                w="100%"
+                value={currentProgress}
+                animated
+                striped
+                size="md"
+                radius="xl"
+                aria-label={t("Home.Databases.ProcessingGames")}
+              />
               <Text fw="bold" fz="sm" c="dimmed">
                 {Math.round(currentProgress)}%
               </Text>

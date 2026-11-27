@@ -1291,6 +1291,9 @@ test("session line replaces idle figures and Stop keeps the answered summary", a
   expect(host.textContent).not.toContain("Board.Practice.SessionLine");
   expect(host.textContent).toContain("Board.Practice.Explanation");
   expect(host.textContent).toContain("Board.Practice.LearnedProgress");
+  expect(host.querySelector('[role="progressbar"]')?.getAttribute("aria-label")).toBe(
+    'Board.Practice.LearnedProgress {"learned":1,"total":1}',
+  );
   expect(host.textContent).toContain("Board.Practice.SessionSummary");
   expect(host.textContent).toContain('"correct":0,"incorrect":1,"accuracy":0,"bestStreak":0');
   expect(atoms.get(practiceCompletedSummaryFamily(owner.value))).toMatchObject({

@@ -36,7 +36,19 @@ vi.mock("@mantine/core", () => {
   return {
     Box: Container,
     Flex: Container,
-    Text: ({ children }: any) => <span>{children}</span>,
+    Text: ({ children, c, opacity, style, ...props }: any) => (
+      <span
+        {...props}
+        c={c}
+        style={{
+          ...style,
+          ...(c === "dimmed" ? { color: "var(--mantine-color-dimmed)" } : {}),
+          ...(opacity !== undefined ? { opacity } : {}),
+        }}
+      >
+        {children}
+      </span>
+    ),
     Tooltip: ({ label, children }: any) => <div title={label}>{children}</div>,
     Portal: Container,
     rem: (value: number) => value,
@@ -215,6 +227,7 @@ test("inert previous rows ignore insertion, hover preview, context and expansion
       threat={false}
       fen={INITIAL_FEN}
       orientation="white"
+      chessdb={{ note: "!! (30-11)", winrate: "100" }}
       inert={inert}
     />
   );
@@ -248,6 +261,15 @@ test("inert previous rows ignore insertion, hover preview, context and expansion
   );
   expect(host.querySelector("[inert]")).not.toBeNull();
   expect(host.querySelector('[aria-label="Menu.Edit.Copy"]')).toBeNull();
+  const inertRow = host.querySelector<HTMLElement>("[inert]")!;
+  expect(inertRow.style.opacity).toBe("");
+  expect(inertRow.getAttribute("style") ?? "").not.toContain("opacity");
+  const dimmed = [...inertRow.querySelectorAll<HTMLElement>('[c="dimmed"]')];
+  expect(dimmed.map((el) => el.textContent)).toEqual(["!!", "100.0%"]);
+  for (const el of dimmed) {
+    expect(el.style.color).toBe("var(--mantine-color-dimmed)");
+    expect(el.style.opacity).toBe("");
+  }
 });
 
 test("move keys step a collapsed line's preview up to its twelfth shown move, an expanded one to its end", async () => {

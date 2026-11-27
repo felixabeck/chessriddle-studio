@@ -588,11 +588,22 @@ test("position change with previous lines renders dimmed inert rows without skel
   await h.render(panel(["d2d4"]));
   expect(h.host.querySelector('[data-inert="true"]')?.textContent).toBe("e4 e5 Nf3");
   expect(h.host.querySelector('[data-inert="true"]')?.getAttribute("data-fen")).toBe(INITIAL_FEN);
-  expect(h.host.querySelector('[style*="opacity: 0.5"]')).not.toBeNull();
+  expect(h.host.querySelector('[style*="opacity: 0.5"]')).toBeNull();
+  const dimmedStats = h.host.querySelector<HTMLElement>('[class*="stats"]')!;
+  expect(dimmedStats).not.toBeNull();
+  expect(dimmedStats.style.opacity).toBe("");
+  expect(dimmedStats.textContent).toContain("GoMode.Depth");
+  const dimmedDepth = dimmedStats.querySelectorAll<HTMLElement>("p")[1];
+  expect(dimmedDepth.textContent).toMatch(/^\d+$/);
+  expect(dimmedDepth.style.color).toBe("var(--mantine-color-dimmed)");
   expect(h.host.querySelector(".mantine-Skeleton-root")).toBeNull();
   expect(h.host.textContent).not.toContain("Common.Loading");
   await h.remember(undefined, ["d2d4"]);
   expect(h.host.querySelector('[data-inert="true"]')).toBeNull();
+  const activeDepth = h.host
+    .querySelector<HTMLElement>('[class*="stats"]')!
+    .querySelectorAll<HTMLElement>("p")[1];
+  expect(activeDepth.style.color).toBe("");
 });
 
 test("inactive and no-analysis messages take precedence over delayed loading in the rendered panel", async () => {

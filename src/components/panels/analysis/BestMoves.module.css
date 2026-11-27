@@ -42,6 +42,12 @@
   background: var(--cf-surface-inset);
 }
 
+/* Stale lines after a position change stay at full opacity. Unannotated SAN takes the AA
+   secondary colour through MoveCell's --notation-unannotated-move-color (d-20261124-04). */
+.line[inert] {
+  --notation-unannotated-move-color: var(--mantine-color-dimmed);
+}
+
 .moveNumber {
   color: var(--mantine-color-dimmed);
   font-variant-numeric: tabular-nums;

@@ -176,11 +176,11 @@ function BestMovesComponent({
         {threat && <ThreatBadge />}
         {showLoading && <Code fz="xs">{t("Common.Loading")}</Code>}
         {hasVariations && engineVariations && (
-          <Group gap={4} wrap="nowrap" opacity={dimmed ? 0.5 : 1} className={classes.stats}>
+          <Group gap={4} wrap="nowrap" className={classes.stats}>
             <Text fz="xs" fw={700} tt="uppercase" c="dimmed">
               {t("GoMode.Depth")}
             </Text>
-            <Text fz="sm" fw={700}>
+            <Text fz="sm" fw={700} c={dimmed ? "dimmed" : undefined}>
               {engineVariations[0].depth}
             </Text>
             <AssessmentSymbol score={engineVariations[0].score.value} fz="sm" />

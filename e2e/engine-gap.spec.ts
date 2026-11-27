@@ -1,4 +1,5 @@
 import {
+    contrastRatio,
     expect,
     test,
     filesWorkspaceCommands,
@@ -16,9 +17,34 @@ import {
     moveBackground,
     CURRENT_MOVE_FILL,
     CURRENT_MOVE_HOVER,
+    paintedText,
 } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import type { EngineOptions, ErrorPayload } from "../src/bindings/generated";
+
+async function expectReadableInertLine(row: Locator) {
+    const san = row.locator("button").first();
+    const opacities = await san.evaluate((element) => {
+        const values: string[] = [];
+        for (let node: Element | null = element; node; node = node.parentElement) {
+            values.push(getComputedStyle(node).opacity);
+        }
+        return values;
+    });
+    expect(opacities, "inert engine line opacity chain").toEqual(opacities.map(() => "1"));
+    const paint = await paintedText(san);
+    expect(paint.opacity, "inert SAN element opacity").toBe(1);
+    expect(contrastRatio(paint.color, paint.layers)).toBeGreaterThanOrEqual(4.5);
+    const dimmed = await san.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--mantine-color-dimmed)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+    });
+    expect(paint.color, "inert SAN uses dimmed colour").toBe(dimmed);
+}
 
 async function setupNotationMenu(
     page: Page,
@@ -573,7 +599,7 @@ test("engine-gap: A lines stay dimmed and inert at B until explicitly emitted B 
     );
     const oldRow = panel.locator("tr[inert]").filter({ hasText: "e4" });
     await expect(oldRow).toHaveCount(1);
-    await expect(oldRow).toHaveCSS("opacity", "0.5");
+    await expectReadableInertLine(oldRow);
     await expect(panel.locator(".mantine-Skeleton-root")).toHaveCount(0);
     await expect(panel).not.toContainText("Loading");
     expect((await panel.boundingBox())!.height).toBe(before!.height);
@@ -1136,7 +1162,7 @@ for (const partial of [false, true]) {
         await expect(panel).not.toContainText("n/s");
         await expect(panel.locator("[data-animated]")).toHaveCount(0);
         await expect(panel.locator("tr[inert]")).toHaveCount(partial ? 1 : 0);
-        if (partial) await expect(panel.locator("tr[inert]")).toHaveCSS("opacity", "0.5");
+        if (partial) await expectReadableInertLine(panel.locator("tr[inert]"));
         await emitTauriEvent({ event: "best-moves-payload", payload });
         await expect(panel.locator("tr[inert]")).toHaveCount(partial ? 1 : 0);
         await expect(panel).toContainText("Engine failed");

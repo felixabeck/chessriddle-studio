@@ -98,7 +98,11 @@ vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Loader: () => null,
   Paper: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Progress: ({ value }: { value: number }) => <div data-testid="progress">{value}</div>,
+  Progress: (props: { value: number; "aria-label"?: string }) => (
+    <div data-testid="progress" aria-label={props["aria-label"]}>
+      {props.value}
+    </div>
+  ),
   Select: (props: {
     value?: string | null;
     data?: { value: string; label: string }[];
@@ -454,6 +458,9 @@ test("a ProgressEvent under the id passed to getPlayersGameInfo moves the bar", 
 
   expect(displayedProgress()).toContain("40%");
   expect(container.querySelector("[data-testid='progress']")?.textContent).toBe("40");
+  expect(container.querySelector("[data-testid='progress']")?.getAttribute("aria-label")).toBe(
+    "Home.Databases.ProcessingGames",
+  );
 });
 
 test("an adapter decoding error notifies only while mounted and leaves progress unchanged", async () => {

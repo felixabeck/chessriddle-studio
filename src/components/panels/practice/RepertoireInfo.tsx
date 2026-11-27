@@ -846,12 +846,11 @@ function MoveRow({
       style={{
         borderBottom: "1px solid var(--cf-border)",
         borderRadius: 0,
-        opacity: dimmed ? 0.45 : 1,
       }}
     >
       <Group justify="space-between" wrap="nowrap">
         <Group gap="sm" style={{ flex: 1, minWidth: 0 }}>
-          <Text fw={700} fz="sm">
+          <Text fw={700} fz="sm" c={dimmed ? "dimmed" : undefined}>
             {notation}
           </Text>
           {move.inRepertoire && (
@@ -918,6 +917,7 @@ function MoveRow({
                 </Tooltip>
               ) : (
                 <Progress
+                  aria-label={t("Board.Practice.Build.YourCoverage")}
                   value={move.inRepertoire ? Math.max(move.coverage * 100, 3) : 0}
                   color={coverageColor}
                   size="sm"

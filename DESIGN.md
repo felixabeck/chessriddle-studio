@@ -109,6 +109,7 @@ and cards lg, and switches, segments and badges use full.
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |
 | Board clocks | White and black papers from the eval-bar pair at full opacity; whose turn is a gold inset ring. Never reduced opacity, which would pull the digits below 4.5:1 |
+| Practice rare-move rows, engine stats Group, inert engine lines, game-list index, and FenSearch suggestion FEN | Take `--mantine-color-dimmed` at full opacity — never reduced opacity, which would pull text below 4.5:1 |
 | Accordion | Gold-tinted open header with a quiet ring |
 | Tooltip, AppModal, Notification | Bordered card surface and appropriate elevation |
 

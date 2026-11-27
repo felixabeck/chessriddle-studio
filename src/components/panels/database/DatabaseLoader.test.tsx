@@ -95,6 +95,9 @@ describe("DatabaseLoader", () => {
     const status = () => container.querySelector('[role="status"]');
     expect(status()?.getAttribute("aria-live")).toBe("polite");
     expect(status()?.textContent).toBe("Searching Imnadze's games…");
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-label")).toBe(
+      "Searching Imnadze's games…",
+    );
     await emit({ progress: 24.6 });
     expect(status()?.textContent).toBe("Searching Imnadze's games… 25%");
   });

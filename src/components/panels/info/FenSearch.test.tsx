@@ -203,6 +203,19 @@ test("Enter before debounce ignores the previous query's FRC result", async () =
   expect(mocks.searchOpeningName).not.toHaveBeenCalled();
 });
 
+test("suggestion FEN uses Mantine dimmed colour instead of reduced opacity", async () => {
+  await setup([sicilian]);
+  await type("Sicilian");
+  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+    (candidate) => candidate.textContent?.includes(sicilian.name),
+  )!;
+  const fenEl = [...option.querySelectorAll("p")].find((p) => p.textContent === sicilian.fen)!;
+  expect(fenEl).toBeDefined();
+  expect(fenEl.style.opacity).toBe("");
+  expect(fenEl.getAttribute("style") ?? "").not.toContain("opacity");
+  expect(fenEl.style.color).toBe("var(--mantine-color-dimmed)");
+});
+
 test("orthodox and FRC suggestions set their own variant and export it faithfully", async () => {
   await setup([sicilian, frc]);
   await type("Sicilian");

@@ -2,9 +2,11 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import {
     assertChooserInsideBoard,
+    contrastRatio,
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
+    paintedText,
     pgnFileCommands,
     selectFilesTreeRow,
     test,
@@ -187,6 +189,25 @@ for (const belowHeading of [false, true]) {
             await page.addInitScript(() => localStorage.setItem("mantine-color-scheme", "dark"));
         }
         const list = await openDragFile(page, mockScenario);
+        const indexCell = list
+            .locator('[data-line-index="1"] [role="option"] > .mantine-Text-root')
+            .first();
+        await expect(indexCell).toHaveText("2");
+        const indexStyle = await indexCell.evaluate((element) => {
+            const opacities: string[] = [];
+            for (let node: Element | null = element; node; node = node.parentElement) {
+                opacities.push(getComputedStyle(node).opacity);
+            }
+            return { opacities };
+        });
+        expect(indexStyle.opacities, "game-list index opacity chain").toEqual(
+            indexStyle.opacities.map(() => "1"),
+        );
+        const indexPaint = await paintedText(indexCell);
+        expect(
+            contrastRatio(indexPaint.color, indexPaint.layers),
+            `game-list index contrast (${belowHeading ? "dark" : "light"})`,
+        ).toBeGreaterThanOrEqual(4.5);
         const source = list.locator('[data-line-index="1"] [role="option"]');
         const heading = list.locator('[data-line-index="3"] [data-line-part="section"]');
         await expect(heading).toBeInViewport({ ratio: 1 });
