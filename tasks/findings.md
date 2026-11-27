@@ -30268,7 +30268,7 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 
 ### Follow-scroll WebKit e2e walk exceeds its timeout on the CI runner and turned master Test red
 
-* **ID:** f-20261127-23 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-23 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** notation-follow-scroll direct run (Claude Code), 2026-11-27
 * **Impact class:** behaviour
 * **CI run:** 46046820962
@@ -30280,3 +30280,6 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 * **Proof:** container run of the spec in Chromium and WebKit well under the default timeout; reverting GameNotation.tsx to the centring behaviour still fails the walk assertions.
 * **Found by:** Claude Code, notation-follow-scroll push CI wait, 2026-11-27
 * **Repair owner:** notation-follow-scroll direct run (Claude Code) on tuxedo-atlas, 2026-11-27T18:45:56Z
+* **Handled (2026-11-27, Claude Code, notation-follow-scroll direct run):** commit `ff4a0c802`. The walk runs inside one page evaluation (keys dispatched where react-hotkeys-hook listens, wait for the current move to change, three settle frames, geometry returned), the margin click comes from the forward walk's first turn, test.slow() kept as cushion.
+  * **Proof:** container e2e `notation-follow-scroll` + `notation-follow-scroll-webkit` 6/6 passed, walk tests 14-25 s locally (were 34-48 s); with GameNotation.tsx reverted to `b83fce58d` the table and inline walks fail ("turned to the top margin"); agy tests and correctness lenses APPROVED after one correctness closure round (start-position wait, return-to-start wait).
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"28108358715775f4d2cbf860adfa4608cb2c027dc5127198f7b15664cd944ff1","header_sha256":"ac342ed0ad196c84c4011d3992f2ac28ab64a565478214d945714158feb3361a","header_status":"handled","input_sha256":"3f9c7ed1aca2fe42dc5438c751b04b1db07e91237497a7f31b211735baeb3130","kind":"mutation-receipt","operation":"4c62e4909714cbc516714428bb218175b23ccffd1efac348849706bb4a830e58","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-23"],"target":"f-20261127-23","v":1} -->
