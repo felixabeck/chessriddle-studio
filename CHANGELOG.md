@@ -2,23 +2,45 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
-## Unreleased
+## 1.4.0
 
 ### New
 
 - Arrange the analysis board: drag Analysis, Report, Database, Annotate, Coach or Info out of the tab strip and drop it to the left, right, above or below the board, the notation, the tabs or another panel; a preview shows where it lands. The notation and the tabs move the same way, every move also works from a grip button with named places, "Return to the tabs" puts a panel back, and Settings → Analysis & notation → "Reset layout" restores the default. This replaces the Database panel's Pin menu and the setting "Panels beside the notation"; a pinned Database or a beside arrangement is carried over. When the window is too narrow for your arrangement, the board shows the plain tab layout until there is room again.
+- Saved layouts: repertoire, game and opponent-preparation boards each keep their own arrangement. The board's More menu lists three ready-made layouts (Repertoire, Game review and Preparation) and your own saved layouts, with "Save layout as…" and "Manage layouts…" to save, rename and delete them; the View menu has "Save layout as…" and "Layouts…". Ctrl/Cmd+Alt+1 to 3 apply the first three layouts.
+- Hide the tabs: the × on the analysis board's tab area hides it and gives its space to the other areas. "Show the tabs" in the notation header, the More menu or the View menu brings it back in the same place.
 - Pull out individual engines on the analysis board: every engine uses one compact card with a six-dot grip on the left, start/pause, name, depth, position symbol, 1–5 line selector, threat check, settings and collapse. Drag the grip to reorder engines in the Analysis panel or pull any engine out onto the board as its own window (up to four at once), or click the grip to place it by keyboard; × or dragging it back over the tab list or Analysis header returns it. This replaces the pinned engine bar and its position menu; an existing pinned engine is carried over to the same spot.
 - Report is now its own panel tab on the analysis board, alongside Analysis and Database, and can be pulled out as its own area; the Analysis panel shows the engine list directly without inner tabs or score pills.
-
+- Focus mode: Ctrl/Cmd+Shift+F or View → "Hide the header" hides the top row with the tabs and menus, so the board gets more room. Move the pointer to the window's top edge to show the header again for a moment. Full screen (F11) is unchanged.
+- Repertoire PGN import: start a new repertoire from a PGN file or pasted text, or merge a PGN into an open repertoire with "Import PGN" under Practice → Build. All games become one tree with the colour you choose. A reply for your side that differs from the repertoire is kept as a variation and marked, and "Mark as reviewed" in the move menu clears the mark.
+- Variation shortcuts: Ctrl/Cmd+Up promotes a variation, Ctrl/Cmd+Delete deletes the variation you are in, and Shift+Delete deletes the moves after the current one. All three can be changed under Settings → Shortcuts → Editing, and the two deletions are also in the move menu.
+- Scoresheet photos stay with the game: an imported game keeps its scoresheet photos, also after you save it to a PGN file and open it again on this computer. The Photo panel can be pulled out like the other panels and its controls fit in one row; a move's mark disappears once you correct it or choose "Mark as checked", so "Finish review" is gone.
 - Files & folders: when you choose a new folder for databases, puzzles or engines and the old one has content, Studio asks whether to "Move files to new folder", "Use new folder only" or cancel. Moving keeps your databases, puzzles and engines working from the new place; if anything goes wrong, the old folder stays active and untouched, and a move interrupted by a crash is finished or undone at the next start.
 
 ### Improved
 
+- Board bar: the button column beside the notation is gone. The bar above the board shows Play from here (Analyze game on a game tab, Take back in a live game), Flip Board, Save when there is something to save, and a More menu with "Save to file or database…", "Take Snapshot" and "Edit position". Edit position (E), Take Snapshot (Ctrl/Cmd+Shift+S) and Save to database (Ctrl/Cmd+Shift+D) have their own shortcuts, and Clear drawings now also works on the game screen. The notation has the same header as the other panels, with the eye button to hide moves and "View options" for table view, comments, diagrams and variations.
+- Clocks: the board clocks are smaller and no longer show a progress bar. Beside the clock of the side that just moved, a muted figure shows how long that move took.
+- Chess.com: a live game opened from a Chess.com link (browser extension or pasted URL) now carries each move's clock time.
+- Explorer: every source shows White's score per move (wins plus half the draws) in a Score column beside Total.
+- Explorer: a "Prepare on board" tab keeps its player, comparison columns and Lichess source after a restart.
+- Player cards: the board on the Openings tab takes moves like a table row, starts larger and can be resized by dragging its edge; Studio remembers the size.
+- Coach and Assistant: the question field spans the full width and starts at two lines, with the model button, new conversation and Send on one line below it. A model list that failed to load now offers Retry.
 - Scoresheet import: add PDF scans as well as photos. Each PDF page counts as one of the four images, and Studio reads the pages on your computer before anything is sent. While the AI reads the sheet, a full-width progress button with a spinner shows that it is working, with Cancel right below.
 - Dialogs: content no longer touches the line under a dialog's title, and the Import Game cards keep the same height (the photo card is now called "Photo").
 - Files & folders: each row shows its folder's name, "Show in folder" opens it in your file manager, "Restore default" switches back to Studio's own folder, and the folder picker opens in the current folder. The PGN collection now has a default folder too.
 - Your databases, puzzles, engines and PGN files now live in a visible folder in your home folder, "ChessRiddle Studio", with one subfolder each, instead of hidden application data. Folders you chose yourself stay where they are; Studio's previous default folders are moved there once at the next start.
 - Assistant: drag its left edge, or use the arrow keys on it, to make the docked Assistant wider or narrower (from 20rem); double-click restores the default width, and Studio remembers your choice.
+- Readability: no text apart from board coordinates and switch labels is smaller than 12px at the default font size, and table scrollbars no longer cover the last column.
+
+### Fixed
+
+- External links in the app (for example in About, the Feedback dialog, database credits and move comments) open in your browser again.
+- The Feedback dialog fits a small window at a large font size.
+- The label on a running progress button, such as "Generating report", is readable again in dark mode.
+- macOS: shortcuts that use the Command key work.
+- The notation keeps the current move in view after switching to table view.
+- Coach on Linux: a sign-in stored in KWallet is read again when the keyring briefly fails to decrypt it.
 
 ## 1.3.0
 
