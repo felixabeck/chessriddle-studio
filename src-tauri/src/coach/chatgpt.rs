@@ -6,8 +6,9 @@
 //! sign-ins start from. Nothing is stored before the whole sign-in has succeeded, so a failed one
 //! leaves no connection and no keyring entry.
 //!
-//! Bodies of the authentication endpoints are never logged: a failure is logged by its status and
-//! the provider's error code only.
+//! Bodies of the authentication endpoints are never logged: a failure is logged by its status, the
+//! provider's error code and its error description, with every secret the request carried removed
+//! from that description first.
 
 use std::{
     sync::{Arc, Mutex},
@@ -23,7 +24,8 @@ use tokio_util::sync::CancellationToken;
 use super::{
     connections::{ChatGptSecret, ConnectionSaved, Connections},
     error::CoachError,
-    http::{browser_link, send_bounded},
+    http::{browser_link, diagnostic_without, send_bounded, timed_out},
+    responses::classify_code,
 };
 use crate::{
     credentials::CoachCredentials,
@@ -77,6 +79,8 @@ const MAX_EXPIRES_IN_SECONDS: u64 = 24 * 60 * 60;
 const MAX_CLIENT_ID_CHARS: usize = 128;
 const MAX_IDENTITY_CHARS: usize = 254;
 const MAX_ERROR_CODE_CHARS: usize = 64;
+/// The fields of a token request whose values are secrets and never reach the log.
+const SECRET_FIELDS: [&str; 3] = ["code", "code_verifier", "refresh_token"];
 
 /// Hands a link to the system browser.
 pub(crate) type BrowserOpener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
@@ -156,6 +160,24 @@ pub(crate) fn error_code(body: &[u8]) -> Option<String> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
     .then(|| code.to_owned())
+}
+
+/// The provider's own words about a refused token request, for the native log: the OAuth
+/// `error_description`, else the message of a nested error object, with every secret value of
+/// `form` removed and cut to one bounded line. `None` when the body says nothing.
+fn refusal_description(body: &[u8], form: &[(&str, &str)]) -> Option<String> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    let text = value
+        .get("error_description")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("error")?.get("message")?.as_str())?;
+    let secrets: Vec<&str> = form
+        .iter()
+        .filter(|(name, _)| SECRET_FIELDS.contains(name))
+        .map(|(_, value)| *value)
+        .collect();
+    let line = diagnostic_without(text, &secrets);
+    (!line.trim().is_empty()).then_some(line)
 }
 
 /// Who signed in, from the claims of the ID token.
@@ -312,12 +334,23 @@ impl ChatGpt {
             429 => Err(TokenFailure::Other(CoachError::RateLimited)),
             400 | 401 | 403 => {
                 let code = error_code(&body).unwrap_or_else(|| "unknown".into());
-                log::warn!("coach: the ChatGPT token endpoint refused with HTTP {status}: {code}");
+                match refusal_description(&body, form) {
+                    Some(description) => log::warn!(
+                        "coach: the ChatGPT token endpoint refused with HTTP {status}: {code} ({description})"
+                    ),
+                    None => log::warn!(
+                        "coach: the ChatGPT token endpoint refused with HTTP {status}: {code}"
+                    ),
+                }
                 Err(TokenFailure::Refused(code))
             }
             _ => {
                 log::warn!("coach: the ChatGPT token endpoint answered HTTP {status}");
-                Err(TokenFailure::Other(CoachError::ProviderFailure))
+                Err(TokenFailure::Other(if timed_out(status) {
+                    CoachError::ProviderTimeout
+                } else {
+                    CoachError::ProviderFailure
+                }))
             }
         }
     }
@@ -341,7 +374,9 @@ impl ChatGpt {
             {
                 Err(RefreshError::Terminal)
             }
-            Err(TokenFailure::Refused(_)) => Err(RefreshError::Other(CoachError::ProviderFailure)),
+            Err(TokenFailure::Refused(code)) => Err(RefreshError::Other(
+                classify_code(&code).unwrap_or(CoachError::ProviderFailure),
+            )),
             Err(TokenFailure::Other(error)) => Err(RefreshError::Other(error)),
         }
     }
@@ -441,7 +476,11 @@ impl ChatGpt {
                     .await
                     .map_err(|failure| match failure {
                         TokenFailure::Other(error) => fail(error),
-                        TokenFailure::Refused(_) => fail(CoachError::SignInFailed),
+                        // A code that names the account's eligibility or limit says so; any other
+                        // refusal (`invalid_grant` included) needs a fresh sign-in.
+                        TokenFailure::Refused(code) => {
+                            fail(classify_code(&code).unwrap_or(CoachError::SignInFailed))
+                        }
                     })?;
                 *granted_ref = Some((client_id, tokens));
                 Ok(())
@@ -1057,6 +1096,27 @@ pub(crate) mod tests {
                 CoachError::SignInFailed,
             ),
             (
+                "the code was refused because the account may not use its plan here",
+                approve(Some("oaiapp_issued")),
+                Box::new(|provider, _| {
+                    provider.answer(
+                        StatusCode::FORBIDDEN,
+                        serde_json::json!({
+                            "error": { "code": "subscription_sharing_user_not_eligible" }
+                        }),
+                    );
+                }),
+                CoachError::SubscriptionNotEligible,
+            ),
+            (
+                "the token endpoint's gateway timed out",
+                approve(Some("oaiapp_issued")),
+                Box::new(|provider, _| {
+                    provider.answer(StatusCode::GATEWAY_TIMEOUT, Value::Null);
+                }),
+                CoachError::ProviderTimeout,
+            ),
+            (
                 "the token endpoint is limiting requests",
                 approve(Some("oaiapp_issued")),
                 Box::new(|provider, _| {
@@ -1083,6 +1143,50 @@ pub(crate) mod tests {
             assert_eq!(result.err(), Some(expected), "{name}");
             no_connection(&fixture).await;
             assert!(fixture.chatgpt.attempts.is_idle().await, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_refusal_description_reaches_the_log_without_any_secret_of_the_request() {
+        let form = [
+            ("grant_type", "authorization_code"),
+            ("client_id", "oaiapp_issued"),
+            ("code", "the-code"),
+            ("code_verifier", "the-verifier"),
+            ("refresh_token", "the-refresh"),
+        ];
+        let body = serde_json::json!({
+            "error": "invalid_grant",
+            "error_description": "Code the-code\nwith verifier the-verifier and the-refresh is bad",
+        });
+        let line = refusal_description(body.to_string().as_bytes(), &form).unwrap();
+        assert_eq!(line, "Code [key] with verifier [key] and [key] is bad");
+        // The client id is no secret and stays readable.
+        let named = serde_json::json!({ "error_description": "unknown oaiapp_issued" });
+        assert_eq!(
+            refusal_description(named.to_string().as_bytes(), &form).as_deref(),
+            Some("unknown oaiapp_issued")
+        );
+
+        // The nested shape gives its message; a long text is cut to one bounded line.
+        let nested = serde_json::json!({
+            "error": { "code": "x", "message": format!("{}{}", "a".repeat(600), "the-code") }
+        });
+        let cut = refusal_description(nested.to_string().as_bytes(), &form).unwrap();
+        assert_eq!(cut.chars().count(), 512);
+        assert!(cut.chars().all(|c| c == 'a'));
+
+        // A body that says nothing, or says only blanks, gives no description.
+        for silent in [
+            serde_json::json!({ "error": "invalid_grant" }).to_string(),
+            serde_json::json!({ "error_description": " \n " }).to_string(),
+            "<html>".to_owned(),
+        ] {
+            assert_eq!(
+                refusal_description(silent.as_bytes(), &form),
+                None,
+                "{silent}"
+            );
         }
     }
 
@@ -1227,6 +1331,18 @@ pub(crate) mod tests {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Value::Null,
                 CoachError::ProviderFailure,
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                serde_json::json!({
+                    "error": { "code": "subscription_sharing_user_not_eligible" }
+                }),
+                CoachError::SubscriptionNotEligible,
+            ),
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                Value::Null,
+                CoachError::ProviderTimeout,
             ),
             (
                 StatusCode::OK,

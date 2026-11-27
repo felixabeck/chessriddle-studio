@@ -545,6 +545,7 @@
     "Coach.Error.PhotoStorage": "The photo could not be saved or read on this computer.",
     "Coach.Error.PhotoUnreadable": "Could not read this file. Use a JPEG, PNG, or WebP photo or a PDF under 32 MB.",
     "Coach.Error.ProviderFailure": "The service gave an unexpected answer.",
+    "Coach.Error.ProviderTimeout": "The service did not answer in time. Try again in a moment, or choose a lower effort so the answer starts sooner.",
     "Coach.Error.RateLimited": "The service is limiting requests. Try again later.",
     "Coach.Error.ScoresheetUnreadable": "No legal moves could be read from these photos. Try a clearer photo of a chess scoresheet.",
     "Coach.Error.SignInAgain": "The sign-in for this connection has ended. Sign in again in the Coach settings.",

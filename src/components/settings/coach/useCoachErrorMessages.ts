@@ -21,6 +21,7 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             network: t("Coach.Error.Network"),
             rateLimited: t("Coach.Error.RateLimited"),
             providerFailure: t("Coach.Error.ProviderFailure"),
+            providerTimeout: t("Coach.Error.ProviderTimeout"),
             busy: t("Coach.Error.Busy"),
             engineFailed: t("Coach.Error.EngineFailed"),
             modelUnavailable: t("Coach.Error.ModelUnavailable"),

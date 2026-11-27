@@ -28,7 +28,7 @@ use super::{
     chatgpt::{display_email, error_code, id_token_claims, BrowserOpener},
     connections::{ConnectionSaved, Connections, GrokSecret},
     error::CoachError,
-    http::{browser_link, send_bounded},
+    http::{browser_link, send_bounded, timed_out},
 };
 use crate::infra::token_session::{IssuedTokens, RefreshError};
 
@@ -231,6 +231,7 @@ impl Grok {
             log::warn!("coach: Grok's discovery document answered HTTP {status}");
             return Err(match status {
                 429 => CoachError::RateLimited,
+                status if timed_out(status) => CoachError::ProviderTimeout,
                 _ => CoachError::ProviderFailure,
             });
         }
@@ -264,6 +265,7 @@ impl Grok {
             return Err(match status {
                 429 => CoachError::RateLimited,
                 403 => CoachError::SubscriptionNotEligible,
+                status if timed_out(status) => CoachError::ProviderTimeout,
                 _ => CoachError::ProviderFailure,
             });
         }
@@ -320,7 +322,7 @@ impl Grok {
                 .form(&form);
             let (status, body) = match send_bounded(request, MAX_TOKEN_RESPONSE_BYTES).await {
                 Ok(answer) => answer,
-                Err(CoachError::Network) => continue,
+                Err(CoachError::Network | CoachError::ProviderTimeout) => continue,
                 Err(error) => return Err(error),
             };
             match status {
@@ -416,6 +418,7 @@ impl Grok {
             // Signed in, but this subscription may not be used from other apps.
             403 => RefreshError::Other(CoachError::SubscriptionNotEligible),
             429 => RefreshError::Other(CoachError::RateLimited),
+            status if timed_out(status) => RefreshError::Other(CoachError::ProviderTimeout),
             _ => RefreshError::Other(CoachError::ProviderFailure),
         })
     }
@@ -561,6 +564,7 @@ pub(crate) mod tests {
     use axum::{extract::Form, http::StatusCode, routing::get, routing::post, Json, Router};
     use serde_json::{json, Value};
     use std::collections::{HashMap, VecDeque};
+    use std::sync::atomic::Ordering::SeqCst;
 
     /// The test rule for the provider's own addresses: the loopback double.
     fn loopback(value: &str) -> Option<url::Url> {
@@ -572,7 +576,12 @@ pub(crate) mod tests {
     /// A Grok whose provider is `server`, with seconds that last two milliseconds.
     pub(crate) fn grok(server: &TestServer) -> Grok {
         Grok {
-            http: reqwest::Client::builder().no_proxy().build().unwrap(),
+            // Short enough that a stalled poll ends in a test's time, long for a loopback answer.
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .read_timeout(Duration::from_millis(500))
+                .build()
+                .unwrap(),
             discovery: server.url("/.well-known/openid-configuration"),
             api: server.url("/v1"),
             own: loopback,
@@ -588,7 +597,10 @@ pub(crate) mod tests {
     struct Double {
         server: TestServer,
         discovery: Arc<Mutex<Value>>,
+        discovery_status: Arc<Mutex<StatusCode>>,
         device: Arc<Mutex<(StatusCode, Value)>>,
+        /// Token requests still to be held without an answer past the client's read timeout.
+        stalls: Arc<std::sync::atomic::AtomicUsize>,
         device_forms: Forms,
         token: Answers,
         token_forms: Forms,
@@ -627,7 +639,9 @@ pub(crate) mod tests {
     impl Double {
         fn start() -> Self {
             let discovery = Arc::new(Mutex::new(Value::Null));
+            let discovery_status = Arc::new(Mutex::new(StatusCode::OK));
             let device = Arc::new(Mutex::new((StatusCode::OK, Value::Null)));
+            let stalls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let (device_forms, token_forms, revocations) =
                 (Forms::default(), Forms::default(), Forms::default());
             let token = Answers::default();
@@ -635,8 +649,11 @@ pub(crate) mod tests {
                 .route(
                     "/.well-known/openid-configuration",
                     get({
-                        let discovery = discovery.clone();
-                        move || async move { Json(discovery.lock().unwrap().clone()) }
+                        let (discovery, status) = (discovery.clone(), discovery_status.clone());
+                        move || async move {
+                            let status = *status.lock().unwrap();
+                            (status, Json(discovery.lock().unwrap().clone()))
+                        }
                     }),
                 )
                 .route(
@@ -653,9 +670,16 @@ pub(crate) mod tests {
                 .route(
                     "/token",
                     post({
-                        let (forms, token) = (token_forms.clone(), token.clone());
+                        let (forms, token, stalls) =
+                            (token_forms.clone(), token.clone(), stalls.clone());
                         move |Form(form): Form<HashMap<String, String>>| async move {
                             forms.lock().unwrap().push(form);
+                            let stall = stalls
+                                .fetch_update(SeqCst, SeqCst, |left| left.checked_sub(1))
+                                .is_ok();
+                            if stall {
+                                tokio::time::sleep(Duration::from_secs(3)).await;
+                            }
                             let (status, body) = next(&token);
                             (status, Json(body))
                         }
@@ -692,7 +716,9 @@ pub(crate) mod tests {
             Self {
                 server,
                 discovery,
+                discovery_status,
                 device,
+                stalls,
                 device_forms,
                 token,
                 token_forms,
@@ -1036,6 +1062,48 @@ pub(crate) mod tests {
                 .await,
             Err(RefreshError::Other(CoachError::ProviderFailure))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_gateway_timeout_is_told_apart_and_a_poll_that_stalls_is_asked_again() {
+        let fixture = fixture();
+        *fixture.double.discovery_status.lock().unwrap() = StatusCode::GATEWAY_TIMEOUT;
+        assert_eq!(
+            fixture.begin("discovery").await,
+            Err(CoachError::ProviderTimeout)
+        );
+        *fixture.double.discovery_status.lock().unwrap() = StatusCode::OK;
+
+        let kept = fixture.double.device.lock().unwrap().clone();
+        *fixture.double.device.lock().unwrap() = (StatusCode::GATEWAY_TIMEOUT, Value::Null);
+        assert_eq!(
+            fixture.begin("device").await,
+            Err(CoachError::ProviderTimeout)
+        );
+        *fixture.double.device.lock().unwrap() = kept;
+
+        fixture
+            .double
+            .answers([(StatusCode::GATEWAY_TIMEOUT, Value::Null)]);
+        let token_endpoint = fixture.double.server.url("/token");
+        assert!(matches!(
+            fixture
+                .sign_in
+                .grok
+                .refresh(&token_endpoint, "refresh")
+                .await,
+            Err(RefreshError::Other(CoachError::ProviderTimeout))
+        ));
+
+        // The first poll gets no answer before the read timeout; the sign-in asks again.
+        let before = fixture.double.polls();
+        fixture.double.stalls.store(1, SeqCst);
+        fixture.double.answers([granted(1, None)]);
+        fixture.begin("stalled").await.unwrap();
+        let saved = fixture.finish("stalled").await.unwrap();
+        assert_eq!(saved.connection.kind, ConnectionKind::Grok);
+        assert!(fixture.double.polls() >= before + 2);
+        fixture.idle().await;
     }
 
     #[tokio::test]

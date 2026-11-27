@@ -108,7 +108,7 @@ impl SseStream {
             let chunk = tokio::select! {
                 biased;
                 () = cancellation.cancelled() => return Err(CoachError::Cancelled),
-                chunk = self.response.chunk() => chunk.map_err(|_| CoachError::Network)?,
+                chunk = self.response.chunk() => chunk.map_err(|error| super::http::transport_error(&error))?,
             };
             let Some(chunk) = chunk else {
                 return Ok(None);

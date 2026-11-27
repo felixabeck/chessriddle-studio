@@ -553,6 +553,7 @@
     "Coach.Error.PhotoStorage": "Nie udało się zapisać ani odczytać zdjęcia na tym komputerze.",
     "Coach.Error.PhotoUnreadable": "Nie udało się odczytać tego pliku. Użyj zdjęcia JPEG, PNG lub WebP albo pliku PDF mniejszego niż 32 MB.",
     "Coach.Error.ProviderFailure": "Usługa zwróciła nieoczekiwaną odpowiedź.",
+    "Coach.Error.ProviderTimeout": "Usługa nie odpowiedziała na czas. Spróbuj ponownie za chwilę lub wybierz niższy poziom wysiłku, aby odpowiedź zaczęła się szybciej.",
     "Coach.Error.RateLimited": "Usługa ogranicza liczbę żądań. Spróbuj ponownie później.",
     "Coach.Error.ScoresheetUnreadable": "Nie udało się odczytać żadnych legalnych posunięć z tych zdjęć. Spróbuj z wyraźniejszym zdjęciem blankietu partii.",
     "Coach.Error.SignInAgain": "Logowanie dla tego połączenia nie jest już ważne. Zaloguj się ponownie w ustawieniach Coacha.",

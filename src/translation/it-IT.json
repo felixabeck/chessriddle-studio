@@ -549,6 +549,7 @@
     "Coach.Error.PhotoStorage": "Impossibile salvare o leggere la foto su questo computer.",
     "Coach.Error.PhotoUnreadable": "Impossibile leggere questo file. Usa una foto JPEG, PNG o WebP o un PDF sotto i 32 MB.",
     "Coach.Error.ProviderFailure": "Il servizio ha dato una risposta inattesa.",
+    "Coach.Error.ProviderTimeout": "Il servizio non ha risposto in tempo. Riprova tra poco o scegli un livello di impegno più basso, così la risposta inizia prima.",
     "Coach.Error.RateLimited": "Il servizio sta limitando le richieste. Riprova più tardi.",
     "Coach.Error.ScoresheetUnreadable": "Non è stato possibile leggere alcuna mossa legale da queste foto. Prova con una foto più nitida del formulario.",
     "Coach.Error.SignInAgain": "La sessione di questa connessione è terminata. Accedi di nuovo nelle impostazioni del Coach.",

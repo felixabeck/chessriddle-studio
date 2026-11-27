@@ -549,6 +549,7 @@
     "Coach.Error.PhotoStorage": "Não foi possível guardar ou ler a foto neste computador.",
     "Coach.Error.PhotoUnreadable": "Não foi possível ler este ficheiro. Use uma foto JPEG, PNG ou WebP ou um PDF com menos de 32 MB.",
     "Coach.Error.ProviderFailure": "O serviço deu uma resposta inesperada.",
+    "Coach.Error.ProviderTimeout": "O serviço não respondeu a tempo. Tente novamente daqui a pouco ou escolha um nível de esforço mais baixo para que a resposta comece mais cedo.",
     "Coach.Error.RateLimited": "O serviço está a limitar os pedidos. Tente novamente mais tarde.",
     "Coach.Error.ScoresheetUnreadable": "Não foi possível ler nenhum lance legal destas fotos. Tente com uma foto mais nítida da folha de registo.",
     "Coach.Error.SignInAgain": "A sessão desta ligação terminou. Inicie sessão novamente nas definições do Coach.",

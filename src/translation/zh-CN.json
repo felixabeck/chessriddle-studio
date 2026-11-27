@@ -541,6 +541,7 @@
     "Coach.Error.PhotoStorage": "无法在此电脑上保存或读取该照片。",
     "Coach.Error.PhotoUnreadable": "无法读取此文件。请使用小于 32 MB 的 JPEG、PNG 或 WebP 照片或 PDF。",
     "Coach.Error.ProviderFailure": "服务返回了意外的响应。",
+    "Coach.Error.ProviderTimeout": "服务未能及时响应。请稍后重试，或选择较低的推理强度，让回答更早开始。",
     "Coach.Error.RateLimited": "服务正在限制请求。请稍后重试。",
     "Coach.Error.ScoresheetUnreadable": "无法从这些照片中识别出任何合法着法。请尝试拍摄更清晰的棋谱照片。",
     "Coach.Error.SignInAgain": "此连接的登录已失效。请在 Coach 设置中重新登录。",

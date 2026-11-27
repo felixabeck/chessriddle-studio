@@ -4,6 +4,7 @@ import { CoachCommandError, coachErrorCode } from "./coach";
 test("only the Coach's own error codes survive; anything else becomes providerFailure", () => {
     expect(new CoachCommandError("keyRejected").code).toBe("keyRejected");
     expect(new CoachCommandError(new Error("rateLimited")).code).toBe("rateLimited");
+    expect(new CoachCommandError("providerTimeout").code).toBe("providerTimeout");
     for (const foreign of ["server", "toString", "", 7, null, undefined, { code: "network" }]) {
         const error = new CoachCommandError(foreign);
         expect(error.code).toBe("providerFailure");

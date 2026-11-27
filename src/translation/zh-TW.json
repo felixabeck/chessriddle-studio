@@ -541,6 +541,7 @@
     "Coach.Error.PhotoStorage": "無法在此電腦上儲存或讀取這張照片。",
     "Coach.Error.PhotoUnreadable": "無法讀取此檔案。請使用小於 32 MB 的 JPEG、PNG 或 WebP 照片或 PDF。",
     "Coach.Error.ProviderFailure": "服務傳回了非預期的回應。",
+    "Coach.Error.ProviderTimeout": "服務未能及時回應。請稍後再試，或選擇較低的推理強度，讓回答更早開始。",
     "Coach.Error.RateLimited": "服務正在限制請求。請稍後重試。",
     "Coach.Error.ScoresheetUnreadable": "無法從這些照片中辨識出任何合法著法。請嘗試拍攝更清晰的棋譜照片。",
     "Coach.Error.SignInAgain": "此連線的登入已失效。請在 Coach 設定中重新登入。",

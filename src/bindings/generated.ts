@@ -2073,6 +2073,10 @@ export type CoachError =
  */
 "keyRejected" | "storage" | "network" | "rateLimited" | "providerFailure" | 
 /**
+ * The provider, or a gateway in front of it, did not answer in time.
+ */
+"providerTimeout" | 
+/**
  * This tab already runs a turn, or too many turns run at once.
  */
 "busy" | 

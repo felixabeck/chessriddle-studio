@@ -545,6 +545,7 @@
     "Coach.Error.PhotoStorage": "Bildet kunne ikke lagres eller leses på denne datamaskinen.",
     "Coach.Error.PhotoUnreadable": "Kunne ikke lese denne filen. Bruk et JPEG-, PNG- eller WebP-bilde eller en PDF under 32 MB.",
     "Coach.Error.ProviderFailure": "Tjenesten ga et uventet svar.",
+    "Coach.Error.ProviderTimeout": "Tjenesten svarte ikke i tide. Prøv igjen om litt, eller velg et lavere innsatsnivå så svaret starter raskere.",
     "Coach.Error.RateLimited": "Tjenesten begrenser forespørsler. Prøv igjen senere.",
     "Coach.Error.ScoresheetUnreadable": "Ingen lovlige trekk kunne leses fra disse bildene. Prøv et tydeligere bilde av et noteringsskjema.",
     "Coach.Error.SignInAgain": "Innloggingen for denne tilkoblingen gjelder ikke lenger. Logg inn på nytt i Coach-innstillingene.",

@@ -748,6 +748,8 @@ impl Coach {
         );
         if http::key_refused(status, &message) {
             Err(CoachError::KeyRejected)
+        } else if http::timed_out(status) {
+            Err(CoachError::ProviderTimeout)
         } else if status == 429 {
             Err(CoachError::RateLimited)
         } else {
@@ -2005,6 +2007,10 @@ mod tests {
                     get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
                 )
                 .route(
+                    "/gateway/models",
+                    get(|| async { StatusCode::GATEWAY_TIMEOUT }),
+                )
+                .route(
                     "/html/models",
                     get(|| async { "<html>not a model list</html>" }),
                 )
@@ -2018,6 +2024,7 @@ mod tests {
             ("/badrequest", CoachError::ProviderFailure),
             ("/limited", CoachError::RateLimited),
             ("/broken", CoachError::ProviderFailure),
+            ("/gateway", CoachError::ProviderTimeout),
             ("/missing", CoachError::ProviderFailure),
             ("/html", CoachError::ProviderFailure),
             ("/huge", CoachError::ProviderFailure),

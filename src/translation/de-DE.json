@@ -545,6 +545,7 @@
     "Coach.Error.PhotoStorage": "Das Foto konnte auf diesem Computer nicht gespeichert oder gelesen werden.",
     "Coach.Error.PhotoUnreadable": "Diese Datei konnte nicht gelesen werden. Verwende ein JPEG-, PNG- oder WebP-Foto oder eine PDF unter 32 MB.",
     "Coach.Error.ProviderFailure": "Der Dienst hat eine unerwartete Antwort gegeben.",
+    "Coach.Error.ProviderTimeout": "Der Dienst hat nicht rechtzeitig geantwortet. Versuche es gleich noch einmal oder wähle einen geringeren Aufwand, dann beginnt die Antwort früher.",
     "Coach.Error.RateLimited": "Der Dienst begrenzt die Anfragen. Versuche es später erneut.",
     "Coach.Error.ScoresheetUnreadable": "Aus diesen Fotos konnten keine legalen Züge gelesen werden. Versuche es mit einem klareren Foto eines Partieformulars.",
     "Coach.Error.SignInAgain": "Die Anmeldung für diese Verbindung besteht nicht mehr. Melde dich in den Coach-Einstellungen erneut an.",

@@ -56,13 +56,30 @@ pub(crate) async fn send_bounded(
         .timeout(REQUEST_TIMEOUT)
         .send()
         .await
-        .map_err(|_| CoachError::Network)?;
+        .map_err(|error| transport_error(&error))?;
     let status = response.status().as_u16();
     match read_bounded_body(response, max_bytes).await {
         Ok(body) => Ok((status, body)),
-        Err(BoundedBodyError::Transport(_)) => Err(CoachError::Network),
+        Err(BoundedBodyError::Transport(error)) => Err(transport_error(&error)),
         Err(BoundedBodyError::TooLarge) => Err(CoachError::ProviderFailure),
     }
+}
+
+/// What a failed request means for the user. A timeout after the connection was made is the
+/// provider taking too long; a connection that could not be made — including one that timed out
+/// while connecting, which reqwest reports as both — is a service that cannot be reached.
+pub(crate) fn transport_error(error: &reqwest::Error) -> CoachError {
+    if !error.is_connect() && error.is_timeout() {
+        CoachError::ProviderTimeout
+    } else {
+        CoachError::Network
+    }
+}
+
+/// Whether an HTTP status says that the provider, or a gateway in front of it, gave up waiting:
+/// 408 Request Timeout, 504 Gateway Timeout, and Cloudflare's 524 origin timeout.
+pub(crate) fn timed_out(status: u16) -> bool {
+    matches!(status, 408 | 504 | 524)
 }
 
 /// The human-readable part of an error body, in the shapes providers use.
@@ -89,11 +106,21 @@ pub(crate) fn error_text(body: &[u8]) -> String {
 /// The provider's own words about a failure, for the native log only: cut short, and with the
 /// connection's secret removed in case the provider echoed it.
 pub(crate) fn diagnostic(text: &str, secret: Option<&str>) -> String {
-    let text = match secret {
-        Some(secret) if !secret.is_empty() => text.replace(secret, "[key]"),
-        _ => text.to_owned(),
-    };
-    text.chars().take(MAX_DIAGNOSTIC_CHARS).collect()
+    diagnostic_without(text, secret.as_slice())
+}
+
+/// [`diagnostic`] for a request that carried several secrets: each one is removed before the
+/// text is cut, and line breaks and other control characters become spaces so that one log line
+/// stays one line.
+pub(crate) fn diagnostic_without(text: &str, secrets: &[&str]) -> String {
+    let mut text = text.to_owned();
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        text = text.replace(secret, "[key]");
+    }
+    text.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(MAX_DIAGNOSTIC_CHARS)
+        .collect()
 }
 
 /// Whether a refusal is about the connection's key. Most providers answer 401 or 403; Gemini
@@ -115,6 +142,9 @@ pub(crate) fn classify_refusal(
 ) -> CoachError {
     if key_refused(status, message) {
         return CoachError::KeyRejected;
+    }
+    if timed_out(status) {
+        return CoachError::ProviderTimeout;
     }
     let message = message.to_ascii_lowercase();
     match status {
@@ -234,6 +264,75 @@ mod tests {
         assert_eq!(logged.chars().count(), MAX_DIAGNOSTIC_CHARS);
         assert_eq!(diagnostic("plain", None), "plain");
         assert_eq!(diagnostic("plain", Some("")), "plain");
+    }
+
+    #[test]
+    fn a_diagnostic_without_several_secrets_removes_each_and_keeps_one_line() {
+        assert_eq!(
+            diagnostic_without("a1\nb2\r\tc3", &["1", "2", ""]),
+            "a[key] b[key]  c3"
+        );
+    }
+
+    #[test]
+    fn a_gateway_that_gave_up_waiting_is_a_timeout_not_an_unexpected_answer() {
+        for status in [408, 504, 524] {
+            assert_eq!(
+                classify_refusal(status, "<html>504 Gateway Timeout</html>", true, true),
+                CoachError::ProviderTimeout,
+                "{status}"
+            );
+        }
+        for status in [500, 502, 503] {
+            assert_eq!(
+                classify_refusal(status, "", false, false),
+                CoachError::ProviderFailure,
+                "{status}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_provider_that_accepts_but_never_answers_timed_out_and_a_closed_port_is_unreachable()
+    {
+        // The kernel completes the connection from the backlog; nobody ever reads or answers.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .read_timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+        let url = format!("http://{}/v1/models", silent.local_addr().unwrap());
+        assert_eq!(
+            send_bounded(client.get(&url), 1024).await,
+            Err(CoachError::ProviderTimeout)
+        );
+
+        // Headers arrive, then the body stops: the read of the body times out the same way.
+        let stalled_body = super::super::test_server::serve(axum::Router::new().route(
+            "/v1/models",
+            axum::routing::get(|| async {
+                let first =
+                    futures_util::stream::iter([Ok::<_, std::convert::Infallible>("{\"data\":[")]);
+                axum::body::StreamBody::new(futures_util::StreamExt::chain(
+                    first,
+                    futures_util::stream::pending(),
+                ))
+            }),
+        ));
+        assert_eq!(
+            send_bounded(client.get(stalled_body.url("/v1/models")), 1024).await,
+            Err(CoachError::ProviderTimeout)
+        );
+
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1/models", closed.local_addr().unwrap());
+        drop(closed);
+        assert_eq!(
+            send_bounded(client.get(&url), 1024).await,
+            Err(CoachError::Network)
+        );
+        drop(silent);
     }
 
     #[test]

@@ -30,6 +30,8 @@ pub(crate) enum CoachError {
     Network,
     RateLimited,
     ProviderFailure,
+    /// The provider, or a gateway in front of it, did not answer in time.
+    ProviderTimeout,
     /// This tab already runs a turn, or too many turns run at once.
     Busy,
     /// The engine could not be started, crashed, or gave no result in time.

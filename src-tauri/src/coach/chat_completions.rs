@@ -14,7 +14,7 @@ use super::{
         MAX_TOOL_CALL_EXTRA_BYTES,
     },
     error::CoachError,
-    http::{classify_refusal, diagnostic, error_text, MAX_ERROR_BODY_BYTES},
+    http::{classify_refusal, diagnostic, error_text, transport_error, MAX_ERROR_BODY_BYTES},
     sse::SseStream,
 };
 use crate::infra::net::read_bounded_body;
@@ -312,7 +312,7 @@ impl ModelBackend for ChatCompletions {
         let response = tokio::select! {
             biased;
             () = cancellation.cancelled() => return Err(RoundFailure::new(CoachError::Cancelled)),
-            response = builder.send() => response.map_err(|_| RoundFailure::new(CoachError::Network))?,
+            response = builder.send() => response.map_err(|error| RoundFailure::new(transport_error(&error)))?,
         };
         let status = response.status();
         if !status.is_success() {
@@ -857,6 +857,13 @@ mod tests {
                 None,
                 CoachError::ProviderFailure,
             ),
+            // A CDN in front of the provider gave up waiting (seen 2026-11-27 on a photo read).
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                json!("<HTML><TITLE>ERROR: The request could not be satisfied</TITLE></HTML>"),
+                Some("high"),
+                CoachError::ProviderTimeout,
+            ),
         ] {
             let server = refusing(status, body.clone());
             let error = run(
@@ -934,6 +941,80 @@ mod tests {
             result.unwrap_err(),
             RoundFailure {
                 error: CoachError::Cancelled,
+                text: "Thinking".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_provider_that_sends_no_answer_within_the_read_timeout_timed_out() {
+        let router = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                StatusCode::OK
+            }),
+        );
+        let server = test_server::serve(router);
+        let backend = ChatCompletions::new(
+            reqwest::Client::builder()
+                .no_proxy()
+                .read_timeout(std::time::Duration::from_millis(300))
+                .build()
+                .unwrap(),
+            Address::parse(&server.url("/v1")).unwrap(),
+            None,
+        );
+        let error = run(&backend, &user(), None, &[]).await.0.unwrap_err();
+        assert_eq!(error, RoundFailure::new(CoachError::ProviderTimeout));
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_falls_silent_past_the_read_timeout_timed_out_and_keeps_the_text() {
+        let router = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async {
+                let first = futures_util::stream::iter([Ok::<_, std::convert::Infallible>(
+                    text_delta("Thinking"),
+                )]);
+                let silent = futures_util::stream::pending();
+                (
+                    [(CONTENT_TYPE, "text/event-stream")],
+                    StreamBody::new(futures_util::StreamExt::chain(first, silent)),
+                )
+            }),
+        );
+        let server = test_server::serve(router);
+        let backend = ChatCompletions::new(
+            reqwest::Client::builder()
+                .no_proxy()
+                .read_timeout(std::time::Duration::from_millis(300))
+                .build()
+                .unwrap(),
+            Address::parse(&server.url("/v1")).unwrap(),
+            None,
+        );
+        let messages = user();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            backend.round(
+                RoundRequest {
+                    model: "m",
+                    effort: None,
+                    system: "s",
+                    messages: &messages,
+                    tools: &[],
+                },
+                &mut |_| {},
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("the read timeout must end the round");
+        assert_eq!(
+            result.unwrap_err(),
+            RoundFailure {
+                error: CoachError::ProviderTimeout,
                 text: "Thinking".into()
             }
         );

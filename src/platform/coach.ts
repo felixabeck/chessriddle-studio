@@ -15,6 +15,7 @@ const coachErrors: Record<CoachError, true> = {
     network: true,
     rateLimited: true,
     providerFailure: true,
+    providerTimeout: true,
     busy: true,
     engineFailed: true,
     modelUnavailable: true,

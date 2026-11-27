@@ -545,6 +545,7 @@
     "Coach.Error.PhotoStorage": "Fotoğraf bu bilgisayara kaydedilemedi veya okunamadı.",
     "Coach.Error.PhotoUnreadable": "Bu dosya okunamadı. 32 MB altında bir JPEG, PNG veya WebP fotoğrafı ya da PDF kullanın.",
     "Coach.Error.ProviderFailure": "Hizmet beklenmeyen bir yanıt verdi.",
+    "Coach.Error.ProviderTimeout": "Hizmet zamanında yanıt vermedi. Biraz sonra yeniden deneyin ya da yanıtın daha erken başlaması için daha düşük bir çaba düzeyi seçin.",
     "Coach.Error.RateLimited": "Hizmet istekleri sınırlıyor. Daha sonra yeniden deneyin.",
     "Coach.Error.ScoresheetUnreadable": "Bu fotoğraflardan geçerli bir hamle okunamadı. Notasyon kağıdının daha net bir fotoğrafını deneyin.",
     "Coach.Error.SignInAgain": "Bu bağlantının oturumu sona erdi. Coach ayarlarında yeniden oturum açın.",

@@ -20,7 +20,9 @@ use super::{
         MAX_ROUND_TEXT_BYTES, MAX_STREAMED_TOOL_CALLS, MAX_TOOL_ARGUMENT_BYTES,
     },
     error::CoachError,
-    http::{classify_refusal, diagnostic, error_text, MAX_ERROR_BODY_BYTES},
+    http::{
+        classify_refusal, diagnostic, error_text, timed_out, transport_error, MAX_ERROR_BODY_BYTES,
+    },
     sse::SseStream,
 };
 use crate::infra::net::read_bounded_body;
@@ -194,7 +196,7 @@ fn error_fields(error: &Value) -> (&str, &str) {
 }
 
 /// What a provider's error code means for the user, where the code alone says it.
-fn classify_code(code: &str) -> Option<CoachError> {
+pub(crate) fn classify_code(code: &str) -> Option<CoachError> {
     match code {
         "subscription_sharing_usage_limit_exceeded" => Some(CoachError::UsageLimitReached),
         "subscription_sharing_user_not_eligible" => Some(CoachError::SubscriptionNotEligible),
@@ -232,6 +234,7 @@ pub(crate) fn classify_plan_refusal(
         // the account.
         403 => CoachError::ProviderFailure,
         429 | 503 => CoachError::RateLimited,
+        status if timed_out(status) => CoachError::ProviderTimeout,
         400 if param.starts_with("reasoning") && effort_sent => CoachError::EffortRejected,
         400 if param.starts_with("tools") => CoachError::NoFunctionCalling,
         400 | 404 | 422 => match classify_refusal(status, &message, effort_sent, has_images) {
@@ -444,7 +447,7 @@ impl<B: BearerSource> Responses<B> {
             let response = tokio::select! {
                 biased;
                 () = cancellation.cancelled() => return Err(CoachError::Cancelled),
-                response = request.send() => response.map_err(|_| CoachError::Network)?,
+                response = request.send() => response.map_err(|error| transport_error(&error))?,
             };
             if response.status().as_u16() == 401 && !retry {
                 bearer = self.tokens.rejected(bearer.generation).await?;
@@ -1040,6 +1043,18 @@ mod tests {
                 CoachError::RateLimited,
             ),
             (
+                StatusCode::GATEWAY_TIMEOUT,
+                json!({ "detail": "upstream timed out" }),
+                None,
+                CoachError::ProviderTimeout,
+            ),
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({ "detail": "busy" }),
+                None,
+                CoachError::RateLimited,
+            ),
+            (
                 StatusCode::BAD_REQUEST,
                 coded(
                     "subscription_sharing_unsupported_capability",
@@ -1189,6 +1204,46 @@ mod tests {
         ])]);
         let (result, _) = ask(&backend(&server, Arc::default()), &question(), None).await;
         assert_eq!(result.unwrap_err().error, CoachError::ProviderFailure);
+    }
+
+    #[tokio::test]
+    async fn a_provider_that_sends_no_answer_within_the_read_timeout_timed_out() {
+        let router = Router::new().route(
+            "/v1/responses",
+            post(|| async {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                StatusCode::OK
+            }),
+        );
+        let server = test_server::serve(router);
+        let backend = Responses::new(
+            reqwest::Client::builder()
+                .no_proxy()
+                .read_timeout(std::time::Duration::from_millis(300))
+                .build()
+                .unwrap(),
+            server.url("/v1/responses"),
+            Arc::<Tokens>::default(),
+            PlanProvider::ChatGpt,
+        );
+        let tools = [tool()];
+        let result = backend
+            .round(
+                RoundRequest {
+                    model: "gpt-test",
+                    effort: None,
+                    system: "",
+                    messages: &question(),
+                    tools: &tools,
+                },
+                &mut |_| {},
+                &CancellationToken::new(),
+            )
+            .await;
+        assert_eq!(
+            result.unwrap_err(),
+            RoundFailure::new(CoachError::ProviderTimeout)
+        );
     }
 
     #[tokio::test]
