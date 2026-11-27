@@ -216,6 +216,31 @@ pub struct InsertedDbGame {
     pub stamp: String,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Type)]
+#[serde(deny_unknown_fields)]
+pub struct DbGameHeadersUpdate {
+    #[specta(optional)]
+    pub white: Option<String>,
+    #[specta(optional)]
+    pub black: Option<String>,
+    #[specta(optional)]
+    pub white_elo: Option<i32>,
+    #[specta(optional)]
+    pub black_elo: Option<i32>,
+    #[specta(optional)]
+    pub event: Option<String>,
+    #[specta(optional)]
+    pub site: Option<String>,
+    #[specta(optional)]
+    pub round: Option<String>,
+    #[specta(optional)]
+    pub date: Option<String>,
+    #[specta(optional)]
+    pub result: Option<String>,
+    #[specta(optional)]
+    pub time_control: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum BoardOrientation {

@@ -270,6 +270,7 @@ const DATABASE_WRITE_ARGUMENTS: ReadonlyMap<PropertyKey, number> = new Map([
     ["deleteEmptyGames", 0],
     ["deleteDbGame", 0],
     ["writeDbGame", 0],
+    ["writeDbGameHeaders", 0],
     ["insertDbGame", 0],
     ["deleteDatabase", 0],
     ["editDbInfo", 0],

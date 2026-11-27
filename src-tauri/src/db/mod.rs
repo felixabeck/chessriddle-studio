@@ -464,35 +464,53 @@ pub struct TempGame {
     pub scoresheet_photos: Option<String>,
 }
 
+fn resolve_game_index_ids(
+    db: &mut SqliteConnection,
+    white_name: Option<&str>,
+    black_name: Option<&str>,
+    event_name: Option<&str>,
+    site_name: Option<&str>,
+    date: Option<&str>,
+) -> Result<(i32, i32, i32, i32), diesel::result::Error> {
+    let white_id = if let Some(name) = database_index_name(white_name) {
+        create_player(db, name)?.id
+    } else {
+        0
+    };
+    let black_id = if let Some(name) = database_index_name(black_name) {
+        create_player(db, name)?.id
+    } else {
+        0
+    };
+
+    let event_id = if let Some(name) = database_index_name(event_name) {
+        create_event(db, name, date)?.id
+    } else {
+        0
+    };
+
+    let site_id = if let Some(name) = database_index_name(site_name) {
+        create_site(db, name)?.id
+    } else {
+        0
+    };
+
+    Ok((white_id, black_id, event_id, site_id))
+}
+
 impl TempGame {
     fn index_ids(
         &self,
         db: &mut SqliteConnection,
     ) -> Result<(i32, i32, i32, i32), diesel::result::Error> {
-        let white_id = if let Some(name) = database_index_name(self.white_name.as_deref()) {
-            create_player(db, name)?.id
-        } else {
-            0
-        };
-        let black_id = if let Some(name) = database_index_name(self.black_name.as_deref()) {
-            create_player(db, name)?.id
-        } else {
-            0
-        };
-
-        let event_id = if let Some(name) = database_index_name(self.event_name.as_deref()) {
-            create_event(db, name, self.date.as_deref())?.id
-        } else {
-            0
-        };
-
-        let site_id = if let Some(name) = database_index_name(self.site_name.as_deref()) {
-            create_site(db, name)?.id
-        } else {
-            0
-        };
-
-        Ok((white_id, black_id, event_id, site_id))
+        resolve_game_index_ids(
+            db,
+            self.white_name.as_deref(),
+            self.black_name.as_deref(),
+            self.event_name.as_deref(),
+            self.site_name.as_deref(),
+            self.date.as_deref(),
+        )
     }
 
     pub fn insert_to_db(&self, db: &mut SqliteConnection) -> Result<i32, diesel::result::Error> {
@@ -1350,6 +1368,8 @@ mod event_summary_tests;
 
 #[cfg(test)]
 mod event_edition_tests;
+#[cfg(test)]
+mod header_write_tests;
 #[cfg(test)]
 mod insert_db_game_tests;
 #[cfg(test)]
@@ -2350,13 +2370,16 @@ fn write_db_game_blocking(
     written_stamp.ok_or_else(|| Error::InvalidInput("Write returned no game stamp".into()))
 }
 
-fn write_parsed_db_game(
+fn update_game_with_stamp_check<F>(
     db: &mut SqliteConnection,
     game_id: i32,
-    temp_game: &TempGame,
     expected_stamp: &str,
     maintain_metadata: fn(&mut SqliteConnection) -> Result<(), Error>,
-) -> Result<String, Error> {
+    apply_update: F,
+) -> Result<String, Error>
+where
+    F: FnOnce(&mut SqliteConnection, Game) -> Result<usize, Error>,
+{
     let existing = games::table
         .filter(games::id.eq(game_id))
         .first::<Game>(db)
@@ -2366,54 +2389,10 @@ fn write_parsed_db_game(
     if game_row_stamp_with_photos(&existing, existing_photos.as_deref()) != expected_stamp {
         return Err(Error::StaleGame);
     }
-    let game_time = temp_game.time.clone().or(existing.time);
 
-    let (white_id, black_id, event_id, site_id) = temp_game.index_ids(db)?;
-
-    let minimum_material = temp_game
-        .material_count
-        .minimum_material(temp_game.position.board());
-    let minimal_white_material = i32::from(minimum_material.white);
-    let minimal_black_material = i32::from(minimum_material.black);
-    let pawn_home = get_pawn_home(temp_game.position.board()) as i32;
-    let ply_count = iter_mainline_move_bytes(&temp_game.moves).count() as i32;
-
-    let updated_rows = diesel::update(games::table.filter(games::id.eq(game_id)))
-        .set((
-            games::event_id.eq(event_id),
-            games::site_id.eq(site_id),
-            games::date.eq(temp_game.date.clone()),
-            games::time.eq(game_time),
-            games::round.eq(temp_game.round.clone()),
-            games::white_id.eq(white_id),
-            games::white_elo.eq(temp_game.white_elo),
-            games::black_id.eq(black_id),
-            games::black_elo.eq(temp_game.black_elo),
-            games::white_material.eq(minimal_white_material),
-            games::black_material.eq(minimal_black_material),
-            games::result.eq(temp_game.result.clone()),
-            games::time_control.eq(temp_game.time_control.clone()),
-            games::eco.eq(temp_game.eco.clone()),
-            games::ply_count.eq(ply_count),
-            games::fen.eq(temp_game.fen.clone()),
-            games::moves.eq(temp_game.moves.clone()),
-            games::pawn_home.eq(pawn_home),
-            games::orientation.eq(temp_game.orientation.clone()),
-        ))
-        .execute(db)?;
-
+    let updated_rows = apply_update(db, existing)?;
     if updated_rows != 1 {
         return Err(Error::GameNotFound(game_id.to_string()));
-    }
-
-    if let Some(photos) = temp_game
-        .scoresheet_photos
-        .as_deref()
-        .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
-    {
-        upsert_scoresheet_photos(db, game_id, photos)?;
-    } else {
-        delete_scoresheet_photos(db, game_id)?;
     }
 
     maintain_metadata(db)?;
@@ -2424,6 +2403,310 @@ fn write_parsed_db_game(
         &written,
         written_photos.as_deref(),
     ))
+}
+
+fn write_parsed_db_game(
+    db: &mut SqliteConnection,
+    game_id: i32,
+    temp_game: &TempGame,
+    expected_stamp: &str,
+    maintain_metadata: fn(&mut SqliteConnection) -> Result<(), Error>,
+) -> Result<String, Error> {
+    update_game_with_stamp_check(
+        db,
+        game_id,
+        expected_stamp,
+        maintain_metadata,
+        |db, existing| {
+            let game_time = temp_game.time.clone().or(existing.time);
+
+            let (white_id, black_id, event_id, site_id) = temp_game.index_ids(db)?;
+
+            let minimum_material = temp_game
+                .material_count
+                .minimum_material(temp_game.position.board());
+            let minimal_white_material = i32::from(minimum_material.white);
+            let minimal_black_material = i32::from(minimum_material.black);
+            let pawn_home = get_pawn_home(temp_game.position.board()) as i32;
+            let ply_count = iter_mainline_move_bytes(&temp_game.moves).count() as i32;
+
+            let updated_rows = diesel::update(games::table.filter(games::id.eq(game_id)))
+                .set((
+                    games::event_id.eq(event_id),
+                    games::site_id.eq(site_id),
+                    games::date.eq(temp_game.date.clone()),
+                    games::time.eq(game_time),
+                    games::round.eq(temp_game.round.clone()),
+                    games::white_id.eq(white_id),
+                    games::white_elo.eq(temp_game.white_elo),
+                    games::black_id.eq(black_id),
+                    games::black_elo.eq(temp_game.black_elo),
+                    games::white_material.eq(minimal_white_material),
+                    games::black_material.eq(minimal_black_material),
+                    games::result.eq(temp_game.result.clone()),
+                    games::time_control.eq(temp_game.time_control.clone()),
+                    games::eco.eq(temp_game.eco.clone()),
+                    games::ply_count.eq(ply_count),
+                    games::fen.eq(temp_game.fen.clone()),
+                    games::moves.eq(temp_game.moves.clone()),
+                    games::pawn_home.eq(pawn_home),
+                    games::orientation.eq(temp_game.orientation.clone()),
+                ))
+                .execute(db)?;
+
+            if updated_rows == 1 {
+                if let Some(photos) = temp_game
+                    .scoresheet_photos
+                    .as_deref()
+                    .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
+                {
+                    upsert_scoresheet_photos(db, game_id, photos)?;
+                } else {
+                    delete_scoresheet_photos(db, game_id)?;
+                }
+            }
+
+            Ok(updated_rows)
+        },
+    )
+}
+
+struct ValidatedGameHeaders {
+    white: Option<String>,
+    black: Option<String>,
+    white_elo: Option<i32>,
+    black_elo: Option<i32>,
+    event: Option<String>,
+    site: Option<String>,
+    round: Option<String>,
+    date: Option<String>,
+    result: Option<String>,
+    time_control: Option<String>,
+}
+
+fn escape_pgn_tag_value(value: &str) -> Cow<'_, str> {
+    if !value.contains(['\\', '"']) {
+        return Cow::Borrowed(value);
+    }
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character == '\\' || character == '"' {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    Cow::Owned(escaped)
+}
+
+fn trim_single_line_header<'a>(
+    field: &str,
+    value: Option<&'a str>,
+) -> Result<Option<&'a str>, Error> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    if raw.contains(['\r', '\n']) {
+        return Err(Error::InvalidInput(format!(
+            "{field} cannot contain line breaks"
+        )));
+    }
+    Ok(Some(raw.trim()))
+}
+
+fn optional_header_text(field: &str, value: Option<&str>) -> Result<Option<String>, Error> {
+    Ok(trim_single_line_header(field, value)?
+        .filter(|text| !text.is_empty() && *text != "?")
+        .map(str::to_owned))
+}
+
+fn optional_escaped_index_name(field: &str, value: Option<&str>) -> Result<Option<String>, Error> {
+    Ok(database_index_name(trim_single_line_header(field, value)?)
+        .map(|name| escape_pgn_tag_value(name).into_owned()))
+}
+
+fn validate_elo(field: &str, value: Option<i32>) -> Result<Option<i32>, Error> {
+    if let Some(elo) = value {
+        if !(0..=4000).contains(&elo) {
+            return Err(Error::InvalidInput(format!(
+                "{field} must be between 0 and 4000"
+            )));
+        }
+    }
+    Ok(value)
+}
+
+fn validate_header_date(
+    value: Option<&str>,
+    existing_date: Option<&str>,
+) -> Result<Option<String>, Error> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    if raw.contains(['\r', '\n']) {
+        return Err(Error::InvalidInput(
+            "Date cannot contain line breaks".into(),
+        ));
+    }
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "?" {
+        return Ok(None);
+    }
+    if existing_date == Some(raw) {
+        return Ok(Some(raw.to_owned()));
+    }
+    if existing_date == Some(trimmed) {
+        return Ok(Some(trimmed.to_owned()));
+    }
+    pgn_date::parse_canonical(trimmed)
+        .map(|canonical| Some(canonical.into_owned()))
+        .ok_or_else(|| Error::InvalidInput("Date must use YYYY.MM.DD format".into()))
+}
+
+fn validate_header_result(value: Option<&str>) -> Result<Option<String>, Error> {
+    let Some(trimmed) = trim_single_line_header("Result", value)?.filter(|text| !text.is_empty())
+    else {
+        return Ok(None);
+    };
+    Outcome::from_str(trimmed)
+        .map(|_| Some(trimmed.to_owned()))
+        .map_err(|_| Error::InvalidInput("Result must be 1-0, 0-1, 1/2-1/2, or *".into()))
+}
+
+fn validate_db_game_headers_update(
+    headers: &DbGameHeadersUpdate,
+    existing_date: Option<&str>,
+) -> Result<ValidatedGameHeaders, Error> {
+    Ok(ValidatedGameHeaders {
+        white: trim_single_line_header("White", headers.white.as_deref())?.map(str::to_owned),
+        black: trim_single_line_header("Black", headers.black.as_deref())?.map(str::to_owned),
+        white_elo: validate_elo("WhiteElo", headers.white_elo)?,
+        black_elo: validate_elo("BlackElo", headers.black_elo)?,
+        event: optional_escaped_index_name("Event", headers.event.as_deref())?,
+        site: optional_escaped_index_name("Site", headers.site.as_deref())?,
+        round: optional_header_text("Round", headers.round.as_deref())?,
+        date: validate_header_date(headers.date.as_deref(), existing_date)?,
+        result: validate_header_result(headers.result.as_deref())?,
+        time_control: optional_header_text("TimeControl", headers.time_control.as_deref())?,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn write_db_game_headers(
+    file: DatabaseHandle,
+    game_id: i32,
+    headers: DbGameHeadersUpdate,
+    expected_stamp: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, Error> {
+    state
+        .folder_switch
+        .wait_for_migration(
+            crate::infra::path_authority::FolderSwitchKind::Database,
+            None,
+        )
+        .await?;
+    let operation = state.operations.accept("write_db_game_headers")?;
+    let cancellation = operation.token();
+    let authority = state.pgn_path_authority.clone();
+    let repository = Arc::clone(&state.database_repository);
+    let search_cache = Arc::clone(&state.search_cache);
+    crate::infra::operations::run_native_operation(operation, "write_db_game_headers", async move {
+        BLOCKING_GATEWAY
+            .spawn_cancellable(cancellation, move |token| {
+                write_db_game_headers_blocking(
+                    &authority,
+                    &repository,
+                    &search_cache,
+                    file,
+                    game_id,
+                    headers,
+                    expected_stamp,
+                    token,
+                )
+            })
+            .await
+    })
+    .await
+}
+
+// Keep the command's injected authority, repository and search cache, request fields (file, game id,
+// header update, expected stamp) and cancellation token separate so tests can call this without
+// Tauri state.
+#[allow(clippy::too_many_arguments)]
+fn write_db_game_headers_blocking(
+    authority: &crate::infra::path_authority::SharedPathAuthority,
+    repository: &DatabaseRepository,
+    search_cache: &SearchCache,
+    file: DatabaseHandle,
+    game_id: i32,
+    headers: DbGameHeadersUpdate,
+    expected_stamp: String,
+    cancellation: &CancellationToken,
+) -> Result<String, Error> {
+    #[cfg(test)]
+    database_command_checkpoint("write_db_game_headers", &file);
+    let target = resolve_database(authority, &file, PathOperation::DatabaseMutate)?;
+
+    let mut written_stamp = None;
+    with_validated_mutation(
+        repository,
+        search_cache,
+        &target,
+        cancellation,
+        authority,
+        &file,
+        |db| {
+            written_stamp = Some(write_validated_db_game_headers(
+                db,
+                game_id,
+                &headers,
+                &expected_stamp,
+            )?);
+            Ok(())
+        },
+    )?;
+    written_stamp.ok_or_else(|| Error::InvalidInput("Write returned no game stamp".into()))
+}
+
+fn write_validated_db_game_headers(
+    db: &mut SqliteConnection,
+    game_id: i32,
+    headers: &DbGameHeadersUpdate,
+    expected_stamp: &str,
+) -> Result<String, Error> {
+    update_game_with_stamp_check(
+        db,
+        game_id,
+        expected_stamp,
+        remove_orphans_and_refresh_derived_data,
+        |db, existing| {
+            let validated = validate_db_game_headers_update(headers, existing.date.as_deref())?;
+            let (white_id, black_id, event_id, site_id) = resolve_game_index_ids(
+                db,
+                validated.white.as_deref(),
+                validated.black.as_deref(),
+                validated.event.as_deref(),
+                validated.site.as_deref(),
+                validated.date.as_deref(),
+            )?;
+
+            Ok(diesel::update(games::table.filter(games::id.eq(game_id)))
+                .set((
+                    games::event_id.eq(event_id),
+                    games::site_id.eq(site_id),
+                    games::date.eq(validated.date),
+                    games::round.eq(validated.round),
+                    games::white_id.eq(white_id),
+                    games::white_elo.eq(validated.white_elo),
+                    games::black_id.eq(black_id),
+                    games::black_elo.eq(validated.black_elo),
+                    games::result.eq(validated.result),
+                    games::time_control.eq(validated.time_control),
+                ))
+                .execute(db)?)
+        },
+    )
 }
 
 #[tauri::command]
@@ -3481,10 +3764,10 @@ mod tests {
     fn database_target_source_text_anchors() {
         let production = db_production_source();
         // Includes the two collection-service admission checks, the authority door,
-        // the insert command's mutation resolution, the deletion recovery present-arm re-resolve,
-        // the single-game recent lookup's read resolution, and
+        // the insert and header-write commands' mutation resolutions, the deletion recovery
+        // present-arm re-resolve, the single-game recent lookup's read resolution, and
         // the owner-orientation inference's read resolution.
-        assert_eq!(production.matches("resolve_database(").count(), 25);
+        assert_eq!(production.matches("resolve_database(").count(), 26);
         let resolver = production
             .split("pub(crate) fn resolve_database(")
             .nth(1)
@@ -3496,7 +3779,11 @@ mod tests {
         assert!(!production.contains("database_path("));
         assert!(!production.contains("DatabaseFileTarget {"));
         assert!(!production.contains("assemble("));
-        for function in ["insert_db_game_from_reader", "write_db_game_blocking"] {
+        for function in [
+            "insert_db_game_from_reader",
+            "write_db_game_blocking",
+            "write_db_game_headers_blocking",
+        ] {
             let body = production
                 .split(&format!("fn {function}("))
                 .nth(1)
@@ -6380,6 +6667,7 @@ mod tests {
         ExportToPgn => export_to_pgn,
         DeleteDbGame => delete_db_game,
         WriteDbGame => write_db_game,
+        WriteDbGameHeaders => write_db_game_headers,
         MergePlayers => merge_players,
     }
 
@@ -6396,6 +6684,7 @@ mod tests {
                 Self::ExportToPgn => "export_to_pgn",
                 Self::DeleteDbGame => "delete_db_game",
                 Self::WriteDbGame => "write_db_game",
+                Self::WriteDbGameHeaders => "write_db_game_headers",
                 Self::MergePlayers => "merge_players",
             }
         }
@@ -6471,7 +6760,9 @@ mod tests {
                 std::fs::write(&path, b"old").unwrap();
                 inputs.destination = Some(grant_pgn_destination(app, &path));
             }
-            DatabaseCommandCase::DeleteDbGame | DatabaseCommandCase::WriteDbGame => {
+            DatabaseCommandCase::DeleteDbGame
+            | DatabaseCommandCase::WriteDbGame
+            | DatabaseCommandCase::WriteDbGameHeaders => {
                 inputs.game_id =
                     insert_named_game(app, database, "White", "Black", "Event", "Site");
                 let state = app.state::<AppState>();
@@ -6547,6 +6838,18 @@ mod tests {
                 handle,
                 inputs.game_id,
                 REPLACEMENT_PGN.into(),
+                inputs.expected_stamp,
+                state,
+            )
+            .await
+            .map(|_| ()),
+            DatabaseCommandCase::WriteDbGameHeaders => write_db_game_headers(
+                handle,
+                inputs.game_id,
+                DbGameHeadersUpdate {
+                    round: Some("9".into()),
+                    ..DbGameHeadersUpdate::default()
+                },
                 inputs.expected_stamp,
                 state,
             )
@@ -6696,6 +6999,19 @@ mod tests {
                         .first::<Option<i32>>(&mut *db)
                         .unwrap(),
                     Some(2)
+                );
+            }
+            DatabaseCommandCase::WriteDbGameHeaders => {
+                let mut db = state
+                    .database_repository
+                    .connection(&test_target(&database), None)
+                    .unwrap();
+                assert_eq!(
+                    games::table
+                        .select(games::round)
+                        .first::<Option<String>>(&mut *db)
+                        .unwrap(),
+                    Some("9".to_string())
                 );
             }
             DatabaseCommandCase::MergePlayers => {
@@ -12391,6 +12707,7 @@ mod tests {
             "delete_empty_games_blocking",
             "delete_db_game_blocking",
             "write_db_game_blocking",
+            "write_db_game_headers_blocking",
             "merge_players_blocking",
         ] {
             let body = source
@@ -12446,6 +12763,7 @@ mod tests {
             "delete_empty_games",
             "delete_db_game",
             "write_db_game",
+            "write_db_game_headers",
             "merge_players",
             "convert_pgn_command_core",
         ] {

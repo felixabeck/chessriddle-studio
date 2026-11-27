@@ -1456,6 +1456,14 @@ async writeDbGame(file: DatabaseHandle, gameId: number, pgn: string, expectedSta
     else return { status: "error", error: e  as any };
 }
 },
+async writeDbGameHeaders(file: DatabaseHandle, gameId: number, headers: DbGameHeadersUpdate, expectedStamp: string) : Promise<Result<string, ErrorPayload>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("write_db_game_headers", { file, gameId, headers, expectedStamp }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async insertDbGame(file: DatabaseHandle, pgn: string) : Promise<Result<InsertedDbGame, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("insert_db_game", { file, pgn }) };
@@ -2235,6 +2243,7 @@ export type DatabaseRootHandle = { id: PathRef; kind: DatabaseRootHandleKind }
 export type DatabaseRootHandleKind = "databaseRoot"
 export type DatabaseUnread = { filename: string; category: ErrorCategory }
 export type DatabaseUpgradeFailureReason = "disk-full" | "other"
+export type DbGameHeadersUpdate = { white?: string | null; black?: string | null; white_elo?: number | null; black_elo?: number | null; event?: string | null; site?: string | null; round?: string | null; date?: string | null; result?: string | null; time_control?: string | null }
 export type DbGameLookup = { kind: "found"; game: NormalizedGame } | { kind: "missing" }
 export type DisconnectOutcome = { status: "notFound" } | { status: "removed"; revocation_pending: boolean; durability_uncertain: boolean }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"

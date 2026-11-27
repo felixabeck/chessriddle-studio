@@ -1,4 +1,4 @@
-import type { DatabaseHandle, FileWorkspaceHandle } from "@/bindings";
+import type { DatabaseHandle, DbGameHeadersUpdate, FileWorkspaceHandle } from "@/bindings";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { collectSWRKeys, databaseHandleKey, sameDatabaseHandle } from "@/utils/db";
 import {
@@ -7,6 +7,7 @@ import {
     runDestructiveWithRefresh,
     safeFailureContext,
 } from "@/platform/errors";
+import { tauri } from "@/platform/tauri";
 import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import type { DatabaseConversionOperation } from "@/state/atoms";
 import { type Cache, type ScopedMutator, unstable_serialize } from "swr";
@@ -70,6 +71,38 @@ export async function refreshDatabaseGameQueries(
             return data;
         }),
     );
+}
+
+/** Save updated game headers, then refresh the database's queries and report any refresh failure
+ * separately without turning a committed write into a save error. */
+export async function saveDbGameHeaders(args: {
+    file: DatabaseHandle;
+    gameId: number;
+    headers: DbGameHeadersUpdate;
+    expectedStamp: string;
+    cache: Cache;
+    mutate: ScopedMutator;
+    refreshFailedTitle: string;
+    onSaved?: (stamp: string) => void;
+}): Promise<string> {
+    const stamp = await tauri.writeDbGameHeaders(
+        args.file,
+        args.gameId,
+        args.headers,
+        args.expectedStamp,
+    );
+    args.onSaved?.(stamp);
+    try {
+        const refreshed = await refreshDatabaseGameQueries(args.file, args.cache, args.mutate);
+        for (const result of refreshed) {
+            if (result.status === "rejected") {
+                notifyUnlessCancelled(args.refreshFailedTitle, result.reason, "database");
+            }
+        }
+    } catch (error) {
+        notifyUnlessCancelled(args.refreshFailedTitle, error, "database");
+    }
+    return stamp;
 }
 
 export type DatabaseRemovalState = {

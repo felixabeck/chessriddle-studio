@@ -27,14 +27,7 @@ pub(super) fn write_decoded_pgn_tag(
     name: &str,
     value: &str,
 ) -> Result<(), Error> {
-    write!(writer, "[{name} \"")?;
-    for character in value.chars() {
-        if character == '\\' || character == '"' {
-            writer.write_all(b"\\")?;
-        }
-        write!(writer, "{character}")?;
-    }
-    writeln!(writer, "\"]")?;
+    writeln!(writer, "[{name} \"{}\"]", escape_pgn_tag_value(value))?;
     Ok(())
 }
 

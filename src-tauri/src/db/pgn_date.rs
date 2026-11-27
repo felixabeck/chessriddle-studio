@@ -32,6 +32,25 @@ pub(super) fn canonical(date: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
+/// Whether `date` already has the canonical 10-byte PGN date shape `[0-9?]{4}.[0-9?]{2}.[0-9?]{2}`.
+pub(super) fn is_canonical(date: &str) -> bool {
+    let bytes = date.as_bytes();
+    bytes.len() == 10
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if index == 4 || index == 7 {
+                *byte == b'.'
+            } else {
+                byte.is_ascii_digit() || *byte == b'?'
+            }
+        })
+}
+
+/// Canonicalises a PGN date and returns it when it matches `[0-9?]{4}.[0-9?]{2}.[0-9?]{2}`.
+pub(super) fn parse_canonical(date: &str) -> Option<Cow<'_, str>> {
+    let normalized = canonical(date);
+    is_canonical(&normalized).then_some(normalized)
+}
+
 /// A date with a known year, month and day, in either the one- or two-digit spelling.
 pub(super) fn is_complete(date: &str) -> bool {
     let date = canonical(date);
@@ -101,6 +120,42 @@ mod tests {
             "26.11.15",
         ] {
             assert!(!is_complete(date), "{date:?}");
+        }
+    }
+
+    #[test]
+    fn parse_canonical_accepts_pgn_date_grammar_and_rejects_malformed_values() {
+        for (input, expected) in [
+            ("2026.11.15", "2026.11.15"),
+            ("2026.1.5", "2026.01.05"),
+            ("2026.??.??", "2026.??.??"),
+            ("2026.?.?", "2026.??.??"),
+            ("????.??.??", "????.??.??"),
+            ("????.?.?", "????.??.??"),
+            ("202?.?9.1", "202?.?9.01"),
+        ] {
+            assert_eq!(
+                parse_canonical(input).as_deref(),
+                Some(expected),
+                "{input:?}"
+            );
+            assert!(is_canonical(expected), "{expected:?}");
+        }
+        for invalid in [
+            "",
+            "?",
+            "invalid",
+            "2026\"01\"01",
+            "2026\\01\\01",
+            "2026-01-05",
+            "2026.01.055",
+            "26.01.05",
+            "2026.1.15x",
+            "2026..1",
+            "2026.1.1.",
+        ] {
+            assert_eq!(parse_canonical(invalid), None, "{invalid:?}");
+            assert!(!is_canonical(invalid), "{invalid:?}");
         }
     }
 

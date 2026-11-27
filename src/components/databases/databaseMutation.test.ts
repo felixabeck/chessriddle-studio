@@ -12,13 +12,25 @@ import {
     runPgnExport,
     refreshDatabaseGameQueries,
     refreshAfterDatabaseConversion,
+    saveDbGameHeaders,
     type DatabaseRemovalState,
 } from "./databaseMutation";
 
 const notify = vi.hoisted(() => vi.fn());
 const logError = vi.hoisted(() => vi.fn());
+const writeDbGameHeaders = vi.hoisted(() => vi.fn());
 vi.mock("@mantine/notifications", () => ({ notifications: { show: notify } }));
 vi.mock("@/platform/native", () => ({ error: logError }));
+vi.mock("@/platform/tauri", async (original) => {
+    const mod = await original<typeof import("@/platform/tauri")>();
+    return {
+        ...mod,
+        tauri: {
+            ...mod.tauri,
+            writeDbGameHeaders,
+        },
+    };
+});
 vi.mock("@/i18n", async (original) => ({
     ...(await original<typeof import("@/i18n")>()),
     default: {
@@ -543,5 +555,167 @@ describe("Add Games picker", () => {
         resolveConversion();
         await pending;
         expect(store.get(databaseConversionStateAtom)).toBe(previous);
+    });
+});
+
+describe("saveDbGameHeaders", () => {
+    const file = database("header-edit");
+    const headers = {
+        white: "Carlsen",
+        black: "Caruana",
+        event: "Candidates",
+    };
+
+    beforeEach(() => {
+        notify.mockClear();
+        writeDbGameHeaders.mockReset();
+    });
+
+    it("writes headers, invokes onSaved, refreshes queries and resolves with the new stamp", async () => {
+        const order: string[] = [];
+        writeDbGameHeaders.mockImplementation(async () => {
+            order.push("write");
+            return "new-stamp";
+        });
+        const keys: Arguments[] = [["games", file, { page: 1 }]];
+        const cache = new Map<string, State>();
+        const mutate = vi.fn(
+            async (
+                key: Arguments | ((key: Arguments) => boolean),
+                _data?: unknown,
+                options?: { revalidate: boolean },
+            ) => {
+                if (typeof key === "function") {
+                    for (const original of keys) key(original);
+                    return [];
+                }
+                if (options?.revalidate === false) {
+                    order.push("invalidate");
+                    cache.set(unstable_serialize(key), { data: undefined, error: undefined });
+                    return undefined;
+                }
+                order.push("revalidate");
+                cache.set(unstable_serialize(key), { data: "fresh" });
+                return "fresh";
+            },
+        );
+
+        const stamp = await saveDbGameHeaders({
+            file,
+            gameId: 42,
+            headers,
+            expectedStamp: "old-stamp",
+            cache,
+            mutate: mutate as ScopedMutator,
+            refreshFailedTitle: "Databases.Game.SavedRefreshFailed",
+            onSaved: (savedStamp) => order.push(`saved:${savedStamp}`),
+        });
+
+        expect(stamp).toBe("new-stamp");
+        expect(writeDbGameHeaders).toHaveBeenCalledExactlyOnceWith(file, 42, headers, "old-stamp");
+        expect(order).toEqual(["write", "saved:new-stamp", "invalidate", "revalidate"]);
+        expect(notify).not.toHaveBeenCalled();
+    });
+
+    it("reports a refresh failure after a successful write and still resolves with the new stamp", async () => {
+        writeDbGameHeaders.mockResolvedValueOnce("new-stamp");
+        const keys: Arguments[] = [["games", file, { page: 1 }]];
+        const cache = new Map<string, State>();
+        const fetchError = new TauriCommandError({
+            tag: "backend-error",
+            category: "io",
+            message: "missing database root at /private/databases",
+            rootFailure: "missing",
+        });
+        const mutate = vi.fn(
+            async (
+                key: Arguments | ((key: Arguments) => boolean),
+                _data?: unknown,
+                options?: { revalidate: boolean },
+            ) => {
+                if (typeof key === "function") {
+                    for (const original of keys) key(original);
+                    return [];
+                }
+                if (options?.revalidate === false) {
+                    cache.set(unstable_serialize(key), { data: undefined, error: undefined });
+                    return undefined;
+                }
+                cache.set(unstable_serialize(key), { data: "stale", error: fetchError });
+                return "stale";
+            },
+        );
+
+        await expect(
+            saveDbGameHeaders({
+                file,
+                gameId: 7,
+                headers,
+                expectedStamp: "old-stamp",
+                cache,
+                mutate: mutate as ScopedMutator,
+                refreshFailedTitle: "Databases.Game.SavedRefreshFailed",
+            }),
+        ).resolves.toBe("new-stamp");
+
+        expect(notify).toHaveBeenCalledExactlyOnceWith({
+            color: "danger",
+            title: "Databases.Game.SavedRefreshFailed",
+            message: "This database folder is no longer available. Choose another.",
+        });
+    });
+
+    it("reports a direct refresh exception after a successful write and still resolves", async () => {
+        writeDbGameHeaders.mockResolvedValueOnce("new-stamp");
+        const cache = new Map<string, State>();
+        const mutate = vi.fn(async () => {
+            throw new Error("cache traversal failed");
+        });
+
+        await expect(
+            saveDbGameHeaders({
+                file,
+                gameId: 7,
+                headers,
+                expectedStamp: "old-stamp",
+                cache,
+                mutate: mutate as ScopedMutator,
+                refreshFailedTitle: "Databases.Game.SavedRefreshFailed",
+            }),
+        ).resolves.toBe("new-stamp");
+
+        expect(notify).toHaveBeenCalledExactlyOnceWith({
+            color: "danger",
+            title: "Databases.Game.SavedRefreshFailed",
+            message: "cache traversal failed",
+        });
+    });
+
+    it("rejects on a command error without calling onSaved or refreshing", async () => {
+        const failure = new TauriCommandError({
+            tag: "backend-error",
+            category: "stale-game",
+            message: "Game changed on disk",
+        });
+        writeDbGameHeaders.mockRejectedValueOnce(failure);
+        const onSaved = vi.fn();
+        const mutate = vi.fn();
+
+        await expect(
+            saveDbGameHeaders({
+                file,
+                gameId: 7,
+                headers,
+                expectedStamp: "old-stamp",
+                cache: new Map<string, State>(),
+                mutate: mutate as ScopedMutator,
+                refreshFailedTitle: "Databases.Game.SavedRefreshFailed",
+                onSaved,
+            }),
+        ).rejects.toBe(failure);
+
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(mutate).not.toHaveBeenCalled();
+        expect(notify).not.toHaveBeenCalled();
     });
 });

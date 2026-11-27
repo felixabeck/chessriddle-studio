@@ -584,18 +584,10 @@ fn matches_date(date: Option<&str>, start: Option<&str>, end: Option<&str>) -> b
     };
     let date = super::pgn_date::canonical(date);
     let date = date.as_ref();
-    let bytes = date.as_bytes();
-    let is_pgn_date = bytes.len() == 10
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            if index == 4 || index == 7 {
-                *byte == b'.'
-            } else {
-                byte.is_ascii_digit() || *byte == b'?'
-            }
-        });
-    if !is_pgn_date {
+    if !super::pgn_date::is_canonical(date) {
         return start.is_none_or(|bound| date >= bound) && end.is_none_or(|bound| date <= bound);
     }
+    let bytes = date.as_bytes();
     if bytes[..4].contains(&b'?') {
         return false;
     }
