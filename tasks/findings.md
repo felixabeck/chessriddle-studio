@@ -29908,3 +29908,18 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Failure scenario:** `rust-macos-test` in Test run 45936168045 on master `dd3dfea0e` (a records-only commit; the same test passed on `c5a3633db` one run earlier) failed `db::content_validation_tests::content_validation_metadata_returns_during_active_scan_and_only_one_of_many_scans_takes_gateway` at `src-tauri/src/db/content_validation_tests.rs:1214` with `left: 2, right: 1` for `pause.0.started`. After the test releases its three held `BLOCKING_GATEWAY` permits (`release.send(true)`), one of the six queued scans can take a freed permit and start before the loop that calls `seal_and_request_cancellation()` reaches its registry, so two scans have started instead of one.
 * **Fix:** make the test cancel (seal) all seven registries before releasing the held permits, or otherwise order release after cancellation, so a queued scan cannot start in the window; the assertion stays as strict as it is.
 * **Spotted outside diff:** found while triaging the scoresheet photo build's CI run; the test and the scan code are untouched by that build.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The saved-layouts e2e test runs out of its 45 s budget on the CI runner and turns the Test workflow red
+
+* **ID:** f-20261127-07 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 04e8f621-d458-405a-a102-f7eee9b6e626
+
+* **Impact class:** tooling
+* **CI run:** 45909200719 (newest red, head c1a26a5c8); first red run 45908738477 at ae0cc2b0a (that push changed only scripts/verify-app.mjs harness code and ledgers, no e2e input; the cause is the test's budget, not that SHA)
+* **Failure scenario:** `e2e/saved-layouts.spec.ts:52` ("per-kind presets, kind isolation, save/replace, menus, shortcuts, rename, delete, and Reset") runs every layout flow in one test under the default 45 000 ms timeout. Its CI durations were 43.4 s (ca435e7d9), 35.7 s (d4bab9a49), then 53.8 s and 52.8 s: both red runs hit "Test timeout of 45000ms exceeded" at the last step, `preserveStorageForReload` (`page.reload: net::ERR_ABORTED`, spec line 302). Every other Test job is green, and 573 other e2e tests pass.
+* **Open question:** none; give this one multi-flow test an explicit budget (`test.setTimeout`, precedent `e2e/chessriddle-training.spec.ts:1486`).
+* **Repair owner:** 04e8f621-d458-405a-a102-f7eee9b6e626 on tuxedo-felix, 2026-11-26T23:31:35Z
