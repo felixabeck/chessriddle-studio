@@ -1,7 +1,6 @@
 /** Recent files and last-opened timestamps. */
 import type { SetStateAction } from "react";
 import { atom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
 import { z } from "zod";
 import { normalizeGameSignature } from "../gameSignature";
 import { recentFileSchema, type RecentFile, type RecentEntryInput } from "../recentFiles";
@@ -12,8 +11,8 @@ import {
     type LastOpened,
 } from "../lastOpened";
 import { fileWorkspaceKey, capabilityKey } from "../../utils/pathCapabilities";
-import { createZodStorage, initializeBeforeUse } from "../utils";
-import { documentPreferences, initializeRendererState } from "./rendererState";
+import { createZodStorage } from "../utils";
+import { documentPreferences } from "./rendererState";
 
 const MAX_RECENT_FILES = 10;
 
@@ -49,21 +48,45 @@ export function dedupeRecentFiles(files: RecentFile[]): RecentFile[] {
         .slice(0, MAX_RECENT_FILES);
 }
 
-/** Refresh native identities without changing the last-opened timestamp. */
+type FileRecent = Extract<RecentFile, { handle: unknown }>;
+
+/** After a Library sidecar type or name write, keep matching Recent-file rows in sync. */
+export function patchRecentFilesSidecar({
+    setRecentFiles,
+    fileKey,
+    name,
+    type,
+}: {
+    setRecentFiles: (files: SetStateAction<RecentFile[]>) => void;
+    fileKey: string;
+    name: string;
+    type: FileRecent["type"];
+}): void {
+    setRecentFiles((files) => {
+        let changed = false;
+        const next = files.map((file) => {
+            if ("kind" in file) return file;
+            if (fileWorkspaceKey(file.handle) !== fileKey) return file;
+            if (file.name === name && file.type === type) return file;
+            changed = true;
+            return { ...file, name, type };
+        });
+        return changed ? next : files;
+    });
+}
+
+/** Refresh native identities, or patch sidecar name/type, without changing last-opened. */
 export const updateRecentFilesAtom = atom(null, (get, set, files: SetStateAction<RecentFile[]>) => {
-    set(
-        recentFilesAtom,
-        dedupeRecentFiles(typeof files === "function" ? files(get(recentFilesAtom)) : files),
-    );
+    const current = get(recentFilesAtom);
+    const next = typeof files === "function" ? files(current) : files;
+    if (next === current) return;
+    set(recentFilesAtom, dedupeRecentFiles(next));
 });
 
-export const recentFilesAtom = initializeBeforeUse(
-    atomWithStorage<RecentFile[]>(
-        "recent-files",
-        [],
-        createZodStorage(z.array(recentFileSchema), localStorage),
-    ),
-    initializeRendererState,
+export const recentFilesAtom = documentPreferences.atomWithStorage<RecentFile[]>(
+    "recent-files",
+    [],
+    createZodStorage(z.array(recentFileSchema), localStorage),
 );
 
 export const lastOpenedAtom = documentPreferences.atomWithStorage<LastOpened>(

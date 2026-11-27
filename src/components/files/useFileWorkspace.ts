@@ -13,7 +13,13 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR, { useSWRConfig } from "swr";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
-import { fileWorkspaceAtom, fileWorkspaceDisplayNameAtom, tabsAtom } from "@/state/atoms";
+import {
+    fileWorkspaceAtom,
+    fileWorkspaceDisplayNameAtom,
+    patchRecentFilesSidecar,
+    tabsAtom,
+    updateRecentFilesAtom,
+} from "@/state/atoms";
 import { fileGameHasBlockingOpenTab } from "@/utils/fileGameWrite";
 import { patchFileTabsSidecar } from "@/utils/tabs";
 import { readFileGame, setFileGameOrientation } from "@/utils/files";
@@ -79,6 +85,7 @@ export function useFileWorkspace(
     const [, setWorkspaceDisplayName] = useAtom(fileWorkspaceDisplayNameAtom);
     const tabs = useAtomValue(tabsAtom);
     const setTabs = useSetAtom(tabsAtom);
+    const setRecentFiles = useSetAtom(updateRecentFilesAtom);
     const [action, setAction] = useState<FileAction | null>(null);
     const [name, setName] = useState("");
     const [fileType, setFileType] = useState<FileType>("other");
@@ -517,13 +524,22 @@ export function useFileWorkspace(
                             type: chosenType,
                             tags: source.metadata.tags,
                         };
-                        const applySidecarPatch = () =>
+                        const applySidecarPatch = () => {
+                            const fileKey = fileWorkspaceKey(source.handle);
+                            const nextName = nameUnchanged ? source.name : name.trim();
                             patchFileTabsSidecar({
                                 setTabs,
-                                fileKey: fileWorkspaceKey(source.handle),
-                                name: nameUnchanged ? source.name : name,
+                                fileKey,
+                                name: nextName,
                                 metadata,
                             });
+                            patchRecentFilesSidecar({
+                                setRecentFiles,
+                                fileKey,
+                                name: nextName,
+                                type: metadata.type,
+                            });
+                        };
                         try {
                             if (nameUnchanged)
                                 await tauri.writeWorkspaceFileMetadata(
@@ -535,7 +551,7 @@ export function useFileWorkspace(
                                 await tauri.renameWorkspaceFile(
                                     owner.workspace,
                                     source.handle,
-                                    name,
+                                    name.trim(),
                                     metadata,
                                 );
                             applySidecarPatch();

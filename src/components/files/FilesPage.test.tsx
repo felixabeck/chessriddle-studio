@@ -38,6 +38,20 @@ const mocks = vi.hoisted(() => ({
         : (update as Array<unknown>);
     return true;
   },
+  recentFiles: [] as Array<{
+    name: string;
+    handle: { id: { id: string }; kind: string };
+    type: string;
+    lastOpened: number;
+  }>,
+  setRecentFiles: (update: unknown) => {
+    mocks.recentFiles =
+      typeof update === "function"
+        ? (update as (files: typeof mocks.recentFiles) => typeof mocks.recentFiles)(
+            mocks.recentFiles,
+          )
+        : (update as typeof mocks.recentFiles);
+  },
   data: [] as Array<unknown> | undefined,
   cardMounts: [] as string[],
   error: undefined as unknown,
@@ -49,6 +63,7 @@ const stateAtoms = vi.hoisted(() => ({
   fileWorkspaceDisplayNameAtom: {},
   fontSizeAtom: {},
   tabsAtom: {},
+  updateRecentFilesAtom: {},
 }));
 
 vi.mock("@/platform/tauri", async () => {
@@ -82,6 +97,7 @@ vi.mock("jotai", async (original) => ({
   },
   useSetAtom: (atom: object) => {
     if (atom === stateAtoms.tabsAtom) return mocks.setTabs;
+    if (atom === stateAtoms.updateRecentFilesAtom) return mocks.setRecentFiles;
     throw new Error("Unexpected atom");
   },
   useAtom: (atom: object) =>
@@ -1292,6 +1308,15 @@ beforeEach(async () => {
   mocks.realSWR = false;
   mocks.workspace = undefined;
   mocks.tabs = [];
+  mocks.recentFiles = [
+    { name: entry.name, handle: entry.handle, type: "game", lastOpened: 10 },
+    {
+      name: "other.pgn",
+      handle: { id: { id: "other-entry-token" }, kind: "fileWorkspace" },
+      type: "game",
+      lastOpened: 5,
+    },
+  ];
   mocks.data = [entry, destination];
   mocks.cardMounts = [];
   mocks.error = undefined;
@@ -2592,6 +2617,11 @@ describe("metadata and rename submissions", () => {
       expect(mocks.setGameOrientation).not.toHaveBeenCalled();
       expect(mocks.mutate).not.toHaveBeenCalled();
       expect(container.querySelector('[role="dialog"]')).toBeNull();
+      expect(mocks.recentFiles[0]).toMatchObject({
+        name: entry.name,
+        type: "game",
+        lastOpened: 10,
+      });
     },
   );
 
@@ -2682,6 +2712,15 @@ describe("metadata and rename submissions", () => {
         gameOrigin: { kind: "file", file: other, gameNumber: 0 },
       },
     ]);
+    expect(mocks.recentFiles).toEqual([
+      { name: entry.name, handle: entry.handle, type: "repertoire", lastOpened: 10 },
+      {
+        name: "other.pgn",
+        handle: { id: { id: "other-entry-token" }, kind: "fileWorkspace" },
+        type: "game",
+        lastOpened: 5,
+      },
+    ]);
   });
 
   test("renaming updates open tab file names and keeps type", async () => {
@@ -2704,6 +2743,40 @@ describe("metadata and rename submissions", () => {
         file: { name: "renamed.pgn", metadata: { type: "game", tags: [] }, lastModified: 1 },
       },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({
+      name: "renamed.pgn",
+      type: "game",
+      lastOpened: 10,
+    });
+  });
+
+  test("renaming with surrounding whitespace stores the trimmed name", async () => {
+    mocks.tabs = [
+      {
+        value: "open-game",
+        name: "Game",
+        type: "analysis",
+        gameOrigin: { kind: "file", file: entry, gameNumber: 1 },
+      },
+    ];
+    click("Select sample file");
+    click("Rename");
+    await setDialogName("  renamed.pgn  ");
+    await act(async () => dialogButton("Confirm").click());
+    expect(mocks.renameWorkspaceFile).toHaveBeenCalledExactlyOnceWith(
+      workspace,
+      entry.handle,
+      "renamed.pgn",
+      { type: "game", tags: [] },
+    );
+    expect(mocks.tabs[0]).toMatchObject({
+      gameOrigin: { file: { name: "renamed.pgn" } },
+    });
+    expect(mocks.recentFiles[0]).toMatchObject({
+      name: "renamed.pgn",
+      type: "game",
+      lastOpened: 10,
+    });
   });
 
   test("a refused metadata write leaves open tab type unchanged", async () => {
@@ -2724,6 +2797,7 @@ describe("metadata and rename submissions", () => {
     expect(mocks.tabs[0]).toMatchObject({
       gameOrigin: { file: { metadata: { type: "game" } } },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({ type: "game", lastOpened: 10 });
   });
 
   test("durability-uncertain metadata still patches open tabs", async () => {
@@ -2748,6 +2822,7 @@ describe("metadata and rename submissions", () => {
     expect(mocks.tabs[0]).toMatchObject({
       gameOrigin: { file: { metadata: { type: "repertoire" } } },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({ type: "repertoire", lastOpened: 10 });
   });
 
   test("unmount before sidecar write resolves still patches open tabs", async () => {
@@ -2771,6 +2846,7 @@ describe("metadata and rename submissions", () => {
     expect(mocks.tabs[0]).toMatchObject({
       gameOrigin: { file: { metadata: { type: "repertoire" } } },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({ type: "repertoire", lastOpened: 10 });
   });
 
   test("listing refresh failure after metadata write still patches open tabs", async () => {
@@ -2792,11 +2868,13 @@ describe("metadata and rename submissions", () => {
     expect(mocks.tabs[0]).toMatchObject({
       gameOrigin: { file: { metadata: { type: "repertoire" } } },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({ type: "repertoire", lastOpened: 10 });
   });
 
   test("converting repertoire to game updates open tab type", async () => {
     const repertoire = { ...entry, metadata: { type: "repertoire" as const, tags: ["keep"] } };
     mocks.data = [repertoire, destination];
+    mocks.recentFiles[0] = { ...mocks.recentFiles[0]!, type: "repertoire" };
     mocks.tabs = [
       {
         value: "open-game",
@@ -2818,6 +2896,7 @@ describe("metadata and rename submissions", () => {
     expect(mocks.tabs[0]).toMatchObject({
       gameOrigin: { file: { metadata: { type: "game", tags: ["keep"] } } },
     });
+    expect(mocks.recentFiles[0]).toMatchObject({ type: "game", lastOpened: 10 });
   });
 
   test("edit that changes name and type updates both on the open tab", async () => {
@@ -2845,6 +2924,11 @@ describe("metadata and rename submissions", () => {
       gameOrigin: {
         file: { name: "renamed.pgn", metadata: { type: "repertoire", tags: [] } },
       },
+    });
+    expect(mocks.recentFiles[0]).toMatchObject({
+      name: "renamed.pgn",
+      type: "repertoire",
+      lastOpened: 10,
     });
   });
 

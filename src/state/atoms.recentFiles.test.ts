@@ -4,6 +4,7 @@ import {
     addRecentFileAtom,
     lastOpenedAtom,
     dedupeRecentFiles,
+    patchRecentFilesSidecar,
     recentFileKey,
     recentFileSchema,
     recentFilesAtom,
@@ -106,4 +107,73 @@ test("refresh dedupes normalized signatures by recency and ignores rebuilt locat
     store.set(updateRecentFilesAtom, [old, distinct, saved, file]);
     expect(store.get(recentFilesAtom)).toEqual([saved, distinct, file]);
     expect(dedupeRecentFiles([saved, old])).toEqual([saved]);
+});
+
+function applyRecentSidecar(
+    recents: RecentFile[],
+    patch: {
+        fileKey: string;
+        name: string;
+        type: "game" | "repertoire" | "tournament" | "puzzle" | "other";
+    },
+) {
+    let current = recents;
+    patchRecentFilesSidecar({
+        setRecentFiles: (update) => {
+            current = typeof update === "function" ? update(current) : update;
+        },
+        ...patch,
+    });
+    return current;
+}
+
+test("sidecar patch updates matching file recents and leaves lastOpened, other files and database recents", () => {
+    const other: RecentFile = {
+        ...file,
+        name: "Other",
+        handle: { id: { id: "other" }, kind: "fileWorkspace" },
+        lastOpened: 3,
+    };
+    const recents = [file, other, database];
+    expect(
+        applyRecentSidecar(recents, {
+            fileKey: recentFileKey(file),
+            name: "Renamed",
+            type: "repertoire",
+        }),
+    ).toEqual([{ ...file, name: "Renamed", type: "repertoire" }, other, database]);
+    const store = createStore();
+    store.set(recentFilesAtom, recents);
+    patchRecentFilesSidecar({
+        setRecentFiles: (update) => store.set(updateRecentFilesAtom, update),
+        fileKey: recentFileKey(file),
+        name: "Renamed",
+        type: "repertoire",
+    });
+    expect(store.get(recentFilesAtom)).toEqual([
+        other,
+        database,
+        { ...file, name: "Renamed", type: "repertoire" },
+    ]);
+});
+
+test("sidecar patch keeps identical file recents by identity", () => {
+    const recents: RecentFile[] = [file, database];
+    expect(
+        applyRecentSidecar(recents, {
+            fileKey: recentFileKey(file),
+            name: file.name,
+            type: file.type,
+        }),
+    ).toBe(recents);
+    const store = createStore();
+    store.set(recentFilesAtom, recents);
+    const current = store.get(recentFilesAtom);
+    patchRecentFilesSidecar({
+        setRecentFiles: (update) => store.set(updateRecentFilesAtom, update),
+        fileKey: recentFileKey(file),
+        name: file.name,
+        type: file.type,
+    });
+    expect(store.get(recentFilesAtom)).toBe(current);
 });
