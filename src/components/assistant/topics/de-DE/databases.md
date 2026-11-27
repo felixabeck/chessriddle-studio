@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -20,11 +20,11 @@ Wähle eine Datenbank in [[page:library]] aus, um sie zu verwalten:
 
 Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{label:Databases.Card.Players}} und {{label:Databases.Settings.Events}} (Turnieren):
 - Durchsuche und sortiere Partien, sieh dir eine Vorschau an (die Vorschau kann ihre Züge mit dem Auge-Button ausblenden, [[setting:hide-preview-moves]]) oder öffne sie auf dem Analysebrett.
-- Wähle unter {{label:Databases.Card.Players}} einen Spieler aus, um {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} und {{label:Home.Personal.Openings}} (einen interaktiven Eröffnungsbaum mit der Schaltfläche {{label:Databases.OpeningTree.Prepare}}) sowie FIDE-Daten über {{label:Databases.FIDE.Info}} einzusehen.
+- Wähle unter {{label:Databases.Card.Players}} einen Spieler aus, um {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} und {{label:Home.Personal.Openings}} (einen interaktiven Eröffnungsbaum) sowie FIDE-Daten über {{label:Databases.FIDE.Info}} einzusehen. Verwende {{label:Databases.OpeningTree.Prepare}} unter {{label:Home.Personal.Overview}} und {{label:Home.Personal.Ratings}}, um die Grundstellung als Weiß mit allen Partien zu öffnen, oder unter {{label:Home.Personal.Openings}}, um die gewählte Variante, Farbe und den Zeitraum {{label:Databases.OpeningTree.Since}} zu übernehmen.
 - Suche unter {{label:Databases.Settings.Events}} Turniere nach Namen und sortiere nach Datum, Spielern, Partien oder Durchschnitts-Elo.
 
 Öffne auf der Spielerkarte den Tab {{label:Home.Personal.Preparation}}, um seine Partien mit deinen Repertoire-Dateien abzugleichen:
-- Wähle die Farbe des Gegners, den Zeitraum {{label:Databases.OpeningTree.Since}} und (bei verknüpften Online-Konten) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oder {{label:Databases.Preparation.Both}}. Klicke auf {{label:Databases.Preparation.Refresh}}, um den Abgleich erneut auszuführen.
+- Wähle die Farbe des Gegners, den Zeitraum {{label:Databases.OpeningTree.Since}} und (bei verknüpften Online-Konten) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oder {{label:Databases.Preparation.Both}}. Klicke auf {{label:Databases.Preparation.Refresh}}, um den Abgleich erneut auszuführen, oder klicke auf {{label:Databases.OpeningTree.Prepare}}, um die Grundstellung auf einem Analysebrett mit der Farbe und dem Zeitraum {{label:Databases.OpeningTree.Since}} dieses Tabs zu öffnen.
 - Erhöhe {{label:Databases.Preparation.MinGames}}, um Varianten und Lücken auszublenden, die der Gegner nur selten gespielt hat; deine Datei klappt diese Varianten ein und das Training lässt sie aus.
 - Sieh dir die Varianten an, die der Gegner spielt, sowie {{label:Databases.Preparation.GapsTitle}}. Klicke auf eine Zeile, um deine Repertoire-Datei an dieser Stellung mit ausgeblendeten Nebenvarianten zu öffnen; im Notationskopf wechselst du zwischen {{label:Notation.PreparationOpponentLines}} und {{label:Notation.PreparationAllLines}}.
 - Klicke auf {{label:Databases.Preparation.TrainLines}}, um eine zeitbegrenzte Übungseinheit über genau diese Varianten zu starten; deine Antworten zählen für den normalen Lernplan.

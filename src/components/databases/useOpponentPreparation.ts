@@ -37,7 +37,7 @@ export type PreparationJobState =
 type InternalJobState = Exclude<PreparationJobState, { kind: "ready" }> | { kind: "idle" };
 
 /** Computes the start date string for a period preset, matching the Openings tab. */
-function preparationStartDate(period: OpponentPeriod): string | null {
+export function preparationStartDate(period: OpponentPeriod): string | null {
     if (period === null) return null;
     return dayjs().subtract(period, "year").format("YYYY.MM.DD");
 }

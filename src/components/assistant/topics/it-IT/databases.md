@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -20,11 +20,11 @@ Seleziona un database in [[page:library]] per gestirlo:
 
 All’interno della vista tabellare del database, passa tra {{label:Common.Games}}, {{label:Databases.Card.Players}} e {{label:Databases.Settings.Events}} (tornei):
 - Cerca e ordina le partite, visualizza un’anteprima (l’anteprima può nascondere le mosse con il pulsante a forma di occhio, [[setting:hide-preview-moves]]) o apri una partita sulla scacchiera di analisi.
-- In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo con il pulsante {{label:Databases.OpeningTree.Prepare}}), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}.
+- In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}. Usa {{label:Databases.OpeningTree.Prepare}} in {{label:Home.Personal.Overview}} e {{label:Home.Personal.Ratings}} per aprire la posizione iniziale con il Bianco e tutte le partite, oppure in {{label:Home.Personal.Openings}} per mantenere la variante, il colore e il periodo {{label:Databases.OpeningTree.Since}} selezionati.
 - In {{label:Databases.Settings.Events}}, cerca i tornei per nome e ordina per data, giocatori, partite o Elo medio.
 
 Nella scheda di un giocatore, apri {{label:Home.Personal.Preparation}} per confrontare le sue partite con i tuoi file di repertorio:
-- Scegli il colore dell’avversario, il periodo {{label:Databases.OpeningTree.Since}} e (con account online collegati) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oppure {{label:Databases.Preparation.Both}}. Fai clic su {{label:Databases.Preparation.Refresh}} per ripetere il confronto.
+- Scegli il colore dell’avversario, il periodo {{label:Databases.OpeningTree.Since}} e (con account online collegati) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} oppure {{label:Databases.Preparation.Both}}. Fai clic su {{label:Databases.Preparation.Refresh}} per ripetere il confronto, oppure fai clic su {{label:Databases.OpeningTree.Prepare}} per aprire la posizione iniziale su una scacchiera di analisi usando il colore e il periodo {{label:Databases.OpeningTree.Since}} di quella scheda.
 - Aumenta {{label:Databases.Preparation.MinGames}} per nascondere le linee e le lacune che l’avversario ha giocato solo raramente; il tuo file comprime quelle linee e l'allenamento le esclude.
 - Esamina le varianti giocate dall’avversario e {{label:Databases.Preparation.GapsTitle}}. Fai clic su una riga per aprire il tuo file di repertorio in quella posizione con le altre varianti secondarie nascoste; nell’intestazione della notazione passa tra {{label:Notation.PreparationOpponentLines}} e {{label:Notation.PreparationAllLines}}.
 - Fai clic su {{label:Databases.Preparation.TrainLines}} per avviare una sessione a tempo su quelle varianti; le tue risposte aggiornano la normale pianificazione a ripetizione dilazionata.

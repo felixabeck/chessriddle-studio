@@ -2,7 +2,7 @@
 id: online-accounts
 title: Анлайн-акаўнты і падрыхтоўка да саперніка
 summary: Даданне акаўнтаў Lichess і Chess.com, спампоўка вашых партый і прывязка анлайн-акаўнтаў да гульцоў базы для вывучэння дэбютаў саперніка.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Кіруйце сваімі акаўнтамі Lichess і Chess.com на старонцы [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ source: 7c518989c9948fec
 3. Націсніце {{label:Databases.Opponent.Add}}, каб прывязаць адно або некалькі імён карыстальнікаў Lichess ці Chess.com да гэтага гульца.
 4. Націсніце {{label:Databases.Opponent.Manage}}, каб адфільтраваць па {{label:Databases.OpeningTree.Since}} і {{label:Databases.Opponent.TimeControls}}, або выканаць {{label:Databases.Opponent.RemoveGames}} ці {{label:Databases.Opponent.Unlink}}.
 5. Націсніце {{label:Databases.Opponent.Download}} (або {{label:Databases.Opponent.Update}}), каб спампаваць яго анлайн-партыі.
-6. Адкрыйце ўкладку {{label:Home.Personal.Openings}} на картцы гульца, каб праглядзець яго дрэва вочных і анлайн-дэбютаў, адфільтраваць па колеры і перыядзе {{label:Databases.OpeningTree.Since}} і націснуць {{label:Databases.OpeningTree.Prepare}}, каб адкрыць лінію на дошцы аналізу з замацаванымі партыямі саперніка ў аглядальніку.
+6. Націсніце {{label:Databases.OpeningTree.Prepare}} на ўкладках карткі гульца ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), каб адкрыць дошку аналізу з замацаванымі партыямі саперніка ў аглядальніку; адкрыйце спачатку {{label:Home.Personal.Openings}}, каб праглядзець яго дрэва вочных і анлайн-дэбютаў, адфільтраваць па колеры і перыядзе {{label:Databases.OpeningTree.Since}} ды выбраць пэўны варыянт.

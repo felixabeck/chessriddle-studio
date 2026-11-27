@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -20,11 +20,11 @@ source: 221e2b80a6351752
 
 데이터베이스 표 보기에서는 {{label:Common.Games}}, {{label:Databases.Card.Players}}, {{label:Databases.Settings.Events}}(토너먼트) 사이를 전환할 수 있습니다:
 - 대국을 검색 및 정렬하고, 미리 보거나(미리보기는 눈 버튼으로 수를 숨길 수 있습니다, [[setting:hide-preview-moves]]) 분석 보드에서 엽니다.
-- {{label:Databases.Card.Players}}에서 선수를 선택하면 {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Openings}}({{label:Databases.OpeningTree.Prepare}} 버튼이 있는 대화형 오프닝 트리)와 {{label:Databases.FIDE.Info}}를 통한 FIDE 정보를 볼 수 있습니다.
+- {{label:Databases.Card.Players}}에서 선수를 선택하면 {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Openings}}(대화형 오프닝 트리)와 {{label:Databases.FIDE.Info}}를 통한 FIDE 정보를 볼 수 있습니다. {{label:Home.Personal.Overview}}와 {{label:Home.Personal.Ratings}} 탭에서 {{label:Databases.OpeningTree.Prepare}}을(를) 사용하면 백 기준 전체 대국으로 시작 포지션이 열리고, {{label:Home.Personal.Openings}} 탭에서는 선택한 수순, 색상, {{label:Databases.OpeningTree.Since}} 기간을 그대로 이어서 엽니다.
 - {{label:Databases.Settings.Events}}에서는 이름으로 토너먼트를 검색하고 날짜, 참가자 수, 대국 수 또는 평균 Elo로 정렬할 수 있습니다.
 
 선수 카드의 {{label:Home.Personal.Preparation}} 탭에서 상대의 대국을 내 레퍼토리 파일과 비교하세요:
-- 상대의 색, {{label:Databases.OpeningTree.Since}} 기간을 고르고(온라인 계정이 연결된 경우) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} 또는 {{label:Databases.Preparation.Both}} 중 하나를 선택합니다. {{label:Databases.Preparation.Refresh}}을(를) 클릭하면 비교를 다시 실행합니다.
+- 상대의 색, {{label:Databases.OpeningTree.Since}} 기간을 고르고(온라인 계정이 연결된 경우) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} 또는 {{label:Databases.Preparation.Both}} 중 하나를 선택합니다. {{label:Databases.Preparation.Refresh}}을(를) 클릭하면 비교를 다시 실행하고, {{label:Databases.OpeningTree.Prepare}}을(를) 클릭하면 해당 탭의 색상과 {{label:Databases.OpeningTree.Since}} 기간을 사용해 분석 보드에서 시작 포지션을 엽니다.
 - 상대가 드물게만 둔 라인과 빈틈을 숨기려면 {{label:Databases.Preparation.MinGames}} 값을 높이세요. 파일에서 해당 라인이 접히고 훈련에서도 제외됩니다.
 - 상대가 두는 수순과 {{label:Databases.Preparation.GapsTitle}}을(를) 확인하세요. 행을 클릭하면 다른 곁가지 변화가 숨겨진 채 해당 포지션에서 레퍼토리 파일이 열리며, 기보 상단에서 {{label:Notation.PreparationOpponentLines}}와(과) {{label:Notation.PreparationAllLines}} 사이를 전환할 수 있습니다.
 - {{label:Databases.Preparation.TrainLines}}을(를) 클릭해 해당 수순만 제한 시간 동안 연습하세요. 응답 결과는 일반 간격 반복 일정에 반영됩니다.

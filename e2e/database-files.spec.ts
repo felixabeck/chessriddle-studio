@@ -4745,7 +4745,7 @@ test("database-files: the card's Overview and Ratings switch to a linked opponen
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });
 
-async function prepareFirstWhiteOnBoard(
+async function openPreparedFirstWhiteCard(
     page: Page,
     mockScenario: MockScenario,
     options: { signedIn?: boolean } = {},
@@ -4920,11 +4920,44 @@ async function prepareFirstWhiteOnBoard(
             ...(signedIn ? lichessExplorerCommands : {}),
         },
     });
-    const preview = await openFirstWhiteCard(page);
+    return openFirstWhiteCard(page);
+}
+
+async function prepareFirstWhiteOnBoard(
+    page: Page,
+    mockScenario: MockScenario,
+    options: { signedIn?: boolean } = {},
+) {
+    const preview = await openPreparedFirstWhiteCard(page, mockScenario, options);
     await preview.getByRole("tab", { name: "Openings", exact: true }).click();
     const tree = preview.locator("[data-player-opening-tree]");
     return { tree, preview };
 }
+
+test("database-files: Overview Prepare on board opens the start position with all three explorer columns", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    const preview = await openPreparedFirstWhiteCard(page, mockScenario);
+    const overview = preview.getByRole("tabpanel", { name: "Overview", exact: true });
+    await overview.getByRole("button", { name: "Prepare on board", exact: true }).click();
+    await expect(page).toHaveURL("/");
+
+    const sources = page.locator("[data-explorer-source]");
+    await expect(sources).toHaveCount(3);
+    await expect(sources.nth(0).getByRole("textbox")).toHaveValue(gameOpeningFixture.databaseTitle);
+    await expect(sources.nth(1)).toContainText("First White (online)");
+    await expect(sources.nth(2)).toContainText("Mega Reference");
+    await expect(page.getByRole("cell", { name: "e4", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "b3", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "c4", exact: true })).toBeVisible();
+    await expect(
+        page.locator("#bottomRight").getByRole("button", { name: "e4", exact: true }),
+    ).toHaveCount(0);
+    await assertNoHorizontalOverflow();
+    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
 
 test("database-files: Prepare on board shows a linked opponent's over-the-board, online, and reference databases side by side", async ({
     page,

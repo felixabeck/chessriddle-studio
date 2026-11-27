@@ -2,7 +2,7 @@
 id: online-accounts
 title: Nettkontoer og motstanderforberedelse
 summary: Legg til kontoer for Lichess og Chess.com, last ned partiene dine og koble nettkontoer til spillere i en database for å studere motstanderens åpninger.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Administrer kontoene dine på Lichess og Chess.com under [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ Slik studerer du en motstanders nettåpninger fra en database:
 3. Klikk {{label:Databases.Opponent.Add}} for å koble ett eller flere brukernavn fra Lichess eller Chess.com til den spilleren.
 4. Klikk {{label:Databases.Opponent.Manage}} for å filtrere etter {{label:Databases.OpeningTree.Since}} og {{label:Databases.Opponent.TimeControls}}, eller for å bruke {{label:Databases.Opponent.RemoveGames}} eller {{label:Databases.Opponent.Unlink}}.
 5. Klikk {{label:Databases.Opponent.Download}} (eller {{label:Databases.Opponent.Update}}) for å hente nettpartiene deres.
-6. Åpne fanen {{label:Home.Personal.Openings}} på spillerkortet for å bla gjennom deres nærsjakk- og nettbaserte åpningstre, filtrere etter farge og {{label:Databases.OpeningTree.Since}}, og klikk {{label:Databases.OpeningTree.Prepare}} for å åpne linjen på et analysebrett med motstanderens partier festet i utforskeren.
+6. Klikk {{label:Databases.OpeningTree.Prepare}} fra fanene på spillerkortet ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} eller {{label:Home.Personal.Openings}}) for å åpne et analysebrett med motstanderens partier festet i utforskeren; åpne {{label:Home.Personal.Openings}} først for å bla gjennom deres nærsjakk- og nettbaserte åpningstre, filtrere etter farge og {{label:Databases.OpeningTree.Since}} og velge en bestemt linje.

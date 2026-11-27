@@ -5,25 +5,33 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DatabaseHandle, FileWorkspaceHandle, Player, PositionStats } from "@/bindings";
 import type { FileMetadata } from "@/components/files/file";
+import { INITIAL_FEN } from "chessops/fen";
 import {
   activeTabAtom,
   fileWorkspaceAtom,
   opponentPreparationAtom,
+  pinnedExplorerComparisonFamily,
+  pinnedExplorerDatabaseFamily,
+  pinnedExplorerFurtherColumnsFamily,
+  tabFamily,
   tabPreparationViewFamily,
   tabsAtom,
 } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
+import { createTreeStore } from "@/state/store/tree";
 import type { RepertoireSnapshot } from "@/state/repertoireIndex";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { chooseSelectOption } from "@/tests/select";
 import { stubScrollIntoView } from "@/tests/scrollIntoView";
+import { databaseHandleKey } from "@/utils/db";
 import { INITIAL_BOARD_STATE } from "@/utils/opponentPreparation";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import type { Tab } from "@/utils/tabs";
 import PersonalPlayerCard from "../home/PersonalCard";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import type { OnlineGames } from "./useOnlineGames";
+import { preparationStartDate } from "./useOpponentPreparation";
 import PlayerPreparation from "./PlayerPreparation";
 
 const mocks = vi.hoisted(() => ({
@@ -1404,5 +1412,85 @@ describe("PlayerPreparation", () => {
     });
     expect(mocks.notifyUnlessCancelled).not.toHaveBeenCalled();
     root = createRoot(container);
+  });
+
+  test("toolbar Prepare on board opens start position with current colour, Since, comparison, and reference (and omits start_date for All games)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-08T12:00:00Z"));
+    localStorage.clear();
+    sessionStorage.clear();
+    try {
+      const online: OnlineGames = {
+        file: onlineDb,
+        accounts: [{ provider: "lichess", username: "DrNykterstein" }],
+        lookup: { kind: "found", player: 99 },
+      };
+      await renderTab(online);
+
+      const toolbarButtons = [
+        ...container.querySelectorAll<HTMLButtonElement>("[data-preparation-toolbar] button"),
+      ];
+      const prepareBtn = container.querySelector<HTMLButtonElement>("[data-prepare-on-board]")!;
+      const refreshBtn = container.querySelector<HTMLButtonElement>("[data-preparation-refresh]")!;
+      expect(prepareBtn).not.toBeNull();
+      expect(prepareBtn.textContent).toBe("Databases.OpeningTree.Prepare");
+      expect(toolbarButtons.indexOf(refreshBtn)).toBe(toolbarButtons.indexOf(prepareBtn) + 1);
+
+      // Select Black and 1 year.
+      const blackRadio = container.querySelector<HTMLInputElement>(
+        '[data-preparation-toolbar] input[value="black"]',
+      )!;
+      await act(async () => blackRadio.click());
+      await chooseSelectOption(periodInput(), "1");
+
+      await act(async () => prepareBtn.click());
+      expect(mocks.navigate).toHaveBeenCalledWith({ to: "/" });
+
+      const tab = store.get(tabsAtom).at(-1)!;
+      expect(tab.name).toBe(player.name);
+      expect(tab.explorer).toEqual({
+        pinned: cardDb,
+        comparison: { database: onlineDb, player: 99 },
+        further: ["reference"],
+        options: {
+          player: player.id,
+          player_database: databaseHandleKey(cardDb),
+          color: "black",
+          start_date: preparationStartDate(1),
+          result: "any",
+        },
+      });
+      expect(store.get(pinnedExplorerDatabaseFamily(tab.value))).toEqual(cardDb);
+      expect(store.get(pinnedExplorerComparisonFamily(tab.value))).toEqual({
+        database: onlineDb,
+        player: 99,
+      });
+      expect(store.get(pinnedExplorerFurtherColumnsFamily(tab.value))).toEqual(["reference"]);
+      expect(store.get(tabFamily(tab.value))).toBe("database");
+      const tree = createTreeStore(tab.value).getState();
+      expect(tree.root.fen).toBe(INITIAL_FEN);
+      expect(tree.root.children).toHaveLength(0);
+      expect(tree.headers.orientation).toBe("black");
+
+      // Switch Since to All games (period === null) -> start_date is omitted.
+      mocks.navigate.mockClear();
+      await chooseSelectOption(periodInput(), "all");
+      await act(async () => prepareBtn.click());
+      const allGamesTab = store.get(tabsAtom).at(-1)!;
+      expect(allGamesTab.explorer).toEqual({
+        pinned: cardDb,
+        comparison: { database: onlineDb, player: 99 },
+        further: ["reference"],
+        options: {
+          player: player.id,
+          player_database: databaseHandleKey(cardDb),
+          color: "black",
+          result: "any",
+        },
+      });
+      expect(allGamesTab.explorer?.options).not.toHaveProperty("start_date");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

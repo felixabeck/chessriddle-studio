@@ -9,12 +9,9 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
-import { useNavigate } from "@tanstack/react-router";
 import type { Color, Move } from "chessops";
 import { makeSan } from "chessops/san";
 import dayjs from "dayjs";
-import { useSetAtom, useStore } from "jotai";
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -23,7 +20,6 @@ import { fitSelectProps } from "@/components/common/fitSelectProps";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
 import PuzzleBoardSurface from "@/components/puzzles/PuzzleBoardSurface";
-import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import ResultsChart from "@/components/home/PersonalCardPanels/ResultsChart";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
 import {
@@ -31,22 +27,17 @@ import {
   mergeLocalOpenings,
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
-import { failureUnlessCancelled } from "@/platform/errors";
-import { tabsAtom } from "@/state/atoms";
-import { canonicalTabExplorerOptions, type TabExplorer } from "@/state/workspaceTypes";
-import { selectStripTab } from "@/state/stripTab";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
 import { databaseGameHeaders } from "@/utils/databaseGameTree";
 import { MIN_OPENING_BOARD_SIZE_REM } from "@/state/openingBoardSize";
 import { databaseHandleKey, type LocalOptions } from "@/utils/db";
 import { formatPgnYearMonth } from "@/utils/pgnDate";
-import { createTab, runTabCreation } from "@/utils/tabs";
 import GamePreview from "./GamePreview";
 import { sectionYearTotals, summarizeRecentGames, type RecentGamesSummary } from "./openingRecency";
-import { opponentPlayers } from "./opponentLookup";
 import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
 import PlayerOpeningRecency from "./PlayerOpeningRecency";
 import { playerOpeningLine } from "./playerOpeningLine";
+import { usePrepareOpponentOnBoard } from "./prepareOpponentOnBoard";
 import { useOpeningBoardSize } from "./useOpeningBoardSize";
 import classes from "./PlayerOpeningTree.module.css";
 
@@ -257,11 +248,7 @@ function OpeningTree({
     setSelectionScope(scope);
     setSelected(null);
   }
-  const [preparing, setPreparing] = useState(false);
-  const setTabs = useSetAtom(tabsAtom);
-  const atoms = useStore();
-  const navigate = useNavigate();
-  const onError = (cause: unknown) => notifyUnlessCancelled(t("Common.Error"), cause);
+  const { preparing, prepare: prepareOnBoard } = usePrepareOpponentOnBoard();
   const gameOpen = useOpenDatabaseGame(
     ({ source, game }: { source: OpeningTreeSource; game: NormalizedGame }) => ({
       game,
@@ -280,67 +267,25 @@ function OpeningTree({
   const advance = (san: string) => {
     if (position && parseSanOrUci(position, san)) changeMoves([...moves, san]);
   };
-  const prepare = async () => {
+  const prepare = () => {
     // The board's explorer reads one database, so only a single source can be pinned there.
     const pinned = queries.length === 1 ? queries[0] : undefined;
-    setPreparing(true);
-    try {
-      // The online games join as a second column once their player is known; without them the
-      // board still opens with the card's database (and, for a database card, the reference database).
-      let onlinePlayer: number | undefined;
-      if (pinned && online) {
-        // The card's answer is used when it is there; a click before it arrives asks once more.
-        let cancelled = false;
-        onlinePlayer =
-          (online.lookup.kind === "found" ? online.lookup.player : undefined) ??
-          (
-            await opponentPlayers(online.file, online.accounts).catch((cause) => {
-              if (failureUnlessCancelled(cause)) return [];
-              cancelled = true;
-              return [];
-            })
-          )[0]?.id;
-        // A cancelled lookup was stopped on purpose; no player and a failed lookup both warn.
-        if (onlinePlayer === undefined && !cancelled) {
-          notifications.show({
-            color: "warning",
-            message: t("Databases.Opponent.BoardWithoutOnline", {
-              defaultValue: "The online games could not be added to the board.",
-            }),
-          });
-        }
-      }
-      let explorer: TabExplorer | undefined;
-      if (pinned) {
-        // The board has no time-control control, so that filter stays behind.
-        const options = canonicalTabExplorerOptions(pinned.options);
-        explorer = {
-          pinned: pinned.source.file,
-          ...(online && onlinePlayer !== undefined
-            ? { comparison: { database: online.file, player: onlinePlayer } }
-            : {}),
-          ...(variant === "database" ? { further: ["reference"] } : {}),
-          ...(options ? { options } : {}),
-        };
-      }
-      await runTabCreation({
-        create: () =>
-          createTab({
-            tab: { type: "analysis", name: tabName, ...(explorer ? { explorer } : {}) },
-            setTabs,
-            initialTree: line.tree,
-          }),
-        onSuccess: (id) => {
-          if (pinned) {
-            selectStripTab(atoms, id, "database");
+    return prepareOnBoard({
+      ...(pinned
+        ? {
+            pin: {
+              file: pinned.source.file,
+              player: pinned.source.player,
+              color,
+              startDate: since.startDate,
+            },
           }
-          return navigate({ to: "/" });
-        },
-        onError,
-      });
-    } finally {
-      setPreparing(false);
-    }
+        : { color }),
+      online,
+      includeReference: variant === "database",
+      tabName,
+      initialTree: line.tree,
+    });
   };
 
   return (

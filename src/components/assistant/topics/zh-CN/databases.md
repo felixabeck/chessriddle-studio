@@ -2,7 +2,7 @@
 id: databases
 title: 数据库、开局探索器、局面搜索、棋手与赛事
 summary: 添加或下载棋局数据库、选择参考数据库、在探索器中搜索局面，以及浏览对局、棋手和赛事。
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 数据库与您的 PGN 文件一起位于 [[page:library]] ({{label:SideBar.Library}}) 中，并保存在 [[setting:databases-directory]]。
@@ -20,11 +20,11 @@ source: 221e2b80a6351752
 
 在数据库表格视图中，可在 {{label:Common.Games}}、{{label:Databases.Card.Players}} 和 {{label:Databases.Settings.Events}}（赛事）之间切换：
 - 搜索和排序对局、预览对局（预览可用眼睛按钮隐藏着法，[[setting:hide-preview-moves]]）或在分析棋盘上打开。
-- 在 {{label:Databases.Card.Players}} 中选择一位棋手，可查看 {{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}} 和 {{label:Home.Personal.Openings}}（带有 {{label:Databases.OpeningTree.Prepare}} 按钮的交互式开局树），以及通过 {{label:Databases.FIDE.Info}} 查看国际棋联（FIDE）信息。
+- 在 {{label:Databases.Card.Players}} 中选择一位棋手，可查看 {{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}} 和 {{label:Home.Personal.Openings}}（交互式开局树），以及通过 {{label:Databases.FIDE.Info}} 查看国际棋联（FIDE）信息。在 {{label:Home.Personal.Overview}} 和 {{label:Home.Personal.Ratings}} 标签页中使用 {{label:Databases.OpeningTree.Prepare}} 会以白方和全部对局打开初始局面，而在 {{label:Home.Personal.Openings}} 标签页中使用则会保留所选变化、执色和 {{label:Databases.OpeningTree.Since}} 时间范围。
 - 在 {{label:Databases.Settings.Events}} 中按名称搜索赛事，并按日期、棋手数、对局数或平均等级分排序。
 
 在棋手卡片中打开 {{label:Home.Personal.Preparation}} 标签页，将其对局与您的开局库文件进行比较：
-- 选择对手的执棋颜色、{{label:Databases.OpeningTree.Since}} 时间范围，以及（在关联了在线账户时）{{label:Databases.OpeningTree.OverTheBoard}}、{{label:Databases.OpeningTree.Online}} 或 {{label:Databases.Preparation.Both}}。点击 {{label:Databases.Preparation.Refresh}} 可重新运行比较。
+- 选择对手的执棋颜色、{{label:Databases.OpeningTree.Since}} 时间范围，以及（在关联了在线账户时）{{label:Databases.OpeningTree.OverTheBoard}}、{{label:Databases.OpeningTree.Online}} 或 {{label:Databases.Preparation.Both}}。点击 {{label:Databases.Preparation.Refresh}} 可重新运行比较，或点击 {{label:Databases.OpeningTree.Prepare}} 使用该标签页的执色和 {{label:Databases.OpeningTree.Since}} 时间范围在分析棋盘上打开初始局面。
 - 提高 {{label:Databases.Preparation.MinGames}} 可隐藏对手很少下过的变化和漏洞；你的文件会折叠这些变化，训练也会跳过它们。
 - 查看对手常下的变化以及 {{label:Databases.Preparation.GapsTitle}}。点击任意一行即可在该局面打开您的开局库文件，并隐藏其他分支；在记谱栏顶部可在 {{label:Notation.PreparationOpponentLines}} 与 {{label:Notation.PreparationAllLines}} 之间切换。
 - 点击 {{label:Databases.Preparation.TrainLines}} 开始针对这些变化的计时训练；您的作答会更新常规间隔重复计划。

@@ -2,7 +2,7 @@
 id: online-accounts
 title: Online-Konten und Gegnervorbereitung
 summary: Lichess- und Chess.com-Konten hinzufügen, eigene Partien herunterladen und Online-Konten mit Datenbankspielern verknüpfen, um gegnerische Eröffnungen zu studieren.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Verwalte deine Lichess- und Chess.com-Konten auf [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ So studierst du die Online-Eröffnungen eines Gegners aus einer Datenbank:
 3. Klicke auf {{label:Databases.Opponent.Add}}, um einen oder mehrere Lichess- oder Chess.com-Benutzernamen mit diesem Spieler zu verknüpfen.
 4. Klicke auf {{label:Databases.Opponent.Manage}}, um nach {{label:Databases.OpeningTree.Since}} und {{label:Databases.Opponent.TimeControls}} zu filtern oder {{label:Databases.Opponent.RemoveGames}} bzw. {{label:Databases.Opponent.Unlink}} auszuführen.
 5. Klicke auf {{label:Databases.Opponent.Download}} (oder {{label:Databases.Opponent.Update}}), um die Online-Partien abzurufen.
-6. Öffne den Tab {{label:Home.Personal.Openings}} auf der Spielerkarte, um den gemeinsamen Turnier- und Online-Eröffnungsbaum zu durchstöbern, nach Farbe und {{label:Databases.OpeningTree.Since}} zu filtern und auf {{label:Databases.OpeningTree.Prepare}} zu klicken, um die Variante auf einem Analysebrett mit angehefteten Gegnerpartien im Explorer zu öffnen.
+6. Klicke auf den Tabs der Spielerkarte ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} oder {{label:Home.Personal.Openings}}) auf {{label:Databases.OpeningTree.Prepare}}, um ein Analysebrett mit angehefteten Gegnerpartien im Explorer zu öffnen; öffne zuerst {{label:Home.Personal.Openings}}, um den gemeinsamen Turnier- und Online-Eröffnungsbaum zu durchstöbern, nach Farbe und {{label:Databases.OpeningTree.Since}} zu filtern und eine bestimmte Variante auszuwählen.

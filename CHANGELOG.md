@@ -26,6 +26,7 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 - Explorer: every source shows White's score per move (wins plus half the draws) in a Score column beside Total.
 - Explorer: a "Prepare on board" tab keeps its player, comparison columns and Lichess source after a restart.
 - Player cards: the board on the Openings tab takes moves like a table row, starts larger and can be resized by dragging its edge; Studio remembers the size.
+- Player cards: "Prepare on board" is now available on Overview, Ratings and Preparation as well — Overview and Ratings open the start position as White with all games, while Preparation uses that tab's colour and Since.
 - Coach and Assistant: the question field spans the full width and starts at two lines, with the model button, new conversation and Send on one line below it. A model list that failed to load now offers Retry.
 - Scoresheet import: add PDF scans as well as photos. Each PDF page counts as one of the four images, and Studio reads the pages on your computer before anything is sent. While the AI reads the sheet, a full-width progress button with a spinner shows that it is working, with Cancel right below.
 - Dialogs: content no longer touches the line under a dialog's title, and the Import Game cards keep the same height (the photo card is now called "Photo").

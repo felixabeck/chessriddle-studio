@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -20,11 +20,11 @@ Wybierz bazę danych w [[page:library]], aby nią zarządzać:
 
 W widoku tabeli bazy danych przełączaj się między {{label:Common.Games}}, {{label:Databases.Card.Players}} i {{label:Databases.Settings.Events}} (turnieje):
 - Wyszukuj i sortuj partie, podejrzyj partię (podgląd może ukryć ruchy przyciskiem oka, [[setting:hide-preview-moves]]) lub otwórz ją na tablicy analizy.
-- W {{label:Databases.Card.Players}} wybierz gracza, aby zobaczyć {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} i {{label:Home.Personal.Openings}} (interaktywne drzewo debiutowe z przyciskiem {{label:Databases.OpeningTree.Prepare}}), a także informacje FIDE poprzez {{label:Databases.FIDE.Info}}.
+- W {{label:Databases.Card.Players}} wybierz gracza, aby zobaczyć {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} i {{label:Home.Personal.Openings}} (interaktywne drzewo debiutowe), a także informacje FIDE poprzez {{label:Databases.FIDE.Info}}. Przycisk {{label:Databases.OpeningTree.Prepare}} w {{label:Home.Personal.Overview}} i {{label:Home.Personal.Ratings}} otwiera pozycję początkową jako białe ze wszystkimi partiami, a w {{label:Home.Personal.Openings}} przenosi wybrany wariant, kolor oraz okres {{label:Databases.OpeningTree.Since}}.
 - W {{label:Databases.Settings.Events}} wyszukuj turnieje po nazwie i sortuj według daty, graczy, partii lub średniego Elo.
 
 Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porównać jego partie z twoimi plikami repertuaru:
-- Wybierz kolor przeciwnika, okres {{label:Databases.OpeningTree.Since}} oraz (przy powiązanych kontach internetowych) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} lub {{label:Databases.Preparation.Both}}. Kliknij {{label:Databases.Preparation.Refresh}}, aby uruchomić porównanie ponownie.
+- Wybierz kolor przeciwnika, okres {{label:Databases.OpeningTree.Since}} oraz (przy powiązanych kontach internetowych) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} lub {{label:Databases.Preparation.Both}}. Kliknij {{label:Databases.Preparation.Refresh}}, aby uruchomić porównanie ponownie, albo kliknij {{label:Databases.OpeningTree.Prepare}}, aby otworzyć pozycję początkową na tablicy analizy z kolorem i okresem {{label:Databases.OpeningTree.Since}} z tej karty.
 - Zwiększ {{label:Databases.Preparation.MinGames}}, aby ukryć warianty i luki, które przeciwnik grał tylko rzadko; Twój plik zwija te warianty, a trening je pomija.
 - Przejrzyj warianty grane przez przeciwnika oraz {{label:Databases.Preparation.GapsTitle}}. Kliknij dowolny wiersz, aby otworzyć swój plik repertuaru w tej pozycji z ukrytymi pozostałymi wariantami pobocznymi; w nagłówku notacji przełączaj się między {{label:Notation.PreparationOpponentLines}} a {{label:Notation.PreparationAllLines}}.
 - Kliknij {{label:Databases.Preparation.TrainLines}}, aby rozpocząć sesję treningową na czas dla tych wariantów; twoje odpowiedzi aktualizują zwykły harmonogram powtórek.

@@ -2,7 +2,7 @@
 id: databases
 title: Bases de dados, explorador, pesquisa de posição, jogadores e torneios
 summary: Adicione ou transfira bases de dados de partidas, escolha uma base de referência, pesquise posições no explorador e consulte partidas, jogadores e torneios.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 As bases de dados ficam em [[page:library]] ({{label:SideBar.Library}}) junto aos seus ficheiros PGN e são guardadas em [[setting:databases-directory]].
@@ -20,11 +20,11 @@ Selecione uma base de dados em [[page:library]] para a gerir:
 
 Dentro da vista de tabela da base de dados, alterne entre {{label:Common.Games}}, {{label:Databases.Card.Players}} e {{label:Databases.Settings.Events}} (torneios):
 - Pesquise e ordene partidas, pré-visualize uma partida (a pré-visualização pode ocultar os lances com o botão do olho, [[setting:hide-preview-moves]]) ou abra-a no tabuleiro de análise.
-- Em {{label:Databases.Card.Players}}, selecione um jogador para consultar {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (uma árvore de aberturas interativa com o botão {{label:Databases.OpeningTree.Prepare}}), bem como informação FIDE através de {{label:Databases.FIDE.Info}}.
+- Em {{label:Databases.Card.Players}}, selecione um jogador para consultar {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (uma árvore de aberturas interativa), bem como informação FIDE através de {{label:Databases.FIDE.Info}}. Utilize {{label:Databases.OpeningTree.Prepare}} na {{label:Home.Personal.Overview}} e nas {{label:Home.Personal.Ratings}} para abrir a posição inicial com as brancas e todas as partidas, ou nas {{label:Home.Personal.Openings}} para manter a linha, a cor e o período {{label:Databases.OpeningTree.Since}} selecionados.
 - Em {{label:Databases.Settings.Events}}, pesquise torneios por nome e ordene por data, jogadores, partidas ou Elo médio.
 
 No cartão de um jogador, abra o separador {{label:Home.Personal.Preparation}} para comparar as partidas dele com os seus ficheiros de repertório:
-- Escolha a cor do adversário, o período {{label:Databases.OpeningTree.Since}} e (com contas online associadas) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} ou {{label:Databases.Preparation.Both}}. Clique em {{label:Databases.Preparation.Refresh}} para repetir a comparação.
+- Escolha a cor do adversário, o período {{label:Databases.OpeningTree.Since}} e (com contas online associadas) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} ou {{label:Databases.Preparation.Both}}. Clique em {{label:Databases.Preparation.Refresh}} para repetir a comparação, ou clique em {{label:Databases.OpeningTree.Prepare}} para abrir a posição inicial num tabuleiro de análise utilizando a cor e o período {{label:Databases.OpeningTree.Since}} desse separador.
 - Aumente {{label:Databases.Preparation.MinGames}} para ocultar as linhas e lacunas que o adversário jogou só raramente; o seu ficheiro recolhe essas linhas e o treino deixa-as de fora.
 - Veja as linhas que o adversário joga e {{label:Databases.Preparation.GapsTitle}}. Clique em qualquer linha para abrir o seu ficheiro de repertório nessa posição com as restantes variantes secundárias ocultas; alterne entre {{label:Notation.PreparationOpponentLines}} e {{label:Notation.PreparationAllLines}} no cabeçalho da notação.
 - Clique em {{label:Databases.Preparation.TrainLines}} para iniciar uma sessão cronometrada sobre essas linhas; as suas respostas atualizam o calendário normal de repetição espaçada.

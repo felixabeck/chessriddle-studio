@@ -2,7 +2,7 @@
 id: online-accounts
 title: Онлайн-облікові записи та підготовка до суперника
 summary: Додавання облікових записів Lichess і Chess.com, завантаження ваших партій і прив’язка онлайн-акаунтів до гравців бази для вивчення дебютів суперника.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Керуйте своїми обліковими записами Lichess і Chess.com на сторінці [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ source: 7c518989c9948fec
 3. Натисніть {{label:Databases.Opponent.Add}}, щоб прив’язати одне або кілька імен користувачів Lichess чи Chess.com до цього гравця.
 4. Натисніть {{label:Databases.Opponent.Manage}}, щоб відфільтрувати за {{label:Databases.OpeningTree.Since}} і {{label:Databases.Opponent.TimeControls}}, або виконати {{label:Databases.Opponent.RemoveGames}} чи {{label:Databases.Opponent.Unlink}}.
 5. Натисніть {{label:Databases.Opponent.Download}} (або {{label:Databases.Opponent.Update}}), щоб завантажити його онлайн-партії.
-6. Відкрийте вкладку {{label:Home.Personal.Openings}} на картці гравця, щоб переглянути його дерево очних та онлайн-дебютів, відфільтрувати за кольором і періодом {{label:Databases.OpeningTree.Since}} та натиснути {{label:Databases.OpeningTree.Prepare}}, щоб відкрити лінію на дошці аналізу із закріпленими партіями суперника в оглядачі.
+6. Натисніть {{label:Databases.OpeningTree.Prepare}} на вкладках картки гравця ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), щоб відкрити дошку аналізу із закріпленими партіями суперника в оглядачі; відкрийте спершу {{label:Home.Personal.Openings}}, щоб переглянути його дерево очних та онлайн-дебютів, відфільтрувати за кольором і періодом {{label:Databases.OpeningTree.Since}} та вибрати певний варіант.

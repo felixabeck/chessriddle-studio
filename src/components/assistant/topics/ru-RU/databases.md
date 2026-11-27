@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -20,11 +20,11 @@ source: 221e2b80a6351752
 
 В табличном просмотре базы данных переключайтесь между разделами {{label:Common.Games}}, {{label:Databases.Card.Players}} и {{label:Databases.Settings.Events}} (турниры):
 - Ищите и сортируйте партии, просматривайте партию в предпросмотре (предпросмотр может скрыть ходы кнопкой-глазом, [[setting:hide-preview-moves]]) или открывайте её на доске анализа.
-- В разделе {{label:Databases.Card.Players}} выберите игрока, чтобы увидеть вкладки {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} и {{label:Home.Personal.Openings}} (интерактивное дерево дебютов с кнопкой {{label:Databases.OpeningTree.Prepare}}), а также данные ФИДЕ через {{label:Databases.FIDE.Info}}.
+- В разделе {{label:Databases.Card.Players}} выберите игрока, чтобы увидеть вкладки {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} и {{label:Home.Personal.Openings}} (интерактивное дерево дебютов), а также данные ФИДЕ через {{label:Databases.FIDE.Info}}. Кнопка {{label:Databases.OpeningTree.Prepare}} на вкладках {{label:Home.Personal.Overview}} и {{label:Home.Personal.Ratings}} открывает начальную позицию за белых со всеми партиями, а в {{label:Home.Personal.Openings}} переносит выбранный вариант, цвет и период {{label:Databases.OpeningTree.Since}}.
 - В разделе {{label:Databases.Settings.Events}} ищите турниры по названию и сортируйте по дате, числу игроков, количеству партий или среднему рейтингу Эло.
 
 На карточке игрока откройте вкладку {{label:Home.Personal.Preparation}}, чтобы сравнить его партии с вашими файлами репертуара:
-- Выберите цвет соперника, период {{label:Databases.OpeningTree.Since}} и (при привязанных онлайн-аккаунтах) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} или {{label:Databases.Preparation.Both}}. Нажмите {{label:Databases.Preparation.Refresh}}, чтобы повторить сравнение.
+- Выберите цвет соперника, период {{label:Databases.OpeningTree.Since}} и (при привязанных онлайн-аккаунтах) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} или {{label:Databases.Preparation.Both}}. Нажмите {{label:Databases.Preparation.Refresh}}, чтобы повторить сравнение, или нажмите {{label:Databases.OpeningTree.Prepare}}, чтобы открыть начальную позицию на доске анализа с цветом и периодом {{label:Databases.OpeningTree.Since}} этой вкладки.
 - Увеличьте {{label:Databases.Preparation.MinGames}}, чтобы скрыть варианты и пробелы, которые соперник играл лишь изредка; файл свернёт эти варианты, а тренировка их пропустит.
 - Просмотрите варианты, которые играет соперник, и {{label:Databases.Preparation.GapsTitle}}. Нажмите любую строку, чтобы открыть свой файл репертуара в этой позиции со скрытыми остальными ответвлениями; в заголовке нотации переключайтесь между {{label:Notation.PreparationOpponentLines}} и {{label:Notation.PreparationAllLines}}.
 - Нажмите {{label:Databases.Preparation.TrainLines}}, чтобы запустить тренировку на время по этим вариантам; ваши ответы обновляют обычное расписание интервальных повторений.

@@ -2,7 +2,7 @@
 id: online-accounts
 title: Онлайн-аккаунты и подготовка к сопернику
 summary: Добавление аккаунтов Lichess и Chess.com, загрузка ваших партий и привязка онлайн-аккаунтов к игрокам базы для изучения дебютов соперника.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Управляйте аккаунтами Lichess и Chess.com на странице [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ source: 7c518989c9948fec
 3. Нажмите {{label:Databases.Opponent.Add}}, чтобы привязать к этому игроку один или несколько никнеймов Lichess или Chess.com.
 4. Нажмите {{label:Databases.Opponent.Manage}}, чтобы задать фильтры {{label:Databases.OpeningTree.Since}} и {{label:Databases.Opponent.TimeControls}}, либо выбрать {{label:Databases.Opponent.RemoveGames}} или {{label:Databases.Opponent.Unlink}}.
 5. Нажмите {{label:Databases.Opponent.Download}} (или {{label:Databases.Opponent.Update}}), чтобы загрузить его онлайн-партии.
-6. Откройте вкладку {{label:Home.Personal.Openings}} на карточке игрока, чтобы просмотреть его дерево очных и онлайн-дебютов, отфильтровать по цвету и периоду {{label:Databases.OpeningTree.Since}} и нажать {{label:Databases.OpeningTree.Prepare}}, чтобы открыть эту линию на доске анализа с закреплёнными партиями соперника в обозревателе.
+6. Нажмите {{label:Databases.OpeningTree.Prepare}} на вкладках карточки игрока ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} или {{label:Home.Personal.Openings}}), чтобы открыть доску анализа с закреплёнными партиями соперника в обозревателе; откройте сначала {{label:Home.Personal.Openings}}, чтобы просмотреть дерево очных и онлайн-дебютов, отфильтровать по цвету и периоду {{label:Databases.OpeningTree.Since}} и выбрать конкретный вариант.

@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: 221e2b80a6351752
+source: 9d4f20d7213a7cbb
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -20,11 +20,11 @@ Yönetmek için [[page:library]] içinde bir veritabanı seçin:
 
 Veritabanı tablo görünümünde {{label:Common.Games}}, {{label:Databases.Card.Players}} ve {{label:Databases.Settings.Events}} (turnuvalar) arasında geçiş yapın:
 - Oyunları arayın ve sıralayın, bir oyunu önizleyin (önizleme, göz düğmesiyle hamleleri gizleyebilir, [[setting:hide-preview-moves]]) veya analiz tahtasında açın.
-- {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} ({{label:Databases.OpeningTree.Prepare}} düğmesine sahip etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin.
+- {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} (etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin. {{label:Home.Personal.Overview}} ve {{label:Home.Personal.Ratings}} sekmelerindeki {{label:Databases.OpeningTree.Prepare}} düğmesi tüm oyunlarla Beyaz olarak başlangıç konumunu açar; {{label:Home.Personal.Openings}} sekmesinde ise seçilen hattı, rengi ve {{label:Databases.OpeningTree.Since}} dönemini aktarır.
 - {{label:Databases.Settings.Events}} bölümünde turnuvaları ada göre arayın ve tarihe, oyuncu sayısına, oyun sayısına veya ortalama ELO'ya göre sıralayın.
 
 Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştırmak için {{label:Home.Personal.Preparation}} sekmesini açın:
-- Rakibin rengini, {{label:Databases.OpeningTree.Since}} dönemini ve (bağlı çevrimiçi hesaplar varsa) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} veya {{label:Databases.Preparation.Both}} seçeneğini belirleyin. Karşılaştırmayı yeniden çalıştırmak için {{label:Databases.Preparation.Refresh}} düğmesine tıklayın.
+- Rakibin rengini, {{label:Databases.OpeningTree.Since}} dönemini ve (bağlı çevrimiçi hesaplar varsa) {{label:Databases.OpeningTree.OverTheBoard}}, {{label:Databases.OpeningTree.Online}} veya {{label:Databases.Preparation.Both}} seçeneğini belirleyin. Karşılaştırmayı yeniden çalıştırmak için {{label:Databases.Preparation.Refresh}} düğmesine tıklayın veya bu sekmenin rengini ve {{label:Databases.OpeningTree.Since}} dönemini kullanarak başlangıç konumunu analiz tahtasında açmak için {{label:Databases.OpeningTree.Prepare}} düğmesine tıklayın.
 - Rakibin yalnızca nadiren oynadığı varyantları ve boşlukları gizlemek için {{label:Databases.Preparation.MinGames}} değerini artırın; dosyanız bu varyantları katlar ve antrenman onları dışarıda bırakır.
 - Rakibin oynadığı varyantları ve {{label:Databases.Preparation.GapsTitle}} listesini inceleyin. Repertuvar dosyanızı o konumda diğer yan varyantlar gizli olarak açmak için bir satıra tıklayın; notasyon başlığında {{label:Notation.PreparationOpponentLines}} ile {{label:Notation.PreparationAllLines}} arasında geçiş yapın.
 - Bu varyantlar üzerinde süreli bir alıştırma başlatmak için {{label:Databases.Preparation.TrainLines}} düğmesine tıklayın; yanıtlarınız normal aralıklı tekrar programını günceller.

@@ -2,7 +2,7 @@
 id: online-accounts
 title: Contas em linha e preparação contra adversários
 summary: Adicione contas do Lichess e Chess.com, transfira as suas partidas e associe contas em linha a jogadores da base de dados para estudar as aberturas de um adversário.
-source: 7c518989c9948fec
+source: 5288fb0320fbe939
 ---
 
 Faça a gestão das suas contas do Lichess e Chess.com em [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -26,4 +26,4 @@ Para estudar as aberturas em linha de um adversário a partir de uma base de dad
 3. Clique em {{label:Databases.Opponent.Add}} para associar um ou mais nomes de utilizador do Lichess ou Chess.com a esse jogador.
 4. Clique em {{label:Databases.Opponent.Manage}} para filtrar por {{label:Databases.OpeningTree.Since}} e {{label:Databases.Opponent.TimeControls}}, ou para usar {{label:Databases.Opponent.RemoveGames}} ou {{label:Databases.Opponent.Unlink}}.
 5. Clique em {{label:Databases.Opponent.Download}} (ou {{label:Databases.Opponent.Update}}) para obter as partidas em linha.
-6. Abra o separador {{label:Home.Personal.Openings}} no cartão do jogador para explorar a árvore de aberturas presencial e em linha, filtrar por cor e {{label:Databases.OpeningTree.Since}} e clicar em {{label:Databases.OpeningTree.Prepare}} para abrir a linha num tabuleiro de análise com as partidas do adversário fixadas no explorador.
+6. Clique em {{label:Databases.OpeningTree.Prepare}} a partir dos separadores do cartão do jogador ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} ou {{label:Home.Personal.Openings}}) para abrir um tabuleiro de análise com as partidas do adversário fixadas no explorador; abra primeiro {{label:Home.Personal.Openings}} para explorar a árvore de aberturas presencial e em linha, filtrar por cor e {{label:Databases.OpeningTree.Since}} e escolher uma linha específica.

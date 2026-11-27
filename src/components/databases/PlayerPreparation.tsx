@@ -58,8 +58,9 @@ import {
   opponentPeriodToValue,
   valueToOpponentPeriod,
 } from "./opponentPeriod";
+import { usePrepareOpponentOnBoard } from "./prepareOpponentOnBoard";
 import { useOnlineGames } from "./useOnlineGames";
-import { useOpponentPreparation } from "./useOpponentPreparation";
+import { preparationStartDate, useOpponentPreparation } from "./useOpponentPreparation";
 import classes from "./PlayerPreparation.module.css";
 
 const INITIAL_ROW_LIMIT = 30;
@@ -122,6 +123,7 @@ export default function PlayerPreparation({
   const trainAbortRef = useRef<AbortController | null>(null);
 
   const online = useOnlineGames(player, file);
+  const { preparing, prepare: prepareOnBoard } = usePrepareOpponentOnBoard();
   const { state, restart, setSource, minGames, setMinGames } = useOpponentPreparation({
     player,
     file,
@@ -405,8 +407,28 @@ export default function PlayerPreparation({
         />
         <Button
           size="xs"
+          className={`wrap-button ${classes.prepare}`}
+          loading={preparing}
+          data-prepare-on-board
+          onClick={() =>
+            void prepareOnBoard({
+              pin: {
+                file,
+                player: player.id,
+                color: opponentColor,
+                startDate: preparationStartDate(period),
+              },
+              online,
+              includeReference: true,
+              tabName: player.name ?? "",
+            })
+          }
+        >
+          {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
+        </Button>
+        <Button
+          size="xs"
           variant="default"
-          className={classes.refresh}
           leftSection={<RefreshCw size={14} />}
           onClick={restart}
           data-preparation-refresh

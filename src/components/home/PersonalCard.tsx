@@ -1,7 +1,9 @@
 import {
   Box,
+  Button,
   Center,
   Flex,
+  Group,
   Loader,
   Paper,
   SegmentedControl,
@@ -29,6 +31,8 @@ import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
 import { PlayerSelect } from "./PlayerSelect";
 import PlayerOpeningTree from "../databases/PlayerOpeningTree";
 import PlayerPreparation from "../databases/PlayerPreparation";
+import { usePrepareOpponentOnBoard } from "../databases/prepareOpponentOnBoard";
+import { useOnlineGames } from "../databases/useOnlineGames";
 import { databaseHandleKey } from "@/utils/db";
 import type { DatabaseHandle, Player } from "@/bindings";
 
@@ -172,6 +176,12 @@ function PersonalPlayerCard({
           )}
         </Tabs.List>
         <Tabs.Panel value="overview" style={SCROLLING_PANEL_STYLE}>
+          {hasPreparation && databasePlayer && (
+            <StartPositionPrepare
+              databasePlayer={databasePlayer}
+              hasSourceSwitch={Boolean(sourceSwitch)}
+            />
+          )}
           {sourceSwitch}
           {showOnline ? (
             <OnlinePanel online={online}>
@@ -210,7 +220,13 @@ function PersonalPlayerCard({
             />
           )}
         </Tabs.Panel>
-        <Tabs.Panel value="ratings">
+        <Tabs.Panel value="ratings" style={SCROLLING_PANEL_STYLE}>
+          {hasPreparation && databasePlayer && (
+            <StartPositionPrepare
+              databasePlayer={databasePlayer}
+              hasSourceSwitch={Boolean(sourceSwitch)}
+            />
+          )}
           {sourceSwitch}
           {showOnline ? (
             <OnlinePanel online={online}>
@@ -237,6 +253,44 @@ function PersonalPlayerCard({
         )}
       </Tabs>
     </Paper>
+  );
+}
+
+/** Opens an analysis board from the start position for the card's over-the-board player as White. */
+function StartPositionPrepare({
+  databasePlayer,
+  hasSourceSwitch,
+}: {
+  databasePlayer: { player: Player; file: DatabaseHandle };
+  hasSourceSwitch: boolean;
+}) {
+  const { t } = useTranslation();
+  const online = useOnlineGames(databasePlayer.player, databasePlayer.file);
+  const { preparing, prepare } = usePrepareOpponentOnBoard();
+
+  return (
+    <Group mt="sm" mb={hasSourceSwitch ? undefined : "sm"}>
+      <Button
+        size="xs"
+        className="wrap-button"
+        loading={preparing}
+        data-prepare-on-board
+        onClick={() =>
+          void prepare({
+            pin: {
+              file: databasePlayer.file,
+              player: databasePlayer.player.id,
+              color: "white",
+            },
+            online,
+            includeReference: true,
+            tabName: databasePlayer.player.name ?? "",
+          })
+        }
+      >
+        {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
+      </Button>
+    </Group>
   );
 }
 
