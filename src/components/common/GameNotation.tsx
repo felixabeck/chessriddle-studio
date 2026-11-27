@@ -102,6 +102,161 @@ const NOTATION_INDEX_SCROLL_MAX_ATTEMPTS = 10;
 const NOTATION_INDEX_SCROLL_STABLE_CHECKS = 3;
 // Sub-pixel differences come from fractional layout and need no further scroll.
 const NOTATION_INDEX_SCROLL_TOLERANCE_PX = 1;
+// The virtualizer's row estimate; the follow margin is expressed in these rows.
+const NOTATION_ROW_ESTIMATE_PX = 32;
+// Stepping through moves keeps the list still until the current move is about three rows from an
+// edge, then turns the page so it sits that far from the other edge.
+const NOTATION_FOLLOW_MARGIN_PX = 3 * NOTATION_ROW_ESTIMATE_PX;
+// Each margin takes at most a quarter of a short panel, so at least half of it stays a still band.
+const NOTATION_FOLLOW_MARGIN_PANEL_DIVISOR = 4;
+const NOTATION_PAGE_TURN_MS = 150;
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+type NotationStep = "forward" | "backward" | "jump";
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+/** The current cell's bounds in scroll-content coordinates, or null when it is not rendered. */
+function currentCellBounds(viewport: HTMLDivElement): { top: number; bottom: number } | null {
+  const cell = viewport.querySelector<HTMLElement>('[data-notation-current="true"]');
+  if (!cell) return null;
+  const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+  const bounds = cell.getBoundingClientRect();
+  return {
+    top: bounds.top - viewportTop + viewport.scrollTop,
+    bottom: bounds.bottom - viewportTop + viewport.scrollTop,
+  };
+}
+
+/**
+ * Keeps the current move visible on a cursor move inside an unchanged list: a one-ply step turns
+ * the page only when the move reaches the margin in its direction of travel, a jump to a visible
+ * move or a click on one does not scroll. Returns undefined when the caller's centre/reveal path
+ * should decide instead (row not mounted or taller than the viewport, current cell not rendered,
+ * or a jump to a move outside the viewport); otherwise the effect cleanup.
+ */
+function followNotationMove({
+  virtualizer,
+  viewport,
+  rowIndex,
+  step,
+  clicked,
+  interruptedTarget,
+  onInterrupt,
+}: {
+  virtualizer: Virtualizer<HTMLDivElement, Element>;
+  viewport: HTMLDivElement;
+  rowIndex: number;
+  step: NotationStep;
+  clicked: boolean;
+  interruptedTarget: number | null;
+  onInterrupt: (target: number) => void;
+}): (() => void) | undefined {
+  const height = viewport.clientHeight;
+  const row = viewport.querySelector<HTMLElement>(`[data-index="${rowIndex}"]`);
+  if (!row || row.getBoundingClientRect().height > height) return undefined;
+  if (!viewport.querySelector('[data-notation-current="true"]')) return undefined;
+
+  // Key repeat: finish the interrupted page turn first, so the board never runs ahead of the list.
+  if (step !== "jump" && !clicked && interruptedTarget !== null) {
+    virtualizer.scrollToOffset(interruptedTarget);
+  }
+
+  const top = viewport.scrollTop;
+  const cell = currentCellBounds(viewport)!;
+  const fullyVisible = cell.top >= top && cell.bottom <= top + height;
+  const noCleanup = () => {};
+
+  if (clicked && fullyVisible) return noCleanup;
+  if (step === "jump") return fullyVisible ? noCleanup : undefined;
+
+  // A cell taller than the band shrinks the margin so the whole cell still fits.
+  const margin = Math.max(
+    0,
+    Math.min(
+      NOTATION_FOLLOW_MARGIN_PX,
+      Math.floor(height / NOTATION_FOLLOW_MARGIN_PANEL_DIVISOR),
+      Math.floor((height - (cell.bottom - cell.top)) / 2),
+    ),
+  );
+  const turnsForward =
+    step === "forward" && (cell.bottom > top + height - margin || cell.top < top);
+  const turnsBackward =
+    step === "backward" && (cell.top < top + margin || cell.bottom > top + height);
+  if (!turnsForward && !turnsBackward) return noCleanup;
+
+  // Rounding toward the cell keeps it inside the new band despite fractional text bounds. The
+  // target is re-read from the cell on every frame: rows mounted by the turn are measured on the
+  // way and move the cell, which a precomputed offset would overwrite.
+  const targetFor = (bounds: { top: number; bottom: number }) => {
+    const target = turnsForward
+      ? Math.floor(bounds.top - margin)
+      : Math.ceil(bounds.bottom - height + margin);
+    return Math.max(0, Math.min(target, viewport.scrollHeight - height));
+  };
+  let target = targetFor(cell);
+  const distance = target - top;
+  if (Math.abs(distance) < NOTATION_INDEX_SCROLL_TOLERANCE_PX) return noCleanup;
+  const retarget = () => {
+    const bounds = currentCellBounds(viewport);
+    if (bounds) target = targetFor(bounds);
+  };
+
+  let cancelled = false;
+  let finished = false;
+  let frame: number;
+  let settleChecks = 0;
+  let stableChecks = 0;
+  // After the turn, follow late measurements until the target has held still for a few frames.
+  const settle = () => {
+    if (cancelled) return;
+    retarget();
+    if (Math.abs(target - viewport.scrollTop) >= NOTATION_INDEX_SCROLL_TOLERANCE_PX) {
+      virtualizer.scrollToOffset(target);
+      stableChecks = 0;
+    } else {
+      stableChecks++;
+    }
+    if (
+      ++settleChecks < NOTATION_INDEX_SCROLL_MAX_ATTEMPTS &&
+      stableChecks < NOTATION_INDEX_SCROLL_STABLE_CHECKS
+    ) {
+      frame = requestAnimationFrame(settle);
+    }
+  };
+  const finish = () => {
+    finished = true;
+    virtualizer.scrollToOffset(target);
+    frame = requestAnimationFrame(settle);
+  };
+
+  if (prefersReducedMotion()) {
+    finish();
+  } else {
+    let startTime: number | undefined;
+    frame = requestAnimationFrame(function turnPage() {
+      if (cancelled) return;
+      const now = performance.now();
+      startTime ??= now;
+      const progress = Math.min(1, (now - startTime) / NOTATION_PAGE_TURN_MS);
+      retarget();
+      if (progress >= 1) {
+        finish();
+        return;
+      }
+      const eased = 1 - (1 - progress) ** 3;
+      virtualizer.scrollToOffset(target - distance * (1 - eased));
+      frame = requestAnimationFrame(turnPage);
+    });
+  }
+  return () => {
+    cancelled = true;
+    cancelAnimationFrame(frame);
+    if (!finished) onInterrupt(target);
+  };
+}
 
 export function scrollNotationToIndex(
   virtualizer: Virtualizer<HTMLDivElement, Element>,
@@ -229,6 +384,19 @@ function GameNotation({
   const storedPreparation = useAtomValue(opponentPreparationAtom);
   const [preparationView, setPreparationView] = useAtom(useTabAtom(tabPreparationViewFamily));
   const viewport = useRef<HTMLDivElement>(null);
+  // Follow-scroll bookkeeping, read and reset by the scroll effect on every run.
+  const previousModel = useRef<NotationRows | null>(null);
+  const previousNode = useRef<TreeNode | null>(null);
+  // The current move when a click inside the notation began (set in the viewport's capture phase,
+  // before the move cell navigates). The scroll effect consumes it for the navigation that click
+  // caused. A click that navigated nowhere (the current move, a comment, a game reference that
+  // stops propagation, empty space) is dropped by a task queued behind the click's dispatch: the
+  // store updates synchronously inside the click, so an unchanged current node then proves the click
+  // did not navigate, and the next key, button or wheel step never inherits it.
+  const notationClickFrom = useRef<TreeNode | null>(null);
+  const notationClickCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const interruptedTarget = useRef<number | null>(null);
+  useEffect(() => () => clearTimeout(notationClickCheck.current), []);
   const [invisibleValue, setInvisible] = useAtom(useTabAtom(invisibleFamily));
   const invisible = hidden === true || (!!topBar && invisibleValue);
   const keyMap = useAtomValue(keyMapAtom);
@@ -349,12 +517,21 @@ function GameNotation({
 
   const rowVirtualizer = useVirtualizer({
     count: model.rows.length,
-    estimateSize: () => 32,
+    estimateSize: () => NOTATION_ROW_ESTIMATE_PX,
     overscan: 8,
     getScrollElement: () => viewport.current,
   });
 
   useEffect(() => {
+    const lastModel = previousModel.current;
+    const lastNode = previousNode.current;
+    previousModel.current = model;
+    previousNode.current = currentNode;
+    const clicked = notationClickFrom.current !== null;
+    notationClickFrom.current = null;
+    const interrupted = interruptedTarget.current;
+    interruptedTarget.current = null;
+
     let node: TreeNode | null = currentNode;
     let rowIndex: number | undefined;
     while (node) {
@@ -365,6 +542,35 @@ function GameNotation({
     }
     if (rowIndex !== undefined) {
       const scrollViewport = viewport.current;
+      // Only a cursor move inside the list that was already measured follows; opening, restoring
+      // and every view or filter change (a new model) centre below with settle verification.
+      if (
+        lastNode !== null &&
+        lastModel === model &&
+        node === currentNode &&
+        scrollViewport &&
+        scrollViewport.clientHeight > 0
+      ) {
+        const links = model.index.links;
+        const step: NotationStep =
+          links.get(currentNode)?.parent === lastNode
+            ? "forward"
+            : links.get(lastNode)?.parent === currentNode
+              ? "backward"
+              : "jump";
+        const cleanup = followNotationMove({
+          virtualizer: rowVirtualizer,
+          viewport: scrollViewport,
+          rowIndex,
+          step,
+          clicked,
+          interruptedTarget: interrupted,
+          onInterrupt: (target) => {
+            interruptedTarget.current = target;
+          },
+        });
+        if (cleanup) return cleanup;
+      }
       if (node !== currentNode || !scrollViewport || scrollViewport.clientHeight === 0) {
         return scrollNotationToIndex(rowVirtualizer, rowIndex, "center");
       }
@@ -469,6 +675,18 @@ function GameNotation({
           offsetScrollbars
           scrollbars="y"
           viewportRef={viewport}
+          viewportProps={{
+            onClickCapture: () => {
+              const from = store.getState().currentNode();
+              notationClickFrom.current = from;
+              clearTimeout(notationClickCheck.current);
+              notationClickCheck.current = setTimeout(() => {
+                if (notationClickFrom.current === from && store.getState().currentNode() === from) {
+                  notationClickFrom.current = null;
+                }
+              });
+            },
+          }}
         >
           <Stack gap="xs">
             <Box>

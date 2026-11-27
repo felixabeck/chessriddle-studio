@@ -134,6 +134,21 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "notation-follow-scroll",
+            testMatch: /notation-follow-scroll\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
+        {
+            // The desktop app renders in WebKitGTK; the follow scroll asserts geometry only.
+            name: "notation-follow-scroll-webkit",
+            testMatch: /notation-follow-scroll\.spec\.ts/,
+            use: {
+                ...devices["Desktop Safari"],
+                viewport: { width: 1280, height: 900 },
+                colorScheme: "light",
+            },
+        },
+        {
             name: "annotation-comment-before",
             testMatch: /annotation-comment-before\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

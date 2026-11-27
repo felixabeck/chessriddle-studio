@@ -48,8 +48,11 @@ const prepState = vi.hoisted(() => {
   return state;
 });
 const virtualizerMock = vi.hoisted(() => ({
-  current: null as null | { count: number },
+  current: null as null | { count: number; getScrollElement?: () => Element | null },
   scrollCalls: [] as { index: number; options: unknown }[],
+  // Raw offsets in call order, and the index targets requested, for the follow-scroll tests.
+  offsetCalls: [] as number[],
+  indexRequests: [] as { index: number; align: "center" | "start" }[],
   measured: [] as Element[],
 }));
 const notationSettings = vi.hoisted(() => {
@@ -192,20 +195,22 @@ vi.mock("./CompleteMoveCell", async () => ({
     const store = React.useContext(TreeStateContext)!;
     const path = pathForNotationNode(props.nodeIndex, props.node)!;
     return (
-      <button
-        type="button"
-        data-move-cell="true"
-        data-node={props.node.san}
-        data-current={props.isCurrentVariation ? "true" : "false"}
-        data-starting-comment={props.startingComment}
-        data-score-text={props.scoreText}
-        data-analysis={props.analysis ? "true" : "false"}
-        data-open-variation={props.openVariation ? "true" : "false"}
-        data-unsure={props.unsure ? "true" : "false"}
-        onClick={() => store.getState().goToMove(path)}
-      >
-        {props.move}
-      </button>
+      <span data-notation-current={props.isCurrentVariation ? "true" : undefined}>
+        <button
+          type="button"
+          data-move-cell="true"
+          data-node={props.node.san}
+          data-current={props.isCurrentVariation ? "true" : "false"}
+          data-starting-comment={props.startingComment}
+          data-score-text={props.scoreText}
+          data-analysis={props.analysis ? "true" : "false"}
+          data-open-variation={props.openVariation ? "true" : "false"}
+          data-unsure={props.unsure ? "true" : "false"}
+          onClick={() => store.getState().goToMove(path)}
+        >
+          {props.move}
+        </button>
+      </span>
     );
   },
 }));
@@ -256,7 +261,11 @@ vi.mock("@mantine/core", async (importOriginal) => {
       </button>
     ),
     Paper: element,
-    ScrollArea: ({ children, viewportRef }: any) => <div ref={viewportRef}>{children}</div>,
+    ScrollArea: ({ children, viewportRef, viewportProps }: any) => (
+      <div ref={viewportRef} {...viewportProps}>
+        {children}
+      </div>
+    ),
     SegmentedControl: ({ data, value, onChange, "aria-label": ariaLabel }: any) => (
       <div role="radiogroup" aria-label={ariaLabel}>
         {data.map((item: any) => (
@@ -285,9 +294,9 @@ vi.mock("@mantine/core", async (importOriginal) => {
 });
 vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-virtual")>()),
-  useVirtualizer: (options: { count: number }) => {
+  useVirtualizer: (options: { count: number; getScrollElement?: () => Element | null }) => {
     virtualizerMock.current = options;
-    let target: { index: number; align: "center" | "start" };
+    let target: { index: number; align: "center" | "start" } | undefined;
     const virtualizer = {
       scrollOffset: 0,
       getTotalSize: () => options.count * 30,
@@ -302,11 +311,15 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
       },
       getOffsetForIndex: (index: number, align: "center" | "start") => {
         target = { index, align };
+        virtualizerMock.indexRequests.push(target);
         return [index * 30, align];
       },
       scrollToOffset: (offset: number) => {
         virtualizer.scrollOffset = offset;
-        virtualizerMock.scrollCalls.push({ index: offset / 30, options: { align: target.align } });
+        virtualizerMock.offsetCalls.push(offset);
+        const element = options.getScrollElement?.();
+        if (element) element.scrollTop = offset;
+        virtualizerMock.scrollCalls.push({ index: offset / 30, options: { align: target?.align } });
       },
     };
     return virtualizer;
@@ -335,6 +348,8 @@ beforeEach(() => {
   store = createTreeStore();
   virtualizerMock.current = null;
   virtualizerMock.scrollCalls.length = 0;
+  virtualizerMock.offsetCalls.length = 0;
+  virtualizerMock.indexRequests.length = 0;
   virtualizerMock.measured.length = 0;
   notationSettings.showComments = false;
   notationSettings.showVariations = true;
@@ -786,6 +801,511 @@ test.each([false, true])(
     }
   },
 );
+
+// Follow-scroll harness: ply k's cell spans [(k - 1) * 30, (k - 1) * 30 + 24] in scroll-content
+// coordinates, the viewport starts at client y 0, and rows are 30 px tall unless a test widens them.
+const FOLLOW_PLY_PX = 30;
+const FOLLOW_CELL_PX = 24;
+
+async function renderFollowGame({
+  height = 600,
+  moves = 40,
+  start,
+  reducedMotion = true,
+  viewportTop = 0,
+  tableView = false,
+}: {
+  height?: number;
+  moves?: number;
+  start: number;
+  reducedMotion?: boolean;
+  viewportTop?: number;
+  tableView?: boolean;
+}) {
+  notationSettings.tableView = tableView;
+  const queue = queueAnimationFrames();
+  installMatchMediaStub({ matches: (query) => reducedMotion && query.includes("reduced-motion") });
+  let clock = 0;
+  const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+  let rowHeight = FOLLOW_PLY_PX;
+  let cellHeight = FOLLOW_CELL_PX;
+  // Added to every cell's position, as when rows above it are measured taller than estimated.
+  let shift = 0;
+  let viewport: HTMLElement | null = null;
+  const clientHeight = vi
+    .spyOn(HTMLElement.prototype, "clientHeight", "get")
+    .mockReturnValue(height);
+  const scrollHeight = vi
+    .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+    .mockReturnValue(moves * FOLLOW_PLY_PX);
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.notationCurrent === "true") {
+        const ply = Number(this.querySelector("[data-node]")!.getAttribute("data-node")!.slice(1));
+        const top = viewportTop + (ply - 1) * FOLLOW_PLY_PX + shift - (viewport?.scrollTop ?? 0);
+        return { top, bottom: top + cellHeight, height: cellHeight } as DOMRect;
+      }
+      if (this.hasAttribute("data-index")) {
+        return { top: 0, bottom: rowHeight, height: rowHeight } as DOMRect;
+      }
+      return { top: viewportTop, bottom: viewportTop + height, height } as DOMRect;
+    });
+
+  const state = defaultTree();
+  let parent = state.root;
+  for (let ply = 1; ply <= moves; ply += 1) {
+    const child = createNode({
+      fen: `follow${ply} w - - 0 1`,
+      move: parseUci("e2e4")!,
+      san: `m${ply}`,
+      halfMoves: ply,
+    });
+    parent.children = [child];
+    parent = child;
+  }
+  store.getState().setState({ ...state, position: Array(start).fill(0) });
+  await act(async () => {
+    root.render(
+      <TreeStateContext.Provider value={store}>
+        <WorkspaceTabScope tabId="notation-test">
+          <GameNotation />
+        </WorkspaceTabScope>
+      </TreeStateContext.Provider>,
+    );
+  });
+  viewport = virtualizerMock.current!.getScrollElement!() as HTMLElement;
+  const scrollTo = (top: number) => {
+    viewport!.scrollTop = top;
+  };
+  const reset = () => {
+    virtualizerMock.offsetCalls.length = 0;
+    virtualizerMock.indexRequests.length = 0;
+  };
+  return {
+    queue,
+    viewport,
+    scrollTo,
+    reset,
+    goTo: async (ply: number) => {
+      await act(async () => store.getState().goToMove(Array(ply).fill(0)));
+    },
+    // A real click on the ply's move button inside the notation (the cell mock navigates on click).
+    // Each click is its own event task: the next action waits for the tasks it queued.
+    clickMove: async (ply: number) => {
+      await act(async () => {
+        viewport!.querySelector<HTMLElement>(`[data-node="m${ply}"]`)!.click();
+        await new Promise((resolve) => setTimeout(resolve));
+      });
+    },
+    // A click on a notation descendant that stops propagation and navigates nowhere (as a game
+    // reference in a comment does).
+    clickStoppedChild: async () => {
+      const child = document.createElement("button");
+      child.addEventListener("click", (event) => event.stopPropagation());
+      viewport!.append(child);
+      await act(async () => {
+        child.click();
+        await new Promise((resolve) => setTimeout(resolve));
+      });
+      child.remove();
+    },
+    advanceClock: (ms: number) => {
+      clock += ms;
+    },
+    setRowHeight: (value: number) => {
+      rowHeight = value;
+    },
+    setCellHeight: (value: number) => {
+      cellHeight = value;
+    },
+    setShift: (value: number) => {
+      shift = value;
+    },
+    restore: async () => {
+      await act(async () => root.render(null));
+      queue.restore();
+      now.mockRestore();
+      clientHeight.mockRestore();
+      scrollHeight.mockRestore();
+      bounds.mockRestore();
+    },
+  };
+}
+
+describe("notation follow-scroll", () => {
+  // Arrange a settled list: the first render's centring is the open path, not the one under test.
+  async function settled(options: Parameters<typeof renderFollowGame>[0], top: number) {
+    const game = await renderFollowGame(options);
+    expect(virtualizerMock.indexRequests.some((request) => request.align === "center")).toBe(true);
+    game.scrollTo(top);
+    game.reset();
+    return game;
+  }
+
+  test("a step inside the band leaves the list still", async () => {
+    const game = await settled({ start: 5 }, 0);
+    try {
+      await game.goTo(6);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      expect(virtualizerMock.indexRequests).toEqual([]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a forward step into the bottom margin turns the page to the margin below the top", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.goTo(18);
+      // Cell 18 spans 510-534, past the band's bottom at 600 - 96; it lands 96 px below the top.
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+      expect(virtualizerMock.indexRequests).toEqual([]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a backward step into the top margin turns the page to the margin above the bottom", async () => {
+    const game = await settled({ start: 21 }, 500);
+    try {
+      await game.goTo(20);
+      // Cell 20 spans 570-594 against a band from 596; its bottom lands 96 px above the bottom.
+      expect(virtualizerMock.offsetCalls).toEqual([90]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test.each([
+    ["the end of the list", 500, 33, 34, 600],
+    ["the start of the list", 100, 7, 6, 0],
+  ])("a page turn is clamped to %s", async (_name, top, start, next, expected) => {
+    const game = await settled({ start }, top);
+    try {
+      await game.goTo(next);
+      expect(virtualizerMock.offsetCalls).toEqual([expected]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a small panel narrows the margin to a quarter of its height", async () => {
+    const game = await settled({ start: 5, height: 200 }, 0);
+    try {
+      await game.goTo(6);
+      expect(virtualizerMock.offsetCalls).toEqual([100]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a page turn animates, and the next step snaps it to its end before deciding", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      game.queue.flushOne();
+      game.advanceClock(75);
+      game.queue.flushOne();
+      expect(virtualizerMock.offsetCalls).toEqual([0, 362.25]);
+      const [staleFrame] = [...game.queue.frames.values()];
+      game.reset();
+
+      await game.goTo(19);
+      // Snapped to 414, cell 19 (540-564) is inside the band 510-918: no further scroll.
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+      expect(game.queue.frames.size).toBe(0);
+      game.advanceClock(200);
+      staleFrame(0);
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("an uninterrupted page turn ends exactly on its target and then settles", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      game.queue.flushOne();
+      game.advanceClock(150);
+      game.queue.flushOne();
+      expect(virtualizerMock.offsetCalls).toEqual([0, 414]);
+      game.queue.flush();
+      expect(virtualizerMock.offsetCalls).toEqual([0, 414]);
+      expect(game.queue.frames.size).toBe(0);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("rows measured during a page turn move its target with the cell", async () => {
+    const game = await settled({ start: 21, reducedMotion: false }, 500);
+    try {
+      await game.goTo(20);
+      game.queue.flushOne();
+      // Rows above were measured 50 px taller: the cell moved down, and the turn follows it.
+      game.setShift(50);
+      game.advanceClock(150);
+      game.queue.flushOne();
+      expect(virtualizerMock.offsetCalls).toEqual([500, 140]);
+      game.setShift(80);
+      game.queue.flushOne();
+      expect(virtualizerMock.offsetCalls).toEqual([500, 140, 170]);
+      game.queue.flush();
+      expect(virtualizerMock.offsetCalls).toEqual([500, 140, 170]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a page turn follows the cell mid-way, and an interruption carries the moved target", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      game.queue.flushOne();
+      game.setShift(40);
+      game.advanceClock(75);
+      game.queue.flushOne();
+      // Target 454 (cell 550 - 96), distance 414 from the start: 454 - 414 * 0.125.
+      expect(virtualizerMock.offsetCalls).toEqual([0, 402.25]);
+      game.reset();
+      await game.goTo(19);
+      expect(virtualizerMock.offsetCalls).toEqual([454]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("the settle check corrects late measurements and stops once the target holds", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.goTo(18);
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+      game.queue.flushOne(); // stable 1
+      game.setShift(20);
+      game.queue.flushOne(); // corrected, stable count restarts
+      expect(virtualizerMock.offsetCalls).toEqual([414, 434]);
+      game.queue.flushOne();
+      game.queue.flushOne();
+      expect(game.queue.frames.size).toBe(1);
+      game.queue.flushOne(); // third stable check in a row ends it
+      expect(game.queue.frames.size).toBe(0);
+      expect(virtualizerMock.offsetCalls).toEqual([414, 434]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("the settle check gives up after ten attempts on a list that keeps moving", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.goTo(18);
+      let checks = 0;
+      while (game.queue.frames.size > 0) {
+        game.setShift(++checks);
+        game.queue.flushOne();
+      }
+      expect(checks).toBe(10);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("unmounting while a finished turn settles stops the checks", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.goTo(18);
+      expect(game.queue.frames.size).toBe(1);
+      await act(async () => root.render(null));
+      expect(game.queue.frames.size).toBe(0);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a jump during a page turn does not snap to the interrupted target", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      game.queue.flushOne();
+      game.advanceClock(75);
+      game.queue.flushOne();
+      game.reset();
+      // Cell 25 (720-744) is visible at 362.25: the jump neither snaps nor scrolls.
+      await game.goTo(25);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      expect(game.viewport.scrollTop).toBe(362.25);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a click that navigates nowhere leaves nothing for the next step", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      // Clicking the current move changes nothing; the next step (a button or wheel, no key) turns.
+      await game.clickMove(17);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      await game.goTo(18);
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a click on a child that stops propagation leaves nothing for the next step", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.clickStoppedChild();
+      await game.goTo(18);
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a cell taller than the band shrinks the margin so it stays whole", async () => {
+    const game = await settled({ start: 2, height: 80 }, 0);
+    try {
+      game.setCellHeight(64);
+      await game.goTo(3);
+      // Cell 3 spans 60-124; a margin of 8 ((80 - 64) / 2) keeps it inside 52-132.
+      expect(virtualizerMock.offsetCalls).toEqual([52]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a viewport below other content measures the cell from its own top", async () => {
+    const game = await settled({ start: 17, viewportTop: 120 }, 0);
+    try {
+      await game.goTo(18);
+      expect(virtualizerMock.offsetCalls).toEqual([414]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a jump to an unmounted row takes the existing mount-then-reveal path", async () => {
+    const game = await settled({ start: 5, moves: 60, tableView: true }, 0);
+    try {
+      await game.goTo(55);
+      // Table row 27 is outside the 20 mounted rows: it is mounted at its start offset first.
+      expect(virtualizerMock.indexRequests).toEqual([{ index: 27, align: "start" }]);
+      expect(virtualizerMock.offsetCalls).toEqual([27 * 30]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a click on a visible move in the margin does not scroll, and the next key step does", async () => {
+    const game = await settled({ start: 17 }, 0);
+    try {
+      await game.clickMove(18);
+      expect(store.getState().position).toHaveLength(18);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      await game.goTo(19);
+      expect(virtualizerMock.offsetCalls).toEqual([444]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a click during a page turn stops the list where it is", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      game.queue.flushOne();
+      game.advanceClock(75);
+      game.queue.flushOne();
+      game.reset();
+      await game.clickMove(17);
+      expect(store.getState().position).toHaveLength(17);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      expect(game.viewport.scrollTop).toBe(362.25);
+      expect(game.queue.frames.size).toBe(0);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test.each([
+    ["forward onto a visible move in the top margin", 400, 14, 15, []],
+    ["backward onto a visible move in the bottom margin", 0, 19, 18, []],
+    ["forward onto a move above the viewport", 600, 4, 5, [24]],
+    ["backward onto a move below the viewport", 0, 30, 29, [360]],
+  ])("a step %s", async (_name, top, start, next, expected) => {
+    const game = await settled({ start }, top);
+    try {
+      await game.goTo(next);
+      expect(virtualizerMock.offsetCalls).toEqual(expected);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a jump to a visible move stays, a jump out of view centres", async () => {
+    const game = await settled({ start: 5 }, 0);
+    try {
+      await game.goTo(15);
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      expect(virtualizerMock.indexRequests).toEqual([]);
+      await game.goTo(35);
+      expect(virtualizerMock.indexRequests).toContainEqual(
+        expect.objectContaining({ align: "center" }),
+      );
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a view switch centres instead of following", async () => {
+    const game = await settled({ start: 10 }, 0);
+    try {
+      await act(async () => notationSettings.setTableView(true));
+      expect(virtualizerMock.indexRequests).toContainEqual(
+        expect.objectContaining({ align: "center" }),
+      );
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("a row taller than the panel keeps the reveal path", async () => {
+    const game = await settled({ start: 20 }, 0);
+    try {
+      game.setRowHeight(700);
+      await game.goTo(21);
+      // The follow step stays out; the reveal path waits a frame, then scrolls cell 21 (600-624)
+      // just into view instead of turning the page to 504.
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+      expect(game.queue.frames.size).toBe(1);
+      game.queue.flushOne();
+      game.queue.flushOne();
+      expect(virtualizerMock.offsetCalls).toEqual([24]);
+    } finally {
+      await game.restore();
+    }
+  });
+
+  test("unmounting during a page turn stops it", async () => {
+    const game = await settled({ start: 17, reducedMotion: false }, 0);
+    try {
+      await game.goTo(18);
+      game.queue.flushOne();
+      expect(game.queue.frames.size).toBe(1);
+      await act(async () => root.render(null));
+      expect(game.queue.frames.size).toBe(0);
+      game.reset();
+      game.queue.flush();
+      expect(virtualizerMock.offsetCalls).toEqual([]);
+    } finally {
+      await game.restore();
+    }
+  });
+});
 
 test("table notation shows the live engine score ahead of the saved one", async () => {
   notationSettings.showComments = true;
