@@ -30287,3 +30287,33 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 * **Handled (2026-11-27, Claude Code, notation-follow-scroll direct run):** commit `ff4a0c802`. The walk runs inside one page evaluation (keys dispatched where react-hotkeys-hook listens, wait for the current move to change, three settle frames, geometry returned), the margin click comes from the forward walk's first turn, test.slow() kept as cushion.
   * **Proof:** container e2e `notation-follow-scroll` + `notation-follow-scroll-webkit` 6/6 passed, walk tests 14-25 s locally (were 34-48 s); with GameNotation.tsx reverted to `b83fce58d` the table and inline walks fail ("turned to the top margin"); agy tests and correctness lenses APPROVED after one correctness closure round (start-position wait, return-to-start wait).
 <!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"28108358715775f4d2cbf860adfa4608cb2c027dc5127198f7b15664cd944ff1","header_sha256":"ac342ed0ad196c84c4011d3992f2ac28ab64a565478214d945714158feb3361a","header_status":"handled","input_sha256":"3f9c7ed1aca2fe42dc5438c751b04b1db07e91237497a7f31b211735baeb3130","kind":"mutation-receipt","operation":"4c62e4909714cbc516714428bb218175b23ccffd1efac348849706bb4a830e58","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-23"],"target":"f-20261127-23","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### GameSelector rows nest Remove-game and section-editor buttons inside a role=option control
+
+* **ID:** f-20261127-24 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 9ad74528-5b1f-469f-8d37-d61946986fb6
+
+* **Impact class:** ux
+* **Spotted outside diff:** review-root-cause on the f-20261126-16 staged diff (confidence 92). Related: f-20261126-16 (accordion header nested-interactive; Root `-`, so named here rather than shared).
+* **Where:** `src/components/panels/info/GameSelector.tsx` `GameRow` (~520–584).
+* **Failure scenario:** `GameRow` renders an interactive `<Group role="option">` (`gameRowActivation` plus `onClick`) that nests `<IconAction>` buttons for Remove game and the section editor, using `event.stopPropagation()` so they do not select the row. Axe `nested-interactive`: a widget (`role="option"`) contains buttons. The chapter accordion starts collapsed, so the f-20261126-16 full-page `assertAccessible()` does not scan these rows; expanding the Info chapter list, or using `GameSelector` in `FileCard`, still exposes them.
+* **Open question:** none; move the row actions out of the `role="option"` control (sibling of the option, same pattern as f-20261126-16's Accordion.Control sibling) so option and actions are separate focusable controls, then prove with a unit test and a full-page `assertAccessible()` on an expanded chapter list or Files game list.
+* **Proof:** a unit test that the Remove-game and section-editor `IconAction`s are not descendants of the `role="option"` row, plus full-page `assertAccessible()` on an expanded chapter list or Files game list. Nested-interactive is present before the move and absent after it.
+
+### Hosted e2e download-count dialog snapshot is 53px shorter than the committed PNG
+
+* **ID:** f-20261127-25 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 9ad74528-5b1f-469f-8d37-d61946986fb6
+* **Impact class:** tooling
+* **Spotted outside diff:** hosted Test e2e after the f-20261126-16 snapshot repair. Job-level owner check classified the e2e streak as inherited (first red run 46045214092 on `f15964a6b`). Not f-20261127-18 (clock-times board snapshots, now handled) and not f-20261127-23 (follow-scroll WebKit timeout, now handled).
+* **CI run:** 46053637618
+* **Where:** `e2e/online-opponent.spec.ts:237` (`toHaveScreenshot("online-opponent-download-count.png")`); committed `e2e/online-opponent.spec.ts-snapshots/online-opponent-download-count-online-opponent.png`.
+* **Failure scenario:** Test run 46053637618 job `e2e` 140690778598: both `[online-opponent]` and `[online-opponent-narrow]` fail `expect(downloadModal).toHaveScreenshot("online-opponent-download-count.png")`. The count text assertion `1,234 games loaded` already passed. Expected 440×246, received 440×193 (4562 pixels, ratio 0.05).
+* **Defect:** after the progress-event count update, the live Downloading dialog is 53px shorter than the committed snapshot.
+* **Fix:** inspect actual vs expected in the CI artifacts; re-record in `pnpm test:e2e:container` if the live dialog is correct, or restore the missing height if the product dialog lost layout. Do not re-record natively.
+* **Proof:** `pnpm test:e2e:container --project=online-opponent --project=online-opponent-narrow --grep "imports an online-only opponent"` fails on `online-opponent-download-count.png` before the fix and passes after it.
+* **Found by:** Grok, f-20261126-16 drain CI wait, 2026-11-27
