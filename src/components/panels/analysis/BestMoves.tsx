@@ -34,6 +34,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import PanelHeader from "@/components/boards/PanelHeader";
 import { IconAction } from "@/components/common/IconAction";
 import {
   engineProgressFamily,
@@ -167,6 +168,26 @@ function BestMovesComponent({
   const multiPv = engineMultiPv(settings.settings);
   const engineArea = engineAreaId(engine.id);
   const isWindow = mode === "window";
+  const showLoading = loading && settings.enabled && !isGameOver && !error;
+  const hasVariations = !isGameOver && Boolean(engineVariations && engineVariations.length > 0);
+  const headerStatus =
+    threat || showLoading || hasVariations ? (
+      <>
+        {threat && <ThreatBadge />}
+        {showLoading && <Code fz="xs">{t("Common.Loading")}</Code>}
+        {hasVariations && engineVariations && (
+          <Group gap={4} wrap="nowrap" opacity={dimmed ? 0.5 : 1} className={classes.stats}>
+            <Text fz="xs" fw={700} tt="uppercase" c="dimmed">
+              {t("GoMode.Depth")}
+            </Text>
+            <Text fz="sm" fw={700}>
+              {engineVariations[0].depth}
+            </Text>
+            <AssessmentSymbol score={engineVariations[0].score.value} fz="sm" />
+          </Group>
+        )}
+      </>
+    ) : undefined;
 
   return (
     <Box
@@ -180,157 +201,140 @@ function BestMovesComponent({
             : "var(--cf-border-strong)",
       }}
     >
-      <Box
+      <PanelHeader
+        area={engineArea}
+        title={engine.name}
+        arrangeable={isWindow}
+        onDragStart={isWindow ? onDragStart : undefined}
+        onSuppressClick={isWindow ? onSuppressClick : undefined}
+        onStartPlacing={isWindow ? onStartPlacing : undefined}
         className={isWindow ? `${classes.header} ${classes.windowHeader}` : classes.header}
-        onPointerDown={isWindow ? onDragStart : undefined}
-        onClickCapture={isWindow ? onSuppressClick : undefined}
-      >
-        <Group gap={6} wrap="nowrap" className={classes.headerLeft}>
-          {isWindow ? (
+        leading={
+          <>
+            {!isWindow && (
+              <Menu position="bottom-start" shadow="md" withinPortal>
+                <Menu.Target>
+                  <IconAction
+                    label={t("Board.Analysis.ReorderEngine")}
+                    size="xs"
+                    variant="subtle"
+                    className={classes.grip}
+                    data-arrange-grip={engineArea}
+                    onPointerDown={onDragStart}
+                    onClickCapture={onSuppressClick}
+                  >
+                    <GripVertical size="0.875rem" />
+                  </IconAction>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item disabled={!canMoveUp} onClick={onMoveUp}>
+                    {t("Board.Analysis.MoveUp")}
+                  </Menu.Item>
+                  <Menu.Item disabled={!canMoveDown} onClick={onMoveDown}>
+                    {t("Board.Analysis.MoveDown")}
+                  </Menu.Item>
+                  {canShowAsArea && onShowAsArea && (
+                    <Menu.Item onClick={onShowAsArea}>
+                      {t("Board.Analysis.ShowAsOwnArea")}
+                    </Menu.Item>
+                  )}
+                </Menu.Dropdown>
+              </Menu>
+            )}
             <IconAction
-              label={t("Board.Arrange.MoveArea", { area: engine.name })}
-              size="xs"
-              variant="subtle"
-              className={classes.grip}
-              data-arrange-grip={engineArea}
-              onClick={onStartPlacing}
+              label={
+                settings.enabled
+                  ? t("Board.Analysis.DisableEngine")
+                  : t("Board.Analysis.EnableEngine")
+              }
+              pressed={settings.enabled}
+              size="sm"
+              variant={settings.enabled ? "filled" : "transparent"}
+              color={theme.primaryColor}
+              data-no-drag="true"
+              onClick={() => {
+                setSettings((prev) => ({ ...prev, enabled: !prev.enabled }));
+              }}
             >
-              <GripVertical size="0.875rem" />
+              {settings.enabled ? <Pause size="0.875rem" /> : <Play size="0.875rem" />}
             </IconAction>
-          ) : (
-            <Menu position="bottom-start" shadow="md" withinPortal>
-              <Menu.Target>
-                <IconAction
-                  label={t("Board.Analysis.ReorderEngine")}
-                  size="xs"
-                  variant="subtle"
-                  className={classes.grip}
-                  data-arrange-grip={engineArea}
-                  onPointerDown={onDragStart}
-                  onClickCapture={onSuppressClick}
-                >
-                  <GripVertical size="0.875rem" />
-                </IconAction>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item disabled={!canMoveUp} onClick={onMoveUp}>
-                  {t("Board.Analysis.MoveUp")}
-                </Menu.Item>
-                <Menu.Item disabled={!canMoveDown} onClick={onMoveDown}>
-                  {t("Board.Analysis.MoveDown")}
-                </Menu.Item>
-                {canShowAsArea && onShowAsArea && (
-                  <Menu.Item onClick={onShowAsArea}>{t("Board.Analysis.ShowAsOwnArea")}</Menu.Item>
-                )}
-              </Menu.Dropdown>
-            </Menu>
-          )}
-          <IconAction
-            label={
-              settings.enabled
-                ? t("Board.Analysis.DisableEngine")
-                : t("Board.Analysis.EnableEngine")
-            }
-            pressed={settings.enabled}
-            size="sm"
-            variant={settings.enabled ? "filled" : "transparent"}
-            color={theme.primaryColor}
-            data-no-drag="true"
-            onClick={() => {
-              setSettings((prev) => ({ ...prev, enabled: !prev.enabled }));
-            }}
-          >
-            {settings.enabled ? <Pause size="0.875rem" /> : <Play size="0.875rem" />}
-          </IconAction>
-          <Text fw={600} fz="sm" truncate className={classes.name}>
-            {engine.name}
-          </Text>
-          {threat && <ThreatBadge />}
-          {loading && settings.enabled && !isGameOver && !error && (
-            <Code fz="xs">{t("Common.Loading")}</Code>
-          )}
-          {!isGameOver && engineVariations && engineVariations.length > 0 && (
-            <Group gap={4} wrap="nowrap" opacity={dimmed ? 0.5 : 1} className={classes.stats}>
-              <Text fz="xs" fw={700} tt="uppercase" c="dimmed">
-                {t("GoMode.Depth")}
-              </Text>
-              <Text fz="sm" fw={700}>
-                {engineVariations[0].depth}
-              </Text>
-              <AssessmentSymbol score={engineVariations[0].score.value} fz="sm" />
-            </Group>
-          )}
-        </Group>
-        <Group gap={2} wrap="nowrap" className={classes.actions} data-no-drag="true">
-          {hasMultiPv && (
-            <Tooltip label={t("Engines.Settings.NumOfLines")}>
-              <Box>
-                <LinesSlider
-                  ariaLabel={t("Engines.Settings.NumOfLines")}
-                  value={Math.min(Math.max(1, multiPv), LINE_COUNT_OPTIONS.length)}
-                  setValue={(count) => {
-                    setSettings((previous) => ({
-                      ...previous,
-                      settings: setEngineMultiPv(previous.settings, count),
-                    }));
-                  }}
-                />
-              </Box>
-            </Tooltip>
-          )}
-          <IconAction
-            label={t("Board.Analysis.CheckThreat")}
-            pressed={threat}
-            size="sm"
-            onClick={() => setThreat(!threat)}
-            disabled={!settings.enabled}
-            variant="subtle"
-          >
-            <Crosshair color={threat ? "var(--cf-destructive)" : undefined} size="0.875rem" />
-          </IconAction>
-          <IconAction
-            label={t("Board.Analysis.EngineSettings")}
-            pressed={settingsOn}
-            size="sm"
-            variant="subtle"
-            onClick={() => toggleSettingsOn()}
-          >
-            <SettingsIcon size="0.875rem" />
-          </IconAction>
-          <IconAction
-            label={isExpanded ? t("Board.Analysis.Collapse") : t("Board.Analysis.Expand")}
-            pressed={isExpanded}
-            size="sm"
-            variant="subtle"
-            style={{
-              transition: "transform 200ms ease",
-              transform: isExpanded ? "rotate(180deg)" : "none",
-            }}
-            onClick={toggleExpanded}
-          >
-            <ChevronDown size="0.875rem" />
-          </IconAction>
-          {isWindow && onReturn && (
+          </>
+        }
+        status={headerStatus}
+        actions={
+          <>
+            {hasMultiPv && (
+              <Tooltip label={t("Engines.Settings.NumOfLines")}>
+                <Box>
+                  <LinesSlider
+                    ariaLabel={t("Engines.Settings.NumOfLines")}
+                    value={Math.min(Math.max(1, multiPv), LINE_COUNT_OPTIONS.length)}
+                    setValue={(count) => {
+                      setSettings((previous) => ({
+                        ...previous,
+                        settings: setEngineMultiPv(previous.settings, count),
+                      }));
+                    }}
+                  />
+                </Box>
+              </Tooltip>
+            )}
             <IconAction
-              label={t("Board.Area.ReturnToEngines")}
+              label={t("Board.Analysis.CheckThreat")}
+              pressed={threat}
+              size="sm"
+              onClick={() => setThreat(!threat)}
+              disabled={!settings.enabled}
+              variant="subtle"
+            >
+              <Crosshair color={threat ? "var(--cf-destructive)" : undefined} size="0.875rem" />
+            </IconAction>
+            <IconAction
+              label={t("Board.Analysis.EngineSettings")}
+              pressed={settingsOn}
               size="sm"
               variant="subtle"
-              onClick={onReturn}
+              onClick={() => toggleSettingsOn()}
             >
-              <X size="0.875rem" />
+              <SettingsIcon size="0.875rem" />
             </IconAction>
-          )}
-        </Group>
-        <Progress
-          aria-label={engine.name}
-          className={classes.progress}
-          color="var(--cf-engine-status)"
-          value={isGameOver || failure ? 0 : progress}
-          animated={available && progress < 100 && settings.enabled && !isGameOver && !failure}
-          size={3}
-          striped={available && progress < 100 && !settings.enabled && !failure}
-        />
-      </Box>
+            <IconAction
+              label={isExpanded ? t("Board.Analysis.Collapse") : t("Board.Analysis.Expand")}
+              pressed={isExpanded}
+              size="sm"
+              variant="subtle"
+              style={{
+                transition: "transform 200ms ease",
+                transform: isExpanded ? "rotate(180deg)" : "none",
+              }}
+              onClick={toggleExpanded}
+            >
+              <ChevronDown size="0.875rem" />
+            </IconAction>
+            {isWindow && onReturn && (
+              <IconAction
+                label={t("Board.Area.ReturnToEngines")}
+                size="sm"
+                variant="subtle"
+                onClick={onReturn}
+              >
+                <X size="0.875rem" />
+              </IconAction>
+            )}
+          </>
+        }
+        progress={
+          <Progress
+            aria-label={engine.name}
+            className={classes.progress}
+            color="var(--cf-engine-status)"
+            value={isGameOver || failure ? 0 : progress}
+            animated={available && progress < 100 && settings.enabled && !isGameOver && !failure}
+            size={3}
+            striped={available && progress < 100 && !settings.enabled && !failure}
+          />
+        }
+      />
       <Collapse in={settingsOn} px="sm" py="xs">
         <EngineSettingsForm
           engine={engine}

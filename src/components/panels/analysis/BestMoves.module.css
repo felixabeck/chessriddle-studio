@@ -2,14 +2,10 @@
   border-left: 3px solid var(--cf-engine-status);
 }
 
-.header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.engine .header {
+  border-bottom: none;
   gap: 6px;
   padding: 5px 6px 8px 4px;
-  min-width: 0;
 }
 
 .windowHeader {
@@ -18,24 +14,11 @@
   touch-action: none;
 }
 
-.headerLeft {
-  flex: 1;
-  min-width: 0;
-}
-
-.name {
-  min-width: 0;
-}
-
 .grip {
   flex-shrink: 0;
   cursor: grab;
   user-select: none;
   touch-action: none;
-}
-
-.actions {
-  flex-shrink: 0;
 }
 
 .stats {

@@ -20,6 +20,19 @@
   touch-action: none;
 }
 
+.headerWithProgress {
+  position: relative;
+}
+
+.leading {
+  flex-shrink: 0;
+}
+
+.status {
+  flex-shrink: 0;
+  margin-right: auto;
+}
+
 .actions {
   flex-shrink: 0;
 }
@@ -40,7 +53,7 @@
 }
 
 .titleGroup {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 

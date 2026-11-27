@@ -19,6 +19,7 @@ import { decodeEngineOwnerValue } from "@/state/engineOwnerStorage";
 import { useAtomValue } from "jotai";
 import type { Settings } from "./EngineSettingsForm";
 import { analysisSearch } from "@/utils/analysisSearch";
+import { engineAreaId } from "@/state/boardArrangement";
 import { engineIdentity, engineLineContext } from "./analysisLineContext";
 import BestMoves from "./BestMoves";
 import { errorUnlessCancelled } from "@/platform/errors";
@@ -1074,4 +1075,114 @@ test("panel-mode grip menu disables end move items, invokes onMoveDown, and gate
   expect(findItem("Board.Analysis.MoveUp")?.disabled).toBe(false);
   expect(findItem("Board.Analysis.MoveDown")?.disabled).toBe(true);
   expect(findItem("Board.Analysis.ShowAsOwnArea")).toBeUndefined();
+});
+
+test("BestMoves renders through PanelHeader with engine area id, aria labels, and mode-specific drag rules", async () => {
+  const onDragStart = vi.fn();
+  const onReturn = vi.fn();
+  const area = engineAreaId(displayEngine.id);
+  await h.store.set(enginesAtom, [displayEngine]);
+
+  // Window mode: header is [data-panel-header], title drag starts arrange, leading and actions do not.
+  await h.render(
+    <BestMoves
+      id={0}
+      engine={displayEngine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+      mode="window"
+      onDragStart={onDragStart}
+      onReturn={onReturn}
+    />,
+  );
+
+  const windowHeader = h.host.querySelector<HTMLElement>(`[data-panel-header="${area}"]`)!;
+  expect(windowHeader).not.toBeNull();
+  const playBtn = windowHeader.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.DisableEngine"]',
+  )!;
+  const settingsBtn = windowHeader.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.EngineSettings"]',
+  )!;
+  const collapseBtn = windowHeader.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Analysis.Collapse"]',
+  )!;
+  const returnBtn = windowHeader.querySelector<HTMLButtonElement>(
+    'button[aria-label="Board.Area.ReturnToEngines"]',
+  )!;
+  expect(playBtn).not.toBeNull();
+  expect(settingsBtn).not.toBeNull();
+  expect(collapseBtn).not.toBeNull();
+  expect(returnBtn).not.toBeNull();
+
+  const titleEl = [...windowHeader.querySelectorAll("p")].find(
+    (el) => el.textContent === displayEngine.name,
+  )!;
+  expect(titleEl).not.toBeNull();
+
+  // Pointer-down on leading (play button and its wrapper) does not start drag.
+  await act(async () => {
+    playBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    playBtn.parentElement!.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+  });
+  expect(onDragStart).not.toHaveBeenCalled();
+
+  // Pointer-down on actions does not start drag.
+  await act(async () => {
+    settingsBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    collapseBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    returnBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+  });
+  expect(onDragStart).not.toHaveBeenCalled();
+
+  // Pointer-down on the title calls onDragStart.
+  await act(async () => {
+    titleEl.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+  });
+  expect(onDragStart).toHaveBeenCalledTimes(1);
+
+  // Panel mode: header is not arrangeable; title pointer-down does not start drag, leading Menu grip does.
+  onDragStart.mockClear();
+  await h.render(
+    <BestMoves
+      id={0}
+      engine={displayEngine}
+      fen={INITIAL_FEN}
+      moves={[]}
+      halfMoves={0}
+      orientation="white"
+      mode="panel"
+      onDragStart={onDragStart}
+    />,
+  );
+
+  const panelHeader = h.host.querySelector<HTMLElement>(`[data-panel-header="${area}"]`)!;
+  expect(panelHeader).not.toBeNull();
+  expect(
+    panelHeader.querySelector('button[aria-label="Board.Analysis.DisableEngine"]'),
+  ).not.toBeNull();
+  expect(
+    panelHeader.querySelector('button[aria-label="Board.Analysis.EngineSettings"]'),
+  ).not.toBeNull();
+  expect(panelHeader.querySelector('button[aria-label="Board.Analysis.Collapse"]')).not.toBeNull();
+
+  const panelTitle = [...panelHeader.querySelectorAll("p")].find(
+    (el) => el.textContent === displayEngine.name,
+  )!;
+  await act(async () => {
+    panelTitle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+  });
+  expect(onDragStart).not.toHaveBeenCalled();
+
+  const panelGrip = panelHeader.querySelector<HTMLButtonElement>(`[data-arrange-grip="${area}"]`)!;
+  expect(panelGrip).not.toBeNull();
+  expect(panelGrip.closest('[data-no-drag="true"]')).toBeNull();
+  await act(async () => {
+    panelGrip.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+  });
+  expect(onDragStart).toHaveBeenCalledTimes(1);
 });
