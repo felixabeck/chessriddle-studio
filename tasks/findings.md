@@ -29792,7 +29792,7 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### Selecting a tab from a page other than the board view renders the previously active tab first
 
-* **ID:** f-20261126-18 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261126-18 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Filed from:** 439df079-7fd8-4b60-8786-9e87dd68a222
 * **Impact class:** ux
 * **Spotted outside diff:** yes
@@ -29802,6 +29802,8 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Open question:** should activation publish urgently when it also navigates onto the board view (keeping the transition only when already on `/`, which `BoardsPage.test.tsx` "transitions $name before showing a suspending tab" pins), or does an urgent activation off the board route reintroduce the close-time crash `b829b562` fixed with `startTransition`?
 * **Fix:** decide the priority rule for activation-plus-navigation, apply it once in `handleSetActiveTab`'s callers, and prove it with a renderer test in the style of `src/utils/openFile.admission.test.tsx` (active-tab subscription mounted above the routes, first board render logged).
 * **Found by:** Claude Code (Opus 5.5) build urgent-tab-admission, phase 1 diff review, 2026-11-26
+* **Handled 2026-11-27** (drain bfd4856b, build tab-activation-priority, adopted plan reviewed r1–r4 by agy): `handleSetActiveTab` in `src/components/tabs/TabCommands.tsx`, the one owner `showTab`, `selectTab`, `selectTabAt` and `cycleTabs` go through, now writes the active tab urgently when the board view is not shown (`!isBoardsPath(pathname)`) and keeps `startTransition` on `/`. Answer to the open question (d-20261127-05): the `b829b562` crash was a synchronous swap of a mounted board view; off the board route nothing board-side is mounted, and the navigation already mounts the board page urgently. Proof: `TabCommands.test.tsx` gains an opt-in reactive router mock; from `/library` each of `selectTab`, `alt+2`, `mod+tab`, `mod+shift+tab` and `showTab` renders board renders exactly `[B]` (reverting the branch gives `[A, B]`); `BoardsPage.test.tsx` now pins `showTab`'s on-board transition too. Commit 58d04910a. Rejected: urgent everywhere, navigation inside the transition, a board-page placeholder (see d-20261127-05).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"34e853b4ad674b145fe675c037329e52f9494aef970a72bdd2607e8b7b246929","header_sha256":"be553d16218fa81204013f5acb69818f28bebb3bd7addbb5bfbf591597e85eef","header_status":"handled","input_sha256":"9765f07c8c44e3560901c7096938bec429f3e5cef336451e928d31c93e434c7c","kind":"mutation-receipt","operation":"b63d8c3b1b4baa8aa5d69ead7f55ece956b592846988ec41c038c4fdf6093280","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-18"],"target":"f-20261126-18","v":1} -->
 
 ---
 
