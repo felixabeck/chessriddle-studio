@@ -30167,7 +30167,7 @@ Re-recorded the remaining 16 container baselines that Test e2e failed on the fir
 
 ### Clock-times landing left 14 e2e screenshots stale and turned master Test red
 
-* **ID:** f-20261127-18 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-18 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 2b705c03-4044-4d0b-9a63-f81d540f88e4
 * **Impact class:** tooling
 * **CI run:** 45990064007 (newest red, head ccd82b33d, job `e2e` 140475323637)
@@ -30196,6 +30196,10 @@ Re-recorded the remaining 16 container baselines that Test e2e failed on the fir
 
 * **Repair owner:** notation-follow-scroll direct run (Claude Code) on tuxedo-atlas, 2026-11-27T19:00:58Z
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"37d0e6f2c56bbfa1dc44a1ba12ceb43300c53db716990fa47c49ba0124b8b4bd","input_sha256":"367aed7fb8c58b540299e2f965016a1ba9a6b790a96468a454e22f54909fe0df","kind":"mutation-receipt","operation":"76d90d198b3568618636d9a8fb0db6abe312bdd6f2d3d65d85fbe49e1b62cda5","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-18"],"target":"f-20261127-18","v":1} -->
+
+* **Handled (2026-11-27, Claude Code, notation-follow-scroll push, recording another session's repair):** commit `522086296` (test(e2e): re-record Info accordion snapshots after Add-game move) re-recorded the four container snapshots for the chapter accordion header order, citing Test run 46045214092.
+  * **Proof:** Test run 46053873563 on `270acc304` (contains `522086296`): `clock-times.spec.ts:29` and `game-references.spec.ts:96` pass; the job's only failure is the follow-scroll WebKit walk owned by f-20261127-23, whose repair is pushed with this closure. Local container run of both specs on the same tree: 5 passed.
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"c94e7b757eff7ea1be6b218560c67e00258efccbc1d9de9cb570a25a5e620cbc","header_sha256":"c08bac752cf5ec5df6d5c6ef3a3b6d4a88843a7514fb5294ae4cdd8b9aefa933","header_status":"handled","input_sha256":"32f07aa1c99f81696c0b7cfe04c61ec2f81e48e29b9dcc7702bd78dbec3093bb","kind":"mutation-receipt","operation":"434fdaf9e173942268464807a61a9b49c462b8991a1d7101d595d71fa642b5c1","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-18"],"target":"f-20261127-18","v":1} -->
 
 ---
 
