@@ -15584,8 +15584,8 @@ Former private decision identifier: d-20261029-14
 * **Chosen:** On the expanded sources row with Compare/Add column and the database selectors, so there is no sparse controls row under the title.
 * **Rejected:** Leaving Position on its own full-width row; putting Position in `PanelHeader`.
 * **Reason:** The empty space Felix pointed at is that sparse row. Position needs width and a dialog, so it stays in the body but not alone on a line. Reversal path: restore the separate controls `Group` above `.sources`.
-* **Decided by:** Grok full auto, 2026-11-27 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"40765d95b6afd132bb22b21dd52a382b6bc846757e989aa9b128547536a7d0c5","input_sha256":"272be868ff23db30e230376a331643d3930b5c409bf19f30039a3bee38b5a3d0","kind":"mutation-receipt","operation":"e5290df9a7e76ae9304b8e5b1d34c3904b8ea7351f94e299c110acb83c6a3e43","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-26","d-20261127-27","d-20261127-28","d-20261127-29"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Grok full auto, 2026-11-27 · **Superseded-by:** d-20261127-30
+<!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"22be6763ed233bf3fd32aacae8b3a284228536b3e7d5dc41e68408b0da066123","input_sha256":"272be868ff23db30e230376a331643d3930b5c409bf19f30039a3bee38b5a3d0","kind":"mutation-receipt","operation":"e5290df9a7e76ae9304b8e5b1d34c3904b8ea7351f94e299c110acb83c6a3e43","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-26","d-20261127-27","d-20261127-28","d-20261127-29"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261127-30 — Where does Position: Exact sit once the gear leaves the body row?
 
