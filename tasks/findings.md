@@ -30084,3 +30084,23 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Fix direction:** teach GR2 to drive the already-visible Report pane at 1400×1000 (click Generate report in that pane, or the pane header) and keep a strip-tab fallback for the stacked layout below the mosaic floor. Do not put Report back into the tab strip at that size: the mosaic is Felix's Game review layout. `scripts/verify-app.mjs` stays unchanged in the game-review build that found this.
 * **Proof:** `pnpm verify:app --game-report --screenshot <path>` on a release build of a fresh profile: GR1–GR6 pass, the screenshot shows the generated report (provenance, both accuracy cards, 3...Nf6?? in key moments), and the script is the only change unless a later product change removes the mosaic Report pane.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"fa3e8468df2b153cd1be5d637c041a9453ca7d908385e1ae5820c03d0a7fd474","input_sha256":"784072469695de73a8da3c08b9b5ea2068d4750c666e653eb89695fbf3e1ba2c","kind":"mutation-receipt","operation":"b0e24dc28af3ca4091eaf039070c64418a30b52fb79314da0f9f8fdee3ea6a56","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-14"],"target":"f-20261127-14","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Scheduled frontend mutation sweep red on master: four survivors in empty-drawing command hydration
+
+* **ID:** f-20261127-17 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
+* **Impact class:** behaviour
+* **CI run:** 45986600389
+* **First red:** scheduled Mutation run 45986600389 on `b16a1b819` (2026-11-27), job `frontend-mutation (workspace-storage)`. The previous completed workspace-storage job (run 45836897819) succeeded, so this streak is this run only. Handled f-20261126-08 owns only run 45806767175.
+* **Failure scenario:** `frontend-mutation (workspace-storage)`: "Final mutation score 99.75 under breaking threshold 100", 1553 killed, 12 timeout, 4 survived, all in `src/state/store/tabStorage.ts` at the empty-drawing branch of `migrateLegacyNode` (`b16a1b819` lines 378-379; HEAD 413-414): `shapes.length > 0 ? text.trim() : node.commands` mutated to `true` / `>= 0`, and `if (shapes.length > 0)` mutated to `if (true)` / `>= 0`. Sibling packages tree-path, annotate-comment and game-practice succeeded. `pnpm ci:remote:check` refuses every code push while the job stays red.
+* **Spotted outside diff:** yes, by `pnpm ci:remote:check` while pushing the game-review build (2026-11-27). The four survivors are on origin `b16a1b819`; this build's tabStorage edits only shift the line numbers.
+* **Where:** `src/state/store/tabStorage.ts:413-414` (`finishNode` current-commands path: `extractPgnDrawings` then the `shapes.length > 0` ternary and guard).
+* **Defect:** hydration of a node that already has a `commands` string does not pin the empty-drawing case, so Stryker can replace `shapes.length > 0` with `true` or `>= 0` and keep every existing test green. Either the tests miss the byte-for-byte keep of non-drawing commands, or the ternary is equivalent to the `if` that follows and should be folded away.
+* **Fix:** fold the ternary into the `if (shapes.length > 0)` block and add a read that persists non-drawing commands with padding and asserts they stay untrimmed and that existing shapes are unchanged.
+* **Proof:** a new `tabStorage` test that fails if the empty-drawing branch trims commands or rewrites shapes; Stryker restricted to `tabStorage.ts` around that `finishNode` commands path scores 100 with those four mutants gone.
+* **Related:** f-20261126-08 (previous scheduled workspace-storage red; different survivors, handled).
+* **Found by:** Grok, game-review build, 2026-11-27
