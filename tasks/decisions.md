@@ -15586,3 +15586,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The empty space Felix pointed at is that sparse row. Position needs width and a dialog, so it stays in the body but not alone on a line. Reversal path: restore the separate controls `Group` above `.sources`.
 * **Decided by:** Grok full auto, 2026-11-27 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"40765d95b6afd132bb22b21dd52a382b6bc846757e989aa9b128547536a7d0c5","input_sha256":"272be868ff23db30e230376a331643d3930b5c409bf19f30039a3bee38b5a3d0","kind":"mutation-receipt","operation":"e5290df9a7e76ae9304b8e5b1d34c3904b8ea7351f94e299c110acb83c6a3e43","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-26","d-20261127-27","d-20261127-28","d-20261127-29"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-30 — Where does Position: Exact sit once the gear leaves the body row?
+
+* **Question:** After the gear moves to the tile header, putting Position on the `.sources` grid would break OpeningsTable column alignment. Where does that control go?
+* **Governs:** -
+* **Chosen:** Left-packed Position/Compare/AddColumn cluster **above** `.sources`, never inside the multi-source alignment grid. Tile: cluster only (icons are in `PanelHeader`). Tab: cluster plus gear and games-collapse on that same chrome row.
+* **Rejected:** Putting those controls in `.sources` tracks; leaving a `space-between` sparse row with a trailing empty end on a tile; putting Position in `PanelHeader`.
+* **Reason:** `.sources[data-sources="2"|"3"]` is a 100px/72px Move-column grid whose source cells must match `OpeningsTable` within 2px (`e2e/database-files.spec.ts`). `Position: Exact` is wider than that track. Felix wanted the gear on the first header line, not a broken table. Reversal path: restore the separate `space-between` controls `Group` above `.sources`.
+* **Decided by:** Grok full auto, 2026-11-27, plan-review PH-1 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"5cf5ace95cfc5309eb200432bae34e4cd5b189c1aab94257b88a5a86d08ab9bc","input_sha256":"dee591f81dd9637fd6a81a0bc9574bca576252278eda7cabee46645dfd200a4a","kind":"mutation-receipt","operation":"651596f4dcbe0eec8610a06a2820965b9fa57c7cf2a27df485ad8f0e32a63af1","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-30"],"target":"decisions-ledger","v":1} -->
