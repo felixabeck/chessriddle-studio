@@ -29995,3 +29995,19 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Repair owner:** a9595a38-9fa5-484b-a802-6c5d84aa6d1a on tuxedo-felix, 2026-11-27T10:06:42Z
 * **First red:** Test run 45975375568 on `3965fff33` (job `e2e` 140425669478). The e2e job streak includes earlier reds 45974973498 and 45969736439 owned by handled f-20261127-12 (different test). This finding owns the windowed-All remount failure first observed on 45975375568.
 <!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"13ca140d4ca10485fbe071b20d4e20a7f3a89519e3c11d910dd36c0bc4a71dc4","header_sha256":"e7c16a14bc8c97299c8d667ddb18c8821aff3190fe7482bb1f1d516c1469027f","header_status":"open","input_sha256":"9ee3f11ac743456db01f24396b4e5e6539e32606733852507ae4d9839c04f0d6","kind":"mutation-receipt","operation":"26cf32128cbff653e2f7249dac258579648559b4166a8864c6f81258ee6d6133","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-13"],"target":"f-20261127-13","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Converting a file type in Library leaves open tabs on the old type
+
+* **ID:** f-20261127-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 15b83869-bb15-4dae-938a-52c4e97b88c1
+* **Impact class:** behaviour
+* **Spotted outside diff:** yes, during pre-commit review of f-20261126-10
+* **Where:** `src/components/files/useFileWorkspace.ts` `submitAction` writes sidecar `metadata.type` (and may rename) while `tab.gameOrigin.file` in `tabsAtom` / `sessionStorage["workspace"]` keeps the old type; `isRepertoireTab` in `src/utils/tabs.ts` reads that stored type; `FileFreshnessGate` reloads PGN into the tab tree but does not rewrite `gameOrigin.file.metadata`
+* **Failure scenario:** a player has sample.pgn open as a game tab, converts it to Repertoire (or back to Game) through Edit metadata, then switches to the tab or reloads the app. Practice stays hidden (or stays shown) until the tab is closed and reopened, because BoardAnalysis and boardLayoutKind still see the old type.
+* **Fix:** after a successful type or name write, update matching `tab.gameOrigin.file` records (name and metadata) in the tab list, or have FileFreshnessGate reconcile sidecar type from the listing.
+* **Related:** f-20261126-10 asks colour and writes Orientation on convert; it deliberately does not sync open-tab sidecar type.
+* **Found by:** Grok drain session 15b83869-bb15-4dae-938a-52c4e97b88c1, 2026-11-27
