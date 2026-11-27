@@ -32,7 +32,7 @@ import {
   useLocalExplorer,
 } from "@/components/panels/database/useLocalExplorer";
 import { failureUnlessCancelled } from "@/platform/errors";
-import { dbTabFamily, tabsAtom } from "@/state/atoms";
+import { tabsAtom } from "@/state/atoms";
 import { canonicalTabExplorerOptions, type TabExplorer } from "@/state/workspaceTypes";
 import { selectStripTab } from "@/state/stripTab";
 import { positionFromFen, parseSanOrUci } from "@/utils/chessops";
@@ -332,7 +332,6 @@ function OpeningTree({
           }),
         onSuccess: (id) => {
           if (pinned) {
-            atoms.set(dbTabFamily(id), "stats");
             selectStripTab(atoms, id, "database");
           }
           return navigate({ to: "/" });

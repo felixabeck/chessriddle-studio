@@ -162,7 +162,7 @@ test("GameTable renders German column headers without an English fallback", asyn
 
 test("board-panel games render German column headers", async () => {
   await render(<PanelGamesTable games={[game]} loading={false} databasePath={file} />);
-  expect(headers()).toEqual(["Weiß", "Schwarz", "Datum", "Ergebnis", "Halbzüge"]);
+  expect(headers()).toEqual(["Weiß", "Schwarz", "Notation", "Datum", "Ergebnis"]);
 });
 
 test("board-panel games render both German unrated labels", async () => {
@@ -295,12 +295,26 @@ test("GameTable renders shared date, plies, event and site presets without refor
   expectTruncated(cells[6], game.site);
 });
 
-test("board-panel GamesTable renders the shared date and numeric presets", async () => {
-  await render(<PanelGamesTable games={[game]} loading={false} databasePath={file} />);
+test("board-panel GamesTable renders the shared date preset and Notation cell", async () => {
+  await render(
+    <PanelGamesTable
+      games={[
+        {
+          ...game,
+          fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          moves: "1. e4 e5 *",
+        },
+      ]}
+      loading={false}
+      databasePath={file}
+    />,
+  );
   const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
-  expectDate(cells[2]);
-  expect(cells[2].textContent).toBe(game.date);
-  expectNumeric(cells[4]);
+  expect(cells[2].querySelector("span")?.textContent).toBe("1. e4 e5");
+  expect(cells[2].querySelector("strong")?.textContent).toBe("e4");
+  expectDate(cells[3]);
+  expect(cells[3].textContent).toBe(game.date);
+  expect(cells[4].textContent).toBe(game.result);
 });
 
 test("TournamentCard renders shared Games and Leaderboard presets", async () => {

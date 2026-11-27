@@ -710,12 +710,18 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await page.getByRole("tab", { name: "Database", exact: true }).click();
-    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const explorer = page.getByRole("tabpanel", { name: "Database", exact: true });
     // The database select sits in the sources bar, above the view it would otherwise vanish with.
     const picker = page.getByPlaceholder("add a database", { exact: true });
     await expect(picker).toHaveValue("");
     await expect(page.getByRole("button", { name: /^Filters: / })).toBeDisabled();
-    await expect(stats.getByText("No reference database selected.", { exact: true })).toBeVisible();
+    await expect(
+        explorer.getByText("No reference database selected.", { exact: true }),
+    ).toHaveCount(1);
+    await expect(
+        explorer.getByText("No reference database selected.", { exact: true }),
+    ).toBeVisible();
+    await expect(explorer.getByRole("separator")).toHaveCount(0);
     const searches = () =>
         page.evaluate(() =>
             window.__E2E_TAURI__
@@ -739,8 +745,7 @@ test("database-files: unreadable saved reference stays unselected and resumes se
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
     await goToBoards(page);
-    // With a database chosen the header collapses to its caption, and the view is a plain region.
-    const explorer = page.getByRole("tabpanel", { name: "Database", exact: true });
+    // With a database chosen the header collapses to its caption, and both regions show.
     await expect(explorer.locator("[data-explorer-source]")).toHaveText(
         gameOpeningFixture.databaseTitle,
     );
@@ -4167,9 +4172,10 @@ test("database-files: the board explorer compares two databases side by side", a
     );
     await expect(sources.nth(1)).toHaveText("Correspondence");
     await expect(sources.nth(1).locator("[data-explorer-source-detail]")).toHaveCount(0);
+    const stats = databasePanel.getByRole("region", { name: "Stats", exact: true });
     await expect(databasePanel.getByRole("textbox")).toHaveCount(0);
     await expect(databasePanel.getByRole("tab")).toHaveCount(0);
-    await expect(databasePanel.locator("tbody tr")).toHaveCount(5);
+    await expect(stats.locator("tbody tr")).toHaveCount(5);
     const expectSourcesAligned = async () => {
         const edges = await page.evaluate(() => {
             const left = (element: Element) => Math.round(element.getBoundingClientRect().left);
@@ -4203,7 +4209,6 @@ test("database-files: the board explorer compares two databases side by side", a
     await expect(page.getByRole("button", { name: "Compare with a database" })).toHaveCount(0);
 
     // One table: the union of both databases' moves, ordered by the first one.
-    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
     const rows = stats.locator("tbody tr");
     const moves = () => rows.locator("td:first-child").allTextContents();
     await expect(rows).toHaveCount(5);
@@ -4270,9 +4275,8 @@ test("database-files: the board explorer compares two databases side by side", a
     await corrFilters.click();
     await expect(filters).toBeHidden();
 
-    // The Games view lists one database's sample games at a time.
-    await page.getByRole("tab", { name: "Games", exact: true }).click();
-    const games = page.getByRole("tabpanel", { name: "Games", exact: true });
+    // The Games region below lists one database's sample games at a time.
+    const games = databasePanel.getByRole("region", { name: "Games", exact: true });
     await expect(games.getByRole("radio", { name: "Mega Database", exact: true })).toBeChecked();
     await games.getByText("Correspondence", { exact: true }).click();
     await expect(games.getByRole("radio", { name: "Correspondence", exact: true })).toBeChecked();
@@ -4302,7 +4306,7 @@ test("database-files: a local database sits beside Lichess All with Lichess tota
     await expect(sources.nth(1).getByRole("textbox")).toHaveValue("Lichess All");
     await expect(page.getByRole("button", { name: /^Position: / })).toBeVisible();
 
-    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const stats = page.getByRole("region", { name: "Stats", exact: true });
     const rows = stats.locator("tbody tr");
     await expect(rows).toHaveCount(4);
     expect(await rows.locator("td:first-child").allTextContents()).toEqual([
@@ -4340,7 +4344,7 @@ test("database-files: Lichess All beside a local database without an account sho
     await page.getByRole("button", { name: "Compare with a database" }).click();
     await page.getByRole("menuitem", { name: "Lichess All", exact: true }).click();
 
-    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const stats = page.getByRole("region", { name: "Stats", exact: true });
     await expect(stats.getByRole("alert")).toContainText(
         "Lichess Explorer now requires authentication",
     );
@@ -5021,7 +5025,7 @@ test("database-files: Prepare on board replaces the reference column with Liches
         sources.nth(2).getByRole("button", { name: "Remove column", exact: true }),
     ).toBeVisible();
 
-    const stats = page.getByRole("tabpanel", { name: "Stats", exact: true });
+    const stats = page.getByRole("region", { name: "Stats", exact: true });
     const totals = stats.locator("tbody tr").last().locator("td");
     await expect(totals.nth(7)).toHaveText("200");
     await expect(page.locator('[data-sources="3"]')).toBeVisible();
@@ -5034,4 +5038,227 @@ test("database-files: Prepare on board replaces the reference column with Liches
         "opponent-board-lichess-column.png",
     );
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+});
+
+test("database-files: board explorer split view shows notation, divider resize, short viewport and internal scroll", async ({
+    page,
+    mockScenario,
+}) => {
+    const mega = { id: { id: gameOpeningFixture.databaseId }, kind: "database" as const };
+    const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const fullLine = "1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 e5 7. Nb3 Be6";
+    const fullLineSymbols =
+        "1. e4 c5 2. ♘f3 d6 3. d4 cxd4 4. ♘xd4 ♘f6 5. ♘c3 a6 6. ♗e3 e5 7. ♘b3 ♗e6";
+    const moveRows = ["e4", "d4", "c4", "Nf3", "g3", "b3", "f4", "Nc3", "b4", "e3", "d3", "a3"].map(
+        (move, index) => ({
+            move,
+            white: 200 - index * 10,
+            draw: 80,
+            black: 150 - index * 5,
+            unknown: 0,
+            last_played: null,
+            year_counts: [],
+            recent: [],
+        }),
+    );
+    const gamesList = [
+        {
+            ...gameOpeningFixture.games[0],
+            id: 501,
+            fen: startFen,
+            white: "Carlsen, Magnus",
+            black: "Caruana, Fabiano",
+            date: "2024.06.10",
+            result: "1-0",
+            moves: `${fullLine} *`,
+        },
+        {
+            ...gameOpeningFixture.games[1],
+            id: 502,
+            fen: startFen,
+            white: "Nakamura, Hikaru",
+            black: "Firouzja, Alireza",
+            date: "2024.07.15",
+            result: "1/2-1/2",
+            moves: "1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. e3 O-O 5. Bd3 d5 6. Nf3 c5 *",
+        },
+    ];
+
+    await page.addInitScript((saved) => {
+        localStorage.setItem("reference-database", JSON.stringify(saved));
+        localStorage.setItem("font-size", "100");
+    }, mega);
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            list_workspace_databases: {
+                result: {
+                    entries: [{ handle: mega, filename: "mega.db3", availability: "available" }],
+                    unread: [],
+                },
+            },
+            get_progress: { result: null },
+            linked_collections_supported: { result: true },
+            list_linked_collections: { result: [] },
+            search_position: { result: [moveRows, gamesList] },
+        }),
+    });
+
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Open database", exact: true })).toBeVisible();
+    await goToBoards(page);
+    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+
+    const databasePanel = page.getByRole("tabpanel", { name: "Database", exact: true });
+    const stats = databasePanel.getByRole("region", { name: "Stats", exact: true });
+    const games = databasePanel.getByRole("region", { name: "Games", exact: true });
+    const separator = databasePanel.getByRole("separator", {
+        name: "Resize statistics and games",
+        exact: true,
+    });
+    await expect(stats).toBeVisible();
+    await expect(games).toBeVisible();
+    await expect(separator).toBeVisible();
+    await expect(databasePanel.getByRole("tab")).toHaveCount(0);
+
+    // Games table headers: Notation present, Plies absent.
+    await expect(games.getByRole("columnheader", { name: "Notation", exact: true })).toBeVisible();
+    await expect(games.getByRole("columnheader", { name: "Plies", exact: true })).toHaveCount(0);
+
+    // Notation cell from start position: bold first move, 8-ply preview, full line in title.
+    const firstNotation = games.locator("tbody tr").first().locator("td").nth(2).locator("span");
+    await expect(firstNotation.locator("strong")).toHaveText("e4");
+    await expect(firstNotation).toHaveText("1. e4 c5 2. ♘f3 d6 3. d4 cxd4 4. ♘xd4 ♘f6 …");
+    await expect(firstNotation).toHaveAttribute("title", fullLineSymbols);
+
+    // No horizontal overflow in Games table; Date and Result stay visible.
+    const gamesMetrics = await games.evaluate((region) => {
+        const viewport = region.querySelector<HTMLElement>(".mantine-ScrollArea-viewport");
+        const table = region.querySelector<HTMLElement>("table");
+        if (!viewport || !table) return null;
+        const viewportRect = viewport.getBoundingClientRect();
+        const headers = [...region.querySelectorAll("thead th")];
+        const dateHeader = headers[3]?.getBoundingClientRect();
+        const resultHeader = headers[4]?.getBoundingClientRect();
+        return {
+            tableScrollWidth: table.scrollWidth,
+            viewportClientWidth: viewport.clientWidth,
+            dateVisible:
+                !!dateHeader && dateHeader.width > 0 && dateHeader.right <= viewportRect.right + 1,
+            resultVisible:
+                !!resultHeader &&
+                resultHeader.width > 0 &&
+                resultHeader.right <= viewportRect.right + 1,
+        };
+    });
+    expect(gamesMetrics).not.toBeNull();
+    expect(gamesMetrics!.tableScrollWidth).toBeLessThanOrEqual(
+        gamesMetrics!.viewportClientWidth + 1,
+    );
+    expect(gamesMetrics!.dateVisible).toBe(true);
+    expect(gamesMetrics!.resultVisible).toBe(true);
+
+    // Statistics table scrolls inside its region with scrollbar offset off the last column.
+    const statsMetrics = await stats.evaluate((region) => {
+        const viewport = region.querySelector<HTMLElement>(".mantine-ScrollArea-viewport");
+        const table = region.querySelector<HTMLElement>("table");
+        const regionRect = region.getBoundingClientRect();
+        const lastHeader = [...region.querySelectorAll("thead th")].at(-1)?.getBoundingClientRect();
+        if (!viewport || !table || !lastHeader) return null;
+        const viewportRect = viewport.getBoundingClientRect();
+        const viewportStyle = getComputedStyle(viewport);
+        const paddingEnd = Number.parseFloat(viewportStyle.paddingInlineEnd) || 0;
+        const scrollbarSize =
+            Number.parseFloat(viewportStyle.getPropertyValue("--scrollarea-scrollbar-size")) || 0;
+        return {
+            scrollHeight: viewport.scrollHeight,
+            clientHeight: viewport.clientHeight,
+            viewportBottom: viewportRect.bottom,
+            regionBottom: regionRect.bottom,
+            lastHeaderRight: lastHeader.right,
+            viewportRight: viewportRect.right,
+            paddingEnd,
+            scrollbarSize,
+        };
+    });
+    expect(statsMetrics).not.toBeNull();
+    expect(statsMetrics!.scrollHeight).toBeGreaterThan(statsMetrics!.clientHeight);
+    expect(statsMetrics!.viewportBottom).toBeLessThanOrEqual(statsMetrics!.regionBottom + 1);
+    expect(statsMetrics!.paddingEnd).toBeGreaterThan(0);
+    expect(statsMetrics!.paddingEnd).toBe(statsMetrics!.scrollbarSize);
+    expect(statsMetrics!.lastHeaderRight).toBeLessThanOrEqual(
+        statsMetrics!.viewportRight - statsMetrics!.paddingEnd + 1,
+    );
+
+    // Playing e4 updates the board position and anchors Notation on Black's reply in bold.
+    await stats.locator("tbody tr").first().click();
+    await expect(firstNotation.locator("strong")).toHaveText("c5");
+    await expect(firstNotation).toHaveText("1... c5 2. ♘f3 d6 3. d4 cxd4 4. ♘xd4 ♘f6 5. ♘c3 …");
+    await expect(firstNotation).toHaveAttribute(
+        "title",
+        "1... c5 2. ♘f3 d6 3. d4 cxd4 4. ♘xd4 ♘f6 5. ♘c3 a6 6. ♗e3 e5 7. ♘b3 ♗e6",
+    );
+
+    // Dragging the separator and pressing ArrowDown updates height and survives reload.
+    const beforeValue = Number(await separator.getAttribute("aria-valuenow"));
+    const beforeBox = (await stats.boundingBox())!;
+    const sepBox = (await separator.boundingBox())!;
+    await page.mouse.move(sepBox.x + sepBox.width / 2, sepBox.y + sepBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sepBox.x + sepBox.width / 2, sepBox.y + sepBox.height / 2 - 48, {
+        steps: 4,
+    });
+    await page.mouse.up();
+    const afterDragValue = Number(await separator.getAttribute("aria-valuenow"));
+    expect(afterDragValue).toBeLessThan(beforeValue);
+    expect((await stats.boundingBox())!.height).toBeLessThan(beforeBox.height - 30);
+
+    await separator.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(separator).toHaveAttribute("aria-valuenow", String(afterDragValue + 1));
+    const storedAfterKey = await page.evaluate(() => localStorage.getItem("explorer-stats-height"));
+    expect(Number(storedAfterKey)).toBe(afterDragValue + 1);
+
+    await preserveStorageForReload(page);
+    await page.getByRole("tab", { name: "Database", exact: true }).click();
+    await expect(
+        databasePanel.getByRole("separator", {
+            name: "Resize statistics and games",
+            exact: true,
+        }),
+    ).toHaveAttribute("aria-valuenow", String(afterDragValue + 1));
+
+    // Short viewport shares height without overlap and never overwrites the stored height on key press.
+    await page.setViewportSize({ width: 1280, height: 420 });
+    const shortSep = databasePanel.getByRole("separator", {
+        name: "Resize statistics and games",
+        exact: true,
+    });
+    await expect
+        .poll(async () => {
+            const min = await shortSep.getAttribute("aria-valuemin");
+            const max = await shortSep.getAttribute("aria-valuemax");
+            const now = await shortSep.getAttribute("aria-valuenow");
+            return min !== null && min === max && now === min;
+        })
+        .toBe(true);
+
+    const panelBox = (await databasePanel.boundingBox())!;
+    const shortStatsBox = (await stats.boundingBox())!;
+    const shortGamesBox = (await games.boundingBox())!;
+    expect(shortStatsBox.y).toBeGreaterThanOrEqual(panelBox.y - 1);
+    expect(shortStatsBox.y + shortStatsBox.height).toBeLessThanOrEqual(shortGamesBox.y + 1);
+    expect(shortGamesBox.y + shortGamesBox.height).toBeLessThanOrEqual(
+        panelBox.y + panelBox.height + 1,
+    );
+
+    await shortSep.focus();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    expect(await page.evaluate(() => localStorage.getItem("explorer-stats-height"))).toBe(
+        storedAfterKey,
+    );
 });

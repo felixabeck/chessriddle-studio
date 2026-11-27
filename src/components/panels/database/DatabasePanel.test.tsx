@@ -11,11 +11,16 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import {
   comparisonDbAtom,
   dbTypeFamily,
-  dbTabFamily,
+  DEFAULT_EXPLORER_STATS_HEIGHT_REM,
   DEFAULT_LICHESS_OPTIONS,
   DEFAULT_MASTER_OPTIONS,
+  EXPLORER_DIVIDER_HEIGHT_PX,
+  EXPLORER_STATS_HEIGHT_KEY,
   explorerGamesSourceFamily,
   explorerSortFamily,
+  explorerStatsSplitRange,
+  MIN_EXPLORER_GAMES_HEIGHT_REM,
+  MIN_EXPLORER_STATS_HEIGHT_REM,
   sessionsAtom,
   tabsAtom,
   activeTabAtom,
@@ -513,17 +518,11 @@ describe("DatabasePanel", () => {
     });
   }
 
-  function selectedPanel(value: "games" | "stats") {
-    const labels = { stats: "Stats", games: "Games" };
-    const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
-      (element) => element.textContent === `Board.Database.${labels[value]}`,
-    );
-    expect(tab).toBeDefined();
-    expect(tab!.getAttribute("aria-selected")).toBe("true");
-    const panel = document.getElementById(tab!.getAttribute("aria-controls")!);
-    expect(container.contains(panel)).toBe(true);
-    expect(panel?.getAttribute("role")).toBe("tabpanel");
-    return panel!;
+  function regionPanel(value: "games" | "stats") {
+    const label = value === "stats" ? "Board.Database.Stats" : "Board.Database.Games";
+    const section = container.querySelector<HTMLElement>(`section[aria-label="${label}"]`);
+    expect(section).not.toBeNull();
+    return section!;
   }
 
   async function mountExplorer(
@@ -535,7 +534,6 @@ describe("DatabasePanel", () => {
     store.set(tabsAtom, [validTab]);
     store.set(activeTabAtom, tabId);
     store.set(dbTypeFamily(tabId), "lch_all");
-    store.set(dbTabFamily(tabId), "games");
     store.set(sessionsAtom, [validSession]);
     mocks.getLichessGames.mockResolvedValue(data);
     mocks.getPublicLichessJson.mockImplementation(async ({ game_id }: { game_id: string }) => {
@@ -559,25 +557,23 @@ describe("DatabasePanel", () => {
   /** The match count lives only in the Stats table's Total row. */
   function expectTotal(count: number) {
     expect(container.textContent).not.toContain("Board.Database.Matches");
-    const tab = Array.from(container.querySelectorAll('[role="tab"]')).find(
-      (element) => element.textContent === "Board.Database.Stats",
-    )!;
-    const rows = document
-      .getElementById(tab.getAttribute("aria-controls")!)!
-      .querySelectorAll("tbody tr");
+    const rows = regionPanel("stats").querySelectorAll("tbody tr");
     const total = Array.from(rows).find((row) =>
       row.querySelector("td")?.textContent?.startsWith("Board.Database.StatsTable.Total"),
     );
     expect(total?.querySelectorAll("td")[1]?.textContent).toBe(formatNumber(count));
   }
 
-  test("the rail is gone: Stats and Games are the only views and both sit in the header", async () => {
+  test("both Stats and Games regions show together without tabs or tablist", async () => {
     await mountExplorer();
-    const tabs = Array.from(container.querySelectorAll('[role="tab"]'), (tab) => tab.textContent);
-    expect(tabs).toEqual(["Board.Database.Stats", "Board.Database.Games"]);
-    expect(container.querySelector('[role="tablist"]')?.getAttribute("aria-orientation")).toBe(
-      "horizontal",
-    );
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(0);
+    expect(regionPanel("stats")).toBeDefined();
+    expect(regionPanel("games")).toBeDefined();
+    const divider = container.querySelector('[role="separator"]');
+    expect(divider?.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(divider?.getAttribute("aria-label")).toBe("Board.Database.ResizeSplit");
     expect(container.textContent).not.toContain("Board.Database.Options");
     expect(container.querySelectorAll("[data-explorer-source]")).toHaveLength(1);
   });
@@ -591,8 +587,8 @@ describe("DatabasePanel", () => {
     "mounted partial failure: $label retains the survivor and totals the whole position",
     async ({ moves }) => {
       const diagnostic = "partial-fetch-private-diagnostic";
-      const store = await mountExplorer({ ...mockExplorerData, moves }, ["g0"], diagnostic);
-      const panel = selectedPanel("games");
+      await mountExplorer({ ...mockExplorerData, moves }, ["g0"], diagnostic);
+      const panel = regionPanel("games");
       expect(panel.textContent).toContain("Board.Database.GamesIncomplete W0 - B0");
       const notice = panel.querySelector('[role="alert"]');
       const table = panel.querySelector("table");
@@ -611,10 +607,7 @@ describe("DatabasePanel", () => {
       expect(panel.textContent).not.toContain(diagnostic);
       expectTotal(200);
 
-      await act(async () => {
-        store.set(dbTabFamily(tabId), "stats");
-      });
-      const stats = selectedPanel("stats");
+      const stats = regionPanel("stats");
       expect(stats.textContent).not.toContain("Board.Database.GamesIncomplete");
       expect(stats.textContent).not.toContain("Board.Database.GamesFailed");
       expect(stats.textContent?.includes("e4") ?? false).toBe(moves.length > 0);
@@ -624,7 +617,7 @@ describe("DatabasePanel", () => {
   test("mounted all failed: names every game without an empty games table or raw diagnostic", async () => {
     const diagnostic = "all-fetch-private-diagnostic";
     await mountExplorer(mockExplorerData, ["g0", "g1"], diagnostic);
-    const panel = selectedPanel("games");
+    const panel = regionPanel("games");
     expect(panel.textContent).toContain("Board.Database.GamesFailed W0 - B0, W1 - B1");
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
     expect(panel.textContent).not.toContain("Databases.Game.NoGamesFound");
@@ -642,7 +635,7 @@ describe("DatabasePanel", () => {
 
   test("mounted empty explorer list: keeps the genuine empty state and the Total row count", async () => {
     await mountExplorer({ ...mockExplorerData, topGames: [] }, []);
-    const panel = selectedPanel("games");
+    const panel = regionPanel("games");
     expect(panel.textContent).toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector(".mantine-datatable-empty-state[data-active]")).not.toBeNull();
     expect(panel.textContent).not.toContain("Board.Database.GamesIncomplete");
@@ -673,7 +666,7 @@ describe("DatabasePanel", () => {
         ["g0"],
         diagnostic,
       );
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       expect(panel.querySelector('[role="alert"]')?.textContent).toBe(
         `Board.Database.GamesFailed ${expected}`,
       );
@@ -688,7 +681,6 @@ describe("DatabasePanel", () => {
     store.set(activeTabAtom, tabId);
     if (pin) store.set(pinnedExplorerDatabaseFamily(tabId), pin);
     store.set(dbTypeFamily(tabId), "local");
-    store.set(dbTabFamily(tabId), "stats");
     // Hydrate the real persisted atoms and seed an unrelated old per-tab search path.
     localStorage.setItem("reference-database", JSON.stringify(reference));
     const filters = {
@@ -771,18 +763,11 @@ describe("DatabasePanel", () => {
     },
   );
 
-  function expectNoReference(value: "stats" | "games" = "stats") {
-    const panel = selectedPanel(value);
-    const tab = container.querySelector(`[role="tab"][aria-controls="${panel.id}"]`);
-    expect(panel.getAttribute("aria-labelledby")).toBe(tab?.id);
-    expect({ [value]: panel.textContent }).toEqual({
-      [value]: expect.stringContaining("Board.Database.NoReference1"),
-    });
-    // The database select stays available in the sources bar, outside the replaced view.
-    expect(panel.querySelector(".mantine-Select-input")).toBeNull();
-    expect({
-      [value]: container.querySelector<HTMLInputElement>(".mantine-Select-input")?.value,
-    }).toEqual({ [value]: "" });
+  function expectNoReference() {
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
+    expect(container.querySelectorAll("section[aria-label]")).toHaveLength(0);
+    expect(container.textContent?.split("Board.Database.NoReference1")).toHaveLength(2);
+    expect(container.querySelector<HTMLInputElement>(".mantine-Select-input")?.value).toBe("");
     expect(filterButton().disabled).toBe(true);
   }
 
@@ -876,7 +861,6 @@ describe("DatabasePanel", () => {
       expect(mocks.searchPosition.mock.lastCall?.[0]).toEqual(initialDatabase);
       expect(mocks.searchPosition.mock.lastCall?.[1].player1).toBe(42);
       expect((await showPlayerOptions())?.value).toBe(`${initialDatabase.id.id} player`);
-      await act(async () => store.set(dbTabFamily(tabId), "stats"));
       mocks.searchPosition.mockClear();
 
       const selector = container.querySelector<HTMLInputElement>(".mantine-Select-input")!;
@@ -921,7 +905,6 @@ describe("DatabasePanel", () => {
         store.set(pinned ? pinnedExplorerDatabaseFamily(tabId) : referenceDbAtom, initialDatabase),
       );
       expect((await showPlayerOptions())?.value).toBe(`${initialDatabase.id.id} player`);
-      await act(async () => store.set(dbTabFamily(tabId), "stats"));
       for (const [database, query] of mocks.searchPosition.mock.calls) {
         const expectedPlayer =
           databaseHandleKey(database) === databaseHandleKey(initialDatabase) ? 42 : null;
@@ -945,7 +928,6 @@ describe("DatabasePanel", () => {
     await act(async () => {
       store.set(tabsAtom, [validTab, { ...validTab, value: secondTabId, name: "Tab 2" }]);
       store.set(dbTypeFamily(secondTabId), "local");
-      store.set(dbTabFamily(secondTabId), "stats");
       store.set(activeTabAtom, secondTabId);
     });
     await renderPanel(store, swrConfig, undefined, secondTabId);
@@ -963,7 +945,6 @@ describe("DatabasePanel", () => {
 
     await act(async () => {
       store.set(activeTabAtom, tabId);
-      store.set(dbTabFamily(tabId), "stats");
     });
     await renderPanel(store, swrConfig);
     expect(mocks.searchPosition).toHaveBeenCalled();
@@ -1005,7 +986,6 @@ describe("DatabasePanel", () => {
     store.set(tabsAtom, [{ ...validTab, value: secondTabId, name: "Tab 2" }]);
     store.set(activeTabAtom, secondTabId);
     store.set(dbTypeFamily(secondTabId), "local");
-    store.set(dbTabFamily(secondTabId), "stats");
     store.set(localOptionsFamily(secondTabId), (options) => ({
       ...options,
       fen: treeStore.getState().currentNode().fen,
@@ -1134,7 +1114,7 @@ describe("DatabasePanel", () => {
   });
 
   async function openListedGame(name = "Listed player") {
-    const panel = selectedPanel("games");
+    const panel = regionPanel("games");
     const calls = mocks.openDatabaseGame.mock.calls.length;
     const row = await vi.waitFor(() => {
       const found = Array.from(panel.querySelectorAll<HTMLElement>("tbody tr")).find((item) =>
@@ -1147,39 +1127,36 @@ describe("DatabasePanel", () => {
     await vi.waitFor(() => expect(mocks.openDatabaseGame.mock.calls.length).toBe(calls + 1));
   }
 
-  test("local: a partial position shows Games with Stats disabled and keeps the stored view", async () => {
+  test("local: a partial position hides Stats and separator, showing Games full height", async () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     mocks.searchPosition.mockResolvedValue([
       [],
       [{ id: 3, white: "Listed player", black: "Opponent", result: "*", ply_count: 20 }],
     ]);
     const { store } = await mountLocal();
-    selectedPanel("stats");
+    regionPanel("stats");
+    expect(container.querySelector('[role="separator"]')).not.toBeNull();
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
     );
-    selectedPanel("games");
-    const stats = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-      (tab) => tab.textContent === "Board.Database.Stats",
-    )!;
-    expect(stats.disabled).toBe(true);
-    expect(store.get(dbTabFamily(tabId))).toBe("stats");
+    regionPanel("games");
+    expect(container.querySelector('section[aria-label="Board.Database.Stats"]')).toBeNull();
+    expect(container.querySelector('[role="separator"]')).toBeNull();
     await vi.waitFor(() =>
       expect(mocks.searchPosition.mock.lastCall?.[1].position.type_).toBe("partial"),
     );
     // A pattern is not one position, so its games open at their start.
     await openListedGame();
     expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFens: undefined });
-    // The stored choice returns with the exact position.
+    // Exact mode brings the statistics section and separator back.
     await act(async () =>
       store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "exact" })),
     );
-    selectedPanel("stats");
-    expect(stats.disabled).toBe(false);
+    regionPanel("stats");
+    expect(container.querySelector('[role="separator"]')).not.toBeNull();
     // An exact search opens each game at the searched position, not at the start.
     await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
     await act(async () => new Promise((resolve) => setTimeout(resolve, 80)));
-    await act(async () => store.set(dbTabFamily(tabId), "games"));
     await openListedGame();
     expect(mocks.openDatabaseGame.mock.lastCall?.[0]).toMatchObject({ targetFens: [afterE4] });
   });
@@ -1293,7 +1270,7 @@ describe("DatabasePanel", () => {
         ([file]) => databaseHandleKey(file) === databaseHandleKey(database),
       );
     const moveRows = () =>
-      Array.from(selectedPanel("stats").querySelectorAll("tbody tr"), (row) =>
+      Array.from(regionPanel("stats").querySelectorAll("tbody tr"), (row) =>
         Array.from(row.querySelectorAll("td"), (cell) => cell.textContent),
       );
     const compareButton = () =>
@@ -1328,7 +1305,9 @@ describe("DatabasePanel", () => {
         '[aria-label="Board.Database.ShowSettings"], [aria-label="Board.Database.HideSettings"]',
       )!;
     const headerControls = () =>
-      container.querySelectorAll('.mantine-Select-input, [role="tab"], [role="radiogroup"]');
+      Array.from(container.querySelectorAll('.mantine-Select-input, [role="tab"]')).filter(
+        (el) => !el.closest("section[aria-label]"),
+      );
 
     test("collapsed by default: captions name both databases and their active filters, and the settings button opens the controls", async () => {
       localStorage.removeItem(HEADER_COLLAPSED_KEY);
@@ -1345,7 +1324,7 @@ describe("DatabasePanel", () => {
       expect(sources()[1].textContent).toBe("Correspondence");
       expect(sources()[1].querySelector("[data-explorer-source-detail]")).toBeNull();
       expect(sourceProgressBars()).toHaveLength(0);
-      // The view is a plain region: no tab panel names a tab that is not shown.
+      // Both sources render in plain regions with no tab panel semantics.
       expect(container.querySelector('[role="tabpanel"]')).toBeNull();
       expect(
         Array.from(
@@ -1366,7 +1345,7 @@ describe("DatabasePanel", () => {
         ),
       ).toEqual(["Saved reference", "Correspondence"]);
       expect(sourceProgressBars()).toHaveLength(0);
-      selectedPanel("stats");
+      regionPanel("stats");
 
       await act(async () => settingsButton().click());
       expect(localStorage.getItem(HEADER_COLLAPSED_KEY)).toBe("true");
@@ -1537,7 +1516,7 @@ describe("DatabasePanel", () => {
       const { store } = await mountCompared();
       await vi.waitFor(() => expect(moveRows()).toHaveLength(4));
       const totals = Array.from(
-        selectedPanel("stats").querySelectorAll<HTMLElement>("thead th"),
+        regionPanel("stats").querySelectorAll<HTMLElement>("thead th"),
       ).filter((th) => th.textContent === "Board.Database.StatsTable.Total");
       expect(totals).toHaveLength(2);
       await act(async () => totals[1].click());
@@ -1556,8 +1535,7 @@ describe("DatabasePanel", () => {
     test("the Games switch lists the chosen source's games and opens them from its database", async () => {
       await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
       const { store } = await mountCompared();
-      await act(async () => store.set(dbTabFamily(tabId), "games"));
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
       expect(panel.textContent).not.toContain("Corr player");
       const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
@@ -1595,8 +1573,7 @@ describe("DatabasePanel", () => {
       expect(localStorage.getItem("comparison-database")).toBe("null");
       expect(sources()).toHaveLength(1);
       expect(compareButton()).toBeDefined();
-      await act(async () => store.set(dbTabFamily(tabId), "games"));
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       expect(panel.querySelector('input[type="radio"]')).toBeNull();
       await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
       // The stored games choice stays the tab's; only the shown source is derived.
@@ -1609,8 +1586,8 @@ describe("DatabasePanel", () => {
     ] as const)(
       "a failed search of %s is named and leaves the other source and every control",
       async (_name, failing, failedName, _otherName) => {
-        const { store } = await mountCompared({ failing });
-        const panel = selectedPanel("stats");
+        await mountCompared({ failing });
+        const panel = regionPanel("stats");
         await vi.waitFor(() => expect(panel.querySelector('[role="alert"]')).not.toBeNull());
         const alerts = Array.from(
           panel.querySelectorAll('[role="alert"]'),
@@ -1639,8 +1616,7 @@ describe("DatabasePanel", () => {
         );
         expect(sources()).toHaveLength(2);
 
-        await act(async () => store.set(dbTabFamily(tabId), "games"));
-        const games = selectedPanel("games");
+        const games = regionPanel("games");
         const choices = Array.from(games.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
         expect(choices).toHaveLength(2);
         // The primary is listed first: its failure replaces only its own games.
@@ -1658,7 +1634,7 @@ describe("DatabasePanel", () => {
       mocks.searchPosition.mockRejectedValue(new Error("search failed"));
       localStorage.setItem("comparison-database", JSON.stringify(corr));
       await mountLocal();
-      const panel = selectedPanel("stats");
+      const panel = regionPanel("stats");
       await vi.waitFor(() => expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(2));
       expect(
         Array.from(
@@ -1895,16 +1871,8 @@ describe("DatabasePanel", () => {
           expect(searchesOf(third.file).at(-1)?.[2]).toBe(`${tabId}:reference`);
 
           // Games view keeps only primary and comparison — no third entry for the reference source.
-          const gamesTab = container.querySelector<HTMLButtonElement>(
-            'button[role="tab"][aria-controls]',
-          );
-          const allTabs = Array.from(
-            container.querySelectorAll<HTMLButtonElement>('button[role="tab"]'),
-          );
-          const games = allTabs.find((el) => el.textContent === "Board.Database.Games") ?? gamesTab;
-          await act(async () => games?.click());
           const gamesSwitch = Array.from(
-            container.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+            regionPanel("games").querySelectorAll<HTMLInputElement>('input[type="radio"]'),
           ).map((r) => r.value);
           expect(gamesSwitch).toContain("primary");
           expect(gamesSwitch).toContain("comparison");
@@ -2074,8 +2042,7 @@ describe("DatabasePanel", () => {
           expect(addColumnButton()).toBeUndefined();
           expect(store.get(pinnedExplorerFurtherColumnsFamily(tabId))).toEqual(["lch_all"]);
 
-          await act(async () => store.set(dbTabFamily(tabId), "games"));
-          const games = selectedPanel("games");
+          const games = regionPanel("games");
           const gamesSwitch = Array.from(
             games.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
           ).map((radio) => radio.value);
@@ -2323,7 +2290,7 @@ describe("DatabasePanel", () => {
         expect(searchesOf(reference).at(-1)?.[1].position.type_).toBe("partial");
         expect(searchesOf(corr).at(-1)?.[1].position.type_).toBe("partial");
       });
-      selectedPanel("games");
+      regionPanel("games");
     });
 
     test("a collection that publishes a new comparison database moves the choice and its filters", async () => {
@@ -2624,7 +2591,7 @@ describe("DatabasePanel", () => {
       localStorage.setItem("comparison-database", JSON.stringify("lch_all"));
       const { store } = await mountLocal();
       await act(async () => store.set(sessionsAtom, [validSession]));
-      const panel = selectedPanel("stats");
+      const panel = regionPanel("stats");
       await vi.waitFor(() => expect(panel.querySelector('[role="alert"]')).not.toBeNull());
       expect(panel.querySelector('[role="alert"]')?.textContent).toMatch(
         /^Board.Database.LichessAll: /,
@@ -2653,7 +2620,7 @@ describe("DatabasePanel", () => {
         shouldRetryOnError: false,
       });
       await vi.waitFor(() => expect(sources()).toHaveLength(2));
-      const panel = selectedPanel("stats");
+      const panel = regionPanel("stats");
       expect(
         Array.from(panel.querySelectorAll('[role="alert"]'), (alert) => alert.textContent),
       ).toEqual([expect.stringContaining("Board.Database.ExplorerAuthRequired1")]);
@@ -2679,35 +2646,33 @@ describe("DatabasePanel", () => {
       await act(async () =>
         store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
       );
-      selectedPanel("games");
-      const stats = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-        (tab) => tab.textContent === "Board.Database.Stats",
-      )!;
-      expect(stats.disabled).toBe(true);
+      expect(container.querySelector('section[aria-label="Board.Database.Stats"]')).toBeNull();
+      expect(container.querySelector('[role="separator"]')).toBeNull();
       await vi.waitFor(() =>
         expect(searchesOf(reference).at(-1)?.[1].position.type_).toBe("partial"),
       );
       expect(mocks.getLichessGames).not.toHaveBeenCalled();
-      const games = selectedPanel("games");
+      const games = regionPanel("games");
       expect(games.querySelector('input[type="radio"]')).toBeNull();
       await vi.waitFor(() => expect(games.textContent).toContain("Mega player"));
       expect(store.get(explorerGamesSourceFamily(tabId))).toBe("primary");
     });
 
-    test("partial local options do not disable Stats once every column is Lichess", async () => {
+    test("partial local options do not hide Stats once every column is Lichess", async () => {
       const { store } = await mountMixed({ comparison: null });
       await vi.waitFor(() => expect(sources()).toHaveLength(1));
       await act(async () =>
         store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
       );
-      const statsTab = () =>
-        Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-          (tab) => tab.textContent === "Board.Database.Stats",
-        )!;
-      expect(statsTab().disabled).toBe(true);
+      expect(container.querySelector('section[aria-label="Board.Database.Stats"]')).toBeNull();
       expect(mocks.getLichessGames).not.toHaveBeenCalled();
       await act(async () => store.set(dbTypeFamily(tabId), "lch_all"));
-      await vi.waitFor(() => expect(statsTab().disabled).toBe(false));
+      await vi.waitFor(() =>
+        expect(
+          container.querySelector('section[aria-label="Board.Database.Stats"]'),
+        ).not.toBeNull(),
+      );
+      expect(container.querySelector('[role="separator"]')).not.toBeNull();
       await vi.waitFor(() => expect(mocks.getLichessGames).toHaveBeenCalled());
       expect(positionControl()).toBeUndefined();
     });
@@ -2715,8 +2680,7 @@ describe("DatabasePanel", () => {
     test("the Games switch offers a Lichess column on an unpinned board, including its notices and a game without a database", async () => {
       await act(async () => treeStore.getState().makeMove({ payload: "e4" }));
       const { store } = await mountMixed({ rejectedIds: ["g0"] });
-      await act(async () => store.set(dbTabFamily(tabId), "games"));
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
       const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
       expect(choices.map((choice) => choice.value)).toEqual(["primary", "comparison"]);
@@ -2738,10 +2702,9 @@ describe("DatabasePanel", () => {
     });
 
     test("Games of a Lichess column without an account shows the sign-in notice and no table", async () => {
-      const { store } = await mountMixed({ session: false });
+      await mountMixed({ session: false });
       await vi.waitFor(() => expect(sources()).toHaveLength(2));
-      await act(async () => store.set(dbTabFamily(tabId), "games"));
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       const choices = await vi.waitFor(() => {
         const found = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
         expect(found).toHaveLength(2);
@@ -2762,7 +2725,7 @@ describe("DatabasePanel", () => {
       await act(async () =>
         store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
       );
-      const panel = selectedPanel("games");
+      const panel = regionPanel("games");
       expect(panel.querySelector('input[type="radio"]')).toBeNull();
       await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
       expect(store.get(explorerGamesSourceFamily(tabId))).toBe("comparison");
@@ -2779,7 +2742,7 @@ describe("DatabasePanel", () => {
         await act(async () =>
           store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" })),
         );
-        const panel = selectedPanel("games");
+        const panel = regionPanel("games");
         expect(panel.querySelector('input[type="radio"]')).toBeNull();
         await vi.waitFor(() => expect(panel.textContent).toContain("Mega player"));
         expect(panel.querySelector('[role="alert"]')).toBeNull();
@@ -2856,9 +2819,8 @@ describe("DatabasePanel", () => {
     });
 
     test("all failed Lichess games beside a local column name every game and show no table", async () => {
-      const { store } = await mountMixed({ rejectedIds: ["g0", "g1"] });
-      await act(async () => store.set(dbTabFamily(tabId), "games"));
-      const panel = selectedPanel("games");
+      await mountMixed({ rejectedIds: ["g0", "g1"] });
+      const panel = regionPanel("games");
       const choices = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
       await act(async () => choices[1].click());
       await vi.waitFor(() =>
@@ -2920,7 +2882,6 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     await revalidate();
     expect((await showPlayerOptions())?.value).toBe(`${reference.id.id} player`);
-    await act(async () => store.set(dbTabFamily(tabId), "stats"));
     expect(mocks.searchPosition).toHaveBeenCalled();
     for (const [database, query] of mocks.searchPosition.mock.calls) {
       expect(database).toEqual(reference);
@@ -2952,12 +2913,7 @@ describe("DatabasePanel", () => {
       expect(mocks.searchPosition).not.toHaveBeenCalled();
       expect(store.get(localOptionsFamily(tabId)).path).toBeNull();
       expectSavedChoice(store);
-      for (const value of ["stats", "games"] as const) {
-        await act(async () => {
-          store.set(dbTabFamily(tabId), value);
-        });
-        expectNoReference(value);
-      }
+      expectNoReference();
     },
   );
 
@@ -3059,12 +3015,14 @@ describe("DatabasePanel", () => {
   );
 
   test.each(["Database is unreadable", "C:\\secret\\path diag"])(
-    "local: admitted search failure %s renders translated guidance without native diagnostics",
+    "local: admitted search failure %s renders translated guidance once without native diagnostics or separator",
     async (message) => {
       mocks.getDatabases.mockResolvedValue(databaseList([readable]));
       mocks.searchPosition.mockRejectedValue(new Error(message));
       await mountLocal();
-      expect(container.textContent).toContain("Databases.LoadError.Title");
+      expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
+      expect(container.querySelectorAll("section[aria-label]")).toHaveLength(0);
+      expect(container.textContent?.split("Databases.LoadError.Title")).toHaveLength(2);
       expect(container.textContent).not.toContain(message);
       expect(container.textContent).not.toContain("Board.Database.NoReference1");
     },
@@ -3074,7 +3032,7 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     mocks.searchPosition.mockRejectedValue(new Error("Cancellation"));
     await mountLocal();
-    const panel = selectedPanel("stats");
+    const panel = regionPanel("stats");
     expect(panel.textContent).toContain("Databases.Game.NoGamesFound");
     expect(panel.querySelector('[role="alert"]')).toBeNull();
     expect(panel.textContent).not.toContain("Cancellation");
@@ -3103,9 +3061,9 @@ describe("DatabasePanel", () => {
     mocks.getDatabases.mockResolvedValue(databaseList([readable]));
     mocks.collectionForDatabase.mockRejectedValue(new Error("Collection unavailable"));
     const { store, revalidate } = await mountLocal();
-    expect(selectedPanel("stats").querySelector('[role="alert"]')?.textContent).toBe(
-      "Collections.Unavailable",
-    );
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
+    expect(container.querySelectorAll("section[aria-label]")).toHaveLength(0);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Collections.Unavailable");
     expect(container.textContent).not.toContain("Collection unavailable");
     expect(container.textContent).not.toContain("Board.Database.NoReference1");
 
@@ -3125,7 +3083,6 @@ describe("DatabasePanel", () => {
     jotaiStore.set(tabsAtom, [validTab]);
     jotaiStore.set(activeTabAtom, tabId);
     jotaiStore.set(dbTypeFamily(tabId), "lch_all");
-    jotaiStore.set(dbTabFamily(tabId), "moves");
     jotaiStore.set(sessionsAtom, [validSession]);
 
     mocks.getLichessGames.mockResolvedValue(mockExplorerData);
@@ -3173,7 +3130,6 @@ describe("DatabasePanel", () => {
     jotaiStore.set(tabsAtom, [validTab]);
     jotaiStore.set(activeTabAtom, tabId);
     jotaiStore.set(dbTypeFamily(tabId), "lch_all");
-    jotaiStore.set(dbTabFamily(tabId), "moves");
     jotaiStore.set(sessionsAtom, [validSession]);
 
     mocks.getLichessGames.mockResolvedValue(mockExplorerData);
@@ -3224,7 +3180,6 @@ describe("DatabasePanel", () => {
     jotaiStore.set(tabsAtom, [validTab]);
     jotaiStore.set(activeTabAtom, tabId);
     jotaiStore.set(dbTypeFamily(tabId), "lch_master");
-    jotaiStore.set(dbTabFamily(tabId), "moves");
     jotaiStore.set(sessionsAtom, [validSession]);
 
     mocks.getMasterGames.mockResolvedValue(mockExplorerData);
@@ -3259,5 +3214,124 @@ describe("DatabasePanel", () => {
 
     expect(observedSignal!.aborted).toBe(true);
     expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  test("single-source online auth warning renders once without separator", async () => {
+    const store = createJotaiStore();
+    store.set(tabsAtom, [validTab]);
+    store.set(activeTabAtom, tabId);
+    store.set(dbTypeFamily(tabId), "lch_all");
+    await renderPanel(store, { provider: () => new Map(), shouldRetryOnError: false });
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
+    expect(container.querySelectorAll("section[aria-label]")).toHaveLength(0);
+    expect(container.textContent?.split("Board.Database.ExplorerAuthRequired1")).toHaveLength(2);
+  });
+
+  test("unmeasured body keeps stored height unclamped and ignores divider input without writing", async () => {
+    localStorage.setItem(EXPLORER_STATS_HEIGHT_KEY, "18");
+    await mountExplorer();
+    const stats = regionPanel("stats");
+    expect(stats.style.height).toBe("18rem");
+    const separator = container.querySelector<HTMLElement>('[role="separator"]')!;
+    expect(separator.getAttribute("aria-valuenow")).toBe("18");
+    await act(async () => {
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("18");
+  });
+
+  test("double-click on separator with a measured resizable body resets stored height to default", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 480),
+    );
+    localStorage.setItem(EXPLORER_STATS_HEIGHT_KEY, "8");
+    await mountExplorer();
+    const stats = regionPanel("stats");
+    expect(stats.style.height).toBe("8rem");
+    const separator = container.querySelector<HTMLElement>('[role="separator"]')!;
+    expect(separator.getAttribute("aria-valuenow")).toBe("8");
+
+    await act(async () => {
+      separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe(
+      String(DEFAULT_EXPLORER_STATS_HEIGHT_REM),
+    );
+  });
+});
+
+describe("explorerStatsSplitRange and persisted height", () => {
+  const h = EXPLORER_DIVIDER_HEIGHT_PX / 16;
+
+  test("clamps stored height within [MIN_STATS, H - MIN_GAMES - h] on normal body", () => {
+    expect(MIN_EXPLORER_GAMES_HEIGHT_REM).toBe(12);
+    expect(explorerStatsSplitRange(14, 30, h)).toEqual({
+      statsHeightRem: 14,
+      minRem: MIN_EXPLORER_STATS_HEIGHT_REM,
+      maxRem: 30 - MIN_EXPLORER_GAMES_HEIGHT_REM - h,
+      canResize: true,
+    });
+    expect(explorerStatsSplitRange(2, 30, h).statsHeightRem).toBe(MIN_EXPLORER_STATS_HEIGHT_REM);
+    expect(explorerStatsSplitRange(40, 30, h).statsHeightRem).toBe(
+      30 - MIN_EXPLORER_GAMES_HEIGHT_REM - h,
+    );
+  });
+
+  test("shares remaining height proportionally and disables resize on short body", () => {
+    for (const body of [10, 16]) {
+      const expected =
+        (body - h) *
+        (MIN_EXPLORER_STATS_HEIGHT_REM /
+          (MIN_EXPLORER_STATS_HEIGHT_REM + MIN_EXPLORER_GAMES_HEIGHT_REM));
+      expect(explorerStatsSplitRange(14, body, h)).toEqual({
+        statsHeightRem: expected,
+        minRem: expected,
+        maxRem: expected,
+        canResize: false,
+      });
+    }
+    // Exact boundary H = MIN_STATS + MIN_GAMES + h also collapses the range (min === max).
+    const exact = MIN_EXPLORER_STATS_HEIGHT_REM + MIN_EXPLORER_GAMES_HEIGHT_REM + h;
+    expect(explorerStatsSplitRange(14, exact, h)).toEqual({
+      statsHeightRem: MIN_EXPLORER_STATS_HEIGHT_REM,
+      minRem: MIN_EXPLORER_STATS_HEIGHT_REM,
+      maxRem: MIN_EXPLORER_STATS_HEIGHT_REM,
+      canResize: false,
+    });
+  });
+
+  test("leaves stored height unclamped and non-writable when body is unmeasured", () => {
+    expect(explorerStatsSplitRange(22, 0, h)).toEqual({
+      statsHeightRem: 22,
+      minRem: 22,
+      maxRem: 22,
+      canResize: false,
+    });
+  });
+
+  test("explorerStatsHeightAtom reads pre-seeded storage synchronously on first access without rewriting out-of-range values", async () => {
+    localStorage.setItem(EXPLORER_STATS_HEIGHT_KEY, "45");
+    vi.resetModules();
+    const fresh = await import("@/state/atoms/explorer");
+    const store = createJotaiStore();
+    expect(store.get(fresh.explorerStatsHeightAtom)).toBe(45);
+    expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("45");
+
+    localStorage.setItem(EXPLORER_STATS_HEIGHT_KEY, "2");
+    vi.resetModules();
+    const smallFresh = await import("@/state/atoms/explorer");
+    const smallStore = createJotaiStore();
+    expect(smallStore.get(smallFresh.explorerStatsHeightAtom)).toBe(2);
+    expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("2");
+
+    localStorage.removeItem(EXPLORER_STATS_HEIGHT_KEY);
+    vi.resetModules();
+    const defaultFresh = await import("@/state/atoms/explorer");
+    const defaultStore = createJotaiStore();
+    expect(defaultStore.get(defaultFresh.explorerStatsHeightAtom)).toBe(
+      DEFAULT_EXPLORER_STATS_HEIGHT_REM,
+    );
   });
 });

@@ -17,7 +17,6 @@ import type {
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import DatabasePanel from "@/components/panels/database/DatabasePanel";
 import {
-  dbTabFamily,
   dbTypeFamily,
   localOptionsFamily,
   opponentLinksAtom,
@@ -133,8 +132,8 @@ vi.mock("@/hooks/useDatabaseList", () => ({
 const boardMock = vi.hoisted(() => ({ config: null as Config | null }));
 // jsdom lays nothing out; a test sets the card's measured width to reach the board's size limits.
 const cardWidth = vi.hoisted(() => ({ px: 0 }));
-vi.mock("@/hooks/useElementWidth", () => ({
-  useElementWidth: () => ({ ref: { current: null }, width: cardWidth.px }),
+vi.mock("@/hooks/useMeasuredElementSize", () => ({
+  useMeasuredElementSize: () => ({ ref: { current: null }, width: cardWidth.px, height: 0 }),
 }));
 vi.mock("@/chessground/Chessground", () => ({
   Chessground: (props: Config) => {
@@ -732,7 +731,6 @@ test("Prepare admits the mainline and orientation, presets before navigation, th
     // Database lives in the tab strip in the default game layout, so a hidden strip is shown.
     expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(false);
     expect(store.get(dbTypeFamily(id))).toBe("local");
-    expect(store.get(dbTabFamily(id))).toBe("stats");
   });
   store.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
   await click(button("Prepare on board"));

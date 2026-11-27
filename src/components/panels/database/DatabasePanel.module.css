@@ -1,8 +1,20 @@
+.panel {
+  /* Shared with `.statsSection` and `.sources[data-sources]` so multi-source headers stay aligned
+     with `OpeningsTable` whether or not the vertical scrollbar is shown (matches Mantine's default
+     12px `--scrollarea-scrollbar-size`). */
+  --explorer-scrollbar-size: 12px;
+}
+
 .sources {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   margin-top: var(--mantine-spacing-xs);
+}
+
+.sources[data-sources] {
+  /* Reserve the same trailing strip as `.statsSection` (`--explorer-scrollbar-size`). */
+  padding-inline-end: var(--explorer-scrollbar-size);
 }
 
 /* Multiple sources sit above the move table's column groups: the Move column matches
@@ -45,4 +57,61 @@
   position: absolute;
   top: 0;
   inset-inline-end: 0;
+}
+
+.body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin-top: var(--mantine-spacing-xs);
+}
+
+.body :global(.mantine-datatable) {
+  min-height: 0;
+}
+
+.statsSection {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  overflow: hidden;
+}
+
+/* Keep the stats ScrollArea's trailing gutter permanent (matching `.sources[data-sources]`) even
+   when `data-vertical-hidden` would otherwise collapse Mantine's `padding-inline-end` to 0. */
+.statsSection :global(.mantine-ScrollArea-root) {
+  --scrollarea-scrollbar-size: var(--explorer-scrollbar-size);
+}
+
+.statsSection :global(.mantine-ScrollArea-viewport[data-vertical-hidden]) {
+  padding-inline-end: var(--explorer-scrollbar-size);
+}
+
+.gamesSection {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  overflow: hidden;
+}
+
+.divider {
+  composes: horizontal from "../../../styles/ResizeHandle.module.css";
+}
+
+.divider::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2rem;
+  height: 3px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--cf-border);
 }

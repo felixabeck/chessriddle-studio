@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: c53827bc1f3c7a6d
+source: 526f05192ead329f
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -32,7 +32,7 @@ source: c53827bc1f3c7a6d
 
 На доске анализа откройте вкладку {{label:Board.Tabs.Database}}, чтобы использовать дебютный обозреватель:
 - Выберите {{label:Board.Database.LichessAll}} или {{label:Board.Database.LichessMaster}} в меню источников и в {{label:Board.Database.Compare}} (онлайн-обозреватели Lichess требуют авторизованного аккаунта Lichess на странице [[page:accounts]]).
-- Переключайтесь между {{label:Board.Database.Stats}} (статистика ходов) и {{label:Board.Database.Games}} (подходящие партии).
+- {{label:Board.Database.Stats}} (статистика ходов) отображается сверху, а {{label:Board.Database.Games}} (подходящие партии) — снизу; перетащите разделитель между ними, чтобы распределить высоту. Столбец {{label:Board.Area.Notation}} показывает ходы от позиции на доске, выделяя следующий ход полужирным.
 - Нажмите {{label:Board.Database.Compare}}, чтобы сравнить два источника рядом, или откройте {{label:Board.Database.Local.Position}} для переключения между режимами поиска позиции {{label:Board.Database.Local.Exact}} и {{label:Board.Database.Local.Partial}} (включая {{label:Board.Database.Local.SimilarStructure}} для поиска по пешечной структуре и {{label:Fen.Empty}} для произвольных шаблонов).
 - Вы также можете отобразить {{label:Board.Tabs.Database}} как отдельную область на доске анализа и использовать {{label:Board.Area.ReturnToTabs}}, чтобы вернуть её во вкладки.
 - Когда кнопка {{label:Databases.OpeningTree.Prepare}} открывает доску для игрока базы данных, обозреватель начинает со справочной базы как дополнительного столбца рядом с партиями соперника; нажмите {{label:Board.Database.RemoveReference}}, чтобы скрыть столбец, или {{label:Board.Database.AddColumn}}, чтобы добавить ещё один.

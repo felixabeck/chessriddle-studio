@@ -308,6 +308,7 @@
     "Board.Database.RemoveColumn": "Sütunu kaldır",
     "Board.Database.RemoveComparison": "Karşılaştırma veritabanını kaldır",
     "Board.Database.RemoveReference": "Referans veritabanını kaldır",
+    "Board.Database.ResizeSplit": "İstatistik ve oyun boyutunu değiştir",
     "Board.Database.Save": "Dosyaya veya veritabanına kaydet…",
     "Board.Database.SelectReference": "bir veritabanı ekleyin",
     "Board.Database.ShowSettings": "Veritabanı ayarlarını göster",

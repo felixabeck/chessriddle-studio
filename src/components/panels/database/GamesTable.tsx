@@ -1,15 +1,16 @@
+import { useAtomValue } from "jotai";
 import { DataTable } from "mantine-datatable";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
+import { dateColumn, tableScrollAreaProps } from "@/components/databases/databaseColumns";
 import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
-import {
-  dateColumn,
-  numericColumn,
-  tableScrollAreaProps,
-} from "@/components/databases/databaseColumns";
-import { useTranslation } from "react-i18next";
+import { moveNotationTypeAtom } from "@/state/atoms";
+import { addPieceSymbol } from "@/utils/annotation";
+import { type GameNotationPart, gameNotationPreview } from "./gameNotation";
+import classes from "./GamesTable.module.css";
 
 function GamesTable({
   games,
@@ -24,8 +25,13 @@ function GamesTable({
   targetFen?: string;
 }) {
   const { t } = useTranslation();
+  const moveNotationType = useAtomValue(moveNotationTypeAtom);
   const [page, setPage] = useState(1);
-  const filteredGames = games.slice((page - 1) * 20, page * 20);
+  const filteredGames = useMemo(() => games.slice((page - 1) * 20, page * 20), [games, page]);
+  const notations = useMemo(
+    () => new Map(filteredGames.map((game) => [game, gameNotationPreview(game, targetFen)])),
+    [filteredGames, targetFen],
+  );
 
   useEffect(() => {
     setPage(1);
@@ -41,6 +47,7 @@ function GamesTable({
       withTableBorder
       highlightOnHover
       scrollAreaProps={tableScrollAreaProps}
+      classNames={{ table: classes.table }}
       records={filteredGames}
       fetching={loading}
       totalRecords={games.length}
@@ -58,16 +65,52 @@ function GamesTable({
         {
           accessor: "white",
           title: t("Fen.White"),
+          cellsStyle: () => ({ overflowWrap: "anywhere" }),
           render: ({ white, white_elo }) => <PlayerRatingCell name={white} elo={white_elo} />,
         },
         {
           accessor: "black",
           title: t("Fen.Black"),
+          cellsStyle: () => ({ overflowWrap: "anywhere" }),
           render: ({ black, black_elo }) => <PlayerRatingCell name={black} elo={black_elo} />,
         },
+        {
+          accessor: "notation",
+          title: t("Board.Area.Notation"),
+          render: (game) => {
+            const notation = notations.get(game);
+            if (!notation || notation.preview.length === 0) return null;
+            const formatSan = (san: string) =>
+              moveNotationType === "symbols" ? addPieceSymbol(san) : san;
+            const formatPart = (part: GameNotationPart) =>
+              part.moveNumber ? `${part.moveNumber} ${formatSan(part.san)}` : formatSan(part.san);
+            const fullText = notation.full.map(formatPart).join(" ");
+            const [first, ...rest] = notation.preview;
+            const restText = rest.map(formatPart).join(" ");
+            return (
+              <span
+                title={fullText}
+                style={{
+                  display: "block",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {first.moveNumber ? `${first.moveNumber} ` : null}
+                <strong>{formatSan(first.san)}</strong>
+                {restText ? ` ${restText}` : null}
+                {notation.hasMore ? " …" : null}
+              </span>
+            );
+          },
+        },
         { ...dateColumn, accessor: "date", title: t("Common.Date") },
-        { accessor: "result", title: t("Board.Database.Local.Result") },
-        { ...numericColumn, accessor: "ply_count", title: t("Databases.Game.Plies") },
+        {
+          accessor: "result",
+          title: t("Board.Database.Local.Result"),
+          noWrap: true,
+        },
       ]}
       noRecordsText={t("Databases.Game.NoGamesFound")}
     />

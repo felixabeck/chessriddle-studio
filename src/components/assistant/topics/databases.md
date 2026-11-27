@@ -31,7 +31,7 @@ In a player's {{label:Home.Personal.Preparation}} tab, compare their games with 
 
 On the analysis board, open {{label:Board.Tabs.Database}} to use the opening explorer:
 - Choose {{label:Board.Database.LichessAll}} or {{label:Board.Database.LichessMaster}} in the source drop-down and in {{label:Board.Database.Compare}} (the Lichess online explorers require a signed-in Lichess account on [[page:accounts]]).
-- Switch between {{label:Board.Database.Stats}} (move statistics) and {{label:Board.Database.Games}} (matching games).
+- {{label:Board.Database.Stats}} (move statistics) appear on top and {{label:Board.Database.Games}} (matching games) appear below; drag the divider between them to share the height. The {{label:Board.Area.Notation}} column shows each game's moves from the board position, with the next move in bold.
 - Click {{label:Board.Database.Compare}} to view two sources side by side, or open {{label:Board.Database.Local.Position}} to switch between {{label:Board.Database.Local.Exact}} and {{label:Board.Database.Local.Partial}} position search (including {{label:Board.Database.Local.SimilarStructure}} for pawn-structure search and {{label:Fen.Empty}} for custom patterns).
 - You can also show {{label:Board.Tabs.Database}} as its own area on the analysis board and use {{label:Board.Area.ReturnToTabs}} to send it back to the tabs.
 - When {{label:Databases.OpeningTree.Prepare}} opens a board for a database player, the explorer starts with your reference database as a further column beside the opponent's games; click {{label:Board.Database.RemoveReference}} to hide a column or {{label:Board.Database.AddColumn}} to add another.

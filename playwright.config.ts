@@ -211,7 +211,7 @@ export default defineConfig({
             // no screenshots, because the committed snapshots are Chromium's.
             name: "game-info-webkit",
             testMatch: /(new-game-to-database|database-files)\.spec\.ts/,
-            grep: /Info date field|game info fields stay inside the preview/,
+            grep: /Info date field|game info fields stay inside the preview|board explorer split view shows notation/,
             use: {
                 ...devices["Desktop Safari"],
                 viewport: { width: 1280, height: 900 },

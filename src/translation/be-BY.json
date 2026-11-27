@@ -310,6 +310,7 @@
     "Board.Database.RemoveColumn": "Прыбраць слупок",
     "Board.Database.RemoveComparison": "Прыбраць базу для параўнання",
     "Board.Database.RemoveReference": "Прыбраць асноўную базу дадзеных",
+    "Board.Database.ResizeSplit": "Змяніць памер статыстыкі і партый",
     "Board.Database.Save": "Захаваць у файл або базу даных…",
     "Board.Database.SelectReference": "дадайце базу дадзеных",
     "Board.Database.ShowSettings": "Паказаць налады базы",

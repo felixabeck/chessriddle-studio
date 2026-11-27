@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: c53827bc1f3c7a6d
+source: 526f05192ead329f
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -32,7 +32,7 @@ Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porówn
 
 Na tablicy analizy otwórz {{label:Board.Tabs.Database}}, aby korzystać z eksploratora debiutów:
 - Wybierz {{label:Board.Database.LichessAll}} lub {{label:Board.Database.LichessMaster}} w menu źródeł oraz w {{label:Board.Database.Compare}} (internetowe eksploratory Lichess wymagają zalogowanego konta Lichess w [[page:accounts]]).
-- Przełączaj się między {{label:Board.Database.Stats}} (statystyki ruchów) i {{label:Board.Database.Games}} (pasujące partie).
+- {{label:Board.Database.Stats}} (statystyki ruchów) wyświetla się u góry, a {{label:Board.Database.Games}} (pasujące partie) na dole; przeciągnij linię podziału między nimi, aby podzielić wysokość. Kolumna {{label:Board.Area.Notation}} pokazuje ruchy od pozycji na szachownicy, z następnym ruchem pogrubionym.
 - Kliknij {{label:Board.Database.Compare}}, aby wyświetlić dwa źródła obok siebie, albo otwórz {{label:Board.Database.Local.Position}}, aby przełączać między wyszukiwaniem pozycji {{label:Board.Database.Local.Exact}} i {{label:Board.Database.Local.Partial}} (w tym {{label:Board.Database.Local.SimilarStructure}} do wyszukiwania struktury pionowej oraz {{label:Fen.Empty}} dla własnych układów).
 - Możesz też wyświetlić {{label:Board.Tabs.Database}} jako osobny obszar na szachownicy analizy i użyć {{label:Board.Area.ReturnToTabs}}, aby przywrócić ją do kart.
 - Gdy {{label:Databases.OpeningTree.Prepare}} otwiera tablicę dla gracza z bazy danych, eksplorator zaczyna od twojej bazy odniesienia jako kolejnej kolumny obok partii przeciwnika; kliknij {{label:Board.Database.RemoveReference}}, aby ukryć kolumnę, lub {{label:Board.Database.AddColumn}}, aby dodać następną.

@@ -310,6 +310,7 @@
     "Board.Database.RemoveColumn": "Убрать столбец",
     "Board.Database.RemoveComparison": "Убрать базу для сравнения",
     "Board.Database.RemoveReference": "Убрать основную базу данных",
+    "Board.Database.ResizeSplit": "Изменить размер статистики и партий",
     "Board.Database.Save": "Сохранить в файл или базу данных…",
     "Board.Database.SelectReference": "добавьте базу данных",
     "Board.Database.ShowSettings": "Показать настройки базы",

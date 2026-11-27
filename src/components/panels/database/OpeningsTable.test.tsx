@@ -501,3 +501,9 @@ test("a stored sort naming an absent source falls back to primary and marks prim
         : null;
   expect(headers.map(indicator)).toEqual([null, "sorted", null, null, "unsorted", null, null]);
 });
+
+test("reserves the vertical scrollbar gutter via scrollAreaProps offsetScrollbars", async () => {
+  await renderCompared();
+  const viewport = host.querySelector<HTMLElement>(".mantine-ScrollArea-viewport");
+  expect(viewport?.getAttribute("data-offset-scrollbars")).toBe("y");
+});

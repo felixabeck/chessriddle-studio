@@ -9,34 +9,39 @@ import {
   Menu,
   SegmentedControl,
   Select,
-  Stack,
-  Tabs,
   Text,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Plus, Settings, X } from "lucide-react";
-import { memo, type ReactNode, useCallback, useContext, useEffect } from "react";
+import { memo, type ReactNode, useCallback, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
+import { useDragResize } from "@/hooks/useDragResize";
+import { useMeasuredElementSize } from "@/hooks/useMeasuredElementSize";
+import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useStore } from "zustand";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   comparisonDbAtom,
-  dbTabFamily,
   dbTypeFamily,
+  DEFAULT_EXPLORER_STATS_HEIGHT_REM,
+  EXPLORER_DIVIDER_HEIGHT_PX,
   explorerGamesSourceFamily,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
+  explorerStatsHeightAtom,
+  explorerStatsSplitRange,
   type ExplorerColumnId,
   type ExplorerFurtherColumn,
   type ExplorerGamesSourceRole,
   type ExplorerOnlineSource,
   isDatabaseComparisonSource,
   localOptionsFamily,
+  MIN_EXPLORER_STATS_HEIGHT_REM,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
   pinnedExplorerFurtherColumnsFamily,
@@ -46,6 +51,7 @@ import {
   replaceExplorerDatabaseAtom,
   sessionsAtom,
 } from "@/state/atoms";
+import { roundRem } from "@/state/remPreference";
 import { databaseHandleFromKey, databaseHandleKey, type Opening } from "@/utils/db";
 import classes from "./DatabasePanel.module.css";
 import {
@@ -102,6 +108,7 @@ const SOURCE_SELECT_HEIGHT = 36;
  * below them, which Mantine's 220 px default cut off; a longer list still scrolls.
  */
 const SOURCE_LIST_MAX_HEIGHT = 420;
+const KEY_STEP_REM = 1;
 
 /** Follows a linked collection that publishes a new database in place of `selected`. */
 function useCollectionDatabase(
@@ -258,12 +265,8 @@ function DatabasePanel() {
     pinnedReferenceFilters.filters.player,
   );
   const [tab] = useOwnerTab();
-  const [storedView, setStoredView] = useAtom(useTabAtom(dbTabFamily));
-  // A partial position has no move statistics. The view is derived, so the stored choice returns
-  // with the exact position. A Lichess-only panel ignores the partial setting.
+  // A partial position has no move statistics; its games open at the start.
   const statsUnavailable = showingLocalSource && effectiveLocalOptions.type === "partial";
-  const view = statsUnavailable || storedView === "games" ? "games" : "stats";
-  // A partial search is a pattern, not one position, so its games open at the start.
   const gamesTargetFen = statsUnavailable ? undefined : debouncedFen;
   const localExplorer = useLocalExplorer(
     effectiveLocalOptions,
@@ -797,10 +800,66 @@ function DatabasePanel() {
   const furtherLocalItems = furtherMenuItems.filter((item) => item.value === "reference");
   const furtherOnlineItems = furtherMenuItems.filter((item) => item.value !== "reference");
 
+  const showSingleUnavailable = !statsSources && unavailable !== null;
+  const showSplitStats = !showSingleUnavailable && !statsUnavailable;
+  const rootFont = useRootFontPx();
+  const { ref: bodyRef, height: bodyHeightPx } = useMeasuredElementSize<HTMLDivElement>();
+  const statsSectionRef = useRef<HTMLElement | null>(null);
+  const [storedStatsHeightRem, setStoredStatsHeightRem] = useAtom(explorerStatsHeightAtom);
+  const bodyHeightRem = rootFont > 0 ? bodyHeightPx / rootFont : 0;
+  const handleHeightRem =
+    rootFont > 0 ? EXPLORER_DIVIDER_HEIGHT_PX / rootFont : EXPLORER_DIVIDER_HEIGHT_PX / 16;
+  const split = explorerStatsSplitRange(storedStatsHeightRem, bodyHeightRem, handleHeightRem);
+  const normalizeStatsHeight = (sizeRem: number) =>
+    roundRem(Math.min(split.maxRem, Math.max(split.minRem, sizeRem)));
+  const writeStoredStatsHeight = (sizeRem: number) => {
+    if (!split.canResize || !Number.isFinite(sizeRem) || sizeRem <= 0) return;
+    setStoredStatsHeightRem(roundRem(sizeRem));
+  };
+  const resize = useDragResize({
+    axis: "vertical",
+    measuredSizePx: () => {
+      const measured = statsSectionRef.current?.getBoundingClientRect().height ?? 0;
+      return measured > 0 ? measured : split.statsHeightRem * rootFont;
+    },
+    rootFont,
+    normalize: normalizeStatsHeight,
+    growDirection: 1,
+    keyStepRem: KEY_STEP_REM,
+    setStoredRem: writeStoredStatsHeight,
+    defaultRem: DEFAULT_EXPLORER_STATS_HEIGHT_REM,
+    disabled: !split.canResize || !showSplitStats,
+  });
+  const effectiveStatsHeightRem =
+    resize.dragRem !== null ? normalizeStatsHeight(resize.dragRem) : split.statsHeightRem;
+
+  const gamesContent =
+    gamesColumns.length > 1 && gamesFrom ? (
+      <>
+        <SegmentedControl
+          aria-label={t("Board.Database.GamesSource")}
+          style={{ flexShrink: 0, alignSelf: "flex-start" }}
+          size="xs"
+          data={gamesColumns.map((column) => ({
+            value: column.column,
+            label: column.name,
+          }))}
+          value={gamesSource}
+          onChange={(value) => {
+            if (value === "primary" || value === "comparison") setGamesSource(value);
+          }}
+        />
+        {gamesView(gamesFrom)}
+      </>
+    ) : oneGamesColumnAmongSeveralStats && gamesFrom ? (
+      gamesView(gamesFrom)
+    ) : primaryColumn ? (
+      gamesView(primaryColumn)
+    ) : null;
+
   return (
-    <Tabs
-      value={view}
-      onChange={(v) => setStoredView(v!)}
+    <Box
+      className={classes.panel}
       h="100%"
       px="sm"
       py="xs"
@@ -843,12 +902,6 @@ function DatabasePanel() {
                 )}
             </Group>
             <Group gap={4} wrap="nowrap">
-              <Tabs.List style={{ flexWrap: "nowrap" }}>
-                <Tabs.Tab value="stats" disabled={statsUnavailable}>
-                  {t("Board.Database.Stats")}
-                </Tabs.Tab>
-                <Tabs.Tab value="games">{t("Board.Database.Games")}</Tabs.Tab>
-              </Tabs.List>
               {headerActions}
             </Group>
           </Group>
@@ -875,92 +928,70 @@ function DatabasePanel() {
         </Alert>
       )}
 
-      <ViewPanel value="stats" view={view} plain={collapsed}>
-        {statsSources ? (
+      <div ref={bodyRef} className={classes.body}>
+        {showSingleUnavailable ? (
+          unavailable
+        ) : (
           <>
-            {missingOnlineAuth && signInNotice}
-            {failedColumns.map(sourceAlert)}
-            {answeringColumns.length > 0 && (
-              <OpeningsTable
-                openings={primaryColumn?.explorer.openings ?? []}
-                loading={primaryColumn?.explorer.loading ?? false}
-                sources={statsSources.map((column) => ({
-                  column: column.column,
-                  openings: column.explorer.openings,
-                  loading: column.explorer.loading,
-                  total: column.explorer.total,
-                  unavailable: columnUnavailable(column),
-                }))}
-                sort={sort}
-                onSortChange={setSort}
-              />
+            {showSplitStats && (
+              <>
+                <section
+                  ref={statsSectionRef}
+                  aria-label={t("Board.Database.Stats")}
+                  className={classes.statsSection}
+                  style={{ height: `${effectiveStatsHeightRem}rem` }}
+                >
+                  {statsSources ? (
+                    <>
+                      {missingOnlineAuth && signInNotice}
+                      {failedColumns.map(sourceAlert)}
+                      {answeringColumns.length > 0 && (
+                        <OpeningsTable
+                          openings={primaryColumn?.explorer.openings ?? []}
+                          loading={primaryColumn?.explorer.loading ?? false}
+                          sources={statsSources.map((column) => ({
+                            column: column.column,
+                            openings: column.explorer.openings,
+                            loading: column.explorer.loading,
+                            total: column.explorer.total,
+                            unavailable: columnUnavailable(column),
+                          }))}
+                          sort={sort}
+                          onSortChange={setSort}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <OpeningsTable
+                      openings={openingData?.openings || []}
+                      total={openingData?.total}
+                      loading={isLoading}
+                    />
+                  )}
+                </section>
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label={t("Board.Database.ResizeSplit")}
+                  aria-valuemin={roundRem(
+                    bodyHeightRem > 0 ? split.minRem : MIN_EXPLORER_STATS_HEIGHT_REM,
+                  )}
+                  aria-valuemax={bodyHeightRem > 0 ? roundRem(split.maxRem) : undefined}
+                  aria-valuenow={roundRem(effectiveStatsHeightRem)}
+                  tabIndex={0}
+                  className={classes.divider}
+                  data-dragging={resize.dragRem !== null ? "true" : undefined}
+                  {...resize.handleProps}
+                />
+              </>
             )}
+            <section aria-label={t("Board.Database.Games")} className={classes.gamesSection}>
+              {gamesContent}
+            </section>
           </>
-        ) : (
-          (unavailable ?? (
-            <OpeningsTable
-              openings={openingData?.openings || []}
-              total={openingData?.total}
-              loading={isLoading}
-            />
-          ))
         )}
-      </ViewPanel>
-      <ViewPanel value="games" view={view} plain={collapsed}>
-        {gamesColumns.length > 1 && gamesFrom ? (
-          <Stack gap="xs" flex={1} style={{ overflow: "hidden" }}>
-            <SegmentedControl
-              aria-label={t("Board.Database.GamesSource")}
-              style={{ flexShrink: 0, alignSelf: "flex-start" }}
-              size="xs"
-              data={gamesColumns.map((column) => ({
-                value: column.column,
-                label: column.name,
-              }))}
-              value={gamesSource}
-              onChange={(value) => {
-                if (value === "primary" || value === "comparison") setGamesSource(value);
-              }}
-            />
-            {gamesView(gamesFrom)}
-          </Stack>
-        ) : oneGamesColumnAmongSeveralStats && gamesFrom ? (
-          gamesView(gamesFrom)
-        ) : (
-          (unavailable ?? (primaryColumn ? gamesView(primaryColumn) : null))
-        )}
-      </ViewPanel>
-    </Tabs>
-  );
-}
-
-/**
- * One of the two views. Collapsed, the header shows no view switch, so the view is a plain
- * region instead of a tab panel naming a tab that is not there.
- */
-function ViewPanel({
-  value,
-  view,
-  plain,
-  children,
-}: {
-  value: string;
-  view: string;
-  plain: boolean;
-  children: ReactNode;
-}) {
-  const layout = { display: "flex", flexDirection: "column", overflow: "hidden" } as const;
-  if (plain) {
-    return value === view ? (
-      <Box pt="xs" flex={1} style={layout}>
-        {children}
-      </Box>
-    ) : null;
-  }
-  return (
-    <Tabs.Panel pt="xs" value={value} flex={1} style={layout}>
-      {children}
-    </Tabs.Panel>
+      </div>
+    </Box>
   );
 }
 

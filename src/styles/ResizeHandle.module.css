@@ -1,5 +1,5 @@
-/* A vertical drag handle on a panel edge: a 6px hit strip whose centre line lights up on hover,
-   while dragging, and on keyboard focus. Callers place it on their edge and stack it. */
+/* A drag handle on a panel edge or between stacked panes: a 6px hit strip whose centre line
+   lights up on hover, while dragging, and on keyboard focus. */
 .vertical {
   position: absolute;
   inset-block: 0;
@@ -8,22 +8,45 @@
   touch-action: none;
 }
 
-.vertical::after {
+.horizontal {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  /* Keep in sync with `EXPLORER_DIVIDER_HEIGHT_PX` in `src/state/atoms/explorer.ts`. */
+  height: 6px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.vertical::after,
+.horizontal::after {
   content: "";
   position: absolute;
-  inset-block: 0;
-  left: 2px;
-  width: 2px;
   background: transparent;
   transition: background-color 120ms ease;
 }
 
+.vertical::after {
+  inset-block: 0;
+  left: 2px;
+  width: 2px;
+}
+
+.horizontal::after {
+  inset-inline: 0;
+  top: 2px;
+  height: 2px;
+}
+
 .vertical:hover::after,
-.vertical[data-dragging="true"]::after {
+.vertical[data-dragging="true"]::after,
+.horizontal:hover::after,
+.horizontal[data-dragging="true"]::after {
   background: var(--mantine-primary-color-filled);
 }
 
-.vertical:focus-visible {
+.vertical:focus-visible,
+.horizontal:focus-visible {
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: -1px;
 }

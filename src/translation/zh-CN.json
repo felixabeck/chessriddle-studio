@@ -307,6 +307,7 @@
     "Board.Database.RemoveColumn": "移除列",
     "Board.Database.RemoveComparison": "移除对比数据库",
     "Board.Database.RemoveReference": "移除参考数据库",
+    "Board.Database.ResizeSplit": "调整统计与对局大小",
     "Board.Database.Save": "保存到文件或数据库…",
     "Board.Database.SelectReference": "添加一个数据库",
     "Board.Database.ShowSettings": "显示数据库设置",

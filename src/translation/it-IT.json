@@ -309,6 +309,7 @@
     "Board.Database.RemoveColumn": "Rimuovi colonna",
     "Board.Database.RemoveComparison": "Rimuovi il database di confronto",
     "Board.Database.RemoveReference": "Rimuovi il database di riferimento",
+    "Board.Database.ResizeSplit": "Ridimensiona statistiche e partite",
     "Board.Database.Save": "Salva in un file o nel database…",
     "Board.Database.SelectReference": "Aggiungi un database",
     "Board.Database.ShowSettings": "Mostra le impostazioni del database",

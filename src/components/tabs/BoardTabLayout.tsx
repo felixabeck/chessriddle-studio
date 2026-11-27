@@ -16,7 +16,7 @@ import { Mosaic } from "react-mosaic-component";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { hasScoresheetPhotoPanel } from "@/utils/scoresheet";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
-import { useElementWidth } from "@/hooks/useElementWidth";
+import { useMeasuredElementSize } from "@/hooks/useMeasuredElementSize";
 import {
   applyShownSplits,
   arrangementEngineAreas,
@@ -171,7 +171,7 @@ export default function BoardTabLayout({
     () => (treeStore ? hasScoresheetPhotoPanel(treeStore.getState()) : false),
   );
   const engines = useAtomValue(enginesAtom);
-  const { ref, width } = useElementWidth();
+  const { ref, width } = useMeasuredElementSize();
   const rootFont = useRootFontPx();
   const returnListenerRef = useRef<((panel: PanelAreaId) => void) | null>(null);
 

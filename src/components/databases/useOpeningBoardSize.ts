@@ -1,7 +1,7 @@
 import { useAtom } from "jotai";
 import { type CSSProperties, useRef } from "react";
 import { useDragResize } from "@/hooks/useDragResize";
-import { useElementWidth } from "@/hooks/useElementWidth";
+import { useMeasuredElementSize } from "@/hooks/useMeasuredElementSize";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import {
     clampOpeningBoardSizeRem,
@@ -19,7 +19,7 @@ const KEY_STEP_REM = 1;
 /** The remembered, clamped board size of the Openings tab and its resize handle. */
 export function useOpeningBoardSize() {
     const rootFont = useRootFontPx();
-    const { ref: rootRef, width } = useElementWidth<HTMLDivElement>();
+    const { ref: rootRef, width } = useMeasuredElementSize<HTMLDivElement>();
     const boardRef = useRef<HTMLDivElement | null>(null);
     const [storedRem, setStoredRem] = useAtom(openingBoardSizeAtom);
     const bodyRem = rootFont > 0 ? width / rootFont : 0;

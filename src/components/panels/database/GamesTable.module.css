@@ -1,0 +1,24 @@
+.table {
+  /* Column widths in `GamesTable.tsx` column order; `Notation` has none and takes the remaining
+     space. */
+  --games-player-col-width: 20%;
+  --games-date-col-width: 6.25rem;
+  --games-result-col-width: 4.5rem;
+  table-layout: fixed;
+}
+
+/* 1: White, 2: Black */
+.table th:nth-child(1),
+.table th:nth-child(2) {
+  width: var(--games-player-col-width);
+}
+
+/* 4: Date */
+.table th:nth-child(4) {
+  width: var(--games-date-col-width);
+}
+
+/* 5: Result */
+.table th:nth-child(5) {
+  width: var(--games-result-col-width);
+}

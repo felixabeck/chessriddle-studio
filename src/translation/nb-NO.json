@@ -308,6 +308,7 @@
     "Board.Database.RemoveColumn": "Fjern kolonne",
     "Board.Database.RemoveComparison": "Fjern sammenligningsdatabasen",
     "Board.Database.RemoveReference": "Fjern referansedatabasen",
+    "Board.Database.ResizeSplit": "Endre størrelse på statistikk og partier",
     "Board.Database.Save": "Lagre i fil eller database…",
     "Board.Database.SelectReference": "legg til en database",
     "Board.Database.ShowSettings": "Vis databaseinnstillinger",

@@ -12,6 +12,7 @@ import {
     type MasterGamesOptions,
     masterOptionsSchema,
 } from "@/utils/lichess/explorer";
+import { createPositiveRemStorage } from "../remPreference";
 import { createZodStorage } from "../utils";
 import { canonicalTabExplorerOptions, type Tab, type TabExplorer } from "../workspaceTypes";
 import { documentPreferences } from "./rendererState";
@@ -219,6 +220,69 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
     createZodStorage(z.boolean(), localStorage),
 );
 
+export const EXPLORER_STATS_HEIGHT_KEY = "explorer-stats-height";
+export const DEFAULT_EXPLORER_STATS_HEIGHT_REM = 14;
+export const MIN_EXPLORER_STATS_HEIGHT_REM = 6;
+export const MIN_EXPLORER_GAMES_HEIGHT_REM = 12;
+export const EXPLORER_DIVIDER_HEIGHT_PX = 6; // Keep in sync with `.horizontal` height in `src/styles/ResizeHandle.module.css`.
+
+/** Remembered height of the move-statistics section in the board's Database panel, in rem. */
+export const explorerStatsHeightAtom = documentPreferences.atomWithStorage<number>(
+    EXPLORER_STATS_HEIGHT_KEY,
+    DEFAULT_EXPLORER_STATS_HEIGHT_REM,
+    createPositiveRemStorage(localStorage),
+);
+
+export type ExplorerSplitRange = {
+    statsHeightRem: number;
+    minRem: number;
+    maxRem: number;
+    canResize: boolean;
+};
+
+/**
+ * Clamps the statistics section's height to `[MIN, H - MIN_GAMES - h]` when the body fits both
+ * minimums, shares the remaining height proportionally when short, and leaves an unmeasured body
+ * (`H <= 0`) unclamped and non-writable.
+ */
+export function explorerStatsSplitRange(
+    storedRem: number,
+    bodyHeightRem: number,
+    handleHeightRem: number,
+): ExplorerSplitRange {
+    if (!(bodyHeightRem > 0)) {
+        return {
+            statsHeightRem: storedRem,
+            minRem: storedRem,
+            maxRem: storedRem,
+            canResize: false,
+        };
+    }
+    const minNeeded =
+        MIN_EXPLORER_STATS_HEIGHT_REM + MIN_EXPLORER_GAMES_HEIGHT_REM + handleHeightRem;
+    if (bodyHeightRem >= minNeeded) {
+        const minRem = MIN_EXPLORER_STATS_HEIGHT_REM;
+        const maxRem = bodyHeightRem - MIN_EXPLORER_GAMES_HEIGHT_REM - handleHeightRem;
+        return {
+            statsHeightRem: Math.min(maxRem, Math.max(minRem, storedRem)),
+            minRem,
+            maxRem,
+            canResize: maxRem > minRem,
+        };
+    }
+    const remaining = Math.max(0, bodyHeightRem - handleHeightRem);
+    const proportional =
+        remaining *
+        (MIN_EXPLORER_STATS_HEIGHT_REM /
+            (MIN_EXPLORER_STATS_HEIGHT_REM + MIN_EXPLORER_GAMES_HEIGHT_REM));
+    return {
+        statsHeightRem: proportional,
+        minRem: proportional,
+        maxRem: proportional,
+        canResize: false,
+    };
+}
+
 export const dbTypeFamily = tabAtomFamily((tab: string) =>
     tabExplorerAtom<ExplorerFirstSource, "firstSource">({
         tabId: tab,
@@ -227,5 +291,3 @@ export const dbTypeFamily = tabAtomFamily((tab: string) =>
         toRecord: (value) => (value === "local" ? undefined : value),
     }),
 );
-
-export const dbTabFamily = tabAtomFamily((_tab: string) => atom("stats"));

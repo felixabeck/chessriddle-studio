@@ -308,6 +308,7 @@
     "Board.Database.RemoveColumn": "Remove column",
     "Board.Database.RemoveComparison": "Remove comparison database",
     "Board.Database.RemoveReference": "Remove reference database",
+    "Board.Database.ResizeSplit": "Resize statistics and games",
     "Board.Database.Save": "Save to file or database…",
     "Board.Database.SelectReference": "add a database",
     "Board.Database.ShowSettings": "Show database settings",

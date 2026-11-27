@@ -9,6 +9,7 @@ import { useStore } from "zustand";
 import { gameRowActivation } from "@/components/common/gameOpen";
 import { ResultBar } from "@/components/common/ResultBar";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
+import { tableScrollAreaProps } from "@/components/databases/databaseColumns";
 import { type ExplorerColumnId, moveNotationTypeAtom } from "@/state/atoms";
 import { addPieceSymbol } from "@/utils/annotation";
 import type { Opening } from "@/utils/db";
@@ -280,6 +281,7 @@ function OpeningsTable({
     <DataTable
       withTableBorder
       highlightOnHover
+      scrollAreaProps={tableScrollAreaProps}
       records={rows}
       fetching={everyLoading || openings === null}
       // Equal source groups: the sources bar above lines up with them.

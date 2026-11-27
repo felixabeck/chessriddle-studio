@@ -307,6 +307,7 @@
     "Board.Database.RemoveColumn": "열 제거",
     "Board.Database.RemoveComparison": "비교 데이터베이스 제거",
     "Board.Database.RemoveReference": "참조 데이터베이스 제거",
+    "Board.Database.ResizeSplit": "통계 및 게임 크기 조절",
     "Board.Database.Save": "파일 또는 데이터베이스에 저장…",
     "Board.Database.SelectReference": "데이터베이스를 추가",
     "Board.Database.ShowSettings": "데이터베이스 설정 표시",

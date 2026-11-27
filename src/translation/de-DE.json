@@ -308,6 +308,7 @@
     "Board.Database.RemoveColumn": "Spalte entfernen",
     "Board.Database.RemoveComparison": "Vergleichsdatenbank entfernen",
     "Board.Database.RemoveReference": "Referenzdatenbank entfernen",
+    "Board.Database.ResizeSplit": "Größe von Statistiken und Partien ändern",
     "Board.Database.Save": "In Datei oder Datenbank speichern…",
     "Board.Database.SelectReference": "füge eine Datenbank hinzu",
     "Board.Database.ShowSettings": "Datenbank-Einstellungen einblenden",

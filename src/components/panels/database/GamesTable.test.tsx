@@ -1,11 +1,13 @@
+import { MantineProvider } from "@mantine/core";
 import { Provider, createStore } from "jotai";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { NormalizedGame } from "@/bindings";
-import { tabsAtom, recentFilesAtom } from "@/state/atoms";
+import { moveNotationTypeAtom, tabsAtom, recentFilesAtom } from "@/state/atoms";
 import { tabStorage } from "@/state/store/tabStorage";
 import { closeTreeStore, createTreeStore } from "@/state/store/tree";
+import { installMatchMediaStub } from "@/tests/matchMedia";
 import { defaultTree } from "@/utils/treeReducer";
 import GamesTable from "./GamesTable";
 
@@ -31,17 +33,34 @@ vi.mock("@/utils/chess", async (original) => ({
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
 vi.mock("@/components/files/notifyError", () => ({ notifyUnlessCancelled: mocks.notify }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+installMatchMediaStub({ matches: (query) => query === "" });
+
+type MockColumn = {
+  accessor: string;
+  title?: ReactNode;
+  render?: (record: NormalizedGame) => ReactNode;
+};
+
 vi.mock("mantine-datatable", () => ({
   DataTable: ({
     records,
+    columns,
     onRowClick,
     customRowAttributes,
   }: {
     records: NormalizedGame[];
+    columns: MockColumn[];
     onRowClick: (event: { record: NormalizedGame }) => void;
     customRowAttributes?: (record: NormalizedGame) => Record<string, unknown>;
   }) => (
-    <>
+    <div data-mock-table>
+      <div role="rowgroup" data-mock-headers>
+        {columns.map((column) => (
+          <span key={column.accessor} role="columnheader" data-accessor={column.accessor}>
+            {column.title}
+          </span>
+        ))}
+      </div>
       {records.map((record) => (
         <div
           key={record.id}
@@ -49,10 +68,16 @@ vi.mock("mantine-datatable", () => ({
           {...customRowAttributes?.(record)}
           onClick={() => onRowClick({ record })}
         >
-          {record.white}
+          {columns.map((column) => (
+            <div key={column.accessor} role="cell" data-col={column.accessor}>
+              {column.render
+                ? column.render(record)
+                : String((record as Record<string, unknown>)[column.accessor] ?? "")}
+            </div>
+          ))}
         </div>
       ))}
-    </>
+    </div>
   ),
 }));
 
@@ -100,12 +125,19 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
-async function renderTable(targetFen?: string) {
+async function renderTable(targetFen?: string, gamesList: NormalizedGame[] = [game]) {
   await act(async () =>
     root.render(
-      <Provider store={workspace}>
-        <GamesTable games={[game]} loading={false} databasePath={database} targetFen={targetFen} />
-      </Provider>,
+      <MantineProvider env="test">
+        <Provider store={workspace}>
+          <GamesTable
+            games={gamesList}
+            loading={false}
+            databasePath={database}
+            targetFen={targetFen}
+          />
+        </Provider>
+      </MantineProvider>,
     ),
   );
 }
@@ -225,5 +257,33 @@ test.each([
   expect(tab.gameOrigin.kind).toBe(linked ? "file" : "database");
   expect(tabStorage.read<{ position: number[] }>(tab.treeKey ?? tab.value)?.state.position).toEqual(
     [0, 0],
+  );
+});
+
+test("columns put Notation between Black and Date, omit Plies, bold the first move, and apply figurines", async () => {
+  const longGame: NormalizedGame = {
+    ...game,
+    moves: "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 *",
+  };
+  const afterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+  await renderTable(afterE4, [longGame]);
+
+  const headers = [...host.querySelectorAll('[role="columnheader"]')].map((el) =>
+    el.getAttribute("data-accessor"),
+  );
+  expect(headers).toEqual(["white", "black", "notation", "date", "result"]);
+
+  const cell = host.querySelector('[data-col="notation"] span')!;
+  expect(cell.textContent).toBe("1... e5 2. ♘f3 ♘c6 3. ♗b5 a6 4. ♗a4 ♘f6 5. O-O …");
+  expect(cell.getAttribute("title")).toBe("1... e5 2. ♘f3 ♘c6 3. ♗b5 a6 4. ♗a4 ♘f6 5. O-O ♗e7");
+  expect(cell.querySelector("strong")?.textContent).toBe("e5");
+
+  await act(async () => {
+    workspace.set(moveNotationTypeAtom, "letters");
+  });
+  const lettersCell = host.querySelector('[data-col="notation"] span')!;
+  expect(lettersCell.textContent).toBe("1... e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O …");
+  expect(lettersCell.getAttribute("title")).toBe(
+    "1... e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7",
   );
 });

@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: c53827bc1f3c7a6d
+source: 526f05192ead329f
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -32,7 +32,7 @@ Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştır
 
 Analiz tahtasında açılış gezginini kullanmak için {{label:Board.Tabs.Database}} sekmesini açın:
 - Kaynak menüsünde ve {{label:Board.Database.Compare}} içinde {{label:Board.Database.LichessAll}} veya {{label:Board.Database.LichessMaster}} seçin (Lichess çevrimiçi gezginleri için [[page:accounts]] sayfasında oturum açılmış bir Lichess hesabı gerekir).
-- {{label:Board.Database.Stats}} (hamle istatistikleri) ve {{label:Board.Database.Games}} (eşleşen oyunlar) görünümleri arasında geçiş yapın.
+- {{label:Board.Database.Stats}} (hamle istatistikleri) üstte, {{label:Board.Database.Games}} (eşleşen oyunlar) altta görünür; yüksekliği paylaşmak için aradaki ayırıcıyı sürükleyin. {{label:Board.Area.Notation}} sütunu tahta konumundan itibaren hamleleri gösterir ve sıradaki hamleyi kalın yazar.
 - İki kaynağı yan yana görmek üzere {{label:Board.Database.Compare}} düğmesine tıklayın veya {{label:Board.Database.Local.Exact}} ve {{label:Board.Database.Local.Partial}} konum aramaları (piyon yapısı araması için {{label:Board.Database.Local.SimilarStructure}} ve özel kalıplar için {{label:Fen.Empty}} dahil) arasında geçiş yapmak üzere {{label:Board.Database.Local.Position}} menüsünü açın.
 - Analiz tahtasında {{label:Board.Tabs.Database}} panelini ayrı bir alan olarak da gösterebilir ve {{label:Board.Area.ReturnToTabs}} ile sekmelere geri döndürebilirsiniz.
 - {{label:Databases.OpeningTree.Prepare}} bir veritabanı oyuncusu için tahta açtığında gezgin referans veritabanınızla rakibin oyunlarının yanında ek bir sütun olarak başlar; bir sütunu gizlemek için {{label:Board.Database.RemoveReference}}, başka bir sütun eklemek için {{label:Board.Database.AddColumn}} düğmesine tıklayın.
