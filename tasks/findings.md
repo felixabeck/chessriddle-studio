@@ -30149,7 +30149,7 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 
 ### Library type convert leaves Recent files on the old sidecar type
 
-* **ID:** f-20261127-19 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-19 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 742a2ecb-679d-4ed9-918e-0e7a546387a9
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes, during pre-commit review of f-20261127-10
@@ -30158,3 +30158,6 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Fix:** after a successful type or name write, update matching Recent-file records the same way open tabs are patched, or refuse to seed a tab from Recent when the live listing already has a different type.
 * **Related:** f-20261127-10 syncs open-tab `gameOrigin.file` and deliberately leaves Recent files to this follow-up.
 * **Found by:** Grok drain session 742a2ecb-679d-4ed9-918e-0e7a546387a9, 2026-11-27
+
+Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` updates matching file Recent rows (name and type, lastOpened unchanged) when the IPC resolves or rejects as durability-uncertain, the same moment open tabs are patched. `recentFilesAtom` now lives on `documentPreferences.atomWithStorage` so a Library write hydrates persisted recents without wiping `localStorage["recent-files"]` when the atom is not subscribed. Rename trims the dialog name to match native `validate_name`. Rejected: refuse-to-open from Recent against a listing that has not refreshed (the filed failure is opening before that refresh); import-time `getOnInit` on `atomWithStorage` (fails `initialization.test.ts` "real state import leaves fixture storage untouched"). Proof: `pnpm exec vitest --run src/state/atoms.recentFiles.test.ts src/state/atoms.recentFiles.getOnInit.test.ts src/state/initialization.test.ts src/components/files/FilesPage.test.tsx` → 223 passed; related `agent-gate pnpm exec vitest related --run --passWithNoTests` on the five paths → 7697 passed, 1 skipped. Commit 6294bf7a2.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"03fcceadd3c9ae06d971c28207ab452575f4454b7d6cff4ff8c5c174b4d1d10e","header_sha256":"a36506fd98c0789ed522d30521b37f351b807929324730f162c3fd291636992f","header_status":"handled","input_sha256":"1eee22a54c78370ae7a896fa364a670ff003f1b6b83a1ba99e9579f3b00f5a8f","kind":"mutation-receipt","operation":"996b04cf1d122fb2b0ac801b816843dd076ad4c678f4dd36eea0d90a47b9b147","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-19"],"target":"f-20261127-19","v":1} -->
