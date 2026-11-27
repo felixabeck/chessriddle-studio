@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablica analizy, warianty, komentarze i strzałki
 summary: Wprowadzaj ruchy, edytuj pozycje, zarządzaj wariantami, pisz komentarze, dodawaj adnotacje i rysuj strzałki na szachownicy.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Otwórz tablicę analizy z [[page:new-tab]], klikając {{label:Home.Card.AnalysisBoard.Title}}, albo otwierając zapisaną partię lub repertuar z [[page:library]].
@@ -28,4 +28,4 @@ Aby ułożyć obszary szachownicy analizy, przeciągnij kartę panelu ({{label:B
 
 Karty repertuaru, partii i przygotowania pod przeciwnika zachowują każda własny aktywny układ. Dostępne są trzy gotowe układy ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} oraz {{label:Board.Layout.Preset.Preparation}}), a własne układy możesz zapisywać, przełączać, zmieniać ich nazwy i usuwać z menu {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} i {{label:Board.Layout.Manage}}) lub z menu {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} i {{label:Board.Layout.LayoutsMenu}}). Użyj [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}), aby przywrócić gotowe układy dla wszystkich trzech rodzajów kart, zachowując zapisane układy.
 
-Aby ukryć karty, na przykład gdy każdy używany panel jest wyświetlany jako osobny obszar, kliknij {{label:Board.Area.HideTabs}} pod uchwytem na końcu paska kart; sąsiednie obszary zajmą ich miejsce. Karty zachowują położenie i rozmiar: pokażesz je ponownie przyciskiem {{label:Board.Arrange.ShowTabs}}, który pojawia się w nagłówku notacji, gdy karty są ukryte, skrótem karty albo generując raport. Panel zwrócony, gdy karty są ukryte, trafia do ukrytych kart.
+Aby ukryć karty, na przykład gdy każdy używany panel jest wyświetlany jako osobny obszar, kliknij {{label:Board.Area.HideTabs}} pod uchwytem na końcu paska kart; sąsiednie obszary zajmą ich miejsce. Karty zachowują położenie i rozmiar: pokażesz je ponownie przyciskiem {{label:Board.Arrange.ShowTabs}}, który pojawia się w nagłówku notacji, gdy karty są ukryte, skrótem karty albo generując raport. Panel zwrócony, gdy karty są ukryte, trafia do ukrytych kart. Gdy karty są ukryte, polecenie {{label:Board.Arrange.ShowTabs}} jest dostępne także w {{label:Board.Action.More}} i w menu {{label:Menu.View}}.

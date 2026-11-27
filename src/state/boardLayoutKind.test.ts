@@ -2,13 +2,24 @@ import { createStore, Provider } from "jotai";
 import { act, type ComponentProps, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, test } from "vitest";
-import { disposeTabAtoms, tabsAtom } from "./atoms";
+import {
+    activeTabAtom,
+    boardTabsHiddenFamily,
+    currentBoardTabsHiddenAtom,
+    disposeTabAtoms,
+    tabsAtom,
+} from "./atoms";
 import {
     opponentPreparationAtom,
     type StoredOpponentPreparation,
     tabPreparationViewFamily,
 } from "./atoms/preparation";
-import { resolveBoardLayoutKind, useAnalysisTabLayoutKind } from "./boardLayoutKind";
+import {
+    resolveBoardLayoutKind,
+    showCurrentBoardTabs,
+    useAnalysisTabLayoutKind,
+} from "./boardLayoutKind";
+import { boardLayoutFamily } from "./layoutStorage";
 import type { BoardLayoutKind } from "./layoutPresets";
 import { WorkspaceTabScope } from "./tabScope";
 import type { Tab } from "./workspaceTypes";
@@ -208,5 +219,37 @@ describe("useAnalysisTabLayoutKind", () => {
         await probe.render({ ...tab, name: "Rep (closing)" });
         expect(probe.getKind()).toBe("repertoire");
         expect(Array.from(tabPreparationViewFamily.getParams())).not.toContain(tabId);
+    });
+});
+
+describe("currentBoardTabsHiddenAtom and showCurrentBoardTabs", () => {
+    test("the View menu flag follows the active analysis board's shown state", () => {
+        const store = createStore();
+        store.set(tabsAtom, [gameTab("game"), playTab("play")]);
+        store.set(activeTabAtom, "game");
+        expect(store.get(currentBoardTabsHiddenAtom)).toBe(false);
+        store.set(boardTabsHiddenFamily("game"), true);
+        expect(store.get(currentBoardTabsHiddenAtom)).toBe(true);
+        store.set(activeTabAtom, "play");
+        expect(store.get(currentBoardTabsHiddenAtom)).toBe(false);
+        boardTabsHiddenFamily.remove("game");
+    });
+
+    test("showCurrentBoardTabs shows only the active analysis tab's kind", () => {
+        localStorage.clear();
+        const store = createStore();
+        store.set(tabsAtom, [repertoireTab("rep"), gameTab("game"), playTab("play")]);
+        store.set(boardLayoutFamily("repertoire"), (prev) => ({ ...prev, tabsHidden: true }));
+        store.set(boardLayoutFamily("game"), (prev) => ({ ...prev, tabsHidden: true }));
+
+        store.set(activeTabAtom, "play");
+        showCurrentBoardTabs(store);
+        expect(store.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(true);
+        expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
+
+        store.set(activeTabAtom, "rep");
+        showCurrentBoardTabs(store);
+        expect(store.get(boardLayoutFamily("repertoire")).tabsHidden).toBe(false);
+        expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(true);
     });
 });

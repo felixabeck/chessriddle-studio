@@ -2,7 +2,7 @@
 id: analysis-board
 title: Scacchiera di analisi, varianti, commenti e frecce
 summary: Inserisci mosse, modifica posizioni, gestisci varianti, scrivi commenti, aggiungi annotazioni e disegna frecce sulla scacchiera.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Apri una scacchiera di analisi da [[page:new-tab]] facendo clic su {{label:Home.Card.AnalysisBoard.Title}}, oppure aprendo una partita o un repertorio salvato da [[page:library]].
@@ -28,4 +28,4 @@ Per organizzare la scacchiera di analisi, trascina la scheda di un pannello ({{l
 
 Le schede di repertorio, partita e preparazione contro l’avversario mantengono ciascuna il proprio layout attivo. Sono inclusi tre layout predefiniti ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} e {{label:Board.Layout.Preset.Preparation}}), e puoi salvare i tuoi layout, passare da uno all’altro oppure rinominare ed eliminare i layout salvati da {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} e {{label:Board.Layout.Manage}}) o da {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} e {{label:Board.Layout.LayoutsMenu}}). Usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) per ripristinare i layout predefiniti per tutti e tre i tipi di scheda mantenendo i tuoi layout salvati.
 
-Per nascondere le schede, ad esempio quando ogni pannello che usi è mostrato come area propria, fai clic su {{label:Board.Area.HideTabs}} sotto la maniglia alla fine della barra delle schede; le aree vicine ne occupano lo spazio. Le schede mantengono posizione e dimensioni: mostrale di nuovo con il pulsante {{label:Board.Arrange.ShowTabs}} che compare nell’intestazione della notazione mentre sono nascoste, con una scorciatoia di scheda o generando il report. Un pannello che rimetti nelle schede mentre sono nascoste finisce nelle schede nascoste.
+Per nascondere le schede, ad esempio quando ogni pannello che usi è mostrato come area propria, fai clic su {{label:Board.Area.HideTabs}} sotto la maniglia alla fine della barra delle schede; le aree vicine ne occupano lo spazio. Le schede mantengono posizione e dimensioni: mostrale di nuovo con il pulsante {{label:Board.Arrange.ShowTabs}} che compare nell’intestazione della notazione mentre sono nascoste, con una scorciatoia di scheda o generando il report. Un pannello che rimetti nelle schede mentre sono nascoste finisce nelle schede nascoste. Mentre le schede sono nascoste, {{label:Board.Arrange.ShowTabs}} si trova anche in {{label:Board.Action.More}} e in {{label:Menu.View}}.

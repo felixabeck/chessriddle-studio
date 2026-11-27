@@ -64,23 +64,23 @@ function AnnotationPanel() {
             );
           })}
         </Group>
-        <Divider
-          label={
-            <IconAction
-              label={showMoreSymbols ? t("Annotate.ShowLess") : t("Annotate.ShowMore")}
-              pressed={showMoreSymbols}
-              mx="auto"
-              onClick={() => setShowMoreSymbols(!showMoreSymbols)}
-              color="dimmed"
-              style={{
-                transition: "transform 0.2s",
-                transform: showMoreSymbols ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            >
-              <ChevronDown size="1rem" />
-            </IconAction>
-          }
-        />
+        {/* The button sits between two rules, not inside a separator's label (nested-interactive). */}
+        <Group gap="xs" wrap="nowrap" align="center">
+          <Divider flex={1} />
+          <IconAction
+            label={showMoreSymbols ? t("Annotate.ShowLess") : t("Annotate.ShowMore")}
+            pressed={showMoreSymbols}
+            onClick={() => setShowMoreSymbols(!showMoreSymbols)}
+            color="dimmed"
+            style={{
+              transition: "transform 0.2s",
+              transform: showMoreSymbols ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          >
+            <ChevronDown size="1rem" />
+          </IconAction>
+          <Divider flex={1} />
+        </Group>
       </Stack>
 
       <Collapse in={showMoreSymbols} px="sm">

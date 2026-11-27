@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tablero de análisis, variantes, comentarios y flechas
 summary: Introduce jugadas, edita posiciones, gestiona variantes, escribe comentarios, añade anotaciones y dibuja flechas en el tablero.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Abre un tablero de análisis desde [[page:new-tab]] haciendo clic en {{label:Home.Card.AnalysisBoard.Title}} o abriendo una partida o repertorio guardado desde [[page:library]].
@@ -28,4 +28,4 @@ Para organizar el tablero de análisis, arrastra una pestaña de panel ({{label:
 
 Las pestañas de repertorio, partida y preparación contra rivales mantienen cada una su propio diseño activo. Se incluyen tres diseños predefinidos ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} y {{label:Board.Layout.Preset.Preparation}}), y puedes guardar tus propios diseños, cambiar entre ellos o renombrar y eliminar diseños guardados desde {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} y {{label:Board.Layout.Manage}}) o desde {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} y {{label:Board.Layout.LayoutsMenu}}). Usa [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para restaurar los diseños predefinidos de los tres tipos de pestaña conservando tus diseños guardados.
 
-Para ocultar las pestañas, por ejemplo cuando cada panel que usas se muestra como su propia zona, haz clic en {{label:Board.Area.HideTabs}} debajo del asa al final de la barra de pestañas; las zonas vecinas ocupan su espacio. Las pestañas conservan su posición y tamaño: vuelve a mostrarlas con el botón {{label:Board.Arrange.ShowTabs}} que aparece en el encabezado de la notación mientras están ocultas, con un atajo de pestaña o al generar el informe. Un panel que devuelves mientras las pestañas están ocultas pasa a las pestañas ocultas.
+Para ocultar las pestañas, por ejemplo cuando cada panel que usas se muestra como su propia zona, haz clic en {{label:Board.Area.HideTabs}} debajo del asa al final de la barra de pestañas; las zonas vecinas ocupan su espacio. Las pestañas conservan su posición y tamaño: vuelve a mostrarlas con el botón {{label:Board.Arrange.ShowTabs}} que aparece en el encabezado de la notación mientras están ocultas, con un atajo de pestaña o al generar el informe. Un panel que devuelves mientras las pestañas están ocultas pasa a las pestañas ocultas. Mientras las pestañas están ocultas, {{label:Board.Arrange.ShowTabs}} también aparece en {{label:Board.Action.More}} y en {{label:Menu.View}}.

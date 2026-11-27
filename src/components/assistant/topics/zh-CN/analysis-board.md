@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盘、变例、评注与箭头
 summary: 输入着法、编辑局面、管理变例、撰写评注、添加注释符号以及在棋盘上绘制箭头。
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 在 [[page:new-tab]] 中点击 {{label:Home.Card.AnalysisBoard.Title}}，或在 [[page:library]] 中打开已保存的对局或开局库，即可打开分析棋盘。
@@ -28,4 +28,4 @@ source: 332d035e7fda54c8
 
 开局库、对局和对手准备标签页各自保留自己的实时布局。内置三个预设布局（{{label:Board.Layout.Preset.Repertoire}}、{{label:Board.Layout.Preset.GameReview}} 和 {{label:Board.Layout.Preset.Preparation}}），你可以在 {{label:Board.Action.More}}（{{label:Board.Layout.SaveAs}} 与 {{label:Board.Layout.Manage}}）或 {{label:Menu.View}}（{{label:Board.Layout.SaveAs}} 与 {{label:Board.Layout.LayoutsMenu}}）中保存自己的布局、切换布局，或重命名与删除已保存的布局。使用 [[setting:board-layout]]（{{label:Settings.BoardLayout.Reset}}）可将三种标签页恢复为预设布局，同时保留已保存的布局。
 
-要隐藏标签页（例如所用的每个面板都已显示为独立区域时），请点击标签栏末尾拖动手柄下方的{{label:Board.Area.HideTabs}}，相邻区域会占据其空间。标签页会保留位置和大小：标签页隐藏时，记谱标题栏中会出现{{label:Board.Arrange.ShowTabs}}按钮，点击它、使用标签页快捷键或生成报告即可重新显示。标签页隐藏时放回的面板会进入隐藏的标签页。
+要隐藏标签页（例如所用的每个面板都已显示为独立区域时），请点击标签栏末尾拖动手柄下方的{{label:Board.Area.HideTabs}}，相邻区域会占据其空间。标签页会保留位置和大小：标签页隐藏时，记谱标题栏中会出现{{label:Board.Arrange.ShowTabs}}按钮，点击它、使用标签页快捷键或生成报告即可重新显示。标签页隐藏时放回的面板会进入隐藏的标签页。标签页隐藏时，{{label:Board.Action.More}}和{{label:Menu.View}}菜单中也有{{label:Board.Arrange.ShowTabs}}。

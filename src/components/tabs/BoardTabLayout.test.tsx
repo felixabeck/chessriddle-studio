@@ -638,6 +638,7 @@ function makePointerEvent(
 }
 
 test("pointer drag previews each side and applies placement; return over tab list notifies listener", async () => {
+  setGameArrangement(defaultBoardArrangement());
   await renderAt(1400, true);
   const layoutEl = container.querySelector<HTMLElement>("[data-board-layout]")!;
   mockLayoutGeometry(layoutEl);
@@ -1759,6 +1760,7 @@ test("pointer-dragging an engine window over the tab list or the Analysis area h
   // (a) Analysis in the tab strip -> dropping over [data-board-tab-list="true"] returns the engine.
   const withEngine = placeArea(defaultBoardArrangement(), engArea, "left", "bottom");
   seedGameLayout(withEngine);
+  setGameArrangement(withEngine);
 
   let headerEl: HTMLDivElement | null = null;
   let tabListEl: HTMLDivElement | null = null;

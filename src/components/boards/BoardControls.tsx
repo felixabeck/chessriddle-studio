@@ -9,6 +9,7 @@ import {
   Database,
   Ellipsis,
   LayoutGrid,
+  PanelTop,
   Pencil,
   PencilOff,
   ArrowUpDown,
@@ -48,6 +49,8 @@ interface BoardControlsProps {
   onApplyLayout?: (layoutId: string) => void;
   onSaveLayoutAs?: () => void;
   onManageLayouts?: () => void;
+  /** Present only while the analysis board's tab strip is hidden. */
+  onShowTabs?: () => void;
 }
 
 function BoardControls({
@@ -67,6 +70,7 @@ function BoardControls({
   onApplyLayout,
   onSaveLayoutAs,
   onManageLayouts,
+  onShowTabs,
 }: BoardControlsProps) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
@@ -259,6 +263,11 @@ function BoardControls({
               <Menu.Item leftSection={<LayoutGrid size="0.875rem" />} onClick={onManageLayouts}>
                 {t("Board.Layout.Manage")}
               </Menu.Item>
+              {onShowTabs && (
+                <Menu.Item leftSection={<PanelTop size="0.875rem" />} onClick={onShowTabs}>
+                  {t("Board.Arrange.ShowTabs")}
+                </Menu.Item>
+              )}
             </>
           )}
         </Menu.Dropdown>

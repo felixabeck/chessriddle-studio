@@ -2,7 +2,7 @@
 id: analysis-board
 title: 분석 보드, 변형 수순, 코멘트 및 화살표
 summary: 수 입력, 포지션 편집, 변형 수순 관리, 코멘트 작성, 주석 추가 및 보드에 화살표 그리기.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 [[page:new-tab]]에서 {{label:Home.Card.AnalysisBoard.Title}}을(를) 클릭하거나 [[page:library]]에서 저장된 대국이나 레퍼토리를 열어 분석 보드를 시작하세요.
@@ -28,4 +28,4 @@ source: 332d035e7fda54c8
 
 레퍼토리, 게임, 상대 대비 탭은 각각 고유한 활성 레이아웃을 유지합니다. 세 가지 기본 프리셋({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}}, {{label:Board.Layout.Preset.Preparation}})이 포함되어 있으며, {{label:Board.Action.More}}({{label:Board.Layout.SaveAs}} 및 {{label:Board.Layout.Manage}}) 또는 {{label:Menu.View}}({{label:Board.Layout.SaveAs}} 및 {{label:Board.Layout.LayoutsMenu}})에서 직접 레이아웃을 저장하고 전환하거나 저장된 레이아웃의 이름을 바꾸고 삭제할 수 있습니다. [[setting:board-layout]]({{label:Settings.BoardLayout.Reset}})을 사용하면 저장된 레이아웃은 유지한 채 세 가지 탭 종류의 기본 레이아웃을 복원합니다.
 
-탭을 숨기려면(예: 사용하는 모든 패널을 별도 영역으로 표시할 때) 탭 표시줄 끝 핸들 아래의 {{label:Board.Area.HideTabs}}을(를) 클릭하세요. 이웃한 영역이 그 자리를 차지합니다. 탭은 위치와 크기를 유지하며, 탭이 숨겨진 동안 기보 머리글에 나타나는 {{label:Board.Arrange.ShowTabs}} 버튼, 탭 단축키 또는 보고서 생성으로 다시 표시할 수 있습니다. 탭이 숨겨진 동안 되돌린 패널은 숨겨진 탭으로 들어갑니다.
+탭을 숨기려면(예: 사용하는 모든 패널을 별도 영역으로 표시할 때) 탭 표시줄 끝 핸들 아래의 {{label:Board.Area.HideTabs}}을(를) 클릭하세요. 이웃한 영역이 그 자리를 차지합니다. 탭은 위치와 크기를 유지하며, 탭이 숨겨진 동안 기보 머리글에 나타나는 {{label:Board.Arrange.ShowTabs}} 버튼, 탭 단축키 또는 보고서 생성으로 다시 표시할 수 있습니다. 탭이 숨겨진 동안 되돌린 패널은 숨겨진 탭으로 들어갑니다. 탭이 숨겨진 동안에는 {{label:Board.Action.More}}와 {{label:Menu.View}}에서도 {{label:Board.Arrange.ShowTabs}}을(를) 찾을 수 있습니다.

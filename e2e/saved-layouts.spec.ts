@@ -2,7 +2,6 @@ import type { Page } from "@playwright/test";
 import {
     assertNothingClipped,
     chooseApplicationMenuItem,
-    DEFAULT_BOARD_ARRANGEMENT,
     expect,
     filesWorkspaceCommands,
     filesWorkspaceFixture,
@@ -21,6 +20,10 @@ import {
     waitForTransitionsSettled,
 } from "./fixtures";
 import { preparationCommands } from "./opponentPreparationFixtures";
+import { defaultLayoutForKind } from "../src/state/layoutPresets";
+
+// These specs test the shipped presets, so they start from them instead of the plain default.
+test.use({ shippedBoardLayouts: true });
 
 const repertoireFile = {
     ...filesWorkspaceFixture.pgnFile,
@@ -37,16 +40,12 @@ async function openFreshAnalysisBoard(page: Page, expectedMode: "mosaic" | "stac
     );
 }
 
-async function pullDatabaseBelowBoard(page: Page) {
-    await page.locator('[data-arrange-grip="topRight"]').click();
-    await page
-        .getByRole("menuitem", { name: "Show Database as its own area", exact: true })
-        .click();
-    const placing = page.getByTestId("board-arrange-placing");
-    await expect(placing).toBeVisible();
-    await placing.getByRole("button", { name: "Below the board", exact: true }).click();
-    await expect(placing).toHaveCount(0);
-    await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
+/** Game review preset signal: Report is its own area only there. */
+async function returnReportToTabs(page: Page) {
+    const reportArea = page.locator('[data-panel-area="report"]');
+    await reportArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
+    await expect(reportArea).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Report", exact: true })).toBeVisible();
 }
 
 test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shortcuts, rename, delete, and Reset", async ({
@@ -63,19 +62,24 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     await mockScenario({
         commands: filesWorkspaceCommands([[repertoireFile]], {
             ...pgnFileCommands,
+            // The Game review preset shows Report as its own area, which polls report progress.
+            get_progress: { result: null },
         }),
     });
 
-    // 1. Fresh game tab opens with the Game review preset (two-pane default).
+    // 1. Fresh game tab opens with the Game review preset: Database on top, Report beside the
+    // tabs (Coach stays a tab), Notation beside Annotate, the engine under the board.
     await openFreshAnalysisBoard(page);
-    await expect(page.locator('[data-panel-area="database"]')).toHaveCount(0);
-    await expect(page.locator('[data-panel-area="annotate"]')).toHaveCount(0);
-    await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Database", exact: true })).toBeVisible();
+    await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="report"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="annotate"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="coach"]')).toHaveCount(0);
+    await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toBeVisible();
+    await expect(page.locator("[data-board-tab-list]")).toBeVisible();
 
-    // Customize the game tab (pull Database below the board) and save it under "Study setup"
+    // Customize the game tab (return Report to the tabs) and save it under "Study setup"
     // via the board More (⋯) menu.
-    await pullDatabaseBelowBoard(page);
+    await returnReportToTabs(page);
 
     await page.getByRole("button", { name: "More actions", exact: true }).click();
     const moreMenu = page.getByRole("menu", { name: "More actions", exact: true });
@@ -114,6 +118,7 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     // Reload and verify the saved layout persists alongside the live game layout.
     await preserveStorageForReload(page);
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
     const storedAfterSave = await page.evaluate(() =>
         JSON.parse(localStorage.getItem("analysis-board-layouts")!),
     );
@@ -145,6 +150,7 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
 
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
     await expect(page.locator('[data-panel-area="annotate"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
     await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toBeVisible();
     await assertNoHorizontalOverflow();
     await waitForBoardSizeSettled(page);
@@ -160,8 +166,8 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     const workspaceTabs = page.locator("header [role='tablist'] [role='tab']");
     await workspaceTabs.first().click();
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
-    await expect(page.locator('[data-panel-area="annotate"]')).toHaveCount(0);
-    await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toHaveCount(0);
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Report", exact: true })).toBeVisible();
 
     // 4. Apply a preset through the ⋯ menu (Game review), then verify "Study setup" is
     // unchanged and apply it back through View → Layouts….
@@ -171,8 +177,8 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
         gameMenu.getByRole("menuitem", { name: "Study setup", exact: true }),
     ).toBeVisible();
     await gameMenu.getByRole("menuitem", { name: "Game review", exact: true }).click();
-    await expect(page.locator('[data-panel-area="database"]')).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Database", exact: true })).toBeVisible();
+    await expect(page.locator('[data-panel-area="report"]')).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Report", exact: true })).toHaveCount(0);
 
     await chooseApplicationMenuItem(page, "Layouts…");
     const manageDialog = page.getByRole("dialog", { name: "Board layouts", exact: true });
@@ -194,6 +200,7 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     await expect(savedRow).toContainText("Study setup");
     await savedRow.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(manageDialog).toHaveCount(0);
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
 
     // Editing the live layout after applying does not mutate the saved copy.
@@ -205,7 +212,7 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     const storedAfterLiveEdit = await page.evaluate(() =>
         JSON.parse(localStorage.getItem("analysis-board-layouts")!),
     );
-    expect(storedAfterLiveEdit.saved[0].arrangement.first.second).toBe("database");
+    expect(JSON.stringify(storedAfterLiveEdit.saved[0].arrangement)).toContain('"database"');
 
     // 5. Save with a case-insensitive duplicate name via View → Save layout as… prompts to replace.
     await page.getByRole("button", { name: "Hide the tabs" }).click();
@@ -227,19 +234,46 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     expect(storedAfterReplace.saved[0].id).toBe(savedId);
     expect(storedAfterReplace.saved[0].tabsHidden).toBe(true);
 
+    // While the tabs are hidden, both the ⋯ menu and View offer "Show the tabs".
+    await page.getByRole("button", { name: "More actions", exact: true }).click();
+    await expect(
+        gameMenu.getByRole("menuitem", { name: "Show the tabs", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(gameMenu).toHaveCount(0);
+    await chooseApplicationMenuItem(page, "Show the tabs");
+    await expect(page.locator("[data-board-tab-list]")).toBeVisible();
+    await page.getByRole("button", { name: "More actions", exact: true }).click();
+    await expect(
+        gameMenu.getByRole("menuitem", { name: "Show the tabs", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await openApplicationMenu(page);
+    await expect(appMenu.getByRole("menuitem", { name: "Show the tabs", exact: true })).toHaveCount(
+        0,
+    );
+    await page.keyboard.press("Escape");
+    await expect(appMenu).toHaveCount(0);
+    // Hide them again from the ⋯ menu path: the item's click shows the tabs too.
+    await page.getByRole("button", { name: "Hide the tabs" }).click();
+    await page.getByRole("button", { name: "More actions", exact: true }).click();
+    await gameMenu.getByRole("menuitem", { name: "Show the tabs", exact: true }).click();
+    await expect(page.locator("[data-board-tab-list]")).toBeVisible();
+
     // 6. Shortcut Control+Alt+1 applies list entry 1 (Repertoire preset) to the active game tab,
     // and Control+Alt+2 applies list entry 2 (Game review preset).
     await page.locator("#bottomRight").click();
     await page.keyboard.press("Control+Alt+1");
     await expect(page.locator('[data-panel-area="database"]')).toBeVisible();
     await expect(page.locator('[data-panel-area="annotate"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
     await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toBeVisible();
     await expect(page.locator("[data-board-tab-list]")).toBeVisible();
 
     await page.keyboard.press("Control+Alt+2");
-    await expect(page.locator('[data-panel-area="database"]')).toHaveCount(0);
-    await expect(page.locator('[data-panel-area="annotate"]')).toHaveCount(0);
-    await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toHaveCount(0);
+    await expect(page.locator('[data-panel-area="report"]')).toBeVisible();
+    await expect(page.locator('[data-panel-area="annotate"]')).toBeVisible();
+    await expect(page.locator('[data-engine-window="layout-e2e-engine"]')).toBeVisible();
 
     // 7. Rename and delete the saved layout in View → Layouts…, then test Reset keeps saved layouts.
     await chooseApplicationMenuItem(page, "Layouts…");
@@ -260,7 +294,7 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
 
     // Customize game layout again, then run Settings → Reset layout and verify presets are
     // restored for all three kinds while "Tournament prep" remains in saved layouts.
-    await pullDatabaseBelowBoard(page);
+    await returnReportToTabs(page);
     await goToSettings(page);
     await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
     await expect(
@@ -276,22 +310,14 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
     );
     expect(afterReset.saved).toHaveLength(1);
     expect(afterReset.saved[0].name).toBe("Tournament prep");
-    expect(afterReset.kinds.game).toEqual({
-        arrangement: DEFAULT_BOARD_ARRANGEMENT,
-        tabsHidden: false,
-    });
-    expect(afterReset.kinds.repertoire.arrangement.first.second).toEqual({
-        direction: "row",
-        first: "engine:@1",
-        second: "engine:@2",
-        splitPercentage: 50,
-    });
-    expect(afterReset.kinds.preparation.arrangement.second.first).toBe("database");
+    expect(afterReset.kinds.game).toEqual(defaultLayoutForKind("game"));
+    expect(afterReset.kinds.repertoire).toEqual(defaultLayoutForKind("repertoire"));
+    expect(afterReset.kinds.preparation).toEqual(defaultLayoutForKind("preparation"));
 
     // Return to the game tab (shows restored Game review preset) and delete the saved layout.
     await workspaceTabs.first().click();
     await expect(page).toHaveURL("/");
-    await expect(page.locator('[data-panel-area="database"]')).toHaveCount(0);
+    await expect(page.locator('[data-panel-area="report"]')).toBeVisible();
 
     await chooseApplicationMenuItem(page, "Layouts…");
     await expect(manageDialog).toBeVisible();
@@ -323,7 +349,7 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
 
     // Customize the game kind first so we can verify preparation leaves game and repertoire intact.
     await openFreshAnalysisBoard(page);
-    await pullDatabaseBelowBoard(page);
+    await returnReportToTabs(page);
     const beforeLayouts = await page.evaluate(() =>
         JSON.parse(localStorage.getItem("analysis-board-layouts")!),
     );
@@ -368,7 +394,7 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     expect(afterPrepLayouts.kinds.game).toEqual(beforeLayouts.kinds.game);
     expect(afterPrepLayouts.kinds.repertoire).toEqual(beforeLayouts.kinds.repertoire);
 
-    // Switching back to the game tab shows its customized below-board Database layout.
+    // Switching back to the game tab shows its customized layout (Report back in the tabs).
     await page.locator("header [role='tablist'] [role='tab']").first().click();
     await expect(page.locator("[data-board-layout]")).toHaveAttribute(
         "data-board-layout",
@@ -376,10 +402,8 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     );
     await expect(dbArea).toBeVisible();
     await expect(page.locator("#left cg-board")).toBeVisible();
-    await waitForBoardSizeSettled(page);
-    const gameBoardBox = (await page.locator("#left").boundingBox())!;
-    const gameDbBox = (await dbArea.boundingBox())!;
-    expect(gameDbBox.y).toBeGreaterThanOrEqual(gameBoardBox.y + gameBoardBox.height - 8);
+    await expect(page.locator('[data-panel-area="report"]')).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Report", exact: true })).toBeVisible();
 });
 
 test("saved-layouts: narrow save and manage layout dialogs fit without overflow", async ({

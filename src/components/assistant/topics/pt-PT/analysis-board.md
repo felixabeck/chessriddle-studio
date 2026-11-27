@@ -2,7 +2,7 @@
 id: analysis-board
 title: Tabuleiro de análise, variantes, comentários e setas
 summary: Introduza lances, edite posições, gira variantes, escreva comentários, adicione anotações e desenhe setas no tabuleiro.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Abra um tabuleiro de análise a partir de [[page:new-tab]] clicando em {{label:Home.Card.AnalysisBoard.Title}}, ou abrindo uma partida ou repertório guardado a partir de [[page:library]].
@@ -28,4 +28,4 @@ Para organizar o tabuleiro de análise, arraste um separador de painel ({{label:
 
 Os separadores de repertório, partida e preparação contra adversários mantêm cada um o seu próprio esquema ativo. Estão incluídos três esquemas predefinidos ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} e {{label:Board.Layout.Preset.Preparation}}), e pode guardar os seus próprios esquemas, alternar entre eles ou mudar o nome e eliminar esquemas guardados em {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} e {{label:Board.Layout.Manage}}) ou em {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} e {{label:Board.Layout.LayoutsMenu}}). Use [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) para repor os esquemas predefinidos dos três tipos de separador mantendo os seus esquemas guardados.
 
-Para ocultar os separadores, por exemplo quando cada painel que usa é mostrado como área própria, clique em {{label:Board.Area.HideTabs}} por baixo da pega no fim da barra de separadores; as áreas vizinhas ocupam o seu espaço. Os separadores mantêm a posição e o tamanho: volte a mostrá-los com o botão {{label:Board.Arrange.ShowTabs}} que aparece no cabeçalho da notação enquanto estão ocultos, com um atalho de separador ou ao gerar o relatório. Um painel que devolva enquanto os separadores estão ocultos vai para os separadores ocultos.
+Para ocultar os separadores, por exemplo quando cada painel que usa é mostrado como área própria, clique em {{label:Board.Area.HideTabs}} por baixo da pega no fim da barra de separadores; as áreas vizinhas ocupam o seu espaço. Os separadores mantêm a posição e o tamanho: volte a mostrá-los com o botão {{label:Board.Arrange.ShowTabs}} que aparece no cabeçalho da notação enquanto estão ocultos, com um atalho de separador ou ao gerar o relatório. Um painel que devolva enquanto os separadores estão ocultos vai para os separadores ocultos. Enquanto os separadores estão ocultos, {{label:Board.Arrange.ShowTabs}} também está em {{label:Board.Action.More}} e em {{label:Menu.View}}.

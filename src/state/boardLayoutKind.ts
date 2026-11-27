@@ -1,12 +1,13 @@
 import { type getDefaultStore, useAtomValue } from "jotai";
 import { isRepertoireTab } from "@/utils/tabs";
-import { tabsAtom } from "./atoms";
+import { currentTabAtom, tabsAtom } from "./atoms";
 import {
     opponentPreparationAtom,
     type TabPreparationView,
     tabPreparationViewFamily,
 } from "./atoms/preparation";
 import type { BoardLayoutKind } from "./layoutPresets";
+import { boardLayoutFamily } from "./layoutStorage";
 import { useTabAtom } from "./tabScope";
 import type { Tab } from "./workspaceTypes";
 
@@ -41,6 +42,15 @@ export function resolveBoardLayoutKind(
     const preparation = store.get(opponentPreparationAtom);
     const view = preparation !== null ? store.get(tabPreparationViewFamily(tabId)) : null;
     return classifyBoardLayoutKind(tab, preparation?.id ?? null, view);
+}
+
+/** Shows the tab strip again for the active analysis tab's layout kind. */
+export function showCurrentBoardTabs(store: ReturnType<typeof getDefaultStore>): void {
+    const tab = store.get(currentTabAtom);
+    if (tab?.type !== "analysis") return;
+    const layoutAtom = boardLayoutFamily(resolveBoardLayoutKind(store, tab.value));
+    const layout = store.get(layoutAtom);
+    if (layout.tabsHidden) store.set(layoutAtom, { ...layout, tabsHidden: false });
 }
 
 /**

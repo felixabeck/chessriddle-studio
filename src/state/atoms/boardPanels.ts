@@ -2,6 +2,7 @@
 import { atom, getDefaultStore } from "jotai";
 import { defaultPanelTabAtom, hidePreviewMovesAtom } from "./preferences";
 import { tabAtomFamily } from "./tabFamilies";
+import { currentTabAtom } from "./tabs";
 
 export const evalOpenFamily = tabAtomFamily((_tab: string) => atom(true));
 
@@ -45,3 +46,15 @@ export const pgnOptionsFamily = tabAtomFamily((_tab: string) =>
         extraMarkups: true,
     }),
 );
+
+/**
+ * Whether the analysis board of this tab shows its tab strip hidden right now. Written by the
+ * mounted `BoardAnalysis`: a stored hidden strip still shows in the stacked and too-narrow layouts.
+ */
+export const boardTabsHiddenFamily = tabAtomFamily((_tab: string) => atom(false));
+
+/** The View menu offers "Show the tabs" only while the active analysis tab's strip is hidden. */
+export const currentBoardTabsHiddenAtom = atom((get) => {
+    const tab = get(currentTabAtom);
+    return tab?.type === "analysis" && get(boardTabsHiddenFamily(tab.value));
+});

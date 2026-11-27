@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analiz tahtası, varyasyonlar, yorumlar ve oklar
 summary: Hamle girme, konum düzenleme, varyasyonları yönetme, yorum yazma, açıklama ekleme ve tahta üzerinde oklar çizme.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 [[page:new-tab]] üzerinden {{label:Home.Card.AnalysisBoard.Title}} öğesine tıklayarak veya [[page:library]] sayfasından kayıtlı bir oyun ya da repertuvar açarak bir analiz tahtası açın.
@@ -28,4 +28,4 @@ Analiz tahtasını düzenlemek için bir panel sekmesini ({{label:Board.Tabs.Ana
 
 Repertuvar, oyun ve rakip hazırlığı sekmelerinin her biri kendi etkin düzenini korur. Üç hazır düzen dahildir ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} ve {{label:Board.Layout.Preset.Preparation}}); ayrıca {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} ve {{label:Board.Layout.Manage}}) veya {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} ve {{label:Board.Layout.LayoutsMenu}}) menüsünden kendi düzenlerinizi kaydedebilir, aralarında geçiş yapabilir ya da kayıtlı düzenleri yeniden adlandırıp silebilirsiniz. Kayıtlı düzenlerinizi koruyarak üç sekme türü için hazır düzenleri geri yüklemek üzere [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) ayarını kullanın.
 
-Sekmeleri gizlemek için, örneğin kullandığınız her panel kendi alanı olarak gösterildiğinde, sekme şeridinin sonundaki tutamacın altındaki {{label:Board.Area.HideTabs}} düğmesine tıklayın; komşu alanlar onların yerini alır. Sekmeler konumlarını ve boyutlarını korur: onları, sekmeler gizliyken notasyon başlığında görünen {{label:Board.Arrange.ShowTabs}} düğmesiyle, bir sekme kısayoluyla veya rapor oluşturarak yeniden gösterin. Sekmeler gizliyken geri döndürdüğünüz bir panel gizli sekmelere gider.
+Sekmeleri gizlemek için, örneğin kullandığınız her panel kendi alanı olarak gösterildiğinde, sekme şeridinin sonundaki tutamacın altındaki {{label:Board.Area.HideTabs}} düğmesine tıklayın; komşu alanlar onların yerini alır. Sekmeler konumlarını ve boyutlarını korur: onları, sekmeler gizliyken notasyon başlığında görünen {{label:Board.Arrange.ShowTabs}} düğmesiyle, bir sekme kısayoluyla veya rapor oluşturarak yeniden gösterin. Sekmeler gizliyken geri döndürdüğünüz bir panel gizli sekmelere gider. Sekmeler gizliyken {{label:Board.Arrange.ShowTabs}} komutu {{label:Board.Action.More}} içinde ve {{label:Menu.View}} menüsünde de bulunur.

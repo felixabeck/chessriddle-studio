@@ -106,7 +106,9 @@ export async function seedBoardLayouts(
     arrangement: BoardArrangement = DEFAULT_BOARD_ARRANGEMENT,
 ) {
     await page.addInitScript((layoutArrangement) => {
-        if (localStorage.getItem("analysis-board-layouts") === null) {
+        // The page fixture seeds the default arrangement on every fresh load; replace it then too.
+        const freshLoad = (window as { __e2eFreshStorage?: boolean }).__e2eFreshStorage === true;
+        if (freshLoad || localStorage.getItem("analysis-board-layouts") === null) {
             const layout = { arrangement: layoutArrangement, tabsHidden: false };
             localStorage.setItem(
                 "analysis-board-layouts",
@@ -2002,6 +2004,13 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
 
 export const test = base.extend<{
     appLocale: string | undefined;
+    /**
+     * `false` (default): every fresh load starts all analysis tab kinds on the plain default
+     * arrangement, so the shipped presets (data Felix tunes) never move unrelated specs.
+     * `true`: seed no layout, so the app starts as on a real install (shipped presets, or the
+     * carry-over from legacy keys a spec seeds), for specs that test exactly that.
+     */
+    shippedBoardLayouts: boolean;
     assertNoHorizontalOverflow: () => Promise<void>;
     /** Axe over the page; `exclude` names selectors a filed finding owns, never a blanket skip. */
     assertAccessible: (options?: { exclude?: string[] }) => Promise<void>;
@@ -2010,7 +2019,8 @@ export const test = base.extend<{
     mockScenario: (scenario: MockScenario) => Promise<void>;
 }>({
     appLocale: [undefined, { option: true }],
-    page: async ({ page, appLocale }, use, testInfo) => {
+    shippedBoardLayouts: [false, { option: true }],
+    page: async ({ page, appLocale, shippedBoardLayouts }, use, testInfo) => {
         const failures: string[] = [];
         const allowedOrigin = new URL(
             (testInfo.project.use.baseURL as string | undefined) ?? "http://127.0.0.1:4173",
@@ -2021,7 +2031,7 @@ export const test = base.extend<{
 
         await page.addInitScript(tauriBootstrap, filesWorkspaceFixture.defaultWorkspace);
         await page.addInitScript(
-            ({ scale, scheme, locale, preserveKey }) => {
+            ({ scale, scheme, locale, preserveKey, defaultLayout }) => {
                 const preserveStorageOnce = sessionStorage.getItem(preserveKey) === "1";
                 sessionStorage.removeItem(preserveKey);
                 if (!preserveStorageOnce) {
@@ -2030,6 +2040,18 @@ export const test = base.extend<{
                     localStorage.setItem("i18nextLng", locale);
                     localStorage.setItem("font-size", JSON.stringify(scale));
                     localStorage.setItem("mantine-color-scheme", scheme);
+                    (window as { __e2eFreshStorage?: boolean }).__e2eFreshStorage = true;
+                    if (defaultLayout !== null) {
+                        const layout = { arrangement: defaultLayout, tabsHidden: false };
+                        localStorage.setItem(
+                            "analysis-board-layouts",
+                            JSON.stringify({
+                                version: 1,
+                                kinds: { repertoire: layout, game: layout, preparation: layout },
+                                saved: [],
+                            }),
+                        );
+                    }
                 }
                 // Mantine slides a modal 30px into place. On a starved runner Playwright can
                 // judge the sliding button stable, then press and release on different targets,
@@ -2048,6 +2070,7 @@ export const test = base.extend<{
                 scheme: colorScheme,
                 locale,
                 preserveKey: PRESERVE_STORAGE_ONCE_KEY,
+                defaultLayout: shippedBoardLayouts ? null : DEFAULT_BOARD_ARRANGEMENT,
             },
         );
         await page.context().route("**/*", async (route) => {

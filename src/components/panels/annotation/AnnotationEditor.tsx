@@ -166,6 +166,8 @@ function AnnotationEditor() {
       },
       editorProps: {
         attributes: {
+          // A contenteditable div needs role="textbox" for its label and aria-multiline.
+          role: "textbox",
           "aria-label": t("Board.Annotate.Comment"),
           "aria-multiline": "true",
           "aria-describedby": hintId,

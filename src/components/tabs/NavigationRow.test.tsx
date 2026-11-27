@@ -951,6 +951,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     isMacOS: false,
     showAssistant: true,
     showBoardLayouts: true,
+    showBoardTabsItem: true,
     newTabShortcut: "Ctrl+T",
     openFileShortcut: "Ctrl+O",
     saveShortcut: "Ctrl+S",
@@ -972,6 +973,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
       toggleFocusMode: () => undefined,
       saveLayoutAs: () => undefined,
       manageLayouts: () => undefined,
+      showTabs: () => undefined,
     },
   });
 
@@ -1006,6 +1008,7 @@ test("every in-app menu item has a muted 14px aria-hidden icon and keeps its acc
     toggle_focus_mode: "lucide-panel-top-close",
     save_layout_as: "lucide-bookmark-plus",
     manage_layouts: "lucide-layout-grid",
+    show_tabs: "lucide-panel-top",
     guide: "lucide-info",
     assistant: "lucide-messages-square",
     send_feedback: "lucide-message-square-plus",

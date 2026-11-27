@@ -1,9 +1,5 @@
 import { i18nKey } from "@/utils/i18nKey";
-import {
-    type BoardArrangement,
-    defaultBoardArrangement,
-    enginePlaceholderAreaId,
-} from "./boardArrangement";
+import { type BoardArrangement, enginePlaceholderAreaId } from "./boardArrangement";
 
 /** Analysis tab kinds that each keep their own live board layout. */
 export const BOARD_LAYOUT_KINDS = ["repertoire", "game", "preparation"] as const;
@@ -95,7 +91,40 @@ export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
         id: "preset:game",
         nameKey: i18nKey("Board.Layout.Preset.GameReview"),
         layout: {
-            arrangement: defaultBoardArrangement(),
+            // Felix's own Game review layout (2026-11-27): one engine under the board, Database on
+            // top, Report beside the tab strip, Notation beside Annotate. The Coach stays a tab so
+            // users without an AI connection never get an empty Coach area, and the tabs stay shown.
+            arrangement: {
+                direction: "row",
+                first: {
+                    direction: "column",
+                    first: "left",
+                    second: enginePlaceholderAreaId(1),
+                    splitPercentage: 79,
+                },
+                second: {
+                    direction: "column",
+                    first: {
+                        direction: "column",
+                        first: "database",
+                        second: {
+                            direction: "row",
+                            first: "report",
+                            second: "topRight",
+                            splitPercentage: 56,
+                        },
+                        splitPercentage: 53,
+                    },
+                    second: {
+                        direction: "row",
+                        first: "bottomRight",
+                        second: "annotate",
+                        splitPercentage: 61,
+                    },
+                    splitPercentage: 70,
+                },
+                splitPercentage: 40,
+            },
             tabsHidden: false,
         },
     },

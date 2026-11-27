@@ -61,3 +61,12 @@ test("the good-move symbol is disabled at the root and enabled after a move", as
   expect(tree.getState().position).toEqual([0]);
   expect(goodButton().disabled).toBe(false);
 });
+
+test("the show-more button sits outside every separator (no nested interactive control)", async () => {
+  tree = createTreeStore();
+  await renderPanel();
+  const showMore = host.querySelector<HTMLButtonElement>('button[aria-label="Annotate.ShowMore"]')!;
+  expect(showMore).not.toBeNull();
+  expect(showMore.closest('[role="separator"]')).toBeNull();
+  expect(host.querySelectorAll('[role="separator"] button')).toHaveLength(0);
+});

@@ -1,6 +1,5 @@
 import type { Page } from "@playwright/test";
 import {
-    DEFAULT_BOARD_ARRANGEMENT,
     dragMosaicDivider,
     expect,
     goToSettings,
@@ -10,6 +9,7 @@ import {
     test,
 } from "./fixtures";
 import { importFromPhoto, scoresheetPhotoCommands } from "./scoresheetPhotoImport";
+import { defaultLayoutForKind } from "../src/state/layoutPresets";
 
 async function openAnalysisBoard(page: Page) {
     await page.goto("/");
@@ -24,156 +24,142 @@ const LEGACY_KEYS = [
     "detached-explorer-heights",
 ] as const;
 
-test("board-arrange: carries over legacy beside + pinned database, handles width fallback, divider persistence, Return and Reset", async ({
-    page,
-    mockScenario,
-    assertNoHorizontalOverflow,
-}) => {
-    await mockScenario({});
-    await page.addInitScript(() => {
-        localStorage.setItem("panels-beside-notation", "true");
-        localStorage.setItem("board-beside-splits", JSON.stringify({ board: 42, notation: 52 }));
-        localStorage.setItem("detached-explorer", "true");
-        localStorage.setItem("detached-explorer-placement", JSON.stringify("tabs"));
-        localStorage.setItem("detached-explorer-heights", JSON.stringify({ tabs: 220 }));
-    });
-    await openAnalysisBoard(page);
+test.describe("legacy layout carry-over", () => {
+    // Carry-over runs only when no layout is stored yet, so no default layout seed here.
+    test.use({ shippedBoardLayouts: true });
 
-    const layout = page.locator("[data-board-layout]");
-    const dbArea = page.locator('[data-panel-area="database"]');
-    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
-    await expect(dbArea).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);
+    test("board-arrange: carries over legacy beside + pinned database, handles width fallback, divider persistence, Return and Reset", async ({
+        page,
+        mockScenario,
+        assertNoHorizontalOverflow,
+    }) => {
+        await mockScenario({});
+        await page.addInitScript(() => {
+            localStorage.setItem("panels-beside-notation", "true");
+            localStorage.setItem(
+                "board-beside-splits",
+                JSON.stringify({ board: 42, notation: 52 }),
+            );
+            localStorage.setItem("detached-explorer", "true");
+            localStorage.setItem("detached-explorer-placement", JSON.stringify("tabs"));
+            localStorage.setItem("detached-explorer-heights", JSON.stringify({ tabs: 220 }));
+        });
+        await openAnalysisBoard(page);
 
-    // Carry-over wrote `analysis-board-layouts` (seeding all three kinds) and removed all five legacy keys.
-    const expectedCarried = {
-        direction: "row",
-        first: "left",
-        splitPercentage: 42,
-        second: {
-            direction: "column",
-            first: "database",
-            splitPercentage: 30,
+        const layout = page.locator("[data-board-layout]");
+        const dbArea = page.locator('[data-panel-area="database"]');
+        await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+        await expect(dbArea).toBeVisible();
+        await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveCount(0);
+
+        // Carry-over wrote `analysis-board-layouts` (seeding all three kinds) and removed all five legacy keys.
+        const expectedCarried = {
+            direction: "row",
+            first: "left",
+            splitPercentage: 42,
             second: {
-                direction: "row",
-                first: "bottomRight",
-                second: "topRight",
-                splitPercentage: 52,
+                direction: "column",
+                first: "database",
+                splitPercentage: 30,
+                second: {
+                    direction: "row",
+                    first: "bottomRight",
+                    second: "topRight",
+                    splitPercentage: 52,
+                },
             },
-        },
-    };
-    const afterCarryOver = await page.evaluate((keys) => {
-        const stored = JSON.parse(localStorage.getItem("analysis-board-layouts")!);
-        const remaining = keys.filter((key) => localStorage.getItem(key) !== null);
-        return { stored, remaining };
-    }, LEGACY_KEYS);
-    expect(afterCarryOver.remaining).toEqual([]);
-    expect(afterCarryOver.stored).toEqual({
-        version: 1,
-        kinds: {
-            repertoire: { arrangement: expectedCarried, tabsHidden: false },
-            game: { arrangement: expectedCarried, tabsHidden: false },
-            preparation: { arrangement: expectedCarried, tabsHidden: false },
-        },
-        saved: [],
-    });
-    await assertNoHorizontalOverflow("wide-carried-over");
-    await expect(layout).toHaveScreenshot("board-arrange-beside-database.png");
+        };
+        const afterCarryOver = await page.evaluate((keys) => {
+            const stored = JSON.parse(localStorage.getItem("analysis-board-layouts")!);
+            const remaining = keys.filter((key) => localStorage.getItem(key) !== null);
+            return { stored, remaining };
+        }, LEGACY_KEYS);
+        expect(afterCarryOver.remaining).toEqual([]);
+        expect(afterCarryOver.stored).toEqual({
+            version: 1,
+            kinds: {
+                repertoire: { arrangement: expectedCarried, tabsHidden: false },
+                game: { arrangement: expectedCarried, tabsHidden: false },
+                preparation: { arrangement: expectedCarried, tabsHidden: false },
+            },
+            saved: [],
+        });
+        await assertNoHorizontalOverflow("wide-carried-over");
+        await expect(layout).toHaveScreenshot("board-arrange-beside-database.png");
 
-    // Dragging the outer row divider persists in `analysis-board-layouts` (game kind) across reload.
-    const mosaic = layout.locator(".mosaic-root");
-    await dragMosaicDivider(page, {
-        root: mosaic,
-        split: mosaic.locator("> .mosaic-split.-row").first(),
-        percentage: 48,
-        direction: "row",
-        crossAxisRatio: 0.25,
-    });
-    await page.mouse.move(0, 0);
-    await expect
-        .poll(() =>
-            page.evaluate(() =>
-                Math.abs(
-                    JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game
-                        .arrangement.splitPercentage - 48,
+        // Dragging the outer row divider persists in `analysis-board-layouts` (game kind) across reload.
+        const mosaic = layout.locator(".mosaic-root");
+        await dragMosaicDivider(page, {
+            root: mosaic,
+            split: mosaic.locator("> .mosaic-split.-row").first(),
+            percentage: 48,
+            direction: "row",
+            crossAxisRatio: 0.25,
+        });
+        await page.mouse.move(0, 0);
+        await expect
+            .poll(() =>
+                page.evaluate(() =>
+                    Math.abs(
+                        JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game
+                            .arrangement.splitPercentage - 48,
+                    ),
                 ),
-            ),
-        )
-        .toBeLessThan(1);
-    const draggedSplit = await page.evaluate(
-        () =>
-            JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement
-                .splitPercentage,
-    );
-    await preserveStorageForReload(page);
-    await expect(dbArea).toBeVisible();
-    expect(
-        await page.evaluate(
+            )
+            .toBeLessThan(1);
+        const draggedSplit = await page.evaluate(
             () =>
                 JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement
                     .splitPercentage,
-        ),
-    ).toBeCloseTo(draggedSplit, 1);
+        );
+        await preserveStorageForReload(page);
+        await expect(dbArea).toBeVisible();
+        expect(
+            await page.evaluate(
+                () =>
+                    JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game
+                        .arrangement.splitPercentage,
+            ),
+        ).toBeCloseTo(draggedSplit, 1);
 
-    // Case 3: too narrow for 3 panes (800 x 720) falls back to shared layout with all panels in tabs.
-    await page.setViewportSize({ width: 800, height: 720 });
-    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
-    await expect(dbArea).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Database", exact: true })).toBeVisible();
-    await assertNoHorizontalOverflow("fallback-800x720");
+        // Case 3: too narrow for 3 panes (800 x 720) falls back to shared layout with all panels in tabs.
+        await page.setViewportSize({ width: 800, height: 720 });
+        await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+        await expect(dbArea).toHaveCount(0);
+        await expect(page.getByRole("tab", { name: "Database", exact: true })).toBeVisible();
+        await assertNoHorizontalOverflow("fallback-800x720");
 
-    // Case 1: narrower than two pane floors switches to stacked.
-    await page.setViewportSize({ width: 600, height: 720 });
-    await expect(layout).toHaveAttribute("data-board-layout", "stacked");
-    await expect(dbArea).toHaveCount(0);
+        // Case 1: narrower than two pane floors switches to stacked.
+        await page.setViewportSize({ width: 600, height: 720 });
+        await expect(layout).toHaveAttribute("data-board-layout", "stacked");
+        await expect(dbArea).toHaveCount(0);
 
-    // Widening back restores the stored arrangement with Database as its own area.
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
-    await expect(dbArea).toBeVisible();
-    await assertNoHorizontalOverflow("wide-1440x1000");
+        // Widening back restores the stored arrangement with Database as its own area.
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await expect(layout).toHaveAttribute("data-board-layout", "mosaic");
+        await expect(dbArea).toBeVisible();
+        await assertNoHorizontalOverflow("wide-1440x1000");
 
-    // Return button moves Database back to the tabs and selects it.
-    await dbArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
-    await expect(dbArea).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveAttribute(
-        "aria-selected",
-        "true",
-    );
+        // Return button moves Database back to the tabs and selects it.
+        await dbArea.getByRole("button", { name: "Return to the tabs", exact: true }).click();
+        await expect(dbArea).toHaveCount(0);
+        await expect(page.getByRole("tab", { name: "Database", exact: true })).toHaveAttribute(
+            "aria-selected",
+            "true",
+        );
 
-    // Reset layout in Settings restores all three kinds to their presets.
-    await goToSettings(page);
-    await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
-    await page.getByRole("button", { name: "Reset layout", exact: true }).click();
-    const afterReset = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem("analysis-board-layouts")!),
-    );
-    expect(afterReset.version).toBe(1);
-    expect(afterReset.saved).toEqual([]);
-    expect(afterReset.kinds.game).toEqual({
-        arrangement: DEFAULT_BOARD_ARRANGEMENT,
-        tabsHidden: false,
-    });
-    expect(afterReset.kinds.repertoire.tabsHidden).toBe(false);
-    expect(afterReset.kinds.repertoire.arrangement).toMatchObject({
-        direction: "row",
-        first: {
-            direction: "column",
-            first: "left",
-            second: {
-                direction: "row",
-                first: "engine:@1",
-                second: "engine:@2",
-                splitPercentage: 50,
-            },
-            splitPercentage: 84,
-        },
-    });
-    expect(afterReset.kinds.preparation.tabsHidden).toBe(false);
-    expect(afterReset.kinds.preparation.arrangement).toMatchObject({
-        direction: "row",
-        first: "left",
-        second: { direction: "column", first: "database", splitPercentage: 40 },
+        // Reset layout in Settings restores all three kinds to their presets.
+        await goToSettings(page);
+        await page.getByRole("tab", { name: "Analysis & notation", exact: true }).click();
+        await page.getByRole("button", { name: "Reset layout", exact: true }).click();
+        const afterReset = await page.evaluate(() =>
+            JSON.parse(localStorage.getItem("analysis-board-layouts")!),
+        );
+        expect(afterReset.version).toBe(1);
+        expect(afterReset.saved).toEqual([]);
+        expect(afterReset.kinds.game).toEqual(defaultLayoutForKind("game"));
+        expect(afterReset.kinds.repertoire).toEqual(defaultLayoutForKind("repertoire"));
+        expect(afterReset.kinds.preparation).toEqual(defaultLayoutForKind("preparation"));
     });
 });
 

@@ -2,7 +2,7 @@
 id: analysis-board
 title: Analysebrett, Varianten, Kommentare und Pfeile
 summary: Züge eingeben, Stellungen bearbeiten, Varianten verwalten, Kommentare schreiben, Annotationen setzen und Pfeile auf dem Brett zeichnen.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Öffne ein Analysebrett über [[page:new-tab]] mit einem Klick auf {{label:Home.Card.AnalysisBoard.Title}} oder indem du eine gespeicherte Partie oder ein Repertoire aus [[page:library]] öffnest.
@@ -28,4 +28,4 @@ Um das Analysebrett anzuordnen, ziehe einen Panel-Tab ({{label:Board.Tabs.Analys
 
 Repertoire-, Partie- und Gegnervorbereitungs-Tabs behalten jeweils ihr eigenes aktives Layout. Drei fertige Vorlagen sind enthalten ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} und {{label:Board.Layout.Preset.Preparation}}), und du kannst eigene Layouts speichern, zwischen ihnen wechseln sowie gespeicherte Layouts über {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} und {{label:Board.Layout.Manage}}) oder über {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} und {{label:Board.Layout.LayoutsMenu}}) umbenennen und löschen. Mit [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) stellst du die voreingestellten Layouts für alle drei Tab-Arten wieder her; deine gespeicherten Layouts bleiben dabei erhalten.
 
-Um die Tabs auszublenden, etwa wenn jedes genutzte Panel als eigener Bereich angezeigt wird, klicke auf {{label:Board.Area.HideTabs}} unter dem Griff am Ende der Tab-Leiste; die benachbarten Bereiche übernehmen ihren Platz. Die Tabs behalten Position und Größe: Du blendest sie mit der Schaltfläche {{label:Board.Arrange.ShowTabs}}, die bei ausgeblendeten Tabs in der Notationskopfzeile erscheint, mit einem Tab-Tastenkürzel oder mit „Bericht erstellen“ wieder ein. Ein Panel, das du bei ausgeblendeten Tabs zurückgibst, landet in den ausgeblendeten Tabs.
+Um die Tabs auszublenden, etwa wenn jedes genutzte Panel als eigener Bereich angezeigt wird, klicke auf {{label:Board.Area.HideTabs}} unter dem Griff am Ende der Tab-Leiste; die benachbarten Bereiche übernehmen ihren Platz. Die Tabs behalten Position und Größe: Du blendest sie mit der Schaltfläche {{label:Board.Arrange.ShowTabs}}, die bei ausgeblendeten Tabs in der Notationskopfzeile erscheint, mit einem Tab-Tastenkürzel oder mit „Bericht erstellen“ wieder ein. Ein Panel, das du bei ausgeblendeten Tabs zurückgibst, landet in den ausgeblendeten Tabs. Solange die Tabs ausgeblendet sind, findest du {{label:Board.Arrange.ShowTabs}} auch unter {{label:Board.Action.More}} und im Menü {{label:Menu.View}}.

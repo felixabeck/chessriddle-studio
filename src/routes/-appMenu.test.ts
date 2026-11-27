@@ -955,3 +955,57 @@ test("assembleNativeMenuResources does not start the next group until the curren
     await pending;
     expect(order).toEqual(["item:a", "sub:File", "item:b", "sub:Help", "menu"]);
 });
+
+test("View menu and in-app menu offer Show the tabs only on the board with its tab strip hidden", () => {
+    let shown = 0;
+    const actions = callbacks({
+        showTabs: () => {
+            shown += 1;
+        },
+    });
+    const base = {
+        t,
+        newTabShortcut: "Cmd+T",
+        openFileShortcut: "Cmd+O",
+        saveShortcut: "meta+s",
+        focusMode: { on: false, shortcut: "meta+shift+f" },
+        callbacks: actions,
+    };
+
+    const visibleTabs = buildAppMenuTree({ ...base, isMacOS: true, showBoardLayouts: true });
+    expect(idsOf(visibleTabs, "Menu.View")).not.toContain("show_tabs");
+
+    const offBoard = buildAppMenuTree({
+        ...base,
+        isMacOS: true,
+        showBoardLayouts: false,
+        showBoardTabsItem: true,
+    });
+    expect(idsOf(offBoard, "Menu.View")).not.toContain("show_tabs");
+
+    const hiddenTabs = buildAppMenuTree({
+        ...base,
+        isMacOS: true,
+        showBoardLayouts: true,
+        showBoardTabsItem: true,
+    });
+    expect(idsOf(hiddenTabs, "Menu.View")).toEqual([
+        "toggle_fullscreen",
+        "toggle_focus_mode",
+        "save_layout_as",
+        "manage_layouts",
+        "show_tabs",
+    ]);
+    expect(option(hiddenTabs, "Menu.View", "show_tabs").label).toBe("Board.Arrange.ShowTabs");
+    option(hiddenTabs, "Menu.View", "show_tabs").action?.();
+    expect(shown).toBe(1);
+
+    const inApp = buildInAppMenuItems({
+        ...base,
+        isMacOS: false,
+        showBoardLayouts: true,
+        showBoardTabsItem: true,
+    });
+    item(inApp, "show_tabs").action?.();
+    expect(shown).toBe(2);
+});

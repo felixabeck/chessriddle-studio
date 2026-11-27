@@ -37,6 +37,7 @@ import type { TreeStoreState } from "@/state/store/tree";
 import {
   allEnabledFamily,
   autoSaveAtom,
+  boardTabsHiddenFamily,
   practiceTabFamily,
   reportModalOpenFamily,
   tabFamily,
@@ -269,6 +270,13 @@ function BoardAnalysis() {
     tabsHidden,
     setTabsHidden,
   } = useContext(BoardArrangementContext);
+  // Publishes whether this board's tab strip is hidden right now (the View menu's "Show the tabs").
+  const [, setBoardTabsHidden] = useAtom(useTabAtom(boardTabsHiddenFamily));
+  const tabsHiddenNow = arrangingAvailable && tabsHidden;
+  useEffect(() => {
+    setBoardTabsHidden(tabsHiddenNow);
+    return () => setBoardTabsHidden(false);
+  }, [tabsHiddenNow, setBoardTabsHidden]);
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
@@ -753,6 +761,7 @@ function BoardAnalysis() {
                 onApplyLayout={applyLayout}
                 onSaveLayoutAs={openSaveLayoutAs}
                 onManageLayouts={openManageLayouts}
+                onShowTabs={tabsHiddenNow ? () => setTabsHidden(false) : undefined}
               />
             }
           />

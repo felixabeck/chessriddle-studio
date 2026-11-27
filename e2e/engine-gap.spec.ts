@@ -867,75 +867,80 @@ test("engine-gap: engine cards pull out by drag and grip menu, support two windo
     await expect(page.locator("[data-engine-card-id]")).toHaveCount(2);
 });
 
-test("engine-gap: carries over a seeded pinned engine below the board and removes retired keys", async ({
-    page,
-    mockScenario,
-}) => {
-    await mockScenario({});
-    await seedAnalysisEngines(page, [
-        { id: "e2e-engine", name: "E2E Stockfish", handleId: "e2e-engine-handle" },
-        { id: "e2e-engine-2", name: "E2E ChessDB", handleId: "e2e-engine-handle" },
-    ]);
-    await page.addInitScript(() => {
-        if (localStorage.getItem("analysis-board-layouts") === null) {
-            localStorage.setItem("detached-engine", JSON.stringify("e2e-engine"));
-            localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
-            localStorage.setItem("detached-engine-lines", JSON.stringify(2));
-        }
-    });
-    await page.goto("/");
-    await page.getByRole("button", { name: /^Analysis Board$/ }).click();
+test.describe("legacy layout carry-over", () => {
+    // Carry-over runs only when no layout is stored yet, so no default layout seed here.
+    test.use({ shippedBoardLayouts: true });
 
-    const win = page.locator('[data-engine-window="e2e-engine"]');
-    await expect(win).toBeVisible();
+    test("engine-gap: carries over a seeded pinned engine below the board and removes retired keys", async ({
+        page,
+        mockScenario,
+    }) => {
+        await mockScenario({});
+        await seedAnalysisEngines(page, [
+            { id: "e2e-engine", name: "E2E Stockfish", handleId: "e2e-engine-handle" },
+            { id: "e2e-engine-2", name: "E2E ChessDB", handleId: "e2e-engine-handle" },
+        ]);
+        await page.addInitScript(() => {
+            if (localStorage.getItem("analysis-board-layouts") === null) {
+                localStorage.setItem("detached-engine", JSON.stringify("e2e-engine"));
+                localStorage.setItem("detached-engine-placement", JSON.stringify("board"));
+                localStorage.setItem("detached-engine-lines", JSON.stringify(2));
+            }
+        });
+        await page.goto("/");
+        await page.getByRole("button", { name: /^Analysis Board$/ }).click();
 
-    const boardBox = (await page.locator("#left").boundingBox())!;
-    const winBox = (await win.boundingBox())!;
-    expect(winBox.y).toBeGreaterThanOrEqual(boardBox.y + boardBox.height - 2);
-    expect(Math.abs(winBox.x - boardBox.x)).toBeLessThanOrEqual(4);
+        const win = page.locator('[data-engine-window="e2e-engine"]');
+        await expect(win).toBeVisible();
 
-    await page.getByRole("tab", { name: "Analysis", exact: true }).click();
-    await expect(page.locator('[data-engine-card-id="e2e-engine"]')).toHaveCount(0);
-    await expect(page.locator('[data-engine-card-id="e2e-engine-2"]')).toBeVisible();
+        const boardBox = (await page.locator("#left").boundingBox())!;
+        const winBox = (await win.boundingBox())!;
+        expect(winBox.y).toBeGreaterThanOrEqual(boardBox.y + boardBox.height - 2);
+        expect(Math.abs(winBox.x - boardBox.x)).toBeLessThanOrEqual(4);
 
-    const storageState = await page.evaluate(() => ({
-        layouts: JSON.parse(localStorage.getItem("analysis-board-layouts")!),
-        retired: [
-            localStorage.getItem("detached-engine"),
-            localStorage.getItem("detached-engine-placement"),
-            localStorage.getItem("detached-engine-lines"),
-        ],
-    }));
-    const expectedLayout = {
-        arrangement: {
-            direction: "row",
-            first: {
-                direction: "column",
-                first: "left",
-                second: "engine:e2e-engine",
-                splitPercentage: 70,
+        await page.getByRole("tab", { name: "Analysis", exact: true }).click();
+        await expect(page.locator('[data-engine-card-id="e2e-engine"]')).toHaveCount(0);
+        await expect(page.locator('[data-engine-card-id="e2e-engine-2"]')).toBeVisible();
+
+        const storageState = await page.evaluate(() => ({
+            layouts: JSON.parse(localStorage.getItem("analysis-board-layouts")!),
+            retired: [
+                localStorage.getItem("detached-engine"),
+                localStorage.getItem("detached-engine-placement"),
+                localStorage.getItem("detached-engine-lines"),
+            ],
+        }));
+        const expectedLayout = {
+            arrangement: {
+                direction: "row",
+                first: {
+                    direction: "column",
+                    first: "left",
+                    second: "engine:e2e-engine",
+                    splitPercentage: 70,
+                },
+                second: {
+                    direction: "column",
+                    first: "topRight",
+                    second: "bottomRight",
+                },
             },
-            second: {
-                direction: "column",
-                first: "topRight",
-                second: "bottomRight",
+            tabsHidden: false,
+        };
+        expect(storageState.retired).toEqual([null, null, null]);
+        expect(storageState.layouts).toEqual({
+            version: 1,
+            kinds: {
+                repertoire: expectedLayout,
+                game: expectedLayout,
+                preparation: expectedLayout,
             },
-        },
-        tabsHidden: false,
-    };
-    expect(storageState.retired).toEqual([null, null, null]);
-    expect(storageState.layouts).toEqual({
-        version: 1,
-        kinds: {
-            repertoire: expectedLayout,
-            game: expectedLayout,
-            preparation: expectedLayout,
-        },
-        saved: [],
-    });
+            saved: [],
+        });
 
-    await preserveStorageForReload(page);
-    await expect(win).toBeVisible();
+        await preserveStorageForReload(page);
+        await expect(win).toBeVisible();
+    });
 });
 
 test("engine-gap: pulled-out engine window below the board renders cleanly in light", async ({

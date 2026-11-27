@@ -2,7 +2,7 @@
 id: analysis-board
 title: Échiquier d’analyse, variantes, commentaires et flèches
 summary: Saisissez des coups, éditez des positions, gérez des variantes, rédigez des commentaires, ajoutez des annotations et tracez des flèches sur l’échiquier.
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 Ouvrez un échiquier d’analyse depuis [[page:new-tab]] en cliquant sur {{label:Home.Card.AnalysisBoard.Title}}, ou en ouvrant une partie ou un répertoire enregistré depuis [[page:library]].
@@ -28,4 +28,4 @@ Pour organiser l’échiquier d’analyse, faites glisser un onglet de panneau (
 
 Les onglets de répertoire, de partie et de préparation contre un adversaire conservent chacun leur propre disposition active. Trois préréglages sont inclus ({{label:Board.Layout.Preset.Repertoire}}, {{label:Board.Layout.Preset.GameReview}} et {{label:Board.Layout.Preset.Preparation}}), et vous pouvez enregistrer vos propres dispositions, passer de l’une à l’autre ou renommer et supprimer des dispositions enregistrées depuis {{label:Board.Action.More}} ({{label:Board.Layout.SaveAs}} et {{label:Board.Layout.Manage}}) ou depuis {{label:Menu.View}} ({{label:Board.Layout.SaveAs}} et {{label:Board.Layout.LayoutsMenu}}). Utilisez [[setting:board-layout]] ({{label:Settings.BoardLayout.Reset}}) pour restaurer les dispositions prédéfinies des trois types d’onglets tout en conservant vos dispositions enregistrées.
 
-Pour masquer les onglets, par exemple lorsque chaque panneau utilisé est affiché comme une zone à part, cliquez sur {{label:Board.Area.HideTabs}} sous la poignée au bout de la barre d’onglets ; les zones voisines prennent leur place. Les onglets gardent leur position et leur taille : réaffichez-les avec le bouton {{label:Board.Arrange.ShowTabs}} qui apparaît dans l’en-tête de la notation tant qu’ils sont masqués, avec un raccourci d’onglet ou avec la génération du rapport. Un panneau remis dans les onglets pendant qu’ils sont masqués rejoint les onglets masqués.
+Pour masquer les onglets, par exemple lorsque chaque panneau utilisé est affiché comme une zone à part, cliquez sur {{label:Board.Area.HideTabs}} sous la poignée au bout de la barre d’onglets ; les zones voisines prennent leur place. Les onglets gardent leur position et leur taille : réaffichez-les avec le bouton {{label:Board.Arrange.ShowTabs}} qui apparaît dans l’en-tête de la notation tant qu’ils sont masqués, avec un raccourci d’onglet ou avec la génération du rapport. Un panneau remis dans les onglets pendant qu’ils sont masqués rejoint les onglets masqués. Tant que les onglets sont masqués, {{label:Board.Arrange.ShowTabs}} figure aussi dans {{label:Board.Action.More}} et dans {{label:Menu.View}}.

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   createTab: vi.fn(),
   pickPgnFile: vi.fn(),
   requestBoardCommand: vi.fn(),
+  showCurrentBoardTabs: vi.fn(),
   ask: vi.fn(),
   useIncomingGameLinks: vi.fn(),
   navigate: vi.fn(),
@@ -27,6 +28,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
   requestBoardCommand: mocks.requestBoardCommand,
+}));
+vi.mock("@/state/boardLayoutKind", () => ({
+  showCurrentBoardTabs: mocks.showCurrentBoardTabs,
 }));
 
 vi.mock("@/state/atoms", async () => {
@@ -41,6 +45,7 @@ vi.mock("@/state/atoms", async () => {
     nativeBarAtom: atom(false),
     tabsAtom: atom([analysis]),
     currentTabAtom: atom(analysis),
+    currentBoardTabsHiddenAtom: atom(false),
     workspaceStartedFresh: () => false,
   };
 });
@@ -215,7 +220,7 @@ import { RootLayout, startRootFileFreshnessPoll, useOpenFeedback } from "./__roo
 import { installAppMenuSurface, menuWindowPlatform, wantRealMenu } from "./-appMenu";
 import { getDefaultStore } from "jotai";
 import { getCurrentWindow } from "@/platform/native";
-import { currentTabAtom, nativeBarAtom } from "@/state/atoms";
+import { currentBoardTabsHiddenAtom, currentTabAtom, nativeBarAtom } from "@/state/atoms";
 import type { Tab } from "@/utils/tabs";
 
 beforeEach(() => {
@@ -902,5 +907,25 @@ test("View layout entries appear only on the boards route with an analysis tab, 
   } finally {
     store.set(currentTabAtom, analysisTab as never);
     await nonAnalysis.unmount();
+  }
+
+  // "Show the tabs" appears only while the active board's strip is hidden and shows them again.
+  mocks.pathname = "/";
+  const tabsShown = await renderWithWindow(false);
+  try {
+    expect(menuIds()).not.toContain("show_tabs");
+  } finally {
+    await tabsShown.unmount();
+  }
+  store.set(currentBoardTabsHiddenAtom as never, true as never);
+  const tabsHidden = await renderWithWindow(false);
+  try {
+    expect(menuIds()).toContain("show_tabs");
+    mocks.showCurrentBoardTabs.mockClear();
+    mocks.lastCallbacks?.showTabs?.();
+    expect(mocks.showCurrentBoardTabs).toHaveBeenCalledOnce();
+  } finally {
+    store.set(currentBoardTabsHiddenAtom as never, false as never);
+    await tabsHidden.unmount();
   }
 });

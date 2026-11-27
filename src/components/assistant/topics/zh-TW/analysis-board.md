@@ -2,7 +2,7 @@
 id: analysis-board
 title: 分析棋盤、變例、註解與箭頭
 summary: 輸入著法、編輯局面、管理變例、撰寫註解、新增評註符號，以及在棋盤上繪製箭頭。
-source: 332d035e7fda54c8
+source: 5901c9f30c3c3295
 ---
 
 從 [[page:new-tab]] 點擊 {{label:Home.Card.AnalysisBoard.Title}}，或從 [[page:library]] 開啟已儲存的對局或開局庫，即可開啟分析棋盤。
@@ -28,4 +28,4 @@ source: 332d035e7fda54c8
 
 開局庫、對局與對手準備分頁各自保留自己的即時版面配置。內建三個預設版面配置（{{label:Board.Layout.Preset.Repertoire}}、{{label:Board.Layout.Preset.GameReview}} 與 {{label:Board.Layout.Preset.Preparation}}），你可以在 {{label:Board.Action.More}}（{{label:Board.Layout.SaveAs}} 與 {{label:Board.Layout.Manage}}）或 {{label:Menu.View}}（{{label:Board.Layout.SaveAs}} 與 {{label:Board.Layout.LayoutsMenu}}）中儲存自己的版面配置、切換版面配置，或重新命名與刪除已儲存的版面配置。使用 [[setting:board-layout]]（{{label:Settings.BoardLayout.Reset}}）可將三種分頁恢復為預設版面配置，同時保留已儲存的版面配置。
 
-若要隱藏分頁（例如所用的每個面板都已顯示為獨立區域時），請點擊分頁列末端拖曳把手下方的{{label:Board.Area.HideTabs}}，相鄰區域會佔用其空間。分頁會保留位置與大小：分頁隱藏時，棋譜標題列會出現{{label:Board.Arrange.ShowTabs}}按鈕，點擊它、使用分頁快捷鍵或產生報告即可重新顯示。分頁隱藏時放回的面板會進入隱藏的分頁。
+若要隱藏分頁（例如所用的每個面板都已顯示為獨立區域時），請點擊分頁列末端拖曳把手下方的{{label:Board.Area.HideTabs}}，相鄰區域會佔用其空間。分頁會保留位置與大小：分頁隱藏時，棋譜標題列會出現{{label:Board.Arrange.ShowTabs}}按鈕，點擊它、使用分頁快捷鍵或產生報告即可重新顯示。分頁隱藏時放回的面板會進入隱藏的分頁。分頁隱藏時，{{label:Board.Action.More}}和{{label:Menu.View}}選單中也有{{label:Board.Arrange.ShowTabs}}。

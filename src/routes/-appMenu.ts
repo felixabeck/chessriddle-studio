@@ -38,6 +38,7 @@ export type AppMenuCallbacks = {
     toggleFocusMode: () => void;
     saveLayoutAs?: () => void;
     manageLayouts?: () => void;
+    showTabs?: () => void;
 };
 
 /** Focus mode hides the navigation row; the View entry's label says what choosing it does. */
@@ -64,6 +65,7 @@ function viewMenuOptions(
     focusMode: FocusModeMenuState,
     callbacks: AppMenuCallbacks,
     showBoardLayouts: boolean,
+    showBoardTabsItem: boolean,
 ): MenuItemAction[] {
     return [
         {
@@ -92,6 +94,15 @@ function viewMenuOptions(
                   },
               ]
             : []),
+        ...(showBoardLayouts && showBoardTabsItem
+            ? [
+                  {
+                      label: t("Board.Arrange.ShowTabs"),
+                      id: "show_tabs",
+                      action: callbacks.showTabs,
+                  },
+              ]
+            : []),
     ];
 }
 
@@ -117,6 +128,8 @@ export function buildAppMenuTree(args: {
     isMacOS: boolean;
     showAssistant?: boolean;
     showBoardLayouts?: boolean;
+    /** Offer "Show the tabs" in View: the active analysis tab's tab strip is hidden. */
+    showBoardTabsItem?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
@@ -128,6 +141,7 @@ export function buildAppMenuTree(args: {
         isMacOS,
         showAssistant = false,
         showBoardLayouts = false,
+        showBoardTabsItem = false,
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
@@ -232,7 +246,14 @@ export function buildAppMenuTree(args: {
         ...(!isMacOS ? [] : [macOSEditMenu]),
         {
             label: t("Menu.View"),
-            options: viewMenuOptions(t, isMacOS, focusMode, callbacks, showBoardLayouts),
+            options: viewMenuOptions(
+                t,
+                isMacOS,
+                focusMode,
+                callbacks,
+                showBoardLayouts,
+                showBoardTabsItem,
+            ),
         },
         {
             label: t("Menu.Help"),
@@ -267,6 +288,8 @@ export function buildInAppMenuItems(args: {
     isMacOS: boolean;
     showAssistant?: boolean;
     showBoardLayouts?: boolean;
+    /** Offer "Show the tabs" in View: the active analysis tab's tab strip is hidden. */
+    showBoardTabsItem?: boolean;
     newTabShortcut: string;
     openFileShortcut: string;
     saveShortcut: string;
@@ -278,6 +301,7 @@ export function buildInAppMenuItems(args: {
         isMacOS,
         showAssistant = false,
         showBoardLayouts = false,
+        showBoardTabsItem = false,
         newTabShortcut,
         openFileShortcut,
         saveShortcut,
@@ -326,7 +350,7 @@ export function buildInAppMenuItems(args: {
             action: callbacks.openSettings,
         },
         { kind: "separator" },
-        ...viewMenuOptions(t, isMacOS, focusMode, callbacks, showBoardLayouts),
+        ...viewMenuOptions(t, isMacOS, focusMode, callbacks, showBoardLayouts, showBoardTabsItem),
         { kind: "separator" },
         {
             label: t("Menu.Help.Guide"),
@@ -425,6 +449,7 @@ export type AppMenuCommandBindings = {
     toggleFocusMode: () => void;
     saveLayoutAs?: () => void;
     manageLayouts?: () => void;
+    showTabs?: () => void;
 };
 
 export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuCallbacks {
@@ -445,6 +470,7 @@ export function bindAppMenuCallbacks(bindings: AppMenuCommandBindings): AppMenuC
         toggleFocusMode: bindings.toggleFocusMode,
         ...(bindings.saveLayoutAs ? { saveLayoutAs: bindings.saveLayoutAs } : {}),
         ...(bindings.manageLayouts ? { manageLayouts: bindings.manageLayouts } : {}),
+        ...(bindings.showTabs ? { showTabs: bindings.showTabs } : {}),
     };
 }
 

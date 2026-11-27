@@ -9,6 +9,7 @@ import {
 } from "@/components/tabs/BoardTabLayout";
 import {
   ALWAYS_PRESENT_PANEL_IDS,
+  defaultBoardArrangement,
   engineAreaId,
   type EngineAreaId,
   type PanelAreaId,
@@ -20,6 +21,7 @@ import {
   autoSaveAtom,
   closeWorkspaceTabAtom,
   currentTabAtom,
+  boardTabsHiddenFamily,
   tabFamily,
   practiceMoveControllerFamily,
   practiceTabFamily,
@@ -98,6 +100,7 @@ const mocks = vi.hoisted(() => ({
         onApplyLayout?: (layoutId: string) => void;
         onSaveLayoutAs?: () => void;
         onManageLayouts?: () => void;
+        onShowTabs?: () => void;
       }
     | undefined,
   addGameActivation: undefined as (() => void) | undefined,
@@ -1095,8 +1098,21 @@ describe("BoardAnalysis", () => {
     await act(async () => {
       treeStore.setState({ root: defaultTree().root, position: [], dirty: false });
       treeStore.getState().makeMove({ payload: "e4" });
+      // Report stays in the strip, as on the default arrangement; the shipped Game review preset detaches it.
+      jotaiStore.set(boardLayoutFamily("game"), (prev) => ({
+        ...prev,
+        arrangement: defaultBoardArrangement(),
+      }));
     });
-    await renderWithArrangement(["annotate"], vi.fn(), { tabsHidden: true });
+    const showTabsSpy = vi.fn();
+    await renderWithArrangement(["annotate"], vi.fn(), {
+      tabsHidden: true,
+      setTabsHidden: showTabsSpy,
+    });
+    // A hidden strip is published for the View menu and offered in the More menu.
+    expect(jotaiStore.get(boardTabsHiddenFamily(tabId))).toBe(true);
+    await act(async () => mocks.boardControls!.onShowTabs!());
+    expect(showTabsSpy).toHaveBeenCalledExactlyOnceWith(false);
     const fire = async (keys: string) => {
       const binding = hotkeys.mock.calls
         .flatMap(([bindings]) => bindings)
@@ -4601,6 +4617,8 @@ describe("BoardAnalysis preparation landing", () => {
     expect(mocks.boardControls?.onApplyLayout).toBeTypeOf("function");
     expect(mocks.boardControls?.onSaveLayoutAs).toBeTypeOf("function");
     expect(mocks.boardControls?.onManageLayouts).toBeTypeOf("function");
+    expect(mocks.boardControls?.onShowTabs).toBeUndefined();
+    expect(jotaiStore.get(boardTabsHiddenFamily(tabId))).toBe(false);
 
     await act(async () => {
       mocks.boardControls!.onApplyLayout!(LAYOUT_PRESETS[2].id);

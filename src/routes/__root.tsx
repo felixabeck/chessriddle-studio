@@ -31,7 +31,8 @@ import { useIncomingGameLinks } from "@/components/tabs/useIncomingGameLinks";
 import QuitConfirmModal from "@/components/tabs/QuitConfirmModal";
 import { FolderSwitchDialogHost } from "@/components/settings/FolderSwitchModal";
 import { requestBoardCommand } from "@/components/boards/boardCommands";
-import { currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { showCurrentBoardTabs } from "@/state/boardLayoutKind";
+import { currentBoardTabsHiddenAtom, currentTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
 import { focusModeAtom } from "@/state/focusMode";
 import { useHeaderReveal } from "@/hooks/useHeaderReveal";
 import {
@@ -142,6 +143,7 @@ function RootShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const currentTab = useAtomValue(currentTabAtom);
   const showBoardLayouts = isBoardsPath(pathname) && currentTab?.type === "analysis";
+  const showBoardTabsItem = useAtomValue(currentBoardTabsHiddenAtom);
 
   useEffect(() => {
     if (coachEnabled) void refreshAssistantAvailability();
@@ -359,6 +361,7 @@ function RootShell() {
         manageLayouts: () => {
           requestBoardCommand(jotaiStore, "manageLayouts");
         },
+        showTabs: () => showCurrentBoardTabs(jotaiStore),
       }),
     [
       jotaiStore,
@@ -415,6 +418,7 @@ function RootShell() {
             isMacOS,
             showAssistant: assistantAvailable,
             showBoardLayouts,
+            showBoardTabsItem,
             newTabShortcut: keyMap.NEW_TAB.keys,
             openFileShortcut: keyMap.OPEN_FILE.keys,
             saveShortcut: keyMap.SAVE_FILE.keys,
@@ -431,6 +435,7 @@ function RootShell() {
       keyMap.SAVE_FILE.keys,
       menuCallbacks,
       showBoardLayouts,
+      showBoardTabsItem,
       t,
     ],
   );
@@ -441,6 +446,7 @@ function RootShell() {
         isMacOS,
         showAssistant: assistantAvailable,
         showBoardLayouts,
+        showBoardTabsItem,
         newTabShortcut: keyMap.NEW_TAB.keys,
         openFileShortcut: keyMap.OPEN_FILE.keys,
         saveShortcut: keyMap.SAVE_FILE.keys,
@@ -456,6 +462,7 @@ function RootShell() {
       keyMap.SAVE_FILE.keys,
       menuCallbacks,
       showBoardLayouts,
+      showBoardTabsItem,
       t,
     ],
   );

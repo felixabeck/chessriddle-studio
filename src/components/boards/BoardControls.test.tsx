@@ -749,6 +749,21 @@ describe("BoardControls", () => {
     await openMoreMenu();
     await act(async () => menuItem("Board.Layout.Manage")!.click());
     expect(onManageLayouts).toHaveBeenCalledOnce();
+    // "Show the tabs" appears only while the board passes onShowTabs (its tab strip is hidden).
+    await openMoreMenu();
+    expect(menuItem("Board.Arrange.ShowTabs")).toBeNull();
+
+    const onShowTabs = vi.fn();
+    await renderControls({
+      saveTo: vi.fn(),
+      onApplyLayout,
+      onSaveLayoutAs,
+      onManageLayouts,
+      onShowTabs,
+    });
+    await openMoreMenu();
+    await act(async () => menuItem("Board.Arrange.ShowTabs")!.click());
+    expect(onShowTabs).toHaveBeenCalledOnce();
 
     // Play board never shows the Layout section.
     await act(async () => {

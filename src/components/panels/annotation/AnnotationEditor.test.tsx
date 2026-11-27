@@ -390,6 +390,8 @@ test("live bindings and hint are scoped to the focused editor and Escape leaves 
 test("the comment editor has an accessible name and a described navigation hint", async () => {
   await mount("");
   expect(editorElement().getAttribute("aria-label")).toBe("Board.Annotate.Comment");
+  // aria-label and aria-multiline are allowed on the contenteditable only with role="textbox".
+  expect(editorElement().getAttribute("role")).toBe("textbox");
   expect(editorElement().getAttribute("aria-multiline")).toBe("true");
   const hint = document.getElementById(editorElement().getAttribute("aria-describedby")!);
   expect(hint).not.toBeNull();
