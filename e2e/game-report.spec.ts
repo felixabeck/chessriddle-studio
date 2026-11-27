@@ -137,13 +137,27 @@ async function openReportTab(
     return panel;
 }
 
-function axeExcludeFor(projectName: string): string[] {
-    return [
-        // Visible Clock Progress has no aria-label and inactive clock uses opacity 0.5.
-        '[class*="blackClock"], [class*="whiteClock"]',
-        // Active Tabs.Tab contrast in Dim theme is 3.71:1 on surface-inset.
-        ...(projectName === "game-report-dim" ? ['[role="tab"][aria-selected="true"]'] : []),
-    ];
+async function assertClockAndTabContrast(page: Page) {
+    const clocks = page.locator('[class*="whiteClock"], [class*="blackClock"]');
+    await expect(clocks).toHaveCount(2);
+    await expect(clocks.getByRole("progressbar")).toHaveCount(0);
+    for (const clock of await clocks.all()) {
+        const digits = clock.locator(".mantine-Text-root").first();
+        const style = await clock.evaluate((element) => {
+            const opacities: string[] = [];
+            for (let node: Element | null = element; node; node = node.parentElement) {
+                opacities.push(getComputedStyle(node).opacity);
+            }
+            return { opacities };
+        });
+        expect(style.opacities, "clock opacity chain").toEqual(style.opacities.map(() => "1"));
+        const { color, layers } = await paintedText(digits);
+        expect(contrastRatio(color, layers)).toBeGreaterThanOrEqual(4.5);
+    }
+    const reportTab = page.getByRole("tab", { name: "Report", exact: true });
+    await expect(reportTab).toHaveAttribute("aria-selected", "true");
+    const { color, layers } = await paintedText(reportTab);
+    expect(contrastRatio(color, layers)).toBeGreaterThanOrEqual(4.5);
 }
 
 test("game report: an empty Report tab offers the report and the dialog says what it will do", async ({
@@ -152,7 +166,6 @@ test("game report: an empty Report tab offers the report and the dialog says wha
     assertAccessible,
 }) => {
     const projectName = test.info().project.name;
-    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: true });
     await assertReportHasNoHorizontalOverflow(panel);
     if (BASE_SNAPSHOT_PROJECTS.has(projectName)) {
@@ -160,7 +173,8 @@ test("game report: an empty Report tab offers the report and the dialog says wha
             stylePath: scrollbarFreeScreenshot,
         });
     }
-    await assertAccessible({ exclude });
+    await assertAccessible();
+    await assertClockAndTabContrast(page);
 
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
@@ -174,7 +188,7 @@ test("game report: an empty Report tab offers the report and the dialog says wha
             stylePath: scrollbarFreeScreenshot,
         });
     }
-    await assertAccessible({ exclude });
+    await assertAccessible();
 });
 
 test("game report: the dialog without an engine points to the engines page", async ({
@@ -187,7 +201,6 @@ test("game report: the dialog without an engine points to the engines page", asy
         !BASE_SNAPSHOT_PROJECTS.has(projectName),
         "Dialog snapshot is pinned on base projects",
     );
-    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: false });
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
@@ -196,7 +209,7 @@ test("game report: the dialog without an engine points to the engines page", asy
     await expect(dialog).toHaveScreenshot("report-dialog-no-engine.png", {
         stylePath: scrollbarFreeScreenshot,
     });
-    await assertAccessible({ exclude });
+    await assertAccessible();
 });
 
 test("game report: a run fills the Report tab from the native result", async ({
@@ -205,7 +218,6 @@ test("game report: a run fills the Report tab from the native result", async ({
     assertAccessible,
 }) => {
     const projectName = test.info().project.name;
-    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: true });
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
@@ -278,7 +290,8 @@ test("game report: a run fills the Report tab from the native result", async ({
             stylePath: scrollbarFreeScreenshot,
         });
     }
-    await assertAccessible({ exclude });
+    await assertAccessible();
+    await assertClockAndTabContrast(page);
     // The move-quality table writes marks in their hue; verify >= 4.5:1 contrast.
     const table = panel.getByRole("table");
     for (const cell of [

@@ -13,6 +13,12 @@
   padding: 0.3rem var(--mantine-spacing-xs);
 }
 
+/* Whose turn: the same gold ring TimeStrip uses on the current bar. Inset so it stays inside
+   the 1.9rem bar. The papers stay fully opaque; dimming the whole pill drops digits below 4.5:1. */
+.clock[data-active] {
+  box-shadow: inset 0 0 0 1.5px var(--cf-primary);
+}
+
 .digits {
   font-variant-numeric: tabular-nums;
 }

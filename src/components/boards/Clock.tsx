@@ -65,11 +65,10 @@ function Clock({
       <Paper
         className={`${classes.clock} ${color === "black" ? classes.blackClock : classes.whiteClock}`}
         title={clockTitle}
+        data-active={turn === color || undefined}
         styles={{
           root: {
-            opacity: turn !== color ? 0.5 : 1,
             visibility: clock === undefined ? "hidden" : "visible",
-            transition: "opacity 0.15s",
           },
         }}
       >

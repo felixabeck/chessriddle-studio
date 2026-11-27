@@ -17,7 +17,9 @@
 }
 
 .tab[data-active] {
-  color: color-mix(in srgb, var(--cf-primary) 80%, var(--cf-foreground));
+  /* Gold text on the 10% gold pill over Dim inset is 3.71:1. The tinted pill and border keep the
+     active cue; the label uses foreground so it stays at 4.5:1 in light, dark and Dim. */
+  color: var(--cf-foreground);
   background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
   border-color: color-mix(in srgb, var(--cf-primary) 20%, transparent);
 }

@@ -300,6 +300,28 @@ describe("notation mark colours", () => {
         },
     );
 
+    test.each(["light", "dark", "dim"] as const)(
+        "the active tab label reaches 4.5:1 on the tinted inset pill in %s",
+        (scheme) => {
+            const tokens = chessRiddleTokens[scheme];
+            // Tabs.module.css: foreground on --cf-primary at 10% over --cf-surface-inset.
+            const text = hsl(tokens.foreground);
+            const background = mix(hsl(tokens.primary), hsl(tokens["surface-inset"]), 0.1);
+            expect(contrast(text, background)).toBeGreaterThanOrEqual(4.5);
+        },
+    );
+
+    test.each(["light", "dark", "dim"] as const)(
+        "board clock digits reach 4.5:1 on their papers in %s",
+        (scheme) => {
+            const tokens = chessRiddleTokens[scheme];
+            const light = hsl(tokens["eval-bar-light"]);
+            const darkPaper = hsl(tokens["eval-bar-dark"]);
+            expect(contrast(darkPaper, light)).toBeGreaterThanOrEqual(4.5);
+            expect(contrast(light, darkPaper)).toBeGreaterThanOrEqual(4.5);
+        },
+    );
+
     test("dimmed secondary text reaches 4.5:1 on the dim card, page, inset and current-move fill", () => {
         const tokens = chessRiddleTokens.dim;
         const value = resolvedScheme(theme, "dim")["--mantine-color-dimmed"];

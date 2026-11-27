@@ -98,7 +98,7 @@ and cards lg, and switches, segments and badges use full.
 | Button `default`, `light` | Secondary interactive fill and quiet primary border |
 | Button `subtle`, `transparent` | Ghost text and a visible hover surface |
 | Button `danger` colour | Destructive feedback or action |
-| Tabs | Tinted active pill in default, outline and pills variants |
+| Tabs | Tinted active pill in default, outline and pills variants; the active label is `--cf-foreground` so it reads at 4.5:1 on the inset list in Dim |
 | Window tabs (navigation row only) | Browser tabs on a `--cf-surface-inset` bar; the current item takes `--cf-background` and merges into the page through a gap in the bar's bottom border; other items are flat and take `--cf-bar-hover` (warm beige) on hover, as do the other controls on the bar |
 | SegmentedControl | Inset pill shell, card indicator and gold ring |
 | Inputs and select triggers | Inset or interactive fill, primary focus border and ring |
@@ -108,6 +108,7 @@ and cards lg, and switches, segments and badges use full.
 | Checkbox, Switch | Gold checked state, square checkbox and card switch thumb |
 | Badge | Primary, muted or semantic tinted pill with inset ring |
 | Slider, RangeSlider, Progress | Primary or explicit semantic fill |
+| Board clocks | White and black papers from the eval-bar pair at full opacity; whose turn is a gold inset ring. Never reduced opacity, which would pull the digits below 4.5:1 |
 | Accordion | Gold-tinted open header with a quiet ring |
 | Tooltip, AppModal, Notification | Bordered card surface and appropriate elevation |
 

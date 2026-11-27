@@ -31,14 +31,18 @@ afterEach(async () => {
   host.remove();
 });
 
-async function renderClock(store: TreeStore, color: "white" | "black" = "white") {
+async function renderClock(
+  store: TreeStore,
+  color: "white" | "black" = "white",
+  turn: "white" | "black" = color,
+) {
   const i18n = await catalogueI18n("en-US");
   await act(async () => {
     root.render(
       <I18nextProvider i18n={i18n}>
         <MantineProvider env="test">
           <TreeStateContext.Provider value={store}>
-            <Clock color={color} turn={color} />
+            <Clock color={color} turn={turn} />
           </TreeStateContext.Provider>
         </MantineProvider>
       </I18nextProvider>,
@@ -83,4 +87,22 @@ test("omits title when no time control resolves (node clocks only or unparseable
   });
 
   expect(nodeOnlyPaper.hasAttribute("title")).toBe(false);
+});
+
+test("inactive clock stays fully opaque, marks whose turn, and has no progressbar", async () => {
+  const store = createTreeStore();
+  await act(async () => {
+    store.getState().makeMove({ payload: parseUci("e2e4")! });
+    store.getState().setClock(5160);
+  });
+
+  const inactive = await renderClock(store, "white", "black");
+  expect(inactive.style.opacity).toBe("");
+  expect(inactive.hasAttribute("data-active")).toBe(false);
+  expect(inactive.querySelector("[role='progressbar']")).toBeNull();
+
+  const active = await renderClock(store, "white", "white");
+  expect(active.style.opacity).toBe("");
+  expect(active.hasAttribute("data-active")).toBe(true);
+  expect(active.querySelector("[role='progressbar']")).toBeNull();
 });
