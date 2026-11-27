@@ -738,6 +738,7 @@
     "Databases.Game.EditData": "編輯對局資訊",
     "Databases.Game.EditLinkedDisabled": "編輯對局資訊（關聯集合為唯讀）",
     "Databases.Game.EditStaleReloaded": "此對局已在別處被修改。您的輸入已保留，目前已重新載入最新資料。",
+    "Databases.Game.EloRangeError": "Elo 必須介於 {{min}} 到 {{max}} 之間。",
     "Databases.Game.Event": "賽事",
     "Databases.Game.NoGamesFound": "找不到對局",
     "Databases.Game.NoLongerExists": "此對局已不在資料庫中。",

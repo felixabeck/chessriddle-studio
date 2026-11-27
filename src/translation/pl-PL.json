@@ -750,6 +750,7 @@
     "Databases.Game.EditData": "Edytuj dane partii",
     "Databases.Game.EditLinkedDisabled": "Edytuj dane partii (tylko do odczytu dla powiązanych kolekcji)",
     "Databases.Game.EditStaleReloaded": "Ta partia została zmieniona w innym miejscu. Twoje wpisy zostały zachowane; załadowano bieżące dane.",
+    "Databases.Game.EloRangeError": "Ranking Elo musi mieścić się między {{min}} a {{max}}.",
     "Databases.Game.Event": "Turniej",
     "Databases.Game.NoGamesFound": "Nie znaleziono partii",
     "Databases.Game.NoLongerExists": "Ta partia już nie istnieje w bazie danych.",

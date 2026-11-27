@@ -742,6 +742,7 @@
     "Databases.Game.EditData": "Oyun verilerini düzenle",
     "Databases.Game.EditLinkedDisabled": "Oyun verilerini düzenle (bağlı koleksiyonlar için salt okunur)",
     "Databases.Game.EditStaleReloaded": "Bu oyun başka bir yerde değiştirildi. Girdileriniz korundu; güncel veriler yeniden yüklendi.",
+    "Databases.Game.EloRangeError": "Elo {{min}} ile {{max}} arasında olmalıdır.",
     "Databases.Game.Event": "Etkinlik",
     "Databases.Game.NoGamesFound": "Oyun bulunamadı",
     "Databases.Game.NoLongerExists": "Bu oyun artık veritabanında mevcut değil.",

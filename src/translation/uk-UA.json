@@ -750,6 +750,7 @@
     "Databases.Game.EditData": "Редагувати дані партії",
     "Databases.Game.EditLinkedDisabled": "Редагувати дані партії (лише для читання для пов’язаних колекцій)",
     "Databases.Game.EditStaleReloaded": "Цю партію було змінено в іншому місці. Ваші записи збережено; поточні дані перезавантажено.",
+    "Databases.Game.EloRangeError": "Рейтинг Ело має бути в межах від {{min}} до {{max}}.",
     "Databases.Game.Event": "Турнір",
     "Databases.Game.NoGamesFound": "Партій не знайдено",
     "Databases.Game.NoLongerExists": "Цієї партії більше немає в базі даних.",

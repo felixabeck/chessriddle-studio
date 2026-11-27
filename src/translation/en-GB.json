@@ -742,6 +742,7 @@
     "Databases.Game.EditData": "Edit game data",
     "Databases.Game.EditLinkedDisabled": "Edit game data (read-only for linked collections)",
     "Databases.Game.EditStaleReloaded": "This game was changed elsewhere. Your entries are kept; the current data was reloaded.",
+    "Databases.Game.EloRangeError": "Elo must be between {{min}} and {{max}}.",
     "Databases.Game.Event": "Event",
     "Databases.Game.NoGamesFound": "No games found",
     "Databases.Game.NoLongerExists": "This game no longer exists in the database.",

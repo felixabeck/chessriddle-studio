@@ -746,6 +746,7 @@
     "Databases.Game.EditData": "Modifier les données de la partie",
     "Databases.Game.EditLinkedDisabled": "Modifier les données de la partie (lecture seule pour les collections liées)",
     "Databases.Game.EditStaleReloaded": "Cette partie a été modifiée ailleurs. Vos saisies sont conservées ; les données actuelles ont été rechargées.",
+    "Databases.Game.EloRangeError": "Le classement Elo doit être compris entre {{min}} et {{max}}.",
     "Databases.Game.Event": "Événement",
     "Databases.Game.NoGamesFound": "Aucune partie trouvée",
     "Databases.Game.NoLongerExists": "Cette partie n’existe plus dans la base de données.",

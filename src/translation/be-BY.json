@@ -750,6 +750,7 @@
     "Databases.Game.EditData": "Рэдагаваць даныя партыі",
     "Databases.Game.EditLinkedDisabled": "Рэдагаваць даныя партыі (толькі для чытання для звязаных калекцый)",
     "Databases.Game.EditStaleReloaded": "Гэтая партыя была зменена ў іншым месцы. Вашы запісы захаваны; бягучыя даныя перазагружаны.",
+    "Databases.Game.EloRangeError": "Рэйтынг Эла павінен быць у межах ад {{min}} да {{max}}.",
     "Databases.Game.Event": "Турнір",
     "Databases.Game.NoGamesFound": "Партыі не знойдзены",
     "Databases.Game.NoLongerExists": "Гэтай партыі больш няма ў базе даных.",

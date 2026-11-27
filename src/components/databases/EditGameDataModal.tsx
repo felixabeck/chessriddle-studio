@@ -24,6 +24,13 @@ type ModalPhase = "loading" | "ready" | "missing" | "load-error";
 type StaleReloadState = "idle" | "reloading" | "failed";
 type LoadMode = "initial" | "stale-reload";
 
+const MIN_ELO = 0;
+const MAX_ELO = 4000;
+
+function isValidElo(value: number | null | undefined): boolean {
+  return value == null || (Number.isSafeInteger(value) && value >= MIN_ELO && value <= MAX_ELO);
+}
+
 function toHeaderUpdate(headers: GameHeaders): DbGameHeadersUpdate {
   return {
     white: headers.white,
@@ -203,11 +210,15 @@ export function EditGameDataModal({
     return !headersEqual(toHeaderUpdate(initialHeaders), toHeaderUpdate(draft));
   }, [draft, initialHeaders]);
 
+  const eloInvalid =
+    draft !== null && (!isValidElo(draft.white_elo) || !isValidElo(draft.black_elo));
+
   const canSave =
     target !== null &&
     phase === "ready" &&
     draft !== null &&
     dirty &&
+    !eloInvalid &&
     !saving &&
     staleReloadState === "idle";
 
@@ -247,7 +258,13 @@ export function EditGameDataModal({
         return;
       }
       if (appError.backendCategory === "missing-resource") {
-        setPhase("missing");
+        if (appError.rootFailure == null) {
+          setPhase("missing");
+          return;
+        }
+        setInlineError(
+          inlineFailureMessage(error, "database", loadErrorFallbackRef.current) ?? appError.message,
+        );
         return;
       }
       if (appError.backendCategory === "invalid-input") {
@@ -361,6 +378,11 @@ export function EditGameDataModal({
               {staleReloaded && (
                 <Alert color="warning" role="status" icon={<TriangleAlert size="1rem" />}>
                   {t("Databases.Game.EditStaleReloaded")}
+                </Alert>
+              )}
+              {eloInvalid && (
+                <Alert color="danger" role="alert" icon={<AlertCircle size="1rem" />}>
+                  {t("Databases.Game.EloRangeError", { min: MIN_ELO, max: MAX_ELO })}
                 </Alert>
               )}
               {inlineError && (

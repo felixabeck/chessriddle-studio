@@ -738,6 +738,7 @@
     "Databases.Game.EditData": "대국 정보 편집",
     "Databases.Game.EditLinkedDisabled": "대국 정보 편집 (연결된 컬렉션은 읽기 전용)",
     "Databases.Game.EditStaleReloaded": "이 대국이 다른 곳에서 변경되었습니다. 입력한 내용은 유지되며 현재 데이터를 다시 불러왔습니다.",
+    "Databases.Game.EloRangeError": "Elo는 {{min}}에서 {{max}} 사이여야 합니다.",
     "Databases.Game.Event": "대회",
     "Databases.Game.NoGamesFound": "경기를 찾을 수 없습니다",
     "Databases.Game.NoLongerExists": "이 대국은 더 이상 데이터베이스에 존재하지 않습니다.",

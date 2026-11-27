@@ -742,6 +742,7 @@
     "Databases.Game.EditData": "Partiedaten bearbeiten",
     "Databases.Game.EditLinkedDisabled": "Partiedaten bearbeiten (schreibgeschützt für verknüpfte Sammlungen)",
     "Databases.Game.EditStaleReloaded": "Diese Partie wurde an anderer Stelle geändert. Ihre Eingaben bleiben erhalten; die aktuellen Daten wurden neu geladen.",
+    "Databases.Game.EloRangeError": "Elo muss zwischen {{min}} und {{max}} liegen.",
     "Databases.Game.Event": "Ereignis",
     "Databases.Game.NoGamesFound": "Keine Partien gefunden",
     "Databases.Game.NoLongerExists": "Diese Partie existiert nicht mehr in der Datenbank.",

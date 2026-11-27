@@ -742,6 +742,7 @@
     "Databases.Game.EditData": "Rediger partidata",
     "Databases.Game.EditLinkedDisabled": "Rediger partidata (skrivebeskyttet for tilknyttede samlinger)",
     "Databases.Game.EditStaleReloaded": "Dette partiet ble endret et annet sted. Oppføringene dine er beholdt; gjeldende data ble lastet inn på nytt.",
+    "Databases.Game.EloRangeError": "Elo må være mellom {{min}} og {{max}}.",
     "Databases.Game.Event": "Turnering",
     "Databases.Game.NoGamesFound": "Ingen partier funnet",
     "Databases.Game.NoLongerExists": "Dette partiet finnes ikke lenger i databasen.",

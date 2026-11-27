@@ -489,3 +489,82 @@ fn write_db_game_headers_validates_inputs_and_handles_partial_and_legacy_dates()
     );
     assert!(matches!(changed_invalid, Err(Error::InvalidInput(_))));
 }
+
+#[test]
+fn write_db_game_headers_removes_unreferenced_player_event_and_site_rows() {
+    let (_dir, app, handle, database) = blocking_database_case();
+    let state = app.state::<AppState>();
+    let game_id = insert_header_test_game(&state, &handle);
+    let stamp = test_game_stamp(&state, &handle, game_id);
+
+    write_db_game_headers_blocking(
+        &state.pgn_path_authority,
+        &state.database_repository,
+        &state.search_cache,
+        handle.clone(),
+        game_id,
+        DbGameHeadersUpdate {
+            white: Some("Renamed White".into()),
+            black: Some("Black Player".into()),
+            event: Some("Renamed Event".into()),
+            site: Some("Renamed Site".into()),
+            ..DbGameHeadersUpdate::default()
+        },
+        stamp,
+        &CancellationToken::new(),
+    )
+    .unwrap();
+
+    let mut db = state
+        .database_repository
+        .connection(&test_target(&database), None)
+        .unwrap();
+    assert_eq!(
+        players::table
+            .filter(players::name.eq("White Player"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        players::table
+            .filter(players::name.eq("Renamed White"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        events::table
+            .filter(events::name.eq("Original Event"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        events::table
+            .filter(events::name.eq("Renamed Event"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sites::table
+            .filter(sites::name.eq("Original Site"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sites::table
+            .filter(sites::name.eq("Renamed Site"))
+            .count()
+            .get_result::<i64>(&mut *db)
+            .unwrap(),
+        1
+    );
+}

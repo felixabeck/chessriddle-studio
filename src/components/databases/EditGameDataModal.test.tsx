@@ -186,6 +186,14 @@ describe("EditGameDataModal", () => {
     return dialog().querySelector<HTMLInputElement>('input[aria-label="Date"]')!;
   }
 
+  function whiteEloInput() {
+    return dialog().querySelector<HTMLInputElement>('input[aria-label="White Elo"]')!;
+  }
+
+  function blackEloInput() {
+    return dialog().querySelector<HTMLInputElement>('input[aria-label="Black Elo"]')!;
+  }
+
   function resultInput() {
     const label = [...dialog().querySelectorAll("label")].find(
       (item) => item.textContent === "Result",
@@ -415,6 +423,104 @@ describe("EditGameDataModal", () => {
     expect(mocks.writeDbGameHeaders).not.toHaveBeenCalled();
   });
 
+  test("Escape in open Date calendar, Result dropdown, and Time control dropdown leaves the dialog open without discard prompt", async () => {
+    await render();
+    await act(async () => setNativeInputValue(eventInput(), "Dirty"));
+
+    // 1. Open Date calendar -> Escape closes only the calendar
+    const date = dateInput();
+    await act(async () => {
+      date.focus();
+      date.click();
+    });
+    const dateEsc = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      date.dispatchEvent(dateEsc);
+    });
+    expect(dateEsc.defaultPrevented).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
+    // 2. Open Result dropdown -> Escape closes only the dropdown
+    const result = resultInput();
+    await act(async () => result.click());
+    expect(result.getAttribute("aria-expanded")).toBe("true");
+    const resultEsc = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      result.dispatchEvent(resultEsc);
+    });
+    expect(resultEsc.defaultPrevented).toBe(true);
+    expect(result.getAttribute("aria-expanded")).toBe("false");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
+    // 3. Open Time control dropdown -> Escape closes only the dropdown
+    const tc = timeControlInput();
+    await act(async () => tc.click());
+    expect(tc.getAttribute("data-expanded")).toBe("true");
+    const tcEsc = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      tc.dispatchEvent(tcEsc);
+    });
+    expect(tcEsc.defaultPrevented).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
+    // 4. With nothing open -> Escape follows the normal close path (dirty -> discard prompt)
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(dialogs()).toHaveLength(2);
+    expect(dialogs()[1]!.textContent).toContain("Discard changes?");
+  });
+
+  test("Elo outside 0-4000 (including beyond i32) shows an inline error and blocks saving before IPC", async () => {
+    await render();
+
+    await act(async () => setNativeInputValue(whiteEloInput(), "9999999999"));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "Elo must be between 0 and 4000.",
+    );
+    expect(dialogButton("Save").disabled).toBe(true);
+    await act(async () =>
+      whiteEloInput().dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(mocks.writeDbGameHeaders).not.toHaveBeenCalled();
+
+    await act(async () => setNativeInputValue(whiteEloInput(), "-5"));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "Elo must be between 0 and 4000.",
+    );
+    expect(dialogButton("Save").disabled).toBe(true);
+
+    await act(async () => setNativeInputValue(whiteEloInput(), "2500"));
+    expect(dialog().querySelector('[role="alert"]')).toBeNull();
+    expect(dialogButton("Save").disabled).toBe(false);
+
+    await act(async () => setNativeInputValue(blackEloInput(), "4001"));
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "Elo must be between 0 and 4000.",
+    );
+    expect(dialogButton("Save").disabled).toBe(true);
+    expect(mocks.writeDbGameHeaders).not.toHaveBeenCalled();
+  });
+
   test("first save refresh settling after reopen does not clear the second save's pending state", async () => {
     const firstRefresh = deferred<unknown>();
     const secondSave = deferred<string>();
@@ -583,7 +689,7 @@ describe("EditGameDataModal", () => {
     expect(dialogButton("Save").disabled).toBe(true);
   });
 
-  test("save failing with missing-resource switches to missing state", async () => {
+  test("save failing with missing-resource switches to missing state when rootFailure is absent", async () => {
     await render();
     await act(async () => setNativeInputValue(eventInput(), "Updated"));
     mocks.writeDbGameHeaders.mockRejectedValueOnce(
@@ -597,6 +703,26 @@ describe("EditGameDataModal", () => {
     expect(dialog().textContent).toContain("This game no longer exists in the database.");
     expect(dialogButton("Close")).toBeDefined();
     expect(dialogButton("Save")).toBeUndefined();
+  });
+
+  test("save failing with missing-resource and a rootFailure shows the database error inline and keeps the draft", async () => {
+    await render();
+    await act(async () => setNativeInputValue(eventInput(), "Preserved Event"));
+    mocks.writeDbGameHeaders.mockRejectedValueOnce(
+      new TauriCommandError({
+        tag: "backend-error",
+        category: "missing-resource",
+        message: "missing database root at /private/databases",
+        rootFailure: "missing",
+      }),
+    );
+    await act(async () => dialogButton("Save").click());
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "This database folder is no longer available. Choose another.",
+    );
+    expect(eventInput().value).toBe("Preserved Event");
+    expect(dialogButton("Save").disabled).toBe(false);
+    expect(dialog().textContent).not.toContain("This game no longer exists in the database.");
   });
 
   test("save failing with invalid-input shows message inline", async () => {

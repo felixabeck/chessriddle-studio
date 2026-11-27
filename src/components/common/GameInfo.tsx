@@ -17,12 +17,13 @@ import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
 import type { TFunction } from "i18next";
-import { memo, useContext, useId, useRef, useState } from "react";
+import { memo, useContext, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
 import type { Color } from "chessops";
 import { formatTimeControl, parseTimeControl, resolveTimeControl } from "@/utils/clock";
+import { isPlainEscape } from "@/utils/keyboardOwnership";
 import { lineTitleOf } from "@/utils/lineTitle";
 import { externalLinkProps } from "./ExternalLink";
 import {
@@ -83,6 +84,24 @@ function GameInfo({
   const disabled = !isDraft && store === EMPTY_STORE;
   const resultId = useId();
   const draftTextAttr = isDraft ? { "data-draft-text-input": "true" } : undefined;
+  const [dateOpen, setDateOpen] = useState(false);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [timeControlOpen, setTimeControlOpen] = useState(false);
+
+  // In draft mode (inside a modal), an open Date calendar, Result list, or Time control list owns
+  // Escape: preventDefault in the capture phase so AppModal's bubble listener does not dismiss the
+  // dialog while the control closes its own popup.
+  const hasOpenDraftPopup = isDraft && (dateOpen || resultOpen || timeControlOpen);
+  useEffect(() => {
+    if (!hasOpenDraftPopup) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isPlainEscape(event)) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [hasOpenDraftPopup]);
 
   const date = headers.date
     ? dayjs(headers.date, "YYYY.MM.DD").isValid()
@@ -301,6 +320,14 @@ function GameInfo({
                 });
               }}
               readOnly={disabled}
+              popoverProps={
+                isDraft
+                  ? {
+                      onOpen: () => setDateOpen(true),
+                      onClose: () => setDateOpen(false),
+                    }
+                  : undefined
+              }
               classNames={{ input: classes.dateInput }}
             />
           </Group>
@@ -337,6 +364,7 @@ function GameInfo({
               id={resultId}
               value={headers.result}
               locked={disabled}
+              onDropdownOpenChange={isDraft ? setResultOpen : undefined}
               onChange={(result) =>
                 setHeaders({
                   ...headers,
@@ -364,6 +392,7 @@ function GameInfo({
             setHeaders={setHeaders}
             headers={headers}
             readOnly={disabled || timeControlReadOnly}
+            onDropdownOpenChange={isDraft ? setTimeControlOpen : undefined}
           />
         </div>
       )}
@@ -385,19 +414,27 @@ function ResultField({
   id,
   value,
   locked,
+  onDropdownOpenChange,
   onChange,
 }: {
   id: string;
   value: Outcome;
   /** Read-only game info: the result shows but never opens. */
   locked: boolean;
+  onDropdownOpenChange?: (open: boolean) => void;
   onChange: (result: Outcome) => void;
 }) {
   /** Set by pointerdown, read and cleared by the focus that pointerdown causes. */
   const focusFromPointer = useRef(false);
   const combobox = useCombobox({
-    onDropdownOpen: () => combobox.updateSelectedOptionIndex("active"),
-    onDropdownClose: () => combobox.resetSelectedOption(),
+    onDropdownOpen: () => {
+      combobox.updateSelectedOptionIndex("active");
+      onDropdownOpenChange?.(true);
+    },
+    onDropdownClose: () => {
+      combobox.resetSelectedOption();
+      onDropdownOpenChange?.(false);
+    },
   });
 
   return (
@@ -813,11 +850,13 @@ function TimeControlField({
   setHeaders,
   headers,
   readOnly,
+  onDropdownOpenChange,
 }: {
   documentId: number | string;
   setHeaders: (headers: GameHeaders) => void;
   headers: GameHeaders;
   readOnly: boolean;
+  onDropdownOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const tagKey = timeControlTagKey(documentId, headers);
@@ -932,6 +971,8 @@ function TimeControlField({
         placeholder={placeholder}
         data={selectData}
         onChange={handleSelectChange}
+        onDropdownOpen={onDropdownOpenChange ? () => onDropdownOpenChange(true) : undefined}
+        onDropdownClose={onDropdownOpenChange ? () => onDropdownOpenChange(false) : undefined}
       />
       {summary && (customOpen || !hasSharedPreset) && (
         <Text size="xs" c="dimmed" className={classes.timeControlSummary}>

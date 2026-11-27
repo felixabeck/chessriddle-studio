@@ -149,6 +149,7 @@ const PLAYER_STATISTICS_BATCH_ROW_LIMIT: usize = 256;
 const ACCOUNT_IMPORT_BATCH_ROW_LIMIT: i64 = 256;
 /// Emit on kept rows 1, 1001 and subsequent intervals.
 const PLAYER_STATISTICS_PROGRESS_INTERVAL: usize = 1_000;
+const MAX_GAME_HEADER_ELO: i32 = 4000;
 
 fn cancellation_check(cancellation: &CancellationToken) -> Result<(), Error> {
     if cancellation.is_cancelled() {
@@ -2526,9 +2527,9 @@ fn optional_escaped_index_name(field: &str, value: Option<&str>) -> Result<Optio
 
 fn validate_elo(field: &str, value: Option<i32>) -> Result<Option<i32>, Error> {
     if let Some(elo) = value {
-        if !(0..=4000).contains(&elo) {
+        if !(0..=MAX_GAME_HEADER_ELO).contains(&elo) {
             return Err(Error::InvalidInput(format!(
-                "{field} must be between 0 and 4000"
+                "{field} must be between 0 and {MAX_GAME_HEADER_ELO}"
             )));
         }
     }

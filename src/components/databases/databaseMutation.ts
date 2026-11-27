@@ -61,7 +61,7 @@ export async function refreshDatabaseGameQueries(
     );
     return Promise.allSettled(
         keys.map(async (key) => {
-            // Committed deletion invalidates old rows and historical errors even for inactive
+            // Committed game mutation invalidates old rows and historical errors even for inactive
             // keys. This does not start a refresh, so the next call owns active revalidation.
             await mutate(key, undefined, { revalidate: false });
             // Fetch failures live in cache state even when revalidation resolves normally.

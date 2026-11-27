@@ -746,6 +746,7 @@
     "Databases.Game.EditData": "Editar dados da partida",
     "Databases.Game.EditLinkedDisabled": "Editar dados da partida (só de leitura para coleções ligadas)",
     "Databases.Game.EditStaleReloaded": "Esta partida foi alterada noutro local. As suas entradas foram mantidas; os dados atuais foram recarregados.",
+    "Databases.Game.EloRangeError": "O Elo tem de estar entre {{min}} e {{max}}.",
     "Databases.Game.Event": "Evento",
     "Databases.Game.NoGamesFound": "Não foram encontradas partidas",
     "Databases.Game.NoLongerExists": "Esta partida já não existe na base de dados.",
