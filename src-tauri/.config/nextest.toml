@@ -1,0 +1,4 @@
+[profile.ci]
+slow-timeout = { period = "5m", terminate-after = 1 }
+fail-fast = false
+global-timeout = "23m"

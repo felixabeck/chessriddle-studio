@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { globToRegExp } from "./coverage-scope.mjs";
-import { workflowJobs, workflowSteps } from "./check-gate-routing.mjs";
+import { workflowJobs, workflowStepBlocks, workflowSteps } from "./check-gate-routing.mjs";
 import { isEntrypoint } from "./entrypoint.mjs";
 import { listWorkingTreeFiles } from "./working-tree-files.mjs";
 
@@ -23,6 +23,8 @@ the named message and status 1 in the same run. The test names are the node:test
   push-skill setup fence -> ... / push skill setup fence;
   family minimum/authority/mismatch -> ... / tool-version family minimum, tool-version family
     authority, tool-version family mismatch;
+  cargo-nextest family missing/unpinned -> requires the cargo-nextest workflow authority through
+    the CLI / deleted install step, stripped --version, stripped --locked;
   sccache setup/guard/docs mismatch -> reports sccache install, version-guard, and documentation
     drift through the CLI;
   sccache missing authority/docs -> requires the sccache setup authority and documentation site
@@ -35,9 +37,12 @@ the named message and status 1 in the same run. The test names are the node:test
   rust-platform (2), three targets plus family -> reports each rust-platform contract clause /
     matching subtest;
   rust-platform (3)-(5b) -> ... / matching subtest;
-  rust-macos-test (6a)-(6b) and rust-windows-test (7a)-(7c) -> reports each Rust test-job
+  rust-macos-test (6a)-(6b) and rust-windows-test (7a)-(7f) -> reports each Rust test-job
     contract clause / (6a) wrong runner, (6b) missing cargo test, (7a) wrong runner,
-    (7b) missing cargo test, (7c) strategy declaration, (7c) matrix declaration;
+    (7b) missing Windows nextest receipt, (7c) strategy declaration, (7c) matrix declaration,
+    (7d) nextest config missing file / missing [profile.ci] / missing slow-timeout / invalid
+    terminate-after / invalid period / grace-period stealing period / invalid global-timeout, (7e) Windows nextest step
+    timeout-minutes, (7f) Windows nextest cache and conditional install;
   requiredWorkflowJob -> ... / missing registered workflow jobs frontend and rust,
     missing registered workflow job rust-windows-test;
   main findings return 1 -> every status-1 fixture above;
@@ -55,12 +60,28 @@ export const REQUIRED_NON_LINUX_TARGETS = [
 ];
 const RUST_PLATFORM_CLIPPY =
   "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings";
-const RUST_TEST_COMMAND = "cargo test --manifest-path src-tauri/Cargo.toml --all-targets";
+const MACOS_RUST_TEST_COMMAND = "cargo test --manifest-path src-tauri/Cargo.toml --all-targets";
+const WINDOWS_RUST_TEST_COMMAND =
+  "cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci";
+const WINDOWS_NEXTEST_CONFIG_PATH = "src-tauri/.config/nextest.toml";
+const WINDOWS_NEXTEST_CACHE_PATH = "~/.cargo/bin/cargo-nextest.exe";
+const WINDOWS_TEST_STEP_TIMEOUT_MINUTES = 24;
+const WINDOWS_NEXTEST_INSTALL_TIMEOUT_MINUTES = 12;
 const SCCACHE_INSTALL_COMMAND_PATTERN =
   /cargo\s+install\s+sccache\s+--version\s+(\d+\.\d+\.\d+)\b/gu;
 const RUST_TEST_JOBS = [
-  { job: "rust-macos-test", runner: "macos-26-intel", clauses: ["6a", "6b"] },
-  { job: "rust-windows-test", runner: "windows-latest", clauses: ["7a", "7b", "7c"] },
+  {
+    job: "rust-macos-test",
+    runner: "macos-26-intel",
+    command: MACOS_RUST_TEST_COMMAND,
+    clauses: ["6a", "6b"],
+  },
+  {
+    job: "rust-windows-test",
+    runner: "windows-latest",
+    command: WINDOWS_RUST_TEST_COMMAND,
+    clauses: ["7a", "7b", "7c"],
+  },
 ];
 const RUST_WORKFLOW_JOBS = [
   [".github/workflows/test.yml", "frontend"],
@@ -136,6 +157,17 @@ export const PARITY_FAMILIES = [
       {
         globs: [".github/workflows/*.yml", ".github/workflows/*.yaml"],
         pattern: /cargo\s+install\s+cargo-mutants\s+--version\s+(\d+\.\d+\.\d+)\b/gu,
+        authority: true,
+      },
+    ],
+  },
+  {
+    name: "cargo-nextest",
+    minimumSites: 1,
+    declarations: [
+      {
+        globs: [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+        pattern: /cargo\s+install\s+cargo-nextest\s+--version\s+(\d+\.\d+\.\d+)\s+--locked\b/gu,
         authority: true,
       },
     ],
@@ -431,12 +463,90 @@ function hasCargoCheck(run) {
   return /(^|[^\w-])cargo\s+(\+\S+\s+)?check(?![\w-])/u.test(run);
 }
 
+function isPositiveDuration(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  const durationPattern =
+    /^(?:\s*\d+\s*(?:ns|us|µs|ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days))+\s*$/u;
+  return durationPattern.test(trimmed) && /[1-9]/u.test(trimmed);
+}
+
+function stripTomlComment(line) {
+  let quote = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const ch = line[index];
+    if (quote !== null) {
+      if (quote === '"' && ch === "\\") {
+        index += 1;
+        continue;
+      }
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === "#") {
+      return line.slice(0, index);
+    }
+  }
+  return line;
+}
+
+function checkNextestConfig(nextestConfig, findings) {
+  const lines = nextestConfig.split(/\r?\n/u).map(stripTomlComment);
+  const profileStart = lines.findIndex((line) => /^\s*\[profile\.ci\]\s*$/u.test(line));
+  if (profileStart < 0) {
+    findings.push(`${WINDOWS_NEXTEST_CONFIG_PATH}: (7d) missing [profile.ci] table`);
+    return;
+  }
+  const profileLines = [];
+  for (let index = profileStart + 1; index < lines.length; index += 1) {
+    if (/^\s*\[/u.test(lines[index])) break;
+    profileLines.push(lines[index]);
+  }
+  const profileBody = profileLines.join("\n");
+
+  const slowTimeoutMatch = /^\s*slow-timeout\s*=\s*(.+)$/mu.exec(profileBody);
+  if (!slowTimeoutMatch) {
+    findings.push(`${WINDOWS_NEXTEST_CONFIG_PATH}: (7d) [profile.ci] is missing slow-timeout`);
+  } else {
+    const slowTimeoutValue = slowTimeoutMatch[1].trim();
+    const inlineTable = /^\{([\s\S]*)\}$/u.exec(slowTimeoutValue)?.[1] ?? "";
+    const terminateAfterMatch = /(?<![\w-])terminate-after\s*=\s*([^,}\s]+)/u.exec(inlineTable);
+    if (!terminateAfterMatch || !/^[1-9]\d*$/u.test(terminateAfterMatch[1])) {
+      findings.push(
+        `${WINDOWS_NEXTEST_CONFIG_PATH}: (7d) [profile.ci] slow-timeout must set integer terminate-after >= 1`,
+      );
+    }
+    const periodMatch = /(?<![\w-])period\s*=\s*(?:"([^"]*)"|'([^']*)')/u.exec(inlineTable);
+    const period = periodMatch?.[1] ?? periodMatch?.[2];
+    if (!isPositiveDuration(period)) {
+      findings.push(
+        `${WINDOWS_NEXTEST_CONFIG_PATH}: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period`,
+      );
+    }
+  }
+
+  const globalTimeoutMatch = /^\s*global-timeout\s*=\s*(?:"([^"]*)"|'([^']*)')/mu.exec(profileBody);
+  const globalTimeout = globalTimeoutMatch?.[1] ?? globalTimeoutMatch?.[2];
+  if (!isPositiveDuration(globalTimeout)) {
+    findings.push(
+      `${WINDOWS_NEXTEST_CONFIG_PATH}: (7d) [profile.ci] must set a non-empty global-timeout duration`,
+    );
+  }
+}
+
+function isExactPositiveInteger(value, expected) {
+  return (
+    value !== undefined && /^[1-9]\d*$/u.test(value) && Number.parseInt(value, 10) === expected
+  );
+}
+
 // Deliberately not part of checkTargetCoverage: that function returns early on four unrelated
 // release.yml and rust-platform problems, and those early returns would silently skip every
 // clause below, so a broken release matrix would disable the Windows job's enforcement.
 function checkRustTestJobs(workflows, findings) {
   const testWorkflow = workflows.get(".github/workflows/test.yml");
-  for (const { job: jobName, runner, clauses } of RUST_TEST_JOBS) {
+  for (const { job: jobName, runner, command, clauses } of RUST_TEST_JOBS) {
     const rustTestJob = testWorkflow?.jobs.find((job) => job.name === jobName);
     if (rustTestJob === undefined) continue;
     if (topLevelJobValue(rustTestJob.body, "runs-on") !== runner) {
@@ -444,9 +554,11 @@ function checkRustTestJobs(workflows, findings) {
         `.github/workflows/test.yml: (${clauses[0]}) ${jobName} must use runs-on: ${runner}`,
       );
     }
-    if (!workflowSteps(rustTestJob.body).some((step) => step.run === RUST_TEST_COMMAND)) {
+    const jobSteps = workflowSteps(rustTestJob.body);
+    const receiptSteps = jobSteps.filter((step) => step.run === command);
+    if (receiptSteps.length === 0) {
       findings.push(
-        `.github/workflows/test.yml: (${clauses[1]}) ${jobName} is missing the receipt command: ${RUST_TEST_COMMAND}`,
+        `.github/workflows/test.yml: (${clauses[1]}) ${jobName} is missing the receipt command: ${command}`,
       );
     }
     if (
@@ -456,6 +568,85 @@ function checkRustTestJobs(workflows, findings) {
       findings.push(
         `.github/workflows/test.yml: (7c) ${jobName} must not declare strategy or matrix`,
       );
+    }
+    if (jobName === "rust-windows-test") {
+      if (
+        receiptSteps.length > 0 &&
+        !receiptSteps.some((step) =>
+          isExactPositiveInteger(step.timeoutMinutes, WINDOWS_TEST_STEP_TIMEOUT_MINUTES),
+        )
+      ) {
+        findings.push(
+          `.github/workflows/test.yml: (7e) rust-windows-test nextest step must set timeout-minutes: ${WINDOWS_TEST_STEP_TIMEOUT_MINUTES}`,
+        );
+      }
+
+      const stepBlocks = workflowStepBlocks(rustTestJob.body);
+      const cacheIndex = stepBlocks.findIndex(
+        (step) =>
+          step.uses === "actions/cache@v4" &&
+          step.withValues.get("path") === WINDOWS_NEXTEST_CACHE_PATH,
+      );
+      const installIndex = stepBlocks.findIndex((step) =>
+        workflowSteps(step.text).some((runStep) =>
+          /\bcargo\s+install\s+cargo-nextest\b/u.test(runStep.run),
+        ),
+      );
+      const cacheStep = cacheIndex >= 0 ? stepBlocks[cacheIndex] : undefined;
+      if (cacheStep === undefined) {
+        findings.push(
+          ".github/workflows/test.yml: (7f) rust-windows-test is missing the cargo-nextest actions/cache@v4 step",
+        );
+      } else {
+        if (!cacheStep.id) {
+          findings.push(
+            ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must declare an id",
+          );
+        }
+        const escapedCachePath = WINDOWS_NEXTEST_CACHE_PATH.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+        const immediatePathPattern = new RegExp(
+          String.raw`uses:\s*actions\/cache@v4\n\s+with:\n\s+path:\s*` +
+            escapedCachePath +
+            String.raw`(?:\n|$)`,
+          "u",
+        );
+        if (!immediatePathPattern.test(cacheStep.text)) {
+          findings.push(
+            ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must place with:/path: immediately after uses:",
+          );
+        }
+        if (cacheStep.withValues.has("restore-keys")) {
+          findings.push(
+            ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must not set restore-keys",
+          );
+        }
+      }
+      if (installIndex >= 0) {
+        const installStep = stepBlocks[installIndex];
+        if (cacheIndex >= 0 && cacheIndex > installIndex) {
+          findings.push(
+            ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must appear before the install step",
+          );
+        }
+        if (cacheStep?.id) {
+          const expectedIf = `steps.${cacheStep.id}.outputs.cache-hit != 'true'`;
+          if (installStep.ifValue !== expectedIf) {
+            findings.push(
+              `.github/workflows/test.yml: (7f) rust-windows-test cargo-nextest install step must set if: ${expectedIf}`,
+            );
+          }
+        }
+        if (
+          !isExactPositiveInteger(
+            installStep.timeoutMinutes,
+            WINDOWS_NEXTEST_INSTALL_TIMEOUT_MINUTES,
+          )
+        ) {
+          findings.push(
+            `.github/workflows/test.yml: (7f) rust-windows-test cargo-nextest install step must set timeout-minutes: ${WINDOWS_NEXTEST_INSTALL_TIMEOUT_MINUTES}`,
+          );
+        }
+      }
     }
   }
 }
@@ -545,6 +736,16 @@ export async function checkRustToolchainContract(repoRoot, { contents = new Map(
 
   checkTargetCoverage(workflows, findings);
   checkRustTestJobs(workflows, findings);
+
+  const nextestConfig = await contractFile(
+    repoRoot,
+    WINDOWS_NEXTEST_CONFIG_PATH,
+    findings,
+    contents,
+  );
+  if (nextestConfig !== undefined) {
+    checkNextestConfig(nextestConfig, findings);
+  }
 
   const release = workflows.get(".github/workflows/release.yml");
   if (release !== undefined) {

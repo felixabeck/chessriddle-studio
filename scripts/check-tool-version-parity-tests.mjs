@@ -19,6 +19,7 @@ const rustContractPaths = [
   ".project.json",
   "CONTRIBUTING.md",
   "rust-toolchain.toml",
+  "src-tauri/.config/nextest.toml",
   "scripts/setup-rust.sh",
   "scripts/toolchain-versions.mjs",
   ".github/workflows/test.yml",
@@ -76,8 +77,19 @@ async function fixture() {
       - name: Install Rust toolchain
         shell: bash
         run: bash scripts/setup-rust.sh
+      - name: Cache the cargo-nextest binary
+        id: cargo-nextest-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest.exe
+          key: cargo-nextest-\${{ runner.os }}-\${{ runner.arch }}-\${{ hashFiles('.github/workflows/test.yml') }}
+      - name: Install pinned cargo-nextest
+        if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 12
+        run: cargo install cargo-nextest --version 0.9.152 --locked
       - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+        timeout-minutes: 24
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci
   frontend:
     steps:
       - name: Install Rust toolchain
@@ -116,6 +128,11 @@ async function fixture() {
     root,
     "rust-toolchain.toml",
     `[toolchain]\nchannel = "9.8.7"\ncomponents = ["rustfmt", "clippy", "llvm-tools"]\nprofile = "minimal"\n# Install ${nightly} for coverage.\n`,
+  );
+  await put(
+    root,
+    "src-tauri/.config/nextest.toml",
+    '[profile.ci]\nslow-timeout = { period = "5m", terminate-after = 1 }\nfail-fast = false\nglobal-timeout = "23m"\n',
   );
   await put(
     root,
@@ -255,6 +272,7 @@ test("accepts matching declarations and discovers every matching site", async ()
   assert.equal(families.find((family) => family.name === "cargo-llvm-cov").sites.length, 2);
   assert.equal(families.find((family) => family.name === "sccache").sites.length, 4);
   assert.equal(families.find((family) => family.name === "cargo-mutants").sites.length, 1);
+  assert.equal(families.find((family) => family.name === "cargo-nextest").sites.length, 1);
 });
 
 test("reports sccache install, version-guard, and documentation drift through the CLI", async (t) => {
@@ -663,17 +681,36 @@ test("reports each rust-platform contract clause through the CLI", async (t) => 
 });
 
 const rustTestJobContracts = [
-  { job: "rust-macos-test", runner: "macos-26-intel", runnerClause: "6a", commandClause: "6b" },
+  {
+    job: "rust-macos-test",
+    runner: "macos-26-intel",
+    runnerClause: "6a",
+    commandClause: "6b",
+    commandLabel: "missing cargo test",
+    command: "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+    replacement: ":",
+  },
   {
     job: "rust-windows-test",
     runner: "windows-latest",
     runnerClause: "7a",
     commandClause: "7b",
+    commandLabel: "missing Windows nextest receipt",
+    command: "cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci",
+    replacement: "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
   },
 ];
 
 test("reports each Rust test-job contract clause through the CLI", async (t) => {
-  for (const { job, runner, runnerClause, commandClause } of rustTestJobContracts) {
+  for (const {
+    job,
+    runner,
+    runnerClause,
+    commandClause,
+    commandLabel,
+    command,
+    replacement,
+  } of rustTestJobContracts) {
     await t.test(`(${runnerClause}) wrong runner`, (subtest) =>
       mutateCheckedInFileAndRunCli(
         subtest,
@@ -692,18 +729,12 @@ test("reports each Rust test-job contract clause through the CLI", async (t) => 
         ),
       );
     }
-    await t.test(`(${commandClause}) missing cargo test`, (subtest) =>
+    await t.test(`(${commandClause}) ${commandLabel}`, (subtest) =>
       mutateCheckedInFileAndRunCli(
         subtest,
         ".github/workflows/test.yml",
-        (text) =>
-          replaceNamedJobText(
-            text,
-            job,
-            "run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
-            "run: :",
-          ),
-        `.github/workflows/test.yml: (${commandClause}) ${job} is missing the receipt command: cargo test --manifest-path src-tauri/Cargo.toml --all-targets`,
+        (text) => replaceNamedJobText(text, job, `run: ${command}`, `run: ${replacement}`),
+        `.github/workflows/test.yml: (${commandClause}) ${job} is missing the receipt command: ${command}`,
       ),
     );
   }
@@ -726,6 +757,248 @@ test("reports each Rust test-job contract clause through the CLI", async (t) => 
         ".github/workflows/test.yml: (7c) rust-windows-test must not declare strategy or matrix",
       ),
     );
+  }
+
+  await t.test("(7d) missing nextest.toml file", async (subtest) => {
+    const root = await checkedInRustFixture(subtest);
+    await rm(join(root, "src-tauri/.config/nextest.toml"));
+    assertCliFailure(
+      root,
+      "src-tauri/.config/nextest.toml: required Rust toolchain contract file is missing",
+    );
+  });
+  await t.test("(7d) unreadable nextest.toml exits status 2", async (subtest) => {
+    const root = await checkedInRustFixture(subtest);
+    await rm(join(root, "src-tauri/.config/nextest.toml"));
+    await mkdir(join(root, "src-tauri/.config/nextest.toml"));
+    const result = runChecker(root);
+    assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /EISDIR|directory/u);
+  });
+  for (const [label, mutate, message] of [
+    [
+      "missing [profile.ci]",
+      (text) => text.replace("[profile.ci]", "[profile.default]"),
+      "src-tauri/.config/nextest.toml: (7d) missing [profile.ci] table",
+    ],
+    [
+      "missing slow-timeout",
+      (text) => text.replace(/^slow-timeout = .*\n/mu, ""),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] is missing slow-timeout",
+    ],
+    [
+      "missing terminate-after",
+      (text) => text.replace(", terminate-after = 1", ""),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set integer terminate-after >= 1",
+    ],
+    [
+      "terminate-after = 0",
+      (text) => text.replace("terminate-after = 1", "terminate-after = 0"),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set integer terminate-after >= 1",
+    ],
+    [
+      "terminate-after = false",
+      (text) => text.replace("terminate-after = 1", "terminate-after = false"),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set integer terminate-after >= 1",
+    ],
+    [
+      "missing period",
+      (text) => text.replace('period = "5m", ', ""),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period",
+    ],
+    [
+      "empty period",
+      (text) => text.replace('period = "5m"', 'period = ""'),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period",
+    ],
+    [
+      "zero period",
+      (text) => text.replace('period = "5m"', 'period = "0s"'),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period",
+    ],
+    [
+      "grace-period steals zero period",
+      (text) =>
+        text.replace(
+          'slow-timeout = { period = "5m", terminate-after = 1 }',
+          'slow-timeout = { grace-period = "10s", period = "0s", terminate-after = 1 }',
+        ),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period",
+    ],
+    [
+      "grace-period only missing period",
+      (text) =>
+        text.replace(
+          'slow-timeout = { period = "5m", terminate-after = 1 }',
+          'slow-timeout = { grace-period = "10s", terminate-after = 1 }',
+        ),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] slow-timeout must set a non-empty non-zero period",
+    ],
+    [
+      "missing global-timeout",
+      (text) => text.replace(/^global-timeout = .*\n/mu, ""),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] must set a non-empty global-timeout duration",
+    ],
+    [
+      "empty global-timeout",
+      (text) => text.replace('global-timeout = "23m"', 'global-timeout = ""'),
+      "src-tauri/.config/nextest.toml: (7d) [profile.ci] must set a non-empty global-timeout duration",
+    ],
+  ]) {
+    await t.test(`(7d) ${label}`, (subtest) =>
+      mutateCheckedInFileAndRunCli(subtest, "src-tauri/.config/nextest.toml", mutate, message),
+    );
+  }
+
+  for (const [label, replacement] of [
+    ["missing timeout-minutes", ""],
+    ["non-integer timeout-minutes", "        timeout-minutes: 24.5\n"],
+    ["wrong timeout-minutes", "        timeout-minutes: 25\n"],
+  ]) {
+    await t.test(`(7e) ${label}`, (subtest) =>
+      mutateCheckedInFileAndRunCli(
+        subtest,
+        ".github/workflows/test.yml",
+        (text) =>
+          replaceNamedJobText(
+            text,
+            "rust-windows-test",
+            "        timeout-minutes: 24\n",
+            replacement,
+          ),
+        ".github/workflows/test.yml: (7e) rust-windows-test nextest step must set timeout-minutes: 24",
+      ),
+    );
+  }
+
+  const nextestCacheStep = [
+    "      - name: Cache the cargo-nextest binary",
+    "        id: cargo-nextest-cache",
+    "        uses: actions/cache@v4",
+    "        with:",
+    "          path: ~/.cargo/bin/cargo-nextest.exe",
+    "          key: cargo-nextest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/test.yml') }}",
+  ].join("\n");
+  const nextestInstallStep = [
+    "      - name: Install pinned cargo-nextest",
+    "        if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'",
+    "        timeout-minutes: 12",
+    "        run: cargo install cargo-nextest --version 0.9.152 --locked",
+  ].join("\n");
+
+  for (const [label, mutate, message] of [
+    [
+      "missing cache step",
+      (text) => replaceNamedJobText(text, "rust-windows-test", `${nextestCacheStep}\n\n`, ""),
+      ".github/workflows/test.yml: (7f) rust-windows-test is missing the cargo-nextest actions/cache@v4 step",
+    ],
+    [
+      "cache after install",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          `${nextestCacheStep}\n\n${nextestInstallStep}`,
+          `${nextestInstallStep}\n\n${nextestCacheStep}`,
+        ),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must appear before the install step",
+    ],
+    [
+      "missing if on install",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "        if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'\n",
+          "",
+        ),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest install step must set if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'",
+    ],
+    [
+      "restore-keys on cache step",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "          key: cargo-nextest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/test.yml') }}",
+          "          key: cargo-nextest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/test.yml') }}\n          restore-keys: cargo-nextest-${{ runner.os }}-",
+        ),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must not set restore-keys",
+    ],
+    [
+      "missing install timeout-minutes",
+      (text) => replaceNamedJobText(text, "rust-windows-test", "        timeout-minutes: 12\n", ""),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest install step must set timeout-minutes: 12",
+    ],
+    [
+      "missing id on cache step",
+      (text) =>
+        replaceNamedJobText(text, "rust-windows-test", "        id: cargo-nextest-cache\n", ""),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must declare an id",
+    ],
+    [
+      "uses not immediately followed by with:/path:",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "        id: cargo-nextest-cache\n        uses: actions/cache@v4",
+          "        uses: actions/cache@v4\n        id: cargo-nextest-cache",
+        ),
+      ".github/workflows/test.yml: (7f) rust-windows-test cargo-nextest cache step must place with:/path: immediately after uses:",
+    ],
+  ]) {
+    await t.test(`(7f) ${label}`, (subtest) =>
+      mutateCheckedInFileAndRunCli(subtest, ".github/workflows/test.yml", mutate, message),
+    );
+  }
+});
+
+test("requires the cargo-nextest workflow authority through the CLI", async (t) => {
+  for (const [label, mutate] of [
+    [
+      "deleted install step",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "      - name: Install pinned cargo-nextest\n        if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'\n        timeout-minutes: 12\n        run: cargo install cargo-nextest --version 0.9.152 --locked\n\n",
+          "",
+        ),
+    ],
+    [
+      "stripped --version",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "cargo install cargo-nextest --version 0.9.152 --locked",
+          "cargo install cargo-nextest --locked",
+        ),
+    ],
+    [
+      "stripped --locked",
+      (text) =>
+        replaceNamedJobText(
+          text,
+          "rust-windows-test",
+          "cargo install cargo-nextest --version 0.9.152 --locked",
+          "cargo install cargo-nextest --version 0.9.152",
+        ),
+    ],
+  ]) {
+    await t.test(label, async (subtest) => {
+      const root = await checkedInRustFixture(subtest);
+      const original = await readFile(join(root, ".github/workflows/test.yml"), "utf8");
+      const changed = mutate(original);
+      assert.notEqual(changed, original);
+      await put(root, ".github/workflows/test.yml", changed);
+      const result = assertCliFailure(root, "cargo-nextest: expected at least 1 declaration site");
+      assert.ok(
+        result.stderr.includes("cargo-nextest: expected exactly one authority; found 0"),
+        `missing authority finding:\n${result.stderr}`,
+      );
+    });
   }
 });
 

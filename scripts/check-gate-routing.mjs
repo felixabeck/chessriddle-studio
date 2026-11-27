@@ -53,10 +53,11 @@ const CI_ONLY_SCRIPTS = new Set([
 ]);
 const CI_ONLY_COMMANDS = new Set([
   "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+  "cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci",
   ...[...CI_ONLY_SCRIPTS].map((name) => `pnpm ${name}`),
 ]);
 
-const ALLOWED_CARGO_COMMANDS = new Set(["fmt", "check", "clippy", "test"]);
+const ALLOWED_CARGO_COMMANDS = new Set(["fmt", "check", "clippy", "test", "nextest"]);
 // This closed list mirrors the repository's deliberate test naming conventions:
 // node:test uses *-tests.mjs, Vitest uses *.test.mjs, Python uses *-tests.py or
 // *_test.py, and shell tests use *-tests.sh. Keeping it closed prevents arbitrary
@@ -218,6 +219,10 @@ export function workflowSteps(workflow) {
       .find(({ line }) => /^shell:\s*/u.test(line))
       ?.line.replace(/^shell:\s*/u, "")
       .trim();
+    const timeoutMinutes = block
+      .find(({ line }) => /^timeout-minutes:\s*/u.test(line))
+      ?.line.replace(/^timeout-minutes:\s*/u, "")
+      .trim();
     steps.push({
       name: name ?? "",
       run,
@@ -226,6 +231,7 @@ export function workflowSteps(workflow) {
       ifValue,
       continueOnError,
       shell,
+      timeoutMinutes,
     });
   }
   return steps;
@@ -282,6 +288,7 @@ export function workflowStepBlocks(workflow) {
       uses: fields.get("uses"),
       ifValue: fields.get("if"),
       continueOnError: fields.get("continue-on-error"),
+      timeoutMinutes: fields.get("timeout-minutes"),
       withValues,
       text: blockLines.join("\n"),
     };

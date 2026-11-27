@@ -719,6 +719,7 @@ test("parses job bodies and step shell metadata without depending on field order
       ifValue: undefined,
       continueOnError: undefined,
       shell: "bash",
+      timeoutMinutes: undefined,
     },
   ]);
 });
@@ -759,6 +760,7 @@ test("splits step blocks including uses steps and ignores comments and nested li
       uses: "actions/cache/restore@v4",
       ifValue: "steps.a.outputs.b != ''",
       continueOnError: "true",
+      timeoutMinutes: undefined,
       withValues: [
         ["path", "/tmp/x/*.deb"],
         ["restore-keys", "|"],
@@ -948,6 +950,55 @@ test("rejects re-adding per-push frontend mutation to test.yml and accepts CI-on
       /workflow command must exactly match.*cargo test --manifest-path src-tauri\/Cargo\.toml --bins/u,
     );
   });
+
+  await t.test("exact CI-only cargo nextest command is accepted", async () => {
+    const root = await fixture();
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Rust Windows tests\n    run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci\n`,
+    );
+    assert.deepEqual(await checkGateRouting(root, { paths }), []);
+  });
+
+  await t.test("unlisted cargo nextest variant is rejected", async () => {
+    const root = await fixture();
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Unlisted cargo nextest\n    run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets\n`,
+    );
+    assert.match(
+      (await checkGateRouting(root, { paths })).join("\n"),
+      /workflow command must exactly match.*cargo nextest run --manifest-path src-tauri\/Cargo\.toml --all-targets/u,
+    );
+  });
+
+  await t.test("if: on a cargo nextest step is rejected", async () => {
+    const root = await fixture();
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Conditional cargo nextest\n    if: runner.os == 'Windows'\n    run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci\n`,
+    );
+    assert.match(
+      (await checkGateRouting(root, { paths })).join("\n"),
+      /workflow step has if: "runner\.os == 'Windows'": Conditional cargo nextest/u,
+    );
+  });
+
+  await t.test("continue-on-error: on a cargo nextest step is rejected", async () => {
+    const root = await fixture();
+    const workflowPath = join(root, ".github/workflows/test.yml");
+    await writeFile(
+      workflowPath,
+      `${await readFile(workflowPath, "utf8")}  - name: Ignored cargo nextest\n    continue-on-error: true\n    run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci\n`,
+    );
+    assert.match(
+      (await checkGateRouting(root, { paths })).join("\n"),
+      /workflow step ignores the gate's exit status with continue-on-error: "true": Ignored cargo nextest/u,
+    );
+  });
 });
 
 test("the live repository pins one shared contract-gate list", async () => {
@@ -1034,12 +1085,12 @@ function ciWorkflowContracts(texts) {
     () =>
       assert.equal(testJobs.has("frontend-mutation"), false, "test has no frontend-mutation job"),
   ]);
-  // The pinned actionlint binary is the one permitted actions/cache exception in test.yml
-  // (f-20261108-06), matched by its exact path.
+  // The pinned actionlint and cargo-nextest binaries are the two permitted actions/cache
+  // exceptions in test.yml (d-20261127-10, superseding d-20261108-12), matched by exact path.
   forbid(
     "no push save or combined cache",
     texts.test,
-    /uses:\s*["']?actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: ~\/\.github-actionlint\/bin\n)/u,
+    /uses:\s*["']?actions\/cache(?:\/save)?@[^\n]*\n(?!\s+with:\n\s+path: (?:~\/\.github-actionlint\/bin|~\/\.cargo\/bin\/cargo-nextest\.exe)\n)/u,
   );
   const listing = sweepJobs.get("frontend-mutation-packages");
   const sweep = sweepJobs.get("frontend-mutation");
@@ -2011,6 +2062,13 @@ test("CI workflow wiring rejects removed selectors, checkout, freshness, publica
       "test",
       "uses: actions/cache@v4\n        with:\n          path: ~/.github-actionlint/bin",
       'uses: "actions/cache@v4"\n        with:\n          path: .frontend-mutation-incremental',
+      "no push save or combined cache",
+    ],
+    [
+      "forbid third push save cache path",
+      "test",
+      "path: ~/.cargo/bin/cargo-nextest.exe",
+      "path: ~/.cargo/bin/other-tool.exe",
       "no push save or combined cache",
     ],
     ["forced sweep", "sweep", '      FRONTEND_MUTATION_FORCE: "1"\n'],

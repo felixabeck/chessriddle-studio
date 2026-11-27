@@ -101,6 +101,18 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Cache the cargo-nextest binary
+        id: cargo-nextest-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest.exe
+          key: cargo-nextest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/test.yml') }}
+
+      - name: Install pinned cargo-nextest
+        if: steps.cargo-nextest-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 12
+        run: cargo install cargo-nextest --version 0.9.152 --locked
+
       - name: Mount FAT32 and exFAT measurement volumes
         shell: pwsh
         run: |
@@ -119,7 +131,8 @@ jobs:
           "CHESSFABLE_VOLUME_MEASUREMENT=$measurement" >> $env:GITHUB_ENV
 
       - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+        timeout-minutes: 24
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --all-targets --profile ci
 
       - name: Print and check volume measurements
         if: always()
