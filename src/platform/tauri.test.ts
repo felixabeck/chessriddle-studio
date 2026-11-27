@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
     scoresheetPastePhoto: vi.fn(),
     scoresheetTakeDroppedPhotos: vi.fn(),
     scoresheetRead: vi.fn(),
+    scoresheetStorePhotos: vi.fn(),
+    scoresheetReadPhotos: vi.fn(),
     closeSplashscreen: vi.fn(),
     releasePreviousDocumentOperations: vi.fn(),
     startGame: vi.fn(),
@@ -223,6 +225,8 @@ test.each([
     "scoresheetPastePhoto",
     "scoresheetTakeDroppedPhotos",
     "scoresheetRead",
+    "scoresheetStorePhotos",
+    "scoresheetReadPhotos",
 ] as const)("%s uses the closed Coach boundary", async (command) => {
     const { tauri } = await import("./tauri");
     const invoke = async () => {
@@ -264,6 +268,10 @@ test.each([
                 return tauri.scoresheetTakeDroppedPhotos("drop-id");
             case "scoresheetRead":
                 return tauri.scoresheetRead({} as never);
+            case "scoresheetStorePhotos":
+                return tauri.scoresheetStorePhotos(["data:image/jpeg;base64,AAAA"]);
+            case "scoresheetReadPhotos":
+                return tauri.scoresheetReadPhotos(["a".repeat(64)]);
         }
     };
     mocks[command].mockResolvedValue({ status: "ok", data: "reply" });
@@ -428,6 +436,8 @@ vi.mock("@/bindings/generated", () => ({
         scoresheetPastePhoto: mocks.scoresheetPastePhoto,
         scoresheetTakeDroppedPhotos: mocks.scoresheetTakeDroppedPhotos,
         scoresheetRead: mocks.scoresheetRead,
+        scoresheetStorePhotos: mocks.scoresheetStorePhotos,
+        scoresheetReadPhotos: mocks.scoresheetReadPhotos,
         closeSplashscreen: mocks.closeSplashscreen,
         releasePreviousDocumentOperations: mocks.releasePreviousDocumentOperations,
         startGame: mocks.startGame,
@@ -1338,6 +1348,49 @@ describe("tauri command facade", () => {
             (err: unknown) => err instanceof CoachCommandError && err.code === "cancelled",
         );
         expect(mocks.cancelNativeRead).toHaveBeenCalledWith("ss-race");
+    });
+
+    test("scoresheetReadPhotos forwards ticket, maps photoStorage unchanged, and cancels on abort", async () => {
+        const { CoachCommandError } = await import("./coach");
+        const ids = ["a".repeat(64)];
+        const okResults = [{ status: "ok", dataUrl: "data:image/jpeg;base64,AAAA" }];
+
+        mocks.prepareNativeRead.mockResolvedValueOnce({ status: "ok", data: "photo-read-ok" });
+        mocks.scoresheetReadPhotos.mockResolvedValueOnce({ status: "ok", data: okResults });
+        await expect(
+            tauri.scoresheetReadPhotos(ids, { signal: new AbortController().signal }),
+        ).resolves.toEqual(okResults);
+        expect(mocks.scoresheetReadPhotos).toHaveBeenCalledWith(ids, "photo-read-ok");
+        expect(mocks.cancelNativeRead).not.toHaveBeenCalled();
+
+        mocks.prepareNativeRead.mockResolvedValueOnce({ status: "ok", data: "photo-read-err" });
+        mocks.cancelNativeRead.mockResolvedValue({ status: "ok", data: null });
+        mocks.scoresheetReadPhotos.mockResolvedValueOnce({
+            status: "error",
+            error: "photoStorage",
+        });
+        await expect(
+            tauri.scoresheetReadPhotos(ids, { signal: new AbortController().signal }),
+        ).rejects.toSatisfy(
+            (err: unknown) => err instanceof CoachCommandError && err.code === "photoStorage",
+        );
+
+        const controller = new AbortController();
+        let finishNative!: (v: unknown) => void;
+        mocks.prepareNativeRead.mockResolvedValueOnce({ status: "ok", data: "photo-read-abort" });
+        mocks.scoresheetReadPhotos.mockReturnValueOnce(
+            new Promise((resolve) => {
+                finishNative = resolve;
+            }),
+        );
+        const call = tauri.scoresheetReadPhotos(ids, { signal: controller.signal });
+        await vi.waitFor(() => expect(finishNative).toBeTypeOf("function"));
+        controller.abort();
+        finishNative({ status: "ok", data: okResults });
+        await expect(call).rejects.toSatisfy(
+            (err: unknown) => err instanceof CoachCommandError && err.code === "cancelled",
+        );
+        expect(mocks.cancelNativeRead).toHaveBeenCalledWith("photo-read-abort");
     });
 
     test("generated command errors clean up their claimed reservation", async () => {

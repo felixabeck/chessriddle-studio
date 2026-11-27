@@ -1,5 +1,10 @@
-import { expect, test, waitForTransitionsSettled } from "./fixtures";
-import { importFromPhoto, scoresheetPhotoCommands } from "./scoresheetPhotoImport";
+import { expect, preserveStorageForReload, test, waitForTransitionsSettled } from "./fixtures";
+import {
+    importFromPhoto,
+    PHOTO_DATA_URL,
+    scoresheetPhotoCommands,
+    stubScoresheetPgnTokens,
+} from "./scoresheetPhotoImport";
 
 test("import from photo shows hint without a connection", async ({ page, mockScenario }) => {
     await mockScenario({
@@ -254,4 +259,201 @@ test("import from photo keeps the mode cards even below the header and shows rea
     await expect(dialog.getByRole("button", { name: "Read game" })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "PGN", exact: true })).toBeEnabled();
     await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(1);
+});
+
+test("save imported photo game to PGN file, close tab, and reopen shows Photo tab with photo", async ({
+    page,
+    mockScenario,
+}) => {
+    const savedHandle = { id: { id: "e2e-scoresheet-pgn-file" }, kind: "fileWorkspace" } as const;
+    const savedRevision = "e2e-scoresheet-pgn-rev-1";
+    const savedStamp = "f".repeat(64);
+    const savedGrant = {
+        handle: savedHandle,
+        displayName: "Scoresheet game.pgn",
+        availability: "available" as const,
+    };
+
+    await mockScenario({
+        commands: {
+            ...scoresheetPhotoCommands(),
+            issue_pgn_export_destination: { result: savedGrant },
+            issue_pgn_workspace: { result: savedGrant },
+            write_game: { result: { stamp: savedStamp, revision: savedRevision } },
+            count_pgn_games: { result: 0 },
+            file_revision: { result: savedRevision },
+        },
+    });
+    const installPgnRoundTrip = () =>
+        page.evaluate(
+            ({ baseTokens, revision, stamp }) => {
+                const pgnKey = "__E2E_SAVED_SCORESHEET_PGN__";
+                const internals = (
+                    window as unknown as {
+                        __TAURI_INTERNALS__: {
+                            invoke: (
+                                cmd: string,
+                                args?: Record<string, unknown>,
+                            ) => Promise<unknown>;
+                        };
+                    }
+                ).__TAURI_INTERNALS__;
+                const origInvoke = internals.invoke.bind(internals);
+                internals.invoke = async (cmd: string, args: Record<string, unknown> = {}) => {
+                    if (cmd === "write_game") {
+                        sessionStorage.setItem(pgnKey, String(args.pgn ?? ""));
+                        return origInvoke(cmd, args);
+                    }
+                    if (cmd === "count_pgn_games") {
+                        return sessionStorage.getItem(pgnKey) ? 1 : 0;
+                    }
+                    if (cmd === "read_game") {
+                        const savedPgn = sessionStorage.getItem(pgnKey) ?? "";
+                        return { pgn: savedPgn, stamp, revision, present: true };
+                    }
+                    if (cmd === "read_games") {
+                        const savedPgn = sessionStorage.getItem(pgnKey) ?? "";
+                        return savedPgn ? [{ pgn: savedPgn, stamp, revision, present: true }] : [];
+                    }
+                    if (cmd === "lex_pgn") {
+                        const pgn = String(args.pgn ?? "");
+                        const match = pgn.match(/\[ScoresheetPhotos "([^"]+)"\]/);
+                        if (match) {
+                            return [
+                                {
+                                    type: "Header",
+                                    value: { tag: "ScoresheetPhotos", value: match[1] },
+                                },
+                                ...baseTokens,
+                            ];
+                        }
+                        return baseTokens;
+                    }
+                    return origInvoke(cmd, args);
+                };
+            },
+            { baseTokens: stubScoresheetPgnTokens, revision: savedRevision, stamp: savedStamp },
+        );
+
+    await page.goto("/");
+    await installPgnRoundTrip();
+
+    await importFromPhoto(page);
+    await expect(page.getByRole("tab", { name: "Photo", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+
+    // Save the imported game to a PGN file and verify the written PGN carries ScoresheetPhotos.
+    await page.getByRole("button", { name: /^save pgn/i }).click();
+    await expect(page.locator("[data-file-freshness]")).toHaveAttribute(
+        "data-file-freshness",
+        /^verified:/,
+    );
+    const writtenPgn = await page.evaluate(() => {
+        const writeCall = window.__E2E_TAURI__
+            .invocations()
+            .find((item) => item.command === "write_game");
+        return String((writeCall?.args as { pgn?: string } | undefined)?.pgn ?? "");
+    });
+    const tagMatch = writtenPgn.match(/\[ScoresheetPhotos "([0-9a-f]{64})"\]/);
+    expect(tagMatch).not.toBeNull();
+    const savedPhotoId = tagMatch![1];
+
+    // Close the analysis tab, then reload the page to drop the renderer's in-memory photo cache.
+    await page.getByRole("tab", { name: "Alice - Bob" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Close tab", exact: true }).click();
+    await expect(page.getByRole("tab", { name: "Photo", exact: true })).toHaveCount(0);
+
+    await preserveStorageForReload(page);
+    await installPgnRoundTrip();
+
+    // Reopen the saved PGN file via Application menu -> Open File.
+    await page.getByRole("button", { name: "Application menu", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Open File" }).click();
+
+    // The reopened game has no active review, yet offers the Photo tab and loads the photo through scoresheet_read_photos.
+    const photoTab = page.getByRole("tab", { name: "Photo", exact: true });
+    await expect(photoTab).toBeVisible();
+    await photoTab.click();
+    await expect(page.locator("[data-scoresheet-photo-size] img")).toHaveAttribute(
+        "src",
+        PHOTO_DATA_URL,
+    );
+    await expect(page.locator("[data-scoresheet-review-row]")).toHaveCount(0);
+
+    const readPhotoCalls = await page.evaluate(() =>
+        window.__E2E_TAURI__
+            .invocations()
+            .filter((item) => item.command === "scoresheet_read_photos")
+            .map((item) => item.args),
+    );
+    expect(readPhotoCalls).toContainEqual(expect.objectContaining({ ids: [savedPhotoId] }));
+});
+
+test("multi-page missing photo keeps page overlay anchored inside the empty box", async ({
+    page,
+    mockScenario,
+}) => {
+    const idMissing = "a".repeat(64);
+    const idOk = "b".repeat(64);
+    const grant = {
+        handle: { id: { id: "e2e-missing-2page" }, kind: "fileWorkspace" } as const,
+        displayName: "Missing photo.pgn",
+        availability: "available" as const,
+    };
+    const pgn = `[ScoresheetPhotos "${idMissing},${idOk}"]\n[White "Alice"]\n[Black "Bob"]\n[Result "1-0"]\n\n1. e4 e5 1-0\n`;
+
+    await mockScenario({
+        commands: {
+            issue_pgn_workspace: { result: grant },
+            count_pgn_games: { result: 1 },
+            file_revision: { result: "rev-missing-1" },
+            read_game: {
+                result: { pgn, stamp: "c".repeat(64), revision: "rev-missing-1", present: true },
+            },
+            lex_pgn: {
+                result: [
+                    {
+                        type: "Header",
+                        value: { tag: "ScoresheetPhotos", value: `${idMissing},${idOk}` },
+                    },
+                    ...stubScoresheetPgnTokens,
+                ],
+            },
+            scoresheet_read_photos: {
+                result: [{ status: "missing" }, { status: "ok", dataUrl: PHOTO_DATA_URL }],
+            },
+        },
+    });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Application menu", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Open File" }).click();
+
+    const photoTab = page.getByRole("tab", { name: "Photo", exact: true });
+    await expect(photoTab).toBeVisible();
+    await photoTab.click();
+
+    const emptyBox = page.locator("[data-scoresheet-no-photo]");
+    const pageOverlay = page.locator("[data-scoresheet-page-overlay]");
+    await expect(emptyBox).toBeVisible();
+    await expect(pageOverlay).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+        const box = document.querySelector<HTMLElement>("[data-scoresheet-no-photo]")!;
+        const pager = document.querySelector<HTMLElement>("[data-scoresheet-page-overlay]")!;
+        const boxRect = box.getBoundingClientRect();
+        const pagerRect = pager.getBoundingClientRect();
+        return {
+            position: getComputedStyle(box).position,
+            insideVertically: pagerRect.top >= boxRect.top && pagerRect.bottom <= boxRect.bottom,
+            insideHorizontally: pagerRect.left >= boxRect.left && pagerRect.right <= boxRect.right,
+        };
+    });
+    expect(geometry).toEqual({
+        position: "relative",
+        insideVertically: true,
+        insideHorizontally: true,
+    });
 });

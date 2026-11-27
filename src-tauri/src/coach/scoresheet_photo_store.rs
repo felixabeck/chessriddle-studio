@@ -8,9 +8,6 @@
 //! Store, read, and the background orphan sweep's delete step are serialized by one process-wide
 //! lock ([`lock_store`]) acquired only inside synchronous blocking work, never across `.await`.
 
-// Commands (Phase 3) and the orphan sweep (Phase 5) wire these crate-internal entry points.
-#![allow(dead_code)]
-
 use std::{
     ffi::OsStr,
     fmt,
@@ -19,7 +16,9 @@ use std::{
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
+use serde::Serialize;
 use sha2::{Digest, Sha256};
+use specta::Type;
 use tokio_util::sync::CancellationToken;
 
 use super::scoresheet_photo::{encode_jpeg_data_url, MAX_OUTPUT_JPEG_BYTES, MAX_SCORESHEET_PHOTOS};
@@ -75,9 +74,13 @@ impl fmt::Display for PhotoStoreError {
 impl std::error::Error for PhotoStoreError {}
 
 /// Outcome for one requested photo id in a [`read_photos`] batch.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "status", rename_all = "camelCase")]
 pub(crate) enum StoredPhotoRead {
-    Ok { data_url: String },
+    #[serde(rename_all = "camelCase")]
+    Ok {
+        data_url: String,
+    },
     Missing,
     Unreadable,
 }
@@ -288,7 +291,10 @@ where
             Ok(store_validated_in_dir(&directory, validated))
         })
         .await
-        .map_err(|_| PhotoStoreError::Storage)?
+        .map_err(|error| {
+            log::warn!("scoresheet photo store: blocking gateway store failed: {error}");
+            PhotoStoreError::Storage
+        })?
 }
 
 async fn read_photos_with<F>(
@@ -317,7 +323,10 @@ where
         .await
         .map_err(|error| match error {
             Error::Cancellation => PhotoStoreError::Cancelled,
-            _ => PhotoStoreError::Storage,
+            other => {
+                log::warn!("scoresheet photo store: blocking gateway read failed: {other}");
+                PhotoStoreError::Storage
+            }
         })?
 }
 

@@ -53,6 +53,7 @@ pub(crate) use self::scoresheet_photo::{
     clear_window_dropped_photos, handle_drop as handle_scoresheet_drop, DroppedPhotoSlots,
     ScoresheetPhoto, ScoresheetPhotoBatch, ScoresheetPhotosDropped,
 };
+pub(crate) use self::scoresheet_photo_store::{PhotoStoreError, StoredPhotoRead};
 use self::{
     accounts::{Accounts, ConnectionBearer, HeldSignIn, SignInProvider},
     address::Address,
@@ -955,6 +956,80 @@ pub(crate) async fn scoresheet_read(
     scoresheet::read_scoresheet(read, ticket, &state, window.label()).await
 }
 
+fn map_photo_store_error(error: PhotoStoreError) -> CoachError {
+    match error {
+        PhotoStoreError::InvalidInput => CoachError::InvalidInput,
+        PhotoStoreError::Cancelled => CoachError::Cancelled,
+        PhotoStoreError::Storage => CoachError::PhotoStorage,
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_store_photos(
+    photos: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, CoachError> {
+    scoresheet_photo_store::store_photos(app, photos)
+        .await
+        .map_err(map_photo_store_error)
+}
+
+async fn read_scoresheet_photos_with<F, Fut>(
+    ticket: Option<String>,
+    state: &crate::AppState,
+    window: &str,
+    run: F,
+) -> Result<Vec<StoredPhotoRead>, CoachError>
+where
+    F: FnOnce(CancellationToken) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<Vec<StoredPhotoRead>, PhotoStoreError>>
+        + Send
+        + 'static,
+{
+    let operation = match ticket {
+        Some(ticket) => state
+            .operations
+            .claim_read(&ticket, window, "scoresheet_read_photos"),
+        None => state.operations.accept("scoresheet_read_photos"),
+    }
+    .map_err(|error| {
+        log::warn!("scoresheet_read_photos: operation admission failed: {error}");
+        match error {
+            crate::error::Error::Cancellation => CoachError::Cancelled,
+            crate::error::Error::ResourceLimit(_) => CoachError::Busy,
+            crate::error::Error::Conflict(_) => CoachError::PhotoStorage,
+            _ => CoachError::InvalidInput,
+        }
+    })?;
+    let cancellation = operation.token();
+    let workflow = async move { Ok(run(cancellation).await.map_err(map_photo_store_error)) };
+    crate::infra::operations::run_native_operation(operation, "scoresheet_read_photos", workflow)
+        .await
+        .map_err(|error| {
+            log::warn!("scoresheet_read_photos: native operation failed: {error}");
+            match error {
+                crate::error::Error::Cancellation => CoachError::Cancelled,
+                _ => CoachError::PhotoStorage,
+            }
+        })?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn scoresheet_read_photos(
+    ids: Vec<String>,
+    ticket: Option<String>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<StoredPhotoRead>, CoachError> {
+    read_scoresheet_photos_with(ticket, &state, window.label(), move |cancellation| {
+        scoresheet_photo_store::read_photos(app, ids, cancellation)
+    })
+    .await
+}
+
 fn open_usage(state: &crate::AppState, opener: &BrowserOpener) -> Result<(), CoachError> {
     coach(state)?.chatgpt.open_usage(opener)
 }
@@ -1192,6 +1267,148 @@ mod tests {
     fn release_and_dev_builds_have_the_coach_while_the_release_switch_is_on() {
         assert!(available_for("com.chessriddle.studio"));
         assert!(available_for("com.chessriddle.studio.dev"));
+    }
+
+    #[test]
+    fn photo_store_errors_and_read_outcomes_map_to_closed_ipc_shapes() {
+        assert_eq!(
+            map_photo_store_error(PhotoStoreError::InvalidInput),
+            CoachError::InvalidInput
+        );
+        assert_eq!(
+            map_photo_store_error(PhotoStoreError::Cancelled),
+            CoachError::Cancelled
+        );
+        assert_eq!(
+            map_photo_store_error(PhotoStoreError::Storage),
+            CoachError::PhotoStorage
+        );
+        assert_eq!(
+            serde_json::to_value(CoachError::PhotoStorage).unwrap(),
+            serde_json::json!("photoStorage")
+        );
+        assert_eq!(
+            serde_json::to_value(StoredPhotoRead::Ok {
+                data_url: "data:image/jpeg;base64,AAAA".into(),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "status": "ok",
+                "dataUrl": "data:image/jpeg;base64,AAAA",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(StoredPhotoRead::Missing).unwrap(),
+            serde_json::json!({ "status": "missing" })
+        );
+        assert_eq!(
+            serde_json::to_value(StoredPhotoRead::Unreadable).unwrap(),
+            serde_json::json!({ "status": "unreadable" })
+        );
+    }
+
+    #[tokio::test]
+    async fn scoresheet_read_photos_claims_tickets_handles_accept_and_maps_errors() {
+        let state = crate::AppState::default();
+        let ok_result = vec![StoredPhotoRead::Ok {
+            data_url: "data:image/jpeg;base64,AAAA".into(),
+        }];
+
+        // 1. Valid prepared ticket claims and succeeds.
+        let ticket = state.operations.prepare_read("main").unwrap();
+        let expected = ok_result.clone();
+        let result = read_scoresheet_photos_with(Some(ticket), &state, "main", move |_| async {
+            Ok(expected)
+        })
+        .await;
+        assert_eq!(result, Ok(ok_result.clone()));
+
+        // 2. Absent ticket uses accept() and succeeds.
+        let expected = ok_result.clone();
+        let result =
+            read_scoresheet_photos_with(None, &state, "main", move |_| async { Ok(expected) })
+                .await;
+        assert_eq!(result, Ok(ok_result));
+
+        // 3. Unknown, foreign-window, and pre-claim cancelled tickets fail claim_read with
+        //    Error::Conflict, which maps to CoachError::PhotoStorage (never misleading InvalidInput).
+        assert_eq!(
+            read_scoresheet_photos_with(Some("unknown".into()), &state, "main", |_| async {
+                Ok(vec![])
+            })
+            .await,
+            Err(CoachError::PhotoStorage)
+        );
+        let foreign = state.operations.prepare_read("other-window").unwrap();
+        assert_eq!(
+            read_scoresheet_photos_with(Some(foreign), &state, "main", |_| async { Ok(vec![]) })
+                .await,
+            Err(CoachError::PhotoStorage)
+        );
+        let cancelled = state.operations.prepare_read("main").unwrap();
+        state.operations.cancel_read(&cancelled, "main").unwrap();
+        assert_eq!(
+            read_scoresheet_photos_with(Some(cancelled), &state, "main", |_| async { Ok(vec![]) })
+                .await,
+            Err(CoachError::PhotoStorage)
+        );
+
+        // 4. Store errors map to their closed CoachError variants.
+        for (store_err, expected_err) in [
+            (PhotoStoreError::InvalidInput, CoachError::InvalidInput),
+            (PhotoStoreError::Cancelled, CoachError::Cancelled),
+            (PhotoStoreError::Storage, CoachError::PhotoStorage),
+        ] {
+            assert_eq!(
+                read_scoresheet_photos_with(None, &state, "main", move |_| async move {
+                    Err(store_err)
+                })
+                .await,
+                Err(expected_err)
+            );
+        }
+
+        // 5. In-flight cancellation cancels the token and maps to CoachError::Cancelled.
+        let in_flight = state.operations.prepare_read("main").unwrap();
+        let cancel_ticket = in_flight.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let read_fut =
+            read_scoresheet_photos_with(Some(in_flight), &state, "main", |token| async move {
+                let _ = started_tx.send(());
+                token.cancelled().await;
+                Err(PhotoStoreError::Cancelled)
+            });
+        let cancel_fut = async {
+            let _ = started_rx.await;
+            state
+                .operations
+                .cancel_read(&cancel_ticket, "main")
+                .unwrap();
+        };
+        let (read_res, ()) = tokio::join!(read_fut, cancel_fut);
+        assert_eq!(read_res, Err(CoachError::Cancelled));
+
+        // 6. Sealed/shutdown registry admission maps Conflict to PhotoStorage (not InvalidInput).
+        let shutdown_state = crate::AppState::default();
+        shutdown_state
+            .operations
+            .seal_and_request_cancellation()
+            .unwrap();
+        assert_eq!(
+            read_scoresheet_photos_with(None, &shutdown_state, "main", |_| async { Ok(vec![]) })
+                .await,
+            Err(CoachError::PhotoStorage)
+        );
+
+        // 7. Saturated operation registry maps Error::ResourceLimit to CoachError::Busy.
+        let busy_state = crate::AppState::default();
+        let _held_leases: Vec<_> = (0..crate::infra::operations::MAX_ACCEPTED_OPERATIONS)
+            .map(|i| busy_state.operations.accept(&format!("held-{i}")).unwrap())
+            .collect();
+        assert_eq!(
+            read_scoresheet_photos_with(None, &busy_state, "main", |_| async { Ok(vec![]) }).await,
+            Err(CoachError::Busy)
+        );
     }
 
     #[tokio::test]

@@ -36,6 +36,7 @@ export function useCoachErrorMessages(): Record<CoachError, string> {
             usageLimitReached: t("Coach.Error.UsageLimitReached"),
             creditsExhausted: t("Coach.Error.CreditsExhausted"),
             photoUnreadable: t("Coach.Error.PhotoUnreadable"),
+            photoStorage: t("Coach.Error.PhotoStorage"),
             clipboardEmpty: t("Coach.Error.ClipboardEmpty"),
             imagesUnsupported: t("Coach.Error.ImagesUnsupported"),
             scoresheetUnreadable: t("Coach.Error.ScoresheetUnreadable"),

@@ -80,6 +80,7 @@
 }
 
 .emptyPhoto {
+  position: relative;
   flex: 1;
   min-height: 6rem;
   display: flex;

@@ -72,24 +72,17 @@ export const stubScoresheetPgnTokens: Token[] = [
     { type: "Outcome", value: "1-0" },
 ];
 
-export function scoresheetPhotoCommands(
-    options: {
-        photos?: string[];
-        game?: ScoresheetGame;
-        tokens?: Token[];
-    } = {},
-): NonNullable<MockScenario["commands"]> {
-    const photos = (options.photos ?? [PHOTO_DATA_URL]).map((dataUrl) => ({ dataUrl }));
+export function scoresheetPhotoCommands(): NonNullable<MockScenario["commands"]> {
     return {
         coach_available: { result: true },
         coach_has_connection: { result: true },
         coach_connections: { result: [scoresheetConnection] },
         coach_models: { result: scoresheetModels },
         scoresheet_pick_photos: {
-            result: { photos, skipped: 0, failed: 0 },
+            result: { photos: [{ dataUrl: PHOTO_DATA_URL }], skipped: 0, failed: 0 },
         },
-        scoresheet_read: { result: options.game ?? stubScoresheetGame },
-        lex_pgn: { result: options.tokens ?? stubScoresheetPgnTokens },
+        scoresheet_read: { result: stubScoresheetGame },
+        lex_pgn: { result: stubScoresheetPgnTokens },
     };
 }
 

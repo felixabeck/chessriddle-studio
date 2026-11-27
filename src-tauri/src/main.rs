@@ -1691,6 +1691,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             coach::scoresheet_paste_photo,
             coach::scoresheet_take_dropped_photos,
             coach::scoresheet_read,
+            coach::scoresheet_store_photos,
+            coach::scoresheet_read_photos,
             close_splashscreen,
             verify_signed_bytes,
             prepare_native_read,
@@ -6386,6 +6388,14 @@ mod blocking_offload_scans {
             (
                 "scoresheet_read",
                 "sends already-read photo bytes to the Coach provider over HTTPS; touches no file root",
+            ),
+            (
+                "scoresheet_store_photos",
+                "stores validated scoresheet photos in app-owned ScoresheetPhotos root only; no Database/Puzzle/Engine root",
+            ),
+            (
+                "scoresheet_read_photos",
+                "reads validated 64-hex scoresheet photos from app-owned ScoresheetPhotos root only; no Database/Puzzle/Engine root",
             ),
             // db/mod.rs
             (

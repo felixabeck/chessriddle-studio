@@ -2105,3 +2105,42 @@ test("hidden photo panel area is omitted without a review, kept across divider d
     },
   });
 });
+
+test("BoardTabLayout reveals a pulled-out photo tile for a well-formed ScoresheetPhotos tag and keeps it hidden for a malformed tag", async () => {
+  const arrangement = placeArea(defaultBoardArrangement(), "photo", "topRight", "top");
+  const store = createStore();
+  store.set(boardArrangementAtom, arrangement);
+  const treeStore = createZustandStore<TreeStoreState>(
+    () =>
+      ({
+        scoresheetReview: undefined,
+        headers: { other: { ScoresheetPhotos: "../malformed" } },
+      }) as unknown as TreeStoreState,
+  ) as unknown as TreeStore;
+
+  await act(async () =>
+    root.render(
+      <Provider store={store}>
+        <MantineProvider env="test">
+          <TreeStateContext.Provider value={treeStore}>
+            <BoardTabLayout arrangeable>
+              <ArrangementProbe />
+            </BoardTabLayout>
+          </TreeStateContext.Provider>
+        </MantineProvider>
+      </Provider>,
+    ),
+  );
+
+  // Malformed tag does not offer the photo tile.
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
+
+  // Well-formed tag reveals the photo tile even without an active review.
+  await act(async () =>
+    treeStore.setState({
+      scoresheetReview: undefined,
+      headers: { other: { ScoresheetPhotos: "a".repeat(64) } },
+    } as unknown as Partial<TreeStoreState>),
+  );
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["photo"]);
+});

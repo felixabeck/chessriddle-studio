@@ -809,3 +809,28 @@ test("unticking Variations on a game with nothing to hide leaves the editor edit
   expect(editor().textContent).not.toContain("PgnInput.FilteredReadOnly");
   expect(updateButton()).toBeUndefined();
 });
+
+test("editing the raw PGN keeps the ScoresheetPhotos tag in the serialized text and parsed headers", async () => {
+  const photoId = "a".repeat(64);
+  const initial = defaultTree();
+  initial.headers.event = "Club Open";
+  initial.headers.other = { ScoresheetPhotos: photoId };
+
+  const fixture = await setup({ tree: initial });
+  const textarea = editor().querySelector("textarea")!;
+  expect(textarea.value).toContain(`[ScoresheetPhotos "${photoId}"]`);
+
+  const updatedTree = parsedTree("Updated Event");
+  updatedTree.headers.other = { ScoresheetPhotos: photoId };
+  mocks.parsePGN.mockResolvedValueOnce(updatedTree);
+
+  const edited = textarea.value.replace('[Event "Club Open"]', '[Event "Updated Event"]');
+  expect(edited).toContain(`[ScoresheetPhotos "${photoId}"]`);
+  await draft(edited);
+  await update();
+
+  expect(mocks.parsePGN).toHaveBeenCalledOnce();
+  expect(mocks.parsePGN.mock.calls[0][0]).toContain(`[ScoresheetPhotos "${photoId}"]`);
+  expect(fixture.store.getState().headers.event).toBe("Updated Event");
+  expect(fixture.store.getState().headers.other?.ScoresheetPhotos).toBe(photoId);
+});

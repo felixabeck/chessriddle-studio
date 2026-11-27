@@ -60,6 +60,7 @@ import { resolveBoardLayoutKind } from "@/state/boardLayoutKind";
 import type { BoardLayoutKind } from "@/state/layoutPresets";
 import { applyBoardLayoutToKind, boardLayoutListAtom } from "@/state/layoutStorage";
 import { getVariationLine } from "@/utils/chess";
+import { hasScoresheetPhotoPanel } from "@/utils/scoresheet";
 import { positionFromFen } from "@/utils/chessops";
 import { locateBoardState } from "@/utils/treeReducer";
 import { withKeyboardOwnership } from "@/utils/keyboardOwnership";
@@ -409,13 +410,14 @@ function BoardAnalysis() {
   const keyMap = useAtomValue(keyMapAtom);
 
   const [currentTabSelected, setCurrentTabSelected] = useAtom(useTabAtom(tabFamily));
-  // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab/panel exists only
-  // while a scoresheet review is active. Detached panel areas leave the tab strip and render in their own tiles.
+  // A build without the Coach has no Coach tab, hotkey or panel. The Photo tab/panel exists while
+  // a scoresheet review is active or the game carries a well-formed photo reference. Detached panel
+  // areas leave the tab strip and render in their own tiles.
   const coachEnabled = useAtomValue(coachEnabledAtom);
-  const hasScoresheetReview = useStore(store, (s) => s.scoresheetReview !== undefined);
+  const hasScoresheetPhoto = useStore(store, (s) => hasScoresheetPhotoPanel(s));
   const isRepertoire = isRepertoireTab(currentTab);
   const isPanelAvailable = (panel: PanelAreaId) =>
-    (panel !== "coach" || coachEnabled) && (panel !== "photo" || hasScoresheetReview);
+    (panel !== "coach" || coachEnabled) && (panel !== "photo" || hasScoresheetPhoto);
   const panelMeta: Record<PanelAreaId, { title: string; Icon: typeof AnalysisIcon }> = {
     analysis: { title: t("Board.Tabs.Analysis"), Icon: AnalysisIcon },
     report: { title: t("Board.Analysis.Report"), Icon: ReportIcon },
@@ -436,7 +438,7 @@ function BoardAnalysis() {
     ...(coachEnabled && !shownPanelAreas.has("coach")
       ? [{ value: "coach", ...panelMeta.coach }]
       : []),
-    ...(hasScoresheetReview && !shownPanelAreas.has("photo")
+    ...(hasScoresheetPhoto && !shownPanelAreas.has("photo")
       ? [{ value: "photo", ...panelMeta.photo }]
       : []),
     ...(!shownPanelAreas.has("info") ? [{ value: "info", ...panelMeta.info }] : []),

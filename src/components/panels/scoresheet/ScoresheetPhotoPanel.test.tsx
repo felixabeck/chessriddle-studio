@@ -7,11 +7,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   clearAllScoresheetPhotosForTests,
-  getScoresheetPhotos,
-  setScoresheetPhotos,
+  getCachedScoresheetPhoto,
+  getUnsavedScoresheetPhotos,
+  setUnsavedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { CoachCommandError } from "@/platform/coach";
 import { closeTreeStore, createTreeStore, type TreeStore } from "@/state/store/tree";
+import { SCORESHEET_PHOTOS_TAG, withScoresheetPhotoIds } from "@/utils/scoresheet";
 import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
 import ScoresheetPhotoPanel, {
   adjacentUnsurePath,
@@ -37,11 +39,16 @@ vi.mock("react-i18next", () => ({
 
 const mocks = vi.hoisted(() => ({
   scoresheetPickPhotos: vi.fn(),
+  scoresheetStorePhotos: vi.fn(),
+  scoresheetReadPhotos: vi.fn(),
 }));
 
 vi.mock("@/platform/tauri", () => ({
   tauri: {
     scoresheetPickPhotos: () => mocks.scoresheetPickPhotos(),
+    scoresheetStorePhotos: (photos: string[]) => mocks.scoresheetStorePhotos(photos),
+    scoresheetReadPhotos: (ids: string[], opts?: { signal?: AbortSignal }) =>
+      mocks.scoresheetReadPhotos(ids, opts),
   },
 }));
 
@@ -89,6 +96,10 @@ const createdTabs: string[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
   clearAllScoresheetPhotosForTests();
+  mocks.scoresheetStorePhotos.mockImplementation(async (photos: string[]) =>
+    photos.map((_, idx) => (idx + 1).toString(16).repeat(64)),
+  );
+  mocks.scoresheetReadPhotos.mockResolvedValue([]);
   sessionStorage.clear();
   host = document.createElement("div");
   document.body.append(host);
@@ -153,7 +164,7 @@ async function renderPanel(store: TreeStore, tabId = "tab-1") {
 }
 
 test("shows the photo with overlay controls (enlarge top-right, page overlay only for multiple photos) and no toolbar row above", async () => {
-  setScoresheetPhotos("tab-1", [PHOTO_1]);
+  setUnsavedScoresheetPhotos("tab-1", [PHOTO_1]);
   const store = buildReviewStore("tab-1", { unsurePlies: [1] });
   await renderPanel(store, "tab-1");
 
@@ -168,7 +179,7 @@ test("shows the photo with overlay controls (enlarge top-right, page overlay onl
   expect(host.querySelector("[data-scoresheet-page]")).toBeNull();
 
   // Multiple photos show the page overlay and switch pages; clicking enlarge toggles full size.
-  await act(async () => setScoresheetPhotos("tab-1", [PHOTO_1, PHOTO_2]));
+  await act(async () => setUnsavedScoresheetPhotos("tab-1", [PHOTO_1, PHOTO_2]));
   expect(host.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
   expect(host.querySelector("[data-scoresheet-page]")?.textContent).toBe(
     "Scoresheet.PageOf(current=1,total=2)",
@@ -224,7 +235,7 @@ test("shows a no-photo-in-memory state with Load photo again when no photo is lo
 });
 
 test("counts and navigates only main-line unsure marks with wrap-around and removes Mark as checked once all are checked", async () => {
-  setScoresheetPhotos("tab-1", [PHOTO_1]);
+  setUnsavedScoresheetPhotos("tab-1", [PHOTO_1]);
   const store = buildReviewStore("tab-1", { unsurePlies: [2, 4], variationUnsure: true });
   await renderPanel(store, "tab-1");
 
@@ -276,7 +287,7 @@ test("counts and navigates only main-line unsure marks with wrap-around and remo
 });
 
 test("hides the review controls row when no scoresheet review is active (reopened saved game)", async () => {
-  setScoresheetPhotos("tab-reopened", [PHOTO_1, PHOTO_2]);
+  setUnsavedScoresheetPhotos("tab-reopened", [PHOTO_1, PHOTO_2]);
   createdTabs.push("tab-reopened");
   const store = createTreeStore("tab-reopened", {
     ...defaultTree(),
@@ -396,9 +407,9 @@ test("Load photo again attaches picked photos without sending, reports failed fi
     loadButton().click();
   });
   expect(host.querySelector("[data-scoresheet-intake-status]")).toBeNull();
-  expect(getScoresheetPhotos("tab-reload-photo")).toEqual([]);
+  expect(getUnsavedScoresheetPhotos("tab-reload-photo")).toEqual([]);
 
-  // Failed file reported on intake line while valid photo is attached for viewing.
+  // Failed file reported on intake line while valid photo is stored, tagged, and shown.
   mocks.scoresheetPickPhotos.mockResolvedValueOnce({
     photos: [{ dataUrl: PHOTO_1 }],
     skipped: 0,
@@ -408,11 +419,20 @@ test("Load photo again attaches picked photos without sending, reports failed fi
     loadButton().click();
   });
   expect(mocks.scoresheetPickPhotos).toHaveBeenCalledTimes(2);
-  expect(getScoresheetPhotos("tab-reload-photo")).toEqual([PHOTO_1]);
+  expect(mocks.scoresheetStorePhotos).toHaveBeenCalledWith([PHOTO_1]);
+  expect(store.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe("1".repeat(64));
+  expect(store.getState().dirty).toBe(true);
+  expect(getCachedScoresheetPhoto("1".repeat(64))).toEqual({ status: "ok", dataUrl: PHOTO_1 });
   expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
   expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
     "Scoresheet.Intake.Failed(count=1)",
   );
+
+  // Setting the tag is one undoable header edit.
+  await act(async () => {
+    store.getState().undo();
+  });
+  expect(store.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBeUndefined();
 });
 
 test("Load photo again reports visible command errors and skipped counts on the intake line", async () => {
@@ -448,10 +468,84 @@ test("Load photo again reports visible command errors and skipped counts on the 
   await act(async () => {
     loadButton().click();
   });
-  expect(getScoresheetPhotos("tab-reload-errors")).toEqual([PHOTO_1]);
+  expect(store.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe("1".repeat(64));
   expect(host.querySelector("[data-scoresheet-intake-status]")?.textContent).toBe(
     "Scoresheet.Intake.Skipped(count=2)",
   );
+});
+
+test("reopened game with ScoresheetPhotos tag loads by id, handles missing/unreadable+retry, and Load photo again store failure keeps headers untouched", async () => {
+  const ID_OK = "a".repeat(64);
+  const ID_MISSING = "b".repeat(64);
+  const ID_UNREADABLE = "c".repeat(64);
+
+  // 1. Reopened game (no review) loads photo by id and hides review controls.
+  createdTabs.push("tab-tagged-ok");
+  const okTree = defaultTree();
+  okTree.headers = withScoresheetPhotoIds(okTree.headers, [ID_OK]);
+  const okStore = createTreeStore("tab-tagged-ok", okTree);
+  mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "ok", dataUrl: PHOTO_1 }]);
+  await renderPanel(okStore, "tab-tagged-ok");
+  expect(mocks.scoresheetReadPhotos).toHaveBeenCalledWith([ID_OK], {
+    signal: expect.any(AbortSignal),
+  });
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+  expect(host.querySelector("[data-scoresheet-review-row]")).toBeNull();
+
+  // 2. Missing photo shows PhotoNotOnComputer + Load photo again; store failure keeps headers untouched.
+  createdTabs.push("tab-tagged-missing");
+  const missingTree = defaultTree();
+  missingTree.headers = withScoresheetPhotoIds(missingTree.headers, [ID_MISSING]);
+  missingTree.dirty = false;
+  const missingStore = createTreeStore("tab-tagged-missing", missingTree);
+  mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "missing" }]);
+  await renderPanel(missingStore, "tab-tagged-missing");
+  expect(host.querySelector("[data-scoresheet-no-photo]")?.textContent).toContain(
+    "Scoresheet.PhotoNotOnComputer",
+  );
+
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_2 }],
+    skipped: 0,
+    failed: 0,
+  });
+  mocks.scoresheetStorePhotos.mockRejectedValueOnce(new CoachCommandError("photoStorage"));
+  await act(async () => {
+    loadButton().click();
+  });
+  // Headers stay untouched and not dirty; picked photo is shown tab-scoped with store error.
+  expect(missingStore.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe(ID_MISSING);
+  expect(missingStore.getState().dirty).toBe(false);
+  expect(getUnsavedScoresheetPhotos("tab-tagged-missing")).toEqual([PHOTO_2]);
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_2);
+  expect(host.querySelector("[data-scoresheet-store-error]")?.textContent).toBe(
+    "Coach.Error.PhotoStorage",
+  );
+
+  // 3. Multi-page unreadable state renders Retry and the page overlay inside the unreadable box,
+  //    and Retry reloads the unreadable photo.
+  createdTabs.push("tab-tagged-unreadable");
+  const unreadableTree = defaultTree();
+  unreadableTree.headers = withScoresheetPhotoIds(unreadableTree.headers, [ID_UNREADABLE, ID_OK]);
+  const unreadableStore = createTreeStore("tab-tagged-unreadable", unreadableTree);
+  mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "unreadable" }]);
+  await renderPanel(unreadableStore, "tab-tagged-unreadable");
+  const unreadableBox = host.querySelector("[data-scoresheet-photo-unreadable]")!;
+  expect(unreadableBox.textContent).toContain("Coach.Error.PhotoStorage");
+  expect(unreadableBox.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
+
+  const retryButton = Array.from(host.querySelectorAll("button")).find((btn) =>
+    btn.textContent?.includes("Common.Retry"),
+  )!;
+  mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "ok", dataUrl: PHOTO_1 }]);
+  await act(async () => {
+    retryButton.click();
+  });
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
 });
 
 test("Load photo again resets loading state when tabId changes mid-pick so the new tab can pick", async () => {
@@ -494,15 +588,17 @@ test("Load photo again resets loading state when tabId changes mid-pick so the n
     loadButton().click();
   });
   expect(mocks.scoresheetPickPhotos).toHaveBeenCalledTimes(2);
-  expect(getScoresheetPhotos("tab-mid-b")).toEqual([PHOTO_2]);
+  expect(storeB.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe("1".repeat(64));
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_2);
 
   // Late settlement of tab-mid-a's stale pick must not attach to tab-mid-a or overwrite tab-mid-b.
   await act(async () => {
     resolveFirst({ photos: [{ dataUrl: PHOTO_1 }], skipped: 0, failed: 0 });
     await Promise.resolve();
   });
-  expect(getScoresheetPhotos("tab-mid-a")).toEqual([]);
-  expect(getScoresheetPhotos("tab-mid-b")).toEqual([PHOTO_2]);
+  expect(storeA.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBeUndefined();
+  expect(getUnsavedScoresheetPhotos("tab-mid-a")).toEqual([]);
+  expect(storeB.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe("1".repeat(64));
 });
 
 test("Continue with the rest of the sheet button is shown only in the two eligible situations and replays on click", async () => {
@@ -594,6 +690,7 @@ test.each(Object.entries(catalogues))(
     });
     const cases: readonly (readonly [string, Record<string, string | number> | undefined])[] = [
       ["Board.Tabs.Photo", undefined],
+      ["Coach.Error.PhotoStorage", undefined],
       ["Notation.UnsureMove", undefined],
       ["Notation.UnsureMoveLabel", { move: "Nf3" }],
       ["Scoresheet.AllMovesChecked", undefined],
@@ -612,6 +709,7 @@ test.each(Object.entries(catalogues))(
       ["Scoresheet.NextPage", undefined],
       ["Scoresheet.NextUnsure", undefined],
       ["Scoresheet.NoPhotoInMemory", undefined],
+      ["Scoresheet.PhotoNotOnComputer", undefined],
       ["Scoresheet.PageOf", { current: 1, total: 2 }],
       ["Scoresheet.PhotoAlt", { number: 1 }],
       ["Scoresheet.PreviousPage", undefined],

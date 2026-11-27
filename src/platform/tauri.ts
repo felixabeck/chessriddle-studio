@@ -65,6 +65,8 @@ const CLOSED_ERROR_COMMANDS = new Map<PropertyKey, new (cause: unknown) => Error
     ["scoresheetPastePhoto", CoachCommandError],
     ["scoresheetTakeDroppedPhotos", CoachCommandError],
     ["scoresheetRead", CoachCommandError],
+    ["scoresheetStorePhotos", CoachCommandError],
+    ["scoresheetReadPhotos", CoachCommandError],
 ]);
 
 type GameCounterFields = Pick<GameState, "session" | "revision">;
@@ -190,7 +192,8 @@ type NativeReadCommandName =
     | "listLinkedCollections"
     | "resolveLinkedGame"
     | "collectionForDatabase"
-    | "scoresheetRead";
+    | "scoresheetRead"
+    | "scoresheetReadPhotos";
 type NativeReadFacade<T> = T extends (
     ...args: [...infer Args, string | null]
 ) => Promise<infer Result>
@@ -239,6 +242,7 @@ const NATIVE_READ_ARITY: Readonly<Record<NativeReadCommandName, number>> = {
     resolveLinkedGame: 3,
     collectionForDatabase: 1,
     scoresheetRead: 1,
+    scoresheetReadPhotos: 1,
 };
 
 const EXPECTED_SESSION_COMMANDS = new Set<PropertyKey>([

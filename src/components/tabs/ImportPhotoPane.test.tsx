@@ -10,7 +10,9 @@ import { tabFamily, tabsAtom } from "@/state/atoms";
 import {
   clearAllScoresheetPhotosForTests,
   formatScoresheetIntakeCounts,
-  getScoresheetPhotos,
+  getCachedScoresheetPhoto,
+  getScoresheetStoreError,
+  getUnsavedScoresheetPhotos,
   scoresheetNoticeAcceptedAtom,
 } from "@/state/scoresheetPhotos";
 import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
@@ -51,6 +53,7 @@ const mocks = vi.hoisted(() => ({
   scoresheetPastePhoto: vi.fn(),
   scoresheetTakeDroppedPhotos: vi.fn(),
   scoresheetRead: vi.fn(),
+  scoresheetStorePhotos: vi.fn(),
   buildScoresheetTree: vi.fn(),
   modelSelection: {
     connection: null as ConnectionSummary | null,
@@ -83,6 +86,7 @@ vi.mock("@/platform/tauri", () => ({
     scoresheetPastePhoto: () => mocks.scoresheetPastePhoto(),
     scoresheetTakeDroppedPhotos: (drop: string) => mocks.scoresheetTakeDroppedPhotos(drop),
     scoresheetRead: (read: unknown, opts?: unknown) => mocks.scoresheetRead(read, opts),
+    scoresheetStorePhotos: (photos: string[]) => mocks.scoresheetStorePhotos(photos),
   },
   tauriSubscriptions: {
     scoresheetPhotosDropped: async (callback: (event: { payload: { drop: string } }) => void) => {
@@ -98,7 +102,8 @@ vi.mock("@/platform/tauri", () => ({
   },
 }));
 
-vi.mock("@/utils/scoresheet", () => ({
+vi.mock("@/utils/scoresheet", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/scoresheet")>()),
   buildScoresheetTree: (game: unknown, opts?: unknown) => mocks.buildScoresheetTree(game, opts),
 }));
 
@@ -258,6 +263,9 @@ beforeEach(() => {
   mocks.unlistenCount = 0;
   mocks.coachAvailable.mockResolvedValue(true);
   mocks.coachHasConnection.mockResolvedValue(true);
+  mocks.scoresheetStorePhotos.mockImplementation(async (photos: string[]) =>
+    photos.map((_, idx) => (idx + 1).toString(16).repeat(64)),
+  );
   mocks.modelSelection = {
     connection: CONNECTION,
     model: MODEL,
@@ -566,11 +574,48 @@ test("first-use notice blocks sending until accepted, then reads, builds tree, s
 
   expect(store.get(scoresheetNoticeAcceptedAtom)).toContain(CONNECTION.handle);
   expect(mocks.scoresheetRead).toHaveBeenCalledOnce();
+  expect(mocks.scoresheetStorePhotos).toHaveBeenCalledWith([PHOTO_1]);
+  const storedId = "1".repeat(64);
+  expect(mocks.buildScoresheetTree).toHaveBeenCalledWith(
+    SAMPLE_GAME,
+    expect.objectContaining({ photoIds: [storedId] }),
+  );
   expect(replaceImportedTab).toHaveBeenCalledOnce();
-  expect(getScoresheetPhotos("review-tab-1")).toEqual([PHOTO_1]);
+  expect(getCachedScoresheetPhoto(storedId)).toEqual({ status: "ok", dataUrl: PHOTO_1 });
+  expect(getUnsavedScoresheetPhotos("review-tab-1")).toEqual([]);
+  expect(getScoresheetStoreError("review-tab-1")).toBeNull();
   expect(store.get(tabFamily("review-tab-1"))).toBe("photo");
   // The Photo tab lives in the tab strip, so a hidden strip is shown.
   expect(store.get(boardLayoutFamily("game")).tabsHidden).toBe(false);
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("when storing photos fails after reading, opens tab without photoIds, keeps photos tab-scoped, and records store error", async () => {
+  const onClose = vi.fn();
+  const replaceImportedTab = vi.fn(() => ({ kind: "committed" as const, id: "fallback-tab-1" }));
+  const store = await renderPane({
+    hasConnection: true,
+    onClose,
+    replaceImportedTab,
+    noticeAccepted: [CONNECTION.handle],
+  });
+
+  await addOnePhoto();
+  mocks.scoresheetRead.mockResolvedValueOnce(SAMPLE_GAME);
+  mocks.scoresheetStorePhotos.mockRejectedValueOnce(new CoachCommandError("photoStorage"));
+
+  await act(async () => {
+    buttonByText("Scoresheet.Read.Button").click();
+  });
+
+  expect(mocks.buildScoresheetTree).toHaveBeenCalledWith(
+    SAMPLE_GAME,
+    expect.objectContaining({ photoIds: undefined }),
+  );
+  expect(replaceImportedTab).toHaveBeenCalledOnce();
+  expect(getUnsavedScoresheetPhotos("fallback-tab-1")).toEqual([PHOTO_1]);
+  expect(getScoresheetStoreError("fallback-tab-1")).toBe("photoStorage");
+  expect(store.get(tabFamily("fallback-tab-1"))).toBe("photo");
   expect(onClose).toHaveBeenCalledOnce();
 });
 

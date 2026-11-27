@@ -4,7 +4,7 @@ import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Clipboard, ImagePlus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ScoresheetPhotoBatch } from "@/bindings";
+import type { CoachError, ScoresheetPhotoBatch } from "@/bindings";
 import IconAction from "@/components/common/IconAction";
 import {
   AiModelButton,
@@ -27,14 +27,15 @@ import {
   refreshAssistantAvailabilityAtom,
 } from "@/state/coachAvailability";
 import {
+  cacheStoredScoresheetPhotos,
+  clearUnsavedScoresheetPhotos,
   formatScoresheetIntakeCounts,
   formatScoresheetIntakeError,
-  MAX_SCORESHEET_PHOTOS_PER_TAB,
   scoresheetNoticeAcceptedAtom,
-  setScoresheetPhotos,
+  setUnsavedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { requestSettingsNavigation } from "@/state/settingsNavigation";
-import { buildScoresheetTree } from "@/utils/scoresheet";
+import { buildScoresheetTree, MAX_SCORESHEET_PHOTOS } from "@/utils/scoresheet";
 import type { ReplaceNewTabResult, Tab } from "@/utils/tabs";
 import { getGameName, type TreeState } from "@/utils/treeReducer";
 import classes from "./ImportPhotoPane.module.css";
@@ -150,7 +151,7 @@ function ImportPhotoPane({
   const applyBatch = useCallback(
     (batch: ScoresheetPhotoBatch) => {
       const current = photosRef.current;
-      const room = Math.max(0, MAX_SCORESHEET_PHOTOS_PER_TAB - current.length);
+      const room = Math.max(0, MAX_SCORESHEET_PHOTOS - current.length);
       const accepted = batch.photos.slice(0, room).map((photo) => photo.dataUrl);
       const extraSkipped = Math.max(0, batch.photos.length - room);
       const totalSkipped = batch.skipped + extraSkipped;
@@ -196,7 +197,7 @@ function ImportPhotoPane({
 
   const handlePastePhoto = useCallback(async () => {
     if (busyRef.current || readingRef.current) return;
-    if (photosRef.current.length >= MAX_SCORESHEET_PHOTOS_PER_TAB) {
+    if (photosRef.current.length >= MAX_SCORESHEET_PHOTOS) {
       setIntakeStatus(formatScoresheetIntakeCounts({ skipped: 1, failed: 0 }, t));
       return;
     }
@@ -295,9 +296,23 @@ function ImportPhotoPane({
 
       if (!isActiveSubmit()) return;
 
+      let storedIds: string[] | null = null;
+      let storeError: CoachError | null = null;
+      try {
+        storedIds = await tauri.scoresheetStorePhotos(submittedPhotos);
+      } catch (cause) {
+        if (!isActiveSubmit()) return;
+        storeError = coachErrorCode(cause);
+      }
+
+      if (!isActiveSubmit()) return;
+
       let tree: TreeState;
       try {
-        tree = await buildScoresheetTree(game, { signal: controller.signal });
+        tree = await buildScoresheetTree(game, {
+          signal: controller.signal,
+          photoIds: storedIds ?? undefined,
+        });
       } catch (cause) {
         if (!isActiveSubmit()) return;
         warnSafely(`Scoresheet tree build failed: ${normalizeError(cause).message.slice(0, 200)}`);
@@ -327,7 +342,12 @@ function ImportPhotoPane({
         return;
       }
 
-      setScoresheetPhotos(result.id, submittedPhotos);
+      if (storedIds !== null) {
+        cacheStoredScoresheetPhotos(storedIds, submittedPhotos);
+        clearUnsavedScoresheetPhotos(result.id);
+      } else {
+        setUnsavedScoresheetPhotos(result.id, submittedPhotos, storeError ?? "photoStorage");
+      }
       selectStripTab(store, result.id, "photo");
       onClose();
     } finally {
@@ -396,7 +416,7 @@ function ImportPhotoPane({
           size="xs"
           variant="default"
           leftSection={<ImagePlus size="0.875rem" />}
-          disabled={busy || reading || photos.length >= MAX_SCORESHEET_PHOTOS_PER_TAB}
+          disabled={busy || reading || photos.length >= MAX_SCORESHEET_PHOTOS}
           onClick={() => void handleChoosePhotos()}
         >
           {t("Scoresheet.Intake.ChoosePhotos")}
@@ -405,7 +425,7 @@ function ImportPhotoPane({
           size="xs"
           variant="default"
           leftSection={<Clipboard size="0.875rem" />}
-          disabled={busy || reading || photos.length >= MAX_SCORESHEET_PHOTOS_PER_TAB}
+          disabled={busy || reading || photos.length >= MAX_SCORESHEET_PHOTOS}
           onClick={() => void handlePastePhoto()}
         >
           {t("Scoresheet.Intake.PasteFromClipboard")}

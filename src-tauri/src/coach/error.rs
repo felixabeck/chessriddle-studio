@@ -58,6 +58,8 @@ pub(crate) enum CoachError {
     CreditsExhausted,
     /// A scoresheet photo could not be read, decoded or encoded within the supported bounds.
     PhotoUnreadable,
+    /// A scoresheet photo could not be saved to or read from this computer.
+    PhotoStorage,
     /// The system clipboard does not currently contain a readable image.
     ClipboardEmpty,
     /// The chosen model does not accept image inputs.

@@ -2,13 +2,20 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import type { ScoresheetGame } from "@/bindings";
+import { headersToPGN } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import {
     buildScoresheetTree,
+    formatScoresheetPhotosTag,
+    getScoresheetPhotoIds,
+    hasScoresheetPhotoPanel,
     isPlainScoresheetLine,
+    parseScoresheetPhotosTag,
     planScoresheetContinuation,
     replayScoresheetMoves,
+    SCORESHEET_PHOTOS_TAG,
     scoresheetGameToPgn,
+    withScoresheetPhotoIds,
 } from "./scoresheet";
 
 const mocks = vi.hoisted(() => ({
@@ -325,5 +332,80 @@ describe("scoresheet continuation helpers", () => {
         expect(nf3.san).toBe("Nf3");
         expect(nf3.halfMoves).toBe(3);
         expect(nf3.children).toHaveLength(0);
+    });
+});
+
+describe("ScoresheetPhotos PGN tag helpers", () => {
+    const id1 = "a".repeat(64);
+    const id2 = "0123456789abcdef".repeat(4);
+    const id3 = "b".repeat(64);
+    const id4 = "c".repeat(64);
+    const id5 = "d".repeat(64);
+
+    test("parseScoresheetPhotosTag accepts 1–4 lowercase 64-hex ids and rejects malformed or oversized values", () => {
+        expect(parseScoresheetPhotosTag(id1)).toEqual([id1]);
+        expect(parseScoresheetPhotosTag(`${id1},${id2}`)).toEqual([id1, id2]);
+        expect(parseScoresheetPhotosTag([id1, id2, id3, id4].join(","))).toEqual([
+            id1,
+            id2,
+            id3,
+            id4,
+        ]);
+
+        // Rejects empty, >4 ids, uppercase, non-hex, wrong length, whitespace, path traversal.
+        for (const bad of [
+            undefined,
+            "",
+            "   ",
+            "a".repeat(63),
+            "a".repeat(65),
+            `A${"a".repeat(63)}`,
+            `g${"a".repeat(63)}`,
+            `${id1}, ${id2}`,
+            ` ${id1}`,
+            `${id1},`,
+            `,${id1}`,
+            "../etc/passwd",
+            `${"a".repeat(31)}/${"b".repeat(32)}`,
+            `${"a".repeat(31)}\\${"b".repeat(32)}`,
+            [id1, id2, id3, id4, id5].join(","),
+        ]) {
+            expect(parseScoresheetPhotosTag(bad)).toBeNull();
+        }
+    });
+
+    test("hasScoresheetPhotoPanel is true for active review or well-formed tag, false for malformed tag", () => {
+        const plain = defaultTree();
+        expect(hasScoresheetPhotoPanel(plain)).toBe(false);
+
+        const withReview = { ...defaultTree(), scoresheetReview: {} };
+        expect(hasScoresheetPhotoPanel(withReview)).toBe(true);
+
+        const withValidTag = defaultTree();
+        withValidTag.headers = withScoresheetPhotoIds(withValidTag.headers, [id1, id2]);
+        expect(getScoresheetPhotoIds(withValidTag.headers)).toEqual([id1, id2]);
+        expect(hasScoresheetPhotoPanel(withValidTag)).toBe(true);
+
+        // Malformed tag gives no reference and no Photo panel, and headersToPGN preserves it untouched.
+        const withMalformedTag = defaultTree();
+        withMalformedTag.headers = {
+            ...withMalformedTag.headers,
+            other: { [SCORESHEET_PHOTOS_TAG]: "../malformed" },
+        };
+        expect(getScoresheetPhotoIds(withMalformedTag.headers)).toBeNull();
+        expect(hasScoresheetPhotoPanel(withMalformedTag)).toBe(false);
+        expect(headersToPGN(withMalformedTag.headers)).toContain(
+            `[${SCORESHEET_PHOTOS_TAG} "../malformed"]`,
+        );
+    });
+
+    test("buildScoresheetTree attaches ScoresheetPhotos when photoIds are provided", async () => {
+        const game = sampleGame();
+        mocks.parsePGN.mockResolvedValueOnce(makeParsedTree(["e4", "e5", "Nf3"], "1-0"));
+        const tree = await buildScoresheetTree(game, { photoIds: [id1, id2] });
+        expect(tree.headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe(`${id1},${id2}`);
+        expect(formatScoresheetPhotosTag([id1, id2])).toBe(`${id1},${id2}`);
+        expect(formatScoresheetPhotosTag([])).toBeNull();
+        expect(formatScoresheetPhotosTag(["not-hex"])).toBeNull();
     });
 });

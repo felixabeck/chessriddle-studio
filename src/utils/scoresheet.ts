@@ -9,10 +9,70 @@ import {
     deriveScoresheetRemaining,
     getNodeAtPath,
     getResolvedPathLength,
+    type GameHeaders,
     type ScoresheetReview,
     type TreeNode,
     type TreeState,
 } from "@/utils/treeReducer";
+
+export const SCORESHEET_PHOTOS_TAG = "ScoresheetPhotos";
+export const MAX_SCORESHEET_PHOTOS = 4;
+const PHOTO_ID_HEX_LEN = 64;
+const MAX_SCORESHEET_PHOTOS_TAG_LEN =
+    MAX_SCORESHEET_PHOTOS * PHOTO_ID_HEX_LEN + (MAX_SCORESHEET_PHOTOS - 1);
+const PHOTO_ID_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Strictly parses an untrusted `ScoresheetPhotos` PGN tag value into 1–4 lowercase 64-hex ids.
+ * Returns `null` for absent or malformed values; malformed values must be preserved untouched.
+ */
+export function parseScoresheetPhotosTag(raw: string | undefined): string[] | null {
+    if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_SCORESHEET_PHOTOS_TAG_LEN) {
+        return null;
+    }
+    const parts = raw.split(",");
+    if (parts.length === 0 || parts.length > MAX_SCORESHEET_PHOTOS) {
+        return null;
+    }
+    for (const part of parts) {
+        if (!PHOTO_ID_RE.test(part)) return null;
+    }
+    return parts;
+}
+
+/** Formats 1–4 validated 64-hex photo ids into a `ScoresheetPhotos` tag value, or `null` if invalid. */
+export function formatScoresheetPhotosTag(ids: readonly string[]): string | null {
+    if (ids.length === 0 || ids.length > MAX_SCORESHEET_PHOTOS) return null;
+    for (const id of ids) {
+        if (!PHOTO_ID_RE.test(id)) return null;
+    }
+    return ids.join(",");
+}
+
+/** Returns the validated photo ids referenced by `headers.other.ScoresheetPhotos`, or `null`. */
+export function getScoresheetPhotoIds(headers: GameHeaders | undefined): string[] | null {
+    return parseScoresheetPhotosTag(headers?.other?.[SCORESHEET_PHOTOS_TAG]);
+}
+
+/** Whether the Photo panel is available for a tab: active review OR well-formed photo reference. */
+export function hasScoresheetPhotoPanel(
+    state: Pick<TreeState, "scoresheetReview" | "headers">,
+): boolean {
+    return state.scoresheetReview !== undefined || getScoresheetPhotoIds(state.headers) !== null;
+}
+
+/** Returns a new `GameHeaders` with `headers.other.ScoresheetPhotos` set to the validated `ids`. */
+export function withScoresheetPhotoIds(headers: GameHeaders, ids: readonly string[]): GameHeaders {
+    const tagValue = formatScoresheetPhotosTag(ids);
+    if (tagValue === null) return headers;
+    return {
+        ...headers,
+        other: {
+            ...headers.other,
+            [SCORESHEET_PHOTOS_TAG]: tagValue,
+        },
+    };
+}
 
 function normalizeOutcome(raw: string): Outcome {
     if (raw === "1-0" || raw === "0-1" || raw === "1/2-1/2") return raw;
@@ -55,16 +115,20 @@ export function scoresheetGameToPgn(game: ScoresheetGame): string {
 /**
  * Builds a review-ready `TreeState` from a native `ScoresheetGame`:
  * - composes PGN and parses it through `parsePGN`
+ * - attaches validated `photoIds` onto `tree.headers` when supplied
  * - verifies that the parsed main line has the exact number of returned moves
  * - removes any game-end marker when the reading stopped early (completely read games keep the default)
  * - marks unsure main-line nodes, sets `scoresheetReview`, and marks the tree `dirty`.
  */
 export async function buildScoresheetTree(
     game: ScoresheetGame,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; photoIds?: readonly string[] },
 ): Promise<TreeState> {
     const pgn = scoresheetGameToPgn(game);
     const tree = await parsePGN(pgn, undefined, options);
+    if (options?.photoIds) {
+        tree.headers = withScoresheetPhotoIds(tree.headers, options.photoIds);
+    }
 
     const mainLine: TreeNode[] = [];
     let current = tree.root.children[0];

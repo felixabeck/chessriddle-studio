@@ -26,8 +26,8 @@ import {
 import { newCoachSession } from "@/state/coachSession";
 import {
     clearAllScoresheetPhotosForTests,
-    getScoresheetPhotos,
-    setScoresheetPhotos,
+    getUnsavedScoresheetPhotos,
+    setUnsavedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { positionFromFen } from "@/utils/chessops";
 import { mergeIntoRepertoire } from "@/utils/repertoireImport";
@@ -2657,50 +2657,50 @@ test("replacing the game or start FEN clears scoresheetReview and tab photos, wh
 
     try {
         // setHeaders with unchanged FEN keeps scoresheetReview and photos.
-        setScoresheetPhotos(id, [PHOTO]);
+        setUnsavedScoresheetPhotos(id, [PHOTO]);
         store.getState().setHeaders({ ...store.getState().headers, white: "Alice" });
         expect(store.getState().scoresheetReview).toEqual({
             stopped: { ply: 1, tokens: ["e5"] },
         });
-        expect(getScoresheetPhotos(id)).toEqual([PHOTO]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([PHOTO]);
 
         // setState with another game clears scoresheetReview and photos.
         store.getState().setState(defaultTree());
         expect(store.getState().scoresheetReview).toBeUndefined();
-        expect(getScoresheetPhotos(id)).toEqual([]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([]);
 
         // reset clears scoresheetReview and photos.
         store.getState().setState(makeReviewTree());
-        setScoresheetPhotos(id, [PHOTO]);
+        setUnsavedScoresheetPhotos(id, [PHOTO]);
         store.getState().reset();
         expect(store.getState().scoresheetReview).toBeUndefined();
-        expect(getScoresheetPhotos(id)).toEqual([]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([]);
 
         // setFen clears scoresheetReview and photos.
         store.getState().setState(makeReviewTree());
-        setScoresheetPhotos(id, [PHOTO]);
+        setUnsavedScoresheetPhotos(id, [PHOTO]);
         store.getState().setFen("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
         expect(store.getState().scoresheetReview).toBeUndefined();
-        expect(getScoresheetPhotos(id)).toEqual([]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([]);
 
         // setHeaders with a different FEN clears scoresheetReview and photos.
         store.getState().setState(makeReviewTree());
-        setScoresheetPhotos(id, [PHOTO]);
+        setUnsavedScoresheetPhotos(id, [PHOTO]);
         store.getState().setHeaders({
             ...store.getState().headers,
             fen: "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1",
         });
         expect(store.getState().scoresheetReview).toBeUndefined();
-        expect(getScoresheetPhotos(id)).toEqual([]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([]);
 
         // prepareTreeStoreRetarget clears scoresheetReview and photos.
         store.getState().setState(makeReviewTree());
-        setScoresheetPhotos(id, [PHOTO]);
+        setUnsavedScoresheetPhotos(id, [PHOTO]);
         const nextKey = crypto.randomUUID();
         tabStorage.seed(nextKey, defaultTree());
         prepareTreeStoreRetarget(id, nextKey, defaultTree())();
         expect(store.getState().scoresheetReview).toBeUndefined();
-        expect(getScoresheetPhotos(id)).toEqual([]);
+        expect(getUnsavedScoresheetPhotos(id)).toEqual([]);
         tabStorage.remove(nextKey);
     } finally {
         clearAllScoresheetPhotosForTests();

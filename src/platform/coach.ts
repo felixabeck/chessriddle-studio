@@ -30,6 +30,7 @@ const coachErrors: Record<CoachError, true> = {
     usageLimitReached: true,
     creditsExhausted: true,
     photoUnreadable: true,
+    photoStorage: true,
     clipboardEmpty: true,
     imagesUnsupported: true,
     scoresheetUnreadable: true,

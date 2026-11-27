@@ -315,6 +315,22 @@ async scoresheetRead(read: ScoresheetReadInput, ticket: string | null) : Promise
     else return { status: "error", error: e  as any };
 }
 },
+async scoresheetStorePhotos(photos: string[]) : Promise<Result<string[], CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_store_photos", { photos }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async scoresheetReadPhotos(ids: string[], ticket: string | null) : Promise<Result<StoredPhotoRead[], CoachError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("scoresheet_read_photos", { ids, ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async closeSplashscreen() : Promise<Result<null, ErrorPayload>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("close_splashscreen") };
@@ -2109,6 +2125,10 @@ export type CoachError =
  */
 "photoUnreadable" | 
 /**
+ * A scoresheet photo could not be saved to or read from this computer.
+ */
+"photoStorage" | 
+/**
  * The system clipboard does not currently contain a readable image.
  */
 "clipboardEmpty" | 
@@ -2558,6 +2578,10 @@ export type SiteStatsData = { site: string; player: string; daily: DailyStatsDat
 export type SortDirection = "asc" | "desc"
 export type StampedGame = { pgn: string; stamp: string; revision: string; present: boolean; omission?: GameOmission | null; linked?: LinkedGameLocator | null }
 export type StartupPathOwners = { retainedIds: PathRef[]; trustedFamilies: PathOwnerFamily[] }
+/**
+ * Outcome for one requested photo id in a [`read_photos`] batch.
+ */
+export type StoredPhotoRead = { status: "ok"; dataUrl: string } | { status: "missing" } | { status: "unreadable" }
 export type TimeControl = { initialTime: bigint; increment: bigint }
 export type Token = { type: "ParenOpen" } | { type: "ParenClose" } | { type: "Comment"; value: string } | { type: "Unparsed"; value: string } | { type: "San"; value: string } | { type: "Header"; value: { tag: string; value: string } } | { type: "Nag"; value: string } | { type: "Outcome"; value: string }
 /**

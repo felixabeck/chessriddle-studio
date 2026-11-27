@@ -14,16 +14,23 @@ import { useStore } from "zustand";
 import IconAction from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useScoresheetErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
+import { coachErrorCode } from "@/platform/coach";
 import { tauri } from "@/platform/tauri";
 import {
+  cacheStoredScoresheetPhotos,
+  clearUnsavedScoresheetPhotos,
   formatScoresheetIntakeCounts,
   formatScoresheetIntakeError,
-  setScoresheetPhotos,
-  useScoresheetPhotos,
+  setUnsavedScoresheetPhotos,
+  useResolvedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { useOwnerTabId } from "@/state/tabScope";
 import { formatMoveNumber } from "@/utils/format";
-import { planScoresheetContinuation } from "@/utils/scoresheet";
+import {
+  getScoresheetPhotoIds,
+  planScoresheetContinuation,
+  withScoresheetPhotoIds,
+} from "@/utils/scoresheet";
 import {
   countMainPly,
   deriveScoresheetRemaining,
@@ -78,14 +85,19 @@ export function adjacentUnsurePath(
 function ScoresheetPhotoPanel() {
   const { t } = useTranslation();
   const tabId = useOwnerTabId();
-  const photos = useScoresheetPhotos(tabId);
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
+  const headers = useStore(store, (s) => s.headers);
   const position = useStore(store, (s) => s.position);
   const review = useStore(store, (s) => s.scoresheetReview);
+  const setHeaders = useStore(store, (s) => s.setHeaders);
   const goToMove = useStore(store, (s) => s.goToMove);
   const clearUnsureMark = useStore(store, (s) => s.clearUnsureMark);
   const continueScoresheet = useStore(store, (s) => s.continueScoresheet);
+
+  const photoIds = useMemo(() => getScoresheetPhotoIds(headers), [headers]);
+  const resolved = useResolvedScoresheetPhotos(tabId, photoIds);
+  const { slots, readError, storeError, retry } = resolved;
 
   const [fullSize, setFullSize] = useState(false);
   const [page, setPage] = useState(0);
@@ -133,11 +145,18 @@ function ScoresheetPhotoPanel() {
     try {
       const batch = await tauri.scoresheetPickPhotos();
       if (!mountedRef.current || pickRequestRef.current !== requestId) return;
-      if (batch.photos.length > 0) {
-        setScoresheetPhotos(
-          ownerTab,
-          batch.photos.map((photo) => photo.dataUrl),
-        );
+      const pickedUrls = batch.photos.map((photo) => photo.dataUrl);
+      if (pickedUrls.length > 0) {
+        try {
+          const ids = await tauri.scoresheetStorePhotos(pickedUrls);
+          if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+          cacheStoredScoresheetPhotos(ids, pickedUrls);
+          clearUnsavedScoresheetPhotos(ownerTab);
+          setHeaders(withScoresheetPhotoIds(store.getState().headers, ids));
+        } catch (storeCause) {
+          if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+          setUnsavedScoresheetPhotos(ownerTab, pickedUrls, coachErrorCode(storeCause));
+        }
         setPage(0);
       }
       setIntakeStatus(formatScoresheetIntakeCounts(batch, t));
@@ -149,9 +168,12 @@ function ScoresheetPhotoPanel() {
         setLoadingPhotos(false);
       }
     }
-  }, [errorMessages, loadingPhotos, t]);
+  }, [errorMessages, loadingPhotos, setHeaders, store, t]);
 
-  const safePage = photos.length > 0 ? Math.min(page, photos.length - 1) : 0;
+  const totalPages = slots.length;
+  const safePage = totalPages > 0 ? Math.min(page, totalPages - 1) : 0;
+  const currentSlot = totalPages > 0 ? slots[safePage] : null;
+  const currentPhotoUrl = currentSlot?.status === "ok" ? currentSlot.dataUrl : null;
 
   useEffect(() => {
     measureScrollbarInsets();
@@ -160,7 +182,7 @@ function ScoresheetPhotoPanel() {
     const observer = new ResizeObserver(measureScrollbarInsets);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [measureScrollbarInsets, fullSize, safePage, photos.length]);
+  }, [measureScrollbarInsets, fullSize, safePage, currentPhotoUrl]);
 
   const unsurePaths = useMemo(() => (review ? getMainLineUnsurePaths(root) : []), [review, root]);
   const onMainLine = position.length > 0 && position.every((index) => index === 0);
@@ -196,10 +218,51 @@ function ScoresheetPhotoPanel() {
     "--scoresheet-scrollbar-bottom": `${scrollbarInsets.bottom}px`,
   } as CSSProperties;
 
+  const pageControls =
+    totalPages > 1 ? (
+      <div className={classes.pageOverlay} data-scoresheet-page-overlay>
+        <Group gap={4} wrap="nowrap">
+          <IconAction
+            label={t("Scoresheet.PreviousPage")}
+            size="sm"
+            variant="subtle"
+            disabled={safePage === 0}
+            onClick={() => setPage(Math.max(0, safePage - 1))}
+          >
+            <ChevronLeft size="1rem" />
+          </IconAction>
+          <Text size="xs" fw={500} data-scoresheet-page>
+            {t("Scoresheet.PageOf", { current: safePage + 1, total: totalPages })}
+          </Text>
+          <IconAction
+            label={t("Scoresheet.NextPage")}
+            size="sm"
+            variant="subtle"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+          >
+            <ChevronRight size="1rem" />
+          </IconAction>
+        </Group>
+      </div>
+    ) : null;
+
+  const loadPhotoAgainButton = (
+    <Button
+      size="xs"
+      variant="default"
+      leftSection={<ImagePlus size="0.875rem" />}
+      loading={loadingPhotos}
+      onClick={() => void handleLoadPhotoAgain()}
+    >
+      {t("Scoresheet.LoadPhotoAgain")}
+    </Button>
+  );
+
   return (
     <div className={classes.panel}>
       <div className={classes.photoSection}>
-        {photos.length > 0 ? (
+        {currentPhotoUrl !== null ? (
           <div className={classes.viewportFrame} style={viewportStyle}>
             <div
               ref={viewportRef}
@@ -207,7 +270,7 @@ function ScoresheetPhotoPanel() {
               data-scoresheet-photo-size={fullSize ? "full" : "fit"}
             >
               <img
-                src={photos[safePage]}
+                src={currentPhotoUrl}
                 alt={t("Scoresheet.PhotoAlt", { number: safePage + 1 })}
                 className={fullSize ? classes.imageFull : classes.imageFit}
                 onLoad={measureScrollbarInsets}
@@ -224,49 +287,42 @@ function ScoresheetPhotoPanel() {
                 {fullSize ? <Minimize2 size="1rem" /> : <Maximize2 size="1rem" />}
               </IconAction>
             </div>
-            {photos.length > 1 && (
-              <div className={classes.pageOverlay} data-scoresheet-page-overlay>
-                <Group gap={4} wrap="nowrap">
-                  <IconAction
-                    label={t("Scoresheet.PreviousPage")}
-                    size="sm"
-                    variant="subtle"
-                    disabled={safePage === 0}
-                    onClick={() => setPage(Math.max(0, safePage - 1))}
-                  >
-                    <ChevronLeft size="1rem" />
-                  </IconAction>
-                  <Text size="xs" fw={500} data-scoresheet-page>
-                    {t("Scoresheet.PageOf", { current: safePage + 1, total: photos.length })}
-                  </Text>
-                  <IconAction
-                    label={t("Scoresheet.NextPage")}
-                    size="sm"
-                    variant="subtle"
-                    disabled={safePage >= photos.length - 1}
-                    onClick={() => setPage(Math.min(photos.length - 1, safePage + 1))}
-                  >
-                    <ChevronRight size="1rem" />
-                  </IconAction>
-                </Group>
-              </div>
-            )}
+            {pageControls}
+          </div>
+        ) : currentSlot?.status === "loading" ? (
+          <div className={classes.emptyPhoto} data-scoresheet-loading-photo>
+            <Text size="sm" c="dimmed" role="status">
+              {t("Common.Loading")}
+            </Text>
+          </div>
+        ) : currentSlot?.status === "unreadable" ? (
+          <div className={classes.emptyPhoto} data-scoresheet-photo-unreadable>
+            <Text size="sm" c="dimmed" role="alert">
+              {readError ? errorMessages[readError] : errorMessages.photoStorage}
+            </Text>
+            <Group gap="xs">
+              <Button size="xs" variant="default" onClick={retry}>
+                {t("Common.Retry")}
+              </Button>
+              {loadPhotoAgainButton}
+            </Group>
+            {pageControls}
           </div>
         ) : (
           <div className={classes.emptyPhoto} data-scoresheet-no-photo>
             <Text size="sm" c="dimmed">
-              {t("Scoresheet.NoPhotoInMemory")}
+              {currentSlot?.status === "missing"
+                ? t("Scoresheet.PhotoNotOnComputer")
+                : t("Scoresheet.NoPhotoInMemory")}
             </Text>
-            <Button
-              size="xs"
-              variant="default"
-              leftSection={<ImagePlus size="0.875rem" />}
-              loading={loadingPhotos}
-              onClick={() => void handleLoadPhotoAgain()}
-            >
-              {t("Scoresheet.LoadPhotoAgain")}
-            </Button>
+            {loadPhotoAgainButton}
+            {pageControls}
           </div>
+        )}
+        {storeError && (
+          <Text size="xs" c="danger" role="alert" data-scoresheet-store-error>
+            {errorMessages[storeError]}
+          </Text>
         )}
         {intakeStatus && (
           <Text size="xs" c="dimmed" role="status" data-scoresheet-intake-status>

@@ -1687,6 +1687,24 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         JSON.parse(sessionStorage.getItem(accountCompletionKey) ?? "[]");
     const writeAccountCompletions = (records: { id?: string; deletionPending?: boolean }[]) =>
         sessionStorage.setItem(accountCompletionKey, JSON.stringify(records));
+    const scoresheetPhotoStoreKey = "__E2E_SCORESHEET_PHOTOS__";
+    const readStoredPhotosMap = (): Record<string, string> =>
+        JSON.parse(sessionStorage.getItem(scoresheetPhotoStoreKey) ?? "{}");
+    const writeStoredPhotosMap = (map: Record<string, string>) =>
+        sessionStorage.setItem(scoresheetPhotoStoreKey, JSON.stringify(map));
+    const hashPhotoDataUrl = (value: string): string => {
+        let h1 = 0xdeadbeef;
+        let h2 = 0x41c6ce57;
+        for (let i = 0; i < value.length; i += 1) {
+            const ch = value.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        const part1 = (h1 >>> 0).toString(16).padStart(8, "0");
+        const part2 = (h2 >>> 0).toString(16).padStart(8, "0");
+        const lenHex = (value.length >>> 0).toString(16).padStart(8, "0");
+        return (part1 + part2 + lenHex).repeat(3).slice(0, 64);
+    };
 
     const invoke = async (command: string, args: Record<string, unknown> = {}) => {
         state.invocations.push({ command, args });
@@ -1694,6 +1712,25 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         if (command === "prepare_conversion" && !state.commands[command])
             return `e2e-conversion-${nextNativeTicket++}`;
         if (command === "prepare_engine_search") return `e2e-engine-search-${nextNativeTicket++}`;
+        if (command === "scoresheet_store_photos" && !state.commands[command]) {
+            const photos = Array.isArray(args.photos) ? (args.photos as string[]) : [];
+            const stored = readStoredPhotosMap();
+            const ids = photos.map((dataUrl) => {
+                const id = hashPhotoDataUrl(String(dataUrl));
+                stored[id] = String(dataUrl);
+                return id;
+            });
+            writeStoredPhotosMap(stored);
+            return ids;
+        }
+        if (command === "scoresheet_read_photos" && !state.commands[command]) {
+            const ids = Array.isArray(args.ids) ? (args.ids as string[]) : [];
+            const stored = readStoredPhotosMap();
+            return ids.map((id) => {
+                const dataUrl = stored[String(id)];
+                return dataUrl ? { status: "ok", dataUrl } : { status: "missing" };
+            });
+        }
         if (command === "plugin:event|listen") {
             const callback = args.handler;
             if (typeof callback === "number")

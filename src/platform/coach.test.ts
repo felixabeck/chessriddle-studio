@@ -14,6 +14,7 @@ test("only the Coach's own error codes survive; anything else becomes providerFa
 
 test("coachErrorCode reads the code of a Coach error and reduces every other cause", () => {
     expect(coachErrorCode(new CoachCommandError("storage"))).toBe("storage");
+    expect(coachErrorCode(new CoachCommandError("photoStorage"))).toBe("photoStorage");
     expect(coachErrorCode("network")).toBe("network");
     expect(coachErrorCode(new TypeError("fetch failed"))).toBe("providerFailure");
 });
