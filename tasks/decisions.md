@@ -15435,3 +15435,76 @@ Former private decision identifier: d-20261029-14
 * **Reversal path:** drop the cargo-nextest cache and install steps from `test.yml`, restore the allowlist to only `~/.github-actionlint/bin`, and keep d-20261108-12 as the sole exception.
 * **Decided by:** Grok drain session 2b705c03-4044-4d0b-9a63-f81d540f88e4, full auto, 2026-11-27 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"376cf050fe4815d36c3b6025769a1a2866c9cad2c83d7029643303b24a5886e4","input_sha256":"5b2ea121f832836c53171fdd6dc6350bd92a7fa1886da915e9434a9158be4a73","kind":"mutation-receipt","operation":"d8c40a6dcf82d5d324f1aacf467cea94b62cac9c69f44dc2e7606f47183d29bb","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-10"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-19 — Should review facts be stored in the report summary or re-derived from the tree?
+
+* **Question:** Should review facts (mistake kind and the engine's better line in SAN) be stored in the report summary or re-derived from the game tree?
+* **Governs:** -
+* **Chosen:** Store review facts in `ReportSummary` (up to 256 facts in game order, persisted through `reportSummarySchema`), written regardless of the "Mark moves" and "Show variations" dialog options.
+* **Rejected:** Re-deriving facts from the tree on demand.
+* **Reason:** Engine lines are discarded after `applyReport` (T4), and the better move in the review must not depend on whether "Show variations" was enabled. Reversal path: drop the facts list from `ReportSummary` and fall back to tree-derived moments (`getGameStats`).
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-20 — Which kinds of mistake should Game Review derive from the engine report?
+
+* **Question:** Which mistake classifications should be derived for `?!`, `?`, and `??` key moments from the finished engine analysis?
+* **Governs:** -
+* **Chosen:** Six ordered kinds of mistake (first match wins): allows mate, misses mate, loses material, misses material, misses a win, and decisive mistake. "Hung piece" and "missed tactic" from the early proposal are expressed as "loses material" and "misses material"; "slow drift" and "missed defence" are not derived, so a move without a matching rule shows only its mark.
+* **Rejected:** Deriving "slow drift", "missed defence", or unprovable tactical labels without reliable engine-line witnesses.
+* **Reason:** Engine lines reliably prove mate, material swings, and win-chance band crossings; moves outside those six rules stay conservative and show only their annotation mark. Reversal path: add a rule to the ordered classification list.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-11 — Which numeric thresholds govern summary bands, material swings, time trouble, and stored facts?
+
+* **Question:** What constants should define win-chance bands, material swing calculation, time trouble, time-strip visibility, and stored review facts?
+* **Governs:** -
+* **Chosen:** Named constants: win-chance bands 75 / 25, material swing threshold 2 over at most 8 plies, time trouble threshold of the larger of 30 seconds and 5% of base time, time strip shown from at least half the mainline moves carrying clocks, and a cap of 256 stored review facts.
+* **Rejected:** Unbounded fact storage, per-move hardcoded magic numbers, or always showing an almost-empty time strip.
+* **Reason:** Named constants keep the heuristics consistent across summary, classification, and time display while bounding persisted tab state. Reversal path: change the named constant.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-12 — Should selecting a key moment navigate to the position before or after the move?
+
+* **Question:** When the user selects a key moment in the review list, should the board jump to the position before the move or after the move?
+* **Governs:** -
+* **Chosen:** Navigate to the position before the move (`beforePath`), so both board arrows (the played move and the engine's better move) originate from the square where the decision was made.
+* **Rejected:** Navigating to `moment.path` (after the move) as the previous report panel did.
+* **Reason:** Both arrows represent alternative choices from the same decision position and only make visual sense before the played move is executed. Reversal path: call `goToMove(moment.path)` as before.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-13 — Should key moments add a separate "loss" column and should the chart draw phase bands?
+
+* **Question:** Should the key-moments list include a separate numeric "loss" column and should the evaluation chart replace phase marker lines with shaded phase bands and reduce height?
+* **Governs:** -
+* **Chosen:** Omit the separate "loss" column (before → after evaluation already shows the change), keep the chart's phase markers as lines rather than shaded bands, and keep the chart's existing height.
+* **Rejected:** Adding a dedicated loss column, drawing reference area bands across phases, and shrinking the chart height.
+* **Reason:** Keeps the key-moment columns compact at narrow panel widths and avoids visual clutter on the evaluation chart while preserving existing proportions. Reversal path: add the loss column to key moments and draw reference areas on the chart.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-14 — How should the Report panel's "Explain" action send a question to Coach?
+
+* **Question:** Should the Report panel call `sendCoachMessage` directly or hand a request to `CoachPanel` to consume?
+* **Governs:** -
+* **Chosen:** Hand a transient per-tab request to `CoachPanel` via `coachExplainRequestFamily`, so `CoachPanel` consumes it after its connections and models settle and routes it through the single `sendCoachMessage` path.
+* **Rejected:** Adding a second caller of `sendCoachMessage` inside the Report panel.
+* **Reason:** Keeps the first-use privacy notice, connection/model/engine readiness checks, and running-turn gates in one single owner (`CoachPanel`). Reversal path: add a second caller of `sendCoachMessage` from the report panel.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-15 — Which fallback determines the user's side for the repertoire note when no account name matches?
+
+* **Question:** When neither or both player names match the user's connected Lichess, Chess.com, or alias accounts, how should the repertoire note choose the user's side?
+* **Governs:** -
+* **Chosen:** Fall back to the board orientation (`headers.orientation`, defaulting to White when absent); flipping the board changes which side the repertoire note checks when no account name matches.
+* **Rejected:** Freezing the side at report generation time or introducing another separate fallback setting.
+* **Reason:** Matches the user's current board perspective when account names do not identify the player (MANDATE 8). Reversal path: freeze the side at report generation time or introduce another fallback rule.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+
+### d-20261127-16 — How long should a pending Coach explanation request remain valid?
+
+* **Question:** What lifetime should a pending "Explain" request have while waiting for `CoachPanel` to mount and settle?
+* **Governs:** -
+* **Chosen:** A Coach explanation request lives at most 30 seconds (and is also dropped immediately if the active `documentId` or position FEN changes).
+* **Rejected:** Keeping a pending request alive indefinitely until `CoachPanel` finishes loading or is opened later.
+* **Reason:** Ensures a stale request the user walked away from is never sent unexpectedly later. Reversal path: change the timeout constant.
+* **Decided by:** Grok orchestrator, agy write leaf, DRAIN_SESSION_ID=build-game-review-game-review-20261127-071118-cfe0f504, under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":71,"effect_sha256":"db2327bd6ad6bc97177a1cbb7423c1c0bd1827ec1a48ded8d3ab851c89ab000d","input_sha256":"c488013b3fdf2cfad144f500413204c792bee91ad63ee4511fd3c1575165cf03","kind":"mutation-receipt","operation":"34a8a8d2dd2b897ee746bf435635c49e9a1b37a8e50ebbf7ef22f394e8f70319","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-19","d-20261127-20","d-20261127-11","d-20261127-12","d-20261127-13","d-20261127-14","d-20261127-15","d-20261127-16"],"target":"decisions-ledger","v":1} -->
