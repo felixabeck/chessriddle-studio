@@ -30109,3 +30109,33 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Repair owner:** build-game-review-game-review-20261127-071118-cfe0f504 on tuxedo-atlas, 2026-11-27T12:27:49Z
 * **CI run:** 45986600389
 <!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"6d6d3e4834d154cce93e22b3c45091ce689f68d9ba02907069026ff1fcb52676","header_sha256":"3ae311afd806bc21d1670b08fdd255e0908c9594f24627c271f8e3b78f29fe3a","header_status":"handled","input_sha256":"11ed11c60ddf32ef79c0cd2041d011ca28415da0b80c546da7207c10247111cb","kind":"mutation-receipt","operation":"7b2605428d0f58c51be2e52f97b84cd4ec61f833160f9a21f4ec19c18e7ed325","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-17"],"target":"f-20261127-17","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Clock-times landing left 14 e2e screenshots stale and turned master Test red
+
+* **ID:** f-20261127-18 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 2b705c03-4044-4d0b-9a63-f81d540f88e4
+* **Impact class:** tooling
+* **CI run:** 45990064007 (newest red, head ccd82b33d, job `e2e` 140475323637)
+* **First red:** run 45989505612, head 5204b89e3eab476d883558da511e7c83ae259272, subject "chore(bundle): raise the Entry and total ceilings for clock times"
+* **Spotted outside diff:** yes, `pnpm ci:remote:check` during the f-20261126-01 nextest push
+* **Where:** container e2e snapshots of the board, Info/Termination, saved-layouts repertoire preset, focus mode, Save-to-file modal, citations, game interruption, workspace-tabs import, and board-keyboard
+* **Defect:** `311cc0f38` (clock times on the board), `00aac75f8` (time control in game info) and `d1614ff27` (scoresheet clock times) landed on master, then the bundle-ceiling commit `5204b89e3` is the first red SHA of this e2e streak. Fourteen `toHaveScreenshot` assertions fail (12–10936 pixels, all reported as ratio 0.01). 568 other tests passed in 12.8 m. This is not f-20261127-07 (saved-layouts 45 s timeout) and not handled f-20261127-12 (More-menu height).
+* **Failure scenario:** job `e2e` of Test run 45990064007 on master `ccd82b33d`:
+  * `e2e/game-end.spec.ts:164` termination-suggestions light (33 px) and dark (45 px)
+  * `e2e/board-arrange.spec.ts:31` board-arrange-beside-database (8565 px)
+  * `e2e/board-arrange.spec.ts:166` board-arrange-database-below-board (8950 px)
+  * `e2e/board-arrange.spec.ts:237` board-arrange-drag-preview (10936 px)
+  * `e2e/board-arrange.spec.ts:325` board-arrange-placing-targets (3287 px)
+  * `e2e/saved-layouts.spec.ts:51` saved-layouts-repertoire-preset (1250 px)
+  * `e2e/focus-mode.spec.ts:15` focus-mode-board (9307 px)
+  * `e2e/new-game-to-file.spec.ts:158` save-to-file-or-database-modal (6780 px)
+  * `e2e/game-references.spec.ts:96` citations-notation (12 px)
+  * `e2e/game-interruption.spec.ts:31` game-interrupted (400 px)
+  * `e2e/workspace-tabs.spec.ts:1783` workspace-tabs-import-committed (8998 px)
+  * `e2e/board-keyboard.spec.ts:943` board-keyboard (487 px)
+  * `e2e/board-keyboard.spec.ts:1150` variation-chooser (487 px)
+* **Fix:** re-record those snapshots in `pnpm test:e2e:container` after reading each diff; do not re-record natively. Product clock-times behaviour stays.
