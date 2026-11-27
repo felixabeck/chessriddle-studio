@@ -29120,13 +29120,15 @@ Handled in e86f0c3ad: the outer `tokio::time::timeout` is now `REVOCATION_TIMEOU
 
 ### "Train these lines" leaves an empty New Tab behind when the first chapter is already open
 
-* **ID:** f-20261125-02 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
+* **ID:** f-20261125-02 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** build · **Blocked:** none
 * **Impact class:** ux
 * **Where:** `src/components/databases/PlayerPreparation.tsx` (the "Train these lines" start creates a New Tab and passes it as `TimedRunLaunch.newTabId`, d-20261124-34); `src/components/panels/practice/TimedRunOwner.tsx` `openSegment` (reuses an existing chapter tab through `findChapterTab` and then treats the run's New Tab as used).
 * **Defect:** the preparation run opens a New Tab of its own so the timed run keeps one contract. When the run's first segment is a chapter already open in a tab (for example after opening a line from the Preparation tab), `openSegment` reuses that tab and never replaces or closes the New Tab, so an empty "New tab" stays in `tabsAtom` and in `sessionStorage` after every such start. "Train openings" passes the New Tab the user started from, so it does not create one.
 * **Failure scenario:** on the Preparation tab, click a line (its chapter opens in a tab), go back to the Preparation tab, click "Train these lines": the run trains in the existing chapter tab and an extra empty "New tab" remains in the tab strip.
 * **Open question:** close an unused `newTabId` once the first segment opened in another tab (changes the timed run's tab contract for "Train openings" as well), or have the preparation start detect that the planned first chapter is already open and launch from that tab (needs a second leave rule, rejected by d-20261124-34), or something else.
 * **Found by:** Claude Code build run (session 5deefa91-5f88-4872-a94c-a87dfaec39f3), review-persisted-state lens on phase 5 of `tasks/plans/2026-11-24-opponent-preparation.md`, 2026-11-25; not reproduced in the running app.
+* **Closed (2026-11-27, drain a9595a38):** After the first successful timed-run segment, `TimedRunOwner` closes leftover `type="new"` `newTabId` through existing `closeTab` unless it is the segment tab (`29bbe6c58`, d-20261127-07). AbortError from that close cancels the run; other close failures are warned locally and the run continues. Rejected with d-20261124-34: skip creating the New Tab / launch from the already-open chapter. Proof: related Vitest 173/173, covering reuse+consume, failed-first-open still leaving New Tab for `replaceNewTab`, abort-rethrow, `type !== "new"`, and identity (`newTabId === currentTabId` while type is still `"new"`).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"549a4b4033d0316ae51db33ad535969bf963d1567e9218875edcef1b11f53615","header_sha256":"044dacb19756a05f8ba146c912934d552a01ea28fc85fca98dda34462d7b04d9","header_status":"handled","input_sha256":"e6df0ca118181330506cd50aee7817fb04688fea13298097ab014538143db9f2","kind":"mutation-receipt","operation":"28967f6b3e6a43e4e0f1de95af97416859751967941c5afddd0a9054e3c59731","options":{"section":null},"request_id_sha256":null,"results":["f-20261125-02"],"target":"f-20261125-02","v":1} -->
 
 ---
 
