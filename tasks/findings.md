@@ -30268,7 +30268,7 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 
 ### Practice move rows, engine stats and game-list index still dim text with opacity
 
-* **ID:** f-20261127-21 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 0a17f348-c189-4394-b690-a15696ba3a44
 * **Impact class:** ux
 * **Spotted outside diff:** yes, review-root-cause of f-20261127-15 (drain session 0a17f348-c189-4394-b690-a15696ba3a44)
@@ -30280,7 +30280,12 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 * **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
 
 Closed. Commit `5df2ba1af`. Practice rare-move rows, engine stats Group, inert engine lines, game-list index, and FenSearch FEN take `--mantine-color-dimmed` at full opacity (d-20261124-04). Inert engine SAN uses `--notation-unannotated-move-color` on `.line[inert]`. Rejected: restoring 0.45/0.5 opacity; passing `analysis={inert}` into MoveCell (italic is the analysis-after-game-end cue). Proof: related Vitest 2549 passed; container e2e `engine-gap` + `files-preview` 48 passed (ancestor opacity chain 1, `paintedText` contrast ≥ 4.5, computed SAN colour equals `--mantine-color-dimmed`). Snapshots: engine-gap-dimmed, engine-failure-historical-lines, files-labelled-game, files-preview, files-inline-comment-prose. Practice rare-row e2e skipped (unit tests pin the dimmed colour). Lenses r3: correctness, root-cause, tests, engine-protocol APPROVED.
-<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3dbd341df625c815f2ff679b5878a80819777f849bd5019fcde608caa6426b97","header_sha256":"ee8515c4df0eff86a61e4996f574257d27c79cc5de774f704b0b110aa3c46610","header_status":"handled","input_sha256":"adc15ffd0ec5c62d28ec4467daf893047c78e93e37d852b6f30a4f2f9c1480d6","kind":"mutation-receipt","operation":"b4bceb47d0a0218e3f9886bf669cafc197cef54c6260363b1d611af704fa0051","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-21"],"target":"f-20261127-21","v":1} -->
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3dbd341df625c815f2ff679b5878a80819777f849bd5019fcde608caa6426b97","header_sha256":"544d0a88bcc902b5dd689afa47ad56f841f337e1e4ea54d17a88d377bb133ed7","header_status":"open","input_sha256":"adc15ffd0ec5c62d28ec4467daf893047c78e93e37d852b6f30a4f2f9c1480d6","kind":"mutation-receipt","operation":"b4bceb47d0a0218e3f9886bf669cafc197cef54c6260363b1d611af704fa0051","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-21"],"target":"f-20261127-21","v":1} -->
+
+Reopened after own-red Test run 46076853831 (https://github.com/felixabeck/chessriddle-studio/actions/runs/46076853831) on SHA e0edb6b50165f4131a84a6da261fb2312c4ebac9 (the close commit for this finding). e2e job 140766494957: 596 passed, 4 skipped, 11 failed. Ten failures are 5-pixel (ratio 0.01) screenshot mismatches on library/file surfaces that also show GameSelector indices — the same intended colour change as the files-preview snapshots re-recorded in 5df2ba1af (linked-new-game, file-new-game, library-mixed-1280/1440/1920-100-light-file, library-linked-ready/missing-recovered/unavailable-recovered-desktop, library-migration-preserved-original-desktop, files-open-320-200). One failure is a 135000ms timeout in notation-follow-scroll-webkit at walk → page.evaluate, not a screenshot of dimmed text. Repair: inspect remaining *-diff.png, re-record the missed library/file snapshots in the container after confirming the diffs are the index colour only, and decide the webkit timeout vs flake. Do not install e0edb6b50.
+* **CI run:** 46076853831
+* **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-27T22:54:33Z
+<!-- ledger-meta {"command":"set-header","effect_lines":3,"effect_sha256":"4b1c11ec5423292c0a7820c03e45ae1e20213a9f19e17e604b0822b45f3ffa75","header_sha256":"544d0a88bcc902b5dd689afa47ad56f841f337e1e4ea54d17a88d377bb133ed7","header_status":"open","input_sha256":"ad1a6378cce62abdfca234215b910882b3ee0fbbfd60e44845edcd440a134be8","kind":"mutation-receipt","operation":"e755a9f1508509910f1bd35653ae687b7ff41ba09bb88509c3eb8be5b39c46c2","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-21"],"target":"f-20261127-21","v":1} -->
 
 ---
 
