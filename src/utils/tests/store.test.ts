@@ -880,6 +880,48 @@ test("a bare-kings result saves 0.00 once and moves played on after it stay unsc
     expect(stats.white.acpl).toBe(500);
 });
 
+test("applyReport records review facts even when marks and lines options are off", () => {
+    store.getState().setState(treeE4D5());
+    const best = at([0, "d2d4"]);
+    best.best[0].uciMoves.push("d7d5");
+    expect(
+        runReport([best, at([-400, "e7e5"]), noLines], NOT_REQUESTED, {
+            marks: false,
+            lines: false,
+        }),
+    ).toBe(true);
+    const { root, report } = store.getState();
+    // No marks or variation lines written to the tree when both options are off.
+    expect(root.children[0].nags).toEqual([]);
+    expect(root.children).toHaveLength(1);
+    // Facts are still written on the summary.
+    expect(report.summary?.facts).toEqual([
+        { mainlineIndex: 1, kind: "decisive", betterLine: ["d4", "d5"] },
+    ]);
+});
+
+test("applyReport caps persisted review facts at 256 in game order", () => {
+    store.getState().setState(defaultTree());
+    const cycle = ["Nf3", "Nf6", "Ng1", "Ng8"];
+    for (let i = 0; i < 65; i++) {
+        for (const san of cycle) store.getState().makeMove({ payload: san });
+    }
+    // 260 moves; alternate +400 / -400 on non-first-choice moves so every move is a blunder.
+    const positions: Position[] = [at([0, "e2e4"])];
+    for (let ply = 1; ply <= 260; ply++) {
+        // Mover at odd ply is White (wants +), at even ply is Black (wants -).
+        // Score after ply is bad for whoever just moved: -400 after White, +400 after Black.
+        const scoreAfter = ply % 2 === 1 ? -400 : 400;
+        const bestUci = ply % 2 === 1 ? "e7e5" : "e2e4";
+        positions.push(at([scoreAfter, bestUci]));
+    }
+    expect(runReport(positions, NOT_REQUESTED, { marks: false, lines: false })).toBe(true);
+    const facts = store.getState().report.summary?.facts ?? [];
+    expect(facts).toHaveLength(256);
+    expect(facts[0].mainlineIndex).toBe(1);
+    expect(facts[255].mainlineIndex).toBe(256);
+});
+
 /** 1.e4 (1.d4 report line) (1.c4) d5, with the report line from an earlier run. */
 function treeWithReportLine() {
     store.getState().setState(treeE4D5());

@@ -15,6 +15,12 @@ import {
     type TreeState,
 } from "@/utils/treeReducer";
 import { boundedGoModeSchema } from "@/utils/engines";
+import {
+    MAX_GENERATED_ANALYSIS_VARIATION_PLIES,
+    MAX_REVIEW_FACT_SAN_LENGTH,
+    MAX_REVIEW_FACTS,
+    MISTAKE_KINDS,
+} from "@/utils/gameReview";
 import { z } from "zod";
 import { linkedGameLocatorSchema } from "@/utils/pathCapabilities";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
@@ -155,14 +161,32 @@ export function readStoredScoresheetReview(value: unknown): ScoresheetReview | u
     return parsed.success ? parsed.data : undefined;
 }
 
-const reportSummarySchema = z.object({
-    engine: z.string().max(PGN_TEXT_MAX),
-    goMode: boundedGoModeSchema,
-    createdAt: z.number().finite(),
-    missingEvaluations: z.number().int().nonnegative(),
-    novelty: z.enum(["notRequested", "found", "notFound", "unavailable"]),
-    fingerprint: z.string().max(PGN_TEXT_MAX),
+const reviewFactSchema = z.object({
+    mainlineIndex: z.number().int().min(1).max(MAX_TREE_DEPTH),
+    kind: z.enum(MISTAKE_KINDS).nullable(),
+    betterLine: z
+        .array(z.string().min(1).max(MAX_REVIEW_FACT_SAN_LENGTH))
+        .max(MAX_GENERATED_ANALYSIS_VARIATION_PLIES),
 });
+
+const reportSummarySchema = z
+    .object({
+        engine: z.string().max(PGN_TEXT_MAX),
+        goMode: boundedGoModeSchema,
+        createdAt: z.number().finite(),
+        missingEvaluations: z.number().int().nonnegative(),
+        novelty: z.enum(["notRequested", "found", "notFound", "unavailable"]),
+        fingerprint: z.string().max(PGN_TEXT_MAX),
+        // A malformed facts list is dropped without losing the rest of the summary.
+        facts: z.array(reviewFactSchema).max(MAX_REVIEW_FACTS).optional().catch(undefined),
+    })
+    .transform((summary) => {
+        if (summary.facts === undefined) {
+            const { facts: _dropped, ...rest } = summary;
+            return rest;
+        }
+        return summary;
+    });
 
 function createPersistedTreeSchema() {
     const boundedText = z.string().max(PGN_TEXT_MAX);

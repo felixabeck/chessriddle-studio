@@ -98,6 +98,7 @@
         "src/utils/commentNotation.ts",
         "src/utils/commentSerializer.ts",
         "src/utils/drawings.ts",
+        "src/utils/gameReview.ts",
         "src/utils/keyboardOwnership.ts",
         "src/utils/lruCache.ts",
         "src/utils/misc.ts",

@@ -17,6 +17,7 @@ import {
 import { parseSanOrUci, positionFromFen } from "./chessops";
 import { makePgnDrawings, PGN_COMMENT_COMMAND, toDrawShape } from "./drawings";
 import { harmonicMean, mean } from "./misc";
+import { type GamePhases, getGamePhases } from "./phase";
 import { DIAGRAM_MARKER, splitPgnComment } from "./pgnComment";
 import {
     formatScore,
@@ -1020,10 +1021,18 @@ export type KeyMoment = {
     betterMove: string | null;
 };
 
+export type GamePhase = "opening" | "middlegame" | "endgame";
+
+export type PhaseAccuracy = Record<GamePhase, number | null>;
+
 export type GameStats = ColorMap<SideStats> & {
     keyMoments: KeyMoment[];
     /** Mainline positions, the root included, with a saved evaluation. */
     scoredPositions: number;
+    /** Mainline phase boundaries, computed once for both the scoreboard and the chart. */
+    phases: GamePhases;
+    /** Per-side accuracy restricted to each game phase, or `null` when a phase has no scored move. */
+    phaseAccuracy: ColorMap<PhaseAccuracy>;
 };
 
 function emptyCounts(): AnnotationCounts {
@@ -1075,17 +1084,38 @@ function volatilityWeights(winChances: (number | null)[]): number[] {
     return weights;
 }
 
+function aggregateAccuracy(
+    scored: readonly { accuracy: number; move: number }[],
+    weights: readonly number[],
+): number | null {
+    if (scored.length === 0) return null;
+    const harmonic = harmonicMean(scored.map((entry) => entry.accuracy));
+    const totalWeight = scored.reduce((sum, entry) => sum + weights[entry.move], 0);
+    const weighted =
+        scored.reduce((sum, entry) => sum + entry.accuracy * weights[entry.move], 0) / totalWeight;
+    return (harmonic + weighted) / 2;
+}
+
+function phaseForPly(ply: number, phases: GamePhases): GamePhase {
+    if (phases.endgamePly !== null && ply >= phases.endgamePly) return "endgame";
+    if (phases.middlegamePly !== null && ply >= phases.middlegamePly) return "middlegame";
+    return "opening";
+}
+
 /**
  * Everything the Report tab shows, from one walk over the mainline: per-side accuracy and ACPL,
- * the per-side counts of the six move-quality marks, and the key moments. It reads the saved
- * evaluation (`node.score`), never the live engine; a standard start position without one counts
- * as +0.15.
+ * per-phase accuracy, the per-side counts of the six move-quality marks, and the key moments. It
+ * reads the saved evaluation (`node.score`), never the live engine; a standard start position
+ * without one counts as +0.15.
  */
 export function getGameStats(root: TreeNode): GameStats {
     const annotations: ColorMap<AnnotationCounts> = { white: emptyCounts(), black: emptyCounts() };
     const cplosses: ColorMap<number[]> = { white: [], black: [] };
     const accuracies: ColorMap<{ accuracy: number; move: number }[]> = { white: [], black: [] };
     const keyMoments: KeyMoment[] = [];
+    const boards: Chess[] = [];
+    const [rootBoard] = positionFromFen(root.fen);
+    if (rootBoard) boards.push(rootBoard);
 
     const rootScore = root.score ?? (root.fen === INITIAL_FEN ? INITIAL_SCORE : null);
     const winChances: (number | null)[] = [
@@ -1099,6 +1129,8 @@ export function getGameStats(root: TreeNode): GameStats {
         const parent = node;
         node = node.children[0];
         path.push(0);
+        const [board] = positionFromFen(node.fen);
+        if (board) boards.push(board);
         const color: Color = node.halfMoves % 2 === 1 ? "white" : "black";
         const score = node.score;
         let marked: BasicAnnotation | undefined;
@@ -1134,24 +1166,42 @@ export function getGameStats(root: TreeNode): GameStats {
         parentScore = score;
     }
 
+    const phases = getGamePhases(boards);
     const weights = volatilityWeights(winChances);
     const side = (color: Color): SideStats => {
-        const scored = accuracies[color];
-        if (scored.length === 0) {
+        const accuracy = aggregateAccuracy(accuracies[color], weights);
+        if (accuracy === null) {
             return { accuracy: null, acpl: null, annotations: annotations[color] };
         }
-        const harmonic = harmonicMean(scored.map((entry) => entry.accuracy));
-        const totalWeight = scored.reduce((sum, entry) => sum + weights[entry.move], 0);
-        const weighted =
-            scored.reduce((sum, entry) => sum + entry.accuracy * weights[entry.move], 0) /
-            totalWeight;
         return {
-            accuracy: (harmonic + weighted) / 2,
+            accuracy,
             acpl: mean(cplosses[color]),
             annotations: annotations[color],
         };
     };
-    return { white: side("white"), black: side("black"), keyMoments, scoredPositions };
+    const sidePhases = (color: Color): PhaseAccuracy => {
+        const byPhase: Record<GamePhase, { accuracy: number; move: number }[]> = {
+            opening: [],
+            middlegame: [],
+            endgame: [],
+        };
+        for (const entry of accuracies[color]) {
+            byPhase[phaseForPly(entry.move + 1, phases)].push(entry);
+        }
+        return {
+            opening: aggregateAccuracy(byPhase.opening, weights),
+            middlegame: aggregateAccuracy(byPhase.middlegame, weights),
+            endgame: aggregateAccuracy(byPhase.endgame, weights),
+        };
+    };
+    return {
+        white: side("white"),
+        black: side("black"),
+        keyMoments,
+        scoredPositions,
+        phases,
+        phaseAccuracy: { white: sidePhases("white"), black: sidePhases("black") },
+    };
 }
 
 export type PiecesCount = {

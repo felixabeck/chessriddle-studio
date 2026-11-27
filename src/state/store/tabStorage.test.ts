@@ -3268,6 +3268,61 @@ test("a wrong-typed report-line marker is dropped without losing the node or the
     expect(read.root.children[0].reportLine).toBeUndefined();
 });
 
+test("report summary review facts survive a seed/read round trip", () => {
+    const summaryWithFacts = {
+        ...storedSummary,
+        facts: [
+            { mainlineIndex: 1, kind: "losesMaterial" as const, betterLine: ["d4", "d5"] },
+            { mainlineIndex: 4, kind: null, betterLine: [] },
+        ],
+    };
+    const tree = treeWith((state) => {
+        state.report = { inProgress: false, operationId: null, summary: summaryWithFacts };
+    });
+    storage.seed("report-facts", tree);
+    const read = storage.read("report-facts")?.state as ReturnType<typeof defaultTree>;
+    expect(read.report.summary).toEqual(summaryWithFacts);
+});
+
+test("an older report summary without facts hydrates cleanly without facts", () => {
+    const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+    tree.report = { inProgress: false, operationId: null, summary: storedSummary };
+    sessionStorage.setItem("summary-no-facts", JSON.stringify(tree));
+    const read = storage.read("summary-no-facts")?.state as ReturnType<typeof defaultTree>;
+    expect(read.report.summary).toEqual(storedSummary);
+    expect(read.report.summary && "facts" in read.report.summary).toBe(false);
+});
+
+test.each([
+    { label: "non-array", facts: "corrupt" },
+    { label: "invalid kind", facts: [{ mainlineIndex: 1, kind: "unknown", betterLine: ["e4"] }] },
+    { label: "zero index", facts: [{ mainlineIndex: 0, kind: "decisive", betterLine: ["e4"] }] },
+    {
+        label: "over 256 cap",
+        facts: Array.from({ length: 257 }, (_, i) => ({
+            mainlineIndex: i + 1,
+            kind: null,
+            betterLine: [],
+        })),
+    },
+])(
+    "a malformed review facts list ($label) drops only facts and keeps the rest of the summary",
+    ({ label, facts }) => {
+        const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
+        tree.report = {
+            inProgress: false,
+            operationId: null,
+            summary: { ...storedSummary, facts },
+        };
+        sessionStorage.setItem(`malformed-facts-${label}`, JSON.stringify(tree));
+        const read = storage.read(`malformed-facts-${label}`)?.state as ReturnType<
+            typeof defaultTree
+        >;
+        expect(read.report.summary).toEqual(storedSummary);
+        expect(read.report.summary && "facts" in read.report.summary).toBe(false);
+    },
+);
+
 test("a stored report without a summary hydrates as no summary", () => {
     const tree = structuredClone(defaultTree()) as unknown as Record<string, unknown>;
     tree.report = { inProgress: false, operationId: "older" };

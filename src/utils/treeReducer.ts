@@ -4,6 +4,7 @@ import { INITIAL_FEN, makeCastlingFen, parseFen } from "chessops/fen";
 import type { NoveltyOutcome, Outcome, Score } from "@/bindings";
 import type { CoachSession } from "@/state/coachSession";
 import type { BoundedGoMode } from "@/utils/engines";
+import type { ReviewFact } from "@/utils/gameReview";
 import type { PuzzleSession } from "@/state/puzzleSession";
 import { dropInvalidEpSquare, positionFromFen } from "@/utils/chessops";
 
@@ -553,6 +554,8 @@ export interface ReportSummary {
     novelty: NoveltyOutcome["kind"];
     /** `reportRootFingerprint` of the root FEN and mainline the report describes. */
     fingerprint: string;
+    /** Review facts for mainline mistakes (`?!`, `?`, `??`), capped at `MAX_REVIEW_FACTS`. */
+    facts?: ReviewFact[];
 }
 
 export interface ReportState {

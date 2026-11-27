@@ -142,6 +142,16 @@ export function resolveTimeControl(
     return headers.time_control ? parseTimeControl(headers.time_control) : null;
 }
 
+/** First period of each side's resolved control (`seconds`/`increment` in milliseconds). */
+export function getSideTimeControlFields(
+    headers: Pick<GameHeaders, "time_control" | "white_time_control" | "black_time_control">,
+): { white: TimeControlField | null; black: TimeControlField | null } {
+    return {
+        white: resolveTimeControl(headers, "white")?.[0] ?? null,
+        black: resolveTimeControl(headers, "black")?.[0] ?? null,
+    };
+}
+
 /** True when any node in the tree (main line or variation) carries a clock value. */
 export function hasTreeClock(root: TreeNode): boolean {
     for (const { node } of treeIterator(root)) {

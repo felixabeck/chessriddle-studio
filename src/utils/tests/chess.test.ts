@@ -1114,6 +1114,79 @@ test("a promoted report line is the played move, not the key moment's better mov
     expect(getGameStats(root).keyMoments[0].betterMove).toBeNull();
 });
 
+test("getGameStats computes per-phase accuracy and returns null for phases without scored moves", () => {
+    // 1. Game that stays in the opening (short mainline from INITIAL_FEN):
+    // middlegame and endgame are never reached -> null.
+    const openingOnly = defaultTree().root;
+    openingOnly.score = cpScore(15);
+    const p1 = addMainlineMove(openingOnly, "e4");
+    p1.score = cpScore(15);
+    const p2 = addMainlineMove(p1, "e5");
+    p2.score = cpScore(-200);
+    const openStats = getGameStats(openingOnly);
+    expect(openStats.phases).toEqual({ middlegamePly: null, endgamePly: null });
+    expect(openStats.phaseAccuracy.white.opening).toBe(openStats.white.accuracy);
+    expect(openStats.phaseAccuracy.black.opening).toBe(openStats.black.accuracy);
+    expect(openStats.phaseAccuracy.white.middlegame).toBeNull();
+    expect(openStats.phaseAccuracy.white.endgame).toBeNull();
+    expect(openStats.phaseAccuracy.black.middlegame).toBeNull();
+    expect(openStats.phaseAccuracy.black.endgame).toBeNull();
+
+    // 2. Game that crosses opening -> middlegame -> endgame via real board positions:
+    // Root: standard position (opening, ply 0).
+    // Ply 1 (White): still opening.
+    // Ply 2 (Black): sparse backrank / <= 10 majors+minors -> enters middlegame at ply 2.
+    // Ply 3 (White): middlegame move (blunder).
+    // Ply 4 (Black): <= 6 majors+minors -> enters endgame at ply 4 (Black scored, White has no endgame move).
+    const midOnlyFen = "r2qkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/R2QKB1R w KQkq - 0 10"; // 10 majors+minors (> 6, <= 10 -> middlegame, not endgame)
+    const endFen = "4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 20"; // 0 majors+minors (<= 6 -> endgame)
+    const phased = defaultTree().root;
+    phased.score = cpScore(0);
+    const m1 = createNode({
+        fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        move: parseUci("e2e4")!,
+        san: "e4",
+        halfMoves: 1,
+    });
+    m1.score = cpScore(0);
+    const m2 = createNode({
+        fen: midOnlyFen,
+        move: parseUci("e7e5")!,
+        san: "e5",
+        halfMoves: 2,
+    });
+    m2.score = cpScore(0);
+    const m3 = createNode({
+        fen: midOnlyFen,
+        move: parseUci("a2a3")!,
+        san: "a3",
+        halfMoves: 3,
+    });
+    m3.score = cpScore(-400);
+    const m4 = createNode({
+        fen: endFen,
+        move: parseUci("a7a6")!,
+        san: "a6",
+        halfMoves: 4,
+    });
+    m4.score = cpScore(-400);
+    phased.children = [m1];
+    m1.children = [m2];
+    m2.children = [m3];
+    m3.children = [m4];
+
+    const phasedStats = getGameStats(phased);
+    expect(phasedStats.phases).toEqual({ middlegamePly: 2, endgamePly: 4 });
+    // White: ply 1 (opening, 0->0 = 100), ply 3 (middlegame, 0->-400 < 50), no endgame move -> null.
+    expect(phasedStats.phaseAccuracy.white.opening).toBe(100);
+    expect(phasedStats.phaseAccuracy.white.middlegame).toBeLessThan(50);
+    expect(phasedStats.phaseAccuracy.white.endgame).toBeNull();
+    // Black: no opening move -> null, ply 2 (middlegame, 0->0 = 100), ply 4 (endgame, -400->-400 = 100).
+    expect(phasedStats.phaseAccuracy.black.opening).toBeNull();
+    expect(phasedStats.phaseAccuracy.black.middlegame).toBe(100);
+    expect(phasedStats.phaseAccuracy.black.endgame).toBe(100);
+});
+
 function addMainlineMove(parent: TreeNode, san: string): TreeNode {
     const child = createNode({
         fen: parent.fen,

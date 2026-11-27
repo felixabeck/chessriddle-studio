@@ -1,7 +1,6 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { notifications } from "@mantine/notifications";
 import { type Move, parseUci } from "chessops";
-import { normalizeMove } from "chessops/chess";
 import { makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import { type Draft, freeze, produce } from "immer";
@@ -29,6 +28,11 @@ import { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 export { validateMoveSequence, type MoveSequenceResult } from "@/utils/puzzles";
 import { isPrefix } from "@/utils/misc";
 import type { BoundedGoMode } from "@/utils/engines";
+import {
+    buildReviewFacts,
+    MAX_GENERATED_ANALYSIS_VARIATION_PLIES,
+    playUciLine,
+} from "@/utils/gameReview";
 import { judgeReport } from "@/utils/score";
 import { playSound } from "@/utils/sound";
 import { replacePgnCommentText } from "@/utils/pgnComment";
@@ -1761,8 +1765,6 @@ function setShapes(state: TreeState, shapes: DrawShape[]) {
     return state;
 }
 
-const MAX_GENERATED_ANALYSIS_VARIATION_PLIES = 10;
-
 function replaceInGroup(nags: readonly number[], annotation: Annotation): number[] {
     const next = nags.filter((code) => {
         const glyph = nagGlyph(code);
@@ -1814,20 +1816,13 @@ function reportLineNodes(
     parent: TreeNode,
     line: GameAnalysis["positions"][number]["best"][number],
 ) {
-    const [position] = positionFromFen(parent.fen);
-    if (!position) return null;
+    const steps = playUciLine(parent.fen, line.uciMoves, MAX_GENERATED_ANALYSIS_VARIATION_PLIES);
     let first: TreeNode | null = null;
     let last: TreeNode | null = null;
     let halfMoves = parent.halfMoves;
-    for (const uci of line.uciMoves.slice(0, MAX_GENERATED_ANALYSIS_VARIATION_PLIES)) {
-        const parsed = parseUci(uci);
-        if (!parsed) break;
-        const move = normalizeMove(position, parsed);
-        if (!position.isLegal(move)) break;
-        const san = makeSan(position, move);
-        position.play(move);
+    for (const step of steps) {
         halfMoves += 1;
-        const node = createNode({ fen: makeFen(position.toSetup()), move, san, halfMoves });
+        const node = createNode({ fen: step.fen, move: step.move, san: step.san, halfMoves });
         if (last) last.children.push(node);
         else first = node;
         last = node;
@@ -1916,6 +1911,12 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
         });
     }
 
+    const facts = buildReviewFacts(
+        positions,
+        mainline.map(({ node }) => node),
+        marks,
+    );
+
     state.report.summary = {
         engine: request.engine,
         goMode: request.goMode,
@@ -1925,6 +1926,7 @@ function applyReport(state: TreeStoreState, result: GameAnalysis, request: Repor
         ).length,
         novelty: novelty.kind,
         fingerprint: request.fingerprint,
+        ...(facts.length > 0 ? { facts } : {}),
     };
     return true;
 }
