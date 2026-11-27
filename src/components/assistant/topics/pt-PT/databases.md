@@ -2,7 +2,7 @@
 id: databases
 title: Bases de dados, explorador, pesquisa de posição, jogadores e torneios
 summary: Adicione ou transfira bases de dados de partidas, escolha uma base de referência, pesquise posições no explorador e consulte partidas, jogadores e torneios.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 As bases de dados ficam em [[page:library]] ({{label:SideBar.Library}}) junto aos seus ficheiros PGN e são guardadas em [[setting:databases-directory]].
@@ -32,7 +32,7 @@ No cartão de um jogador, abra o separador {{label:Home.Personal.Preparation}} p
 
 No tabuleiro de análise, abra {{label:Board.Tabs.Database}} para usar o explorador de aberturas:
 - Escolha {{label:Board.Database.LichessAll}} ou {{label:Board.Database.LichessMaster}} no menu de fontes e em {{label:Board.Database.Compare}} (os exploradores em linha do Lichess requerem uma conta Lichess com sessão iniciada em [[page:accounts]]).
-- {{label:Board.Database.Stats}} (estatísticas de lances) aparece em cima e {{label:Board.Database.Games}} (partidas correspondentes) em baixo; arraste o separador entre ambos para dividir a altura. A coluna {{label:Board.Area.Notation}} mostra os lances a partir da posição no tabuleiro, com o lance seguinte a negrito.
+- {{label:Board.Database.Stats}} (estatísticas de lances) aparece em cima e {{label:Board.Database.Games}} (partidas correspondentes) em baixo; enquanto ambas as áreas estiverem visíveis, arraste o separador entre elas para dividir a altura. Utilize {{label:Board.Database.HideGames}} ou {{label:Board.Database.ShowGames}} para ocultar ou mostrar a lista de partidas e a roda dentada das definições para abrir ou recolher os controlos das fontes — ambos ficam no cabeçalho do painel quando é um bloco próprio e na linha superior de controlos quando está nos separadores. A coluna {{label:Board.Area.Notation}} mostra os lances a partir da posição no tabuleiro, com o lance seguinte a negrito.
 - Clique em {{label:Board.Database.Compare}} para ver duas fontes lado a lado, ou abra {{label:Board.Database.Local.Position}} para alternar entre pesquisa de posição {{label:Board.Database.Local.Exact}} e {{label:Board.Database.Local.Partial}} (incluindo {{label:Board.Database.Local.SimilarStructure}} para pesquisa por estrutura de peões e {{label:Fen.Empty}} para padrões personalizados).
 - Também pode mostrar {{label:Board.Tabs.Database}} como uma área própria no tabuleiro de análise e utilizar {{label:Board.Area.ReturnToTabs}} para a devolver aos separadores.
 - Quando {{label:Databases.OpeningTree.Prepare}} abre um tabuleiro para um jogador da base de dados, o explorador começa com a sua base de referência como outra coluna ao lado das partidas do adversário; clique em {{label:Board.Database.RemoveReference}} para ocultar uma coluna ou em {{label:Board.Database.AddColumn}} para adicionar outra.

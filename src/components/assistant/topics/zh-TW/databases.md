@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -32,7 +32,7 @@ source: 526f05192ead329f
 
 在分析棋盤上，開啟 {{label:Board.Tabs.Database}} 分頁以使用開局探索器：
 - 在來源下拉選單和 {{label:Board.Database.Compare}} 中選擇 {{label:Board.Database.LichessAll}} 或 {{label:Board.Database.LichessMaster}}（Lichess 線上探索器需要在 [[page:accounts]] 登入 Lichess 帳戶）。
-- 上方顯示 {{label:Board.Database.Stats}}（著法統計），下方顯示 {{label:Board.Database.Games}}（相符對局）；拖曳中間的分隔線可分配高度。{{label:Board.Area.Notation}} 欄會顯示從目前棋盤局面開始的後續著法，並將下一步著法加粗。
+- 上方顯示 {{label:Board.Database.Stats}}（著法統計），下方顯示 {{label:Board.Database.Games}}（相符對局）；當兩個區域同時顯示時，可拖曳中間的分隔線分配高度。使用 {{label:Board.Database.HideGames}} 或 {{label:Board.Database.ShowGames}} 隱藏或顯示對局清單，使用設定齒輪展開或摺疊來源控制項——當面板為獨立區塊時，這兩個圖示位於面板標頭中；當其位於分頁中時，位於頂部控制列上。{{label:Board.Area.Notation}} 欄會顯示從目前棋盤局面開始的後續著法，並將下一步著法加粗。
 - 點擊 {{label:Board.Database.Compare}} 可並排檢視兩個來源，或開啟 {{label:Board.Database.Local.Position}} 在 {{label:Board.Database.Local.Exact}} 與 {{label:Board.Database.Local.Partial}} 局面搜尋之間切換（包括用於兵型結構搜尋的 {{label:Board.Database.Local.SimilarStructure}} 與用於自訂樣式的 {{label:Fen.Empty}}）。
 - 你也可以在分析棋盤上將 {{label:Board.Tabs.Database}} 顯示為獨立區域，並使用 {{label:Board.Area.ReturnToTabs}} 將其放回分頁中。
 - 當透過 {{label:Databases.OpeningTree.Prepare}} 為資料庫棋手開啟棋盤時，探索器會先把參考資料庫作為額外一欄顯示在對手對局旁；點擊 {{label:Board.Database.RemoveReference}} 可隱藏一欄，點擊 {{label:Board.Database.AddColumn}} 可再新增一欄。

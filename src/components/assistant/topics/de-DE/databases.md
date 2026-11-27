@@ -2,7 +2,7 @@
 id: databases
 title: Datenbanken, Explorer, Stellungssuche, Spieler und Turniere
 summary: Partiedatenbanken hinzufügen oder herunterladen, Referenzdatenbank wählen, Stellungen im Explorer suchen sowie Partien, Spieler und Turniere durchsuchen.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 Datenbanken befinden sich neben deinen PGN-Dateien in [[page:library]] ({{label:SideBar.Library}}) und werden unter [[setting:databases-directory]] gespeichert.
@@ -32,7 +32,7 @@ Wechsle in der Tabellenansicht der Datenbank zwischen {{label:Common.Games}}, {{
 
 Öffne auf dem Analysebrett {{label:Board.Tabs.Database}}, um den Eröffnungs-Explorer zu nutzen:
 - Wähle {{label:Board.Database.LichessAll}} oder {{label:Board.Database.LichessMaster}} im Quellenmenü und unter {{label:Board.Database.Compare}} (die Online-Explorer von Lichess erfordern ein angemeldetes Lichess-Konto unter [[page:accounts]]).
-- {{label:Board.Database.Stats}} (Zugstatistiken) stehen oben und {{label:Board.Database.Games}} (passende Partien) darunter; ziehe die Trennlinie dazwischen, um die Höhe aufzuteilen. Die Spalte {{label:Board.Area.Notation}} zeigt die Züge ab der Brettstellung, mit dem nächsten Zug in Fettschrift.
+- {{label:Board.Database.Stats}} (Zugstatistiken) stehen oben und {{label:Board.Database.Games}} (passende Partien) darunter; solange beide Bereiche sichtbar sind, ziehe die Trennlinie dazwischen, um die Höhe aufzuteilen. Nutze {{label:Board.Database.HideGames}} oder {{label:Board.Database.ShowGames}}, um die Partienliste aus- oder einzublenden, und das Zahnrad für die Einstellungen, um die Quellensteuerung ein- oder auszuklappen — beides liegt in der Kopfzeile des Bereichs, wenn das Panel eine eigene Kachel ist, und in der oberen Steuerungszeile, wenn es in den Tabs liegt. Die Spalte {{label:Board.Area.Notation}} zeigt die Züge ab der Brettstellung, mit dem nächsten Zug in Fettschrift.
 - Klicke auf {{label:Board.Database.Compare}}, um zwei Quellen nebeneinander anzuzeigen, oder öffne {{label:Board.Database.Local.Position}}, um zwischen {{label:Board.Database.Local.Exact}} und {{label:Board.Database.Local.Partial}} umzuschalten (einschließlich {{label:Board.Database.Local.SimilarStructure}} für die Bauernstruktursuche und {{label:Fen.Empty}} für eigene Muster).
 - Du kannst {{label:Board.Tabs.Database}} auf dem Analysebrett auch als eigenen Bereich anzeigen und mit {{label:Board.Area.ReturnToTabs}} wieder in die Tabs zurücklegen.
 - Wenn {{label:Databases.OpeningTree.Prepare}} ein Brett für einen Datenbankspieler öffnet, zeigt der Explorer zuerst deine Referenzdatenbank als weitere Spalte neben den Partien des Gegners; klicke auf {{label:Board.Database.RemoveReference}}, um eine Spalte auszublenden, oder auf {{label:Board.Database.AddColumn}}, um eine weitere hinzuzufügen.

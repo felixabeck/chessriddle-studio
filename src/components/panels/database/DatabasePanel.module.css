@@ -49,7 +49,7 @@
 }
 
 /* The last caption ends before the two small icon buttons and the gap between them. */
-.sources[data-collapsed] > [data-explorer-source]:last-child {
+.sources[data-collapsed][data-overlay-actions="true"] > [data-explorer-source]:last-child {
   padding-inline-end: 3.5rem;
 }
 
@@ -79,6 +79,10 @@
   flex-direction: column;
   gap: var(--mantine-spacing-xs);
   overflow: hidden;
+}
+
+.statsSection[data-expanded="true"] {
+  flex: 1 1 0;
 }
 
 /* Keep the stats ScrollArea's trailing gutter permanent (matching `.sources[data-sources]`) even

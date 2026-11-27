@@ -220,6 +220,15 @@ export const explorerHeaderCollapsedAtom = atomWithStorage<boolean>(
     createZodStorage(z.boolean(), localStorage),
 );
 
+export const EXPLORER_GAMES_COLLAPSED_KEY = "explorer-games-collapsed";
+
+/** Whether the board explorer hides its matching-games region so move statistics fill the panel. */
+export const explorerGamesCollapsedAtom = documentPreferences.atomWithStorage<boolean>(
+    EXPLORER_GAMES_COLLAPSED_KEY,
+    false,
+    createZodStorage(z.boolean(), localStorage),
+);
+
 export const EXPLORER_STATS_HEIGHT_KEY = "explorer-stats-height";
 export const DEFAULT_EXPLORER_STATS_HEIGHT_REM = 14;
 export const MIN_EXPLORER_STATS_HEIGHT_REM = 6;

@@ -14,8 +14,9 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Plus, Settings, X } from "lucide-react";
+import { ChevronDown, Plus, Settings, X } from "lucide-react";
 import { memo, type ReactNode, useCallback, useContext, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useDatabaseList } from "@/hooks/useDatabaseList";
 import { useDragResize } from "@/hooks/useDragResize";
@@ -23,6 +24,7 @@ import { useMeasuredElementSize } from "@/hooks/useMeasuredElementSize";
 import { useRootFontPx } from "@/hooks/useRootFontPx";
 import { useStore } from "zustand";
 import type { DatabaseHandle, NormalizedGame } from "@/bindings";
+import { PanelAreaChromeContext } from "@/components/boards/PanelArea";
 import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
@@ -30,6 +32,7 @@ import {
   dbTypeFamily,
   DEFAULT_EXPLORER_STATS_HEIGHT_REM,
   EXPLORER_DIVIDER_HEIGHT_PX,
+  explorerGamesCollapsedAtom,
   explorerGamesSourceFamily,
   explorerHeaderCollapsedAtom,
   explorerSortFamily,
@@ -671,19 +674,6 @@ function DatabasePanel() {
         : onlineCaption(column.id, column.id),
     ),
   ];
-  const headerActions = (
-    <IconAction
-      label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
-      variant="subtle"
-      size="sm"
-      pressed={!collapsed}
-      disabled={needsDatabase}
-      onClick={() => setStoredCollapsed(!storedCollapsed)}
-    >
-      <Settings size="0.875rem" />
-    </IconAction>
-  );
-
   const sourceAlert = (source: StatsColumn) => (
     <Alert key={source.column} color="danger" style={{ flexShrink: 0 }}>
       {`${source.name}: ${source.explorer.error}`}
@@ -800,8 +790,66 @@ function DatabasePanel() {
   const furtherLocalItems = furtherMenuItems.filter((item) => item.value === "reference");
   const furtherOnlineItems = furtherMenuItems.filter((item) => item.value !== "reference");
 
+  const panelChrome = useContext(PanelAreaChromeContext);
+  const inPanelTile = panelChrome !== null;
+  const [gamesCollapsed, setGamesCollapsed] = useAtom(explorerGamesCollapsedAtom);
+
   const showSingleUnavailable = !statsSources && unavailable !== null;
   const showSplitStats = !showSingleUnavailable && !statsUnavailable;
+  const gamesHidden = showSplitStats && gamesCollapsed;
+  const gamesVisible = !gamesHidden;
+  const headerActions = (
+    <>
+      <IconAction
+        label={collapsed ? t("Board.Database.ShowSettings") : t("Board.Database.HideSettings")}
+        variant="subtle"
+        size="sm"
+        pressed={!collapsed}
+        disabled={needsDatabase}
+        onClick={() => setStoredCollapsed(!storedCollapsed)}
+      >
+        <Settings size="0.875rem" />
+      </IconAction>
+      {showSplitStats && (
+        <IconAction
+          label={gamesVisible ? t("Board.Database.HideGames") : t("Board.Database.ShowGames")}
+          variant="subtle"
+          size="sm"
+          pressed={gamesVisible}
+          style={{
+            transition: "transform 200ms ease",
+            transform: gamesVisible ? "rotate(180deg)" : "none",
+          }}
+          onClick={() => setGamesCollapsed(!gamesCollapsed)}
+        >
+          <ChevronDown size="0.875rem" />
+        </IconAction>
+      )}
+    </>
+  );
+  const hasPositionControls = showingLocalSource || canCompare || canAddFurther;
+  const positionControls = (
+    <Group gap="xs">
+      {showingLocalSource && <PositionSearchControl boardFen={debouncedFen} />}
+      {canCompare &&
+        addSourceMenu(
+          t("Board.Database.Compare"),
+          t("Board.Database.CompareWith"),
+          comparisonLocalChoices,
+          comparisonOnlineChoices,
+          chooseComparison,
+        )}
+      {canAddFurther &&
+        addSourceMenu(
+          t("Board.Database.AddColumn"),
+          t("Board.Database.AddColumn"),
+          furtherLocalItems,
+          furtherOnlineItems,
+          (value) => addFurther(value as ExplorerFurtherColumn),
+        )}
+    </Group>
+  );
+
   const rootFont = useRootFontPx();
   const { ref: bodyRef, height: bodyHeightPx } = useMeasuredElementSize<HTMLDivElement>();
   const statsSectionRef = useRef<HTMLElement | null>(null);
@@ -828,7 +876,7 @@ function DatabasePanel() {
     keyStepRem: KEY_STEP_REM,
     setStoredRem: writeStoredStatsHeight,
     defaultRem: DEFAULT_EXPLORER_STATS_HEIGHT_REM,
-    disabled: !split.canResize || !showSplitStats,
+    disabled: !split.canResize || !showSplitStats || gamesHidden,
   });
   const effectiveStatsHeightRem =
     resize.dragRem !== null ? normalizeStatsHeight(resize.dragRem) : split.statsHeightRem;
@@ -866,45 +914,35 @@ function DatabasePanel() {
       display="flex"
       style={{ flexDirection: "column", overflow: "hidden" }}
     >
+      {panelChrome?.slot ? createPortal(headerActions, panelChrome.slot) : null}
       {collapsed ? (
         <div className={classes.captions}>
           <div
             className={classes.sources}
             data-sources={statsSources ? String(statsSources.length) : undefined}
             data-collapsed
+            data-overlay-actions={!inPanelTile ? "true" : undefined}
           >
             {sourceCaptions}
           </div>
-          <Group gap={4} wrap="nowrap" className={classes.actions}>
-            {headerActions}
-          </Group>
+          {!inPanelTile && (
+            <Group gap={4} wrap="nowrap" className={classes.actions}>
+              {headerActions}
+            </Group>
+          )}
         </div>
       ) : (
         <>
-          <Group justify="space-between" wrap="nowrap" gap="xs">
-            <Group gap="xs">
-              {showingLocalSource && <PositionSearchControl boardFen={debouncedFen} />}
-              {canCompare &&
-                addSourceMenu(
-                  t("Board.Database.Compare"),
-                  t("Board.Database.CompareWith"),
-                  comparisonLocalChoices,
-                  comparisonOnlineChoices,
-                  chooseComparison,
-                )}
-              {canAddFurther &&
-                addSourceMenu(
-                  t("Board.Database.AddColumn"),
-                  t("Board.Database.AddColumn"),
-                  furtherLocalItems,
-                  furtherOnlineItems,
-                  (value) => addFurther(value as ExplorerFurtherColumn),
-                )}
+          {inPanelTile ? (
+            hasPositionControls && positionControls
+          ) : (
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              {positionControls}
+              <Group gap={4} wrap="nowrap">
+                {headerActions}
+              </Group>
             </Group>
-            <Group gap={4} wrap="nowrap">
-              {headerActions}
-            </Group>
-          </Group>
+          )}
           <div
             className={classes.sources}
             data-sources={statsSources ? String(statsSources.length) : undefined}
@@ -939,7 +977,8 @@ function DatabasePanel() {
                   ref={statsSectionRef}
                   aria-label={t("Board.Database.Stats")}
                   className={classes.statsSection}
-                  style={{ height: `${effectiveStatsHeightRem}rem` }}
+                  data-expanded={gamesHidden ? "true" : undefined}
+                  style={gamesHidden ? undefined : { height: `${effectiveStatsHeightRem}rem` }}
                 >
                   {statsSources ? (
                     <>
@@ -969,25 +1008,29 @@ function DatabasePanel() {
                     />
                   )}
                 </section>
-                <div
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label={t("Board.Database.ResizeSplit")}
-                  aria-valuemin={roundRem(
-                    bodyHeightRem > 0 ? split.minRem : MIN_EXPLORER_STATS_HEIGHT_REM,
-                  )}
-                  aria-valuemax={bodyHeightRem > 0 ? roundRem(split.maxRem) : undefined}
-                  aria-valuenow={roundRem(effectiveStatsHeightRem)}
-                  tabIndex={0}
-                  className={classes.divider}
-                  data-dragging={resize.dragRem !== null ? "true" : undefined}
-                  {...resize.handleProps}
-                />
+                {!gamesHidden && (
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label={t("Board.Database.ResizeSplit")}
+                    aria-valuemin={roundRem(
+                      bodyHeightRem > 0 ? split.minRem : MIN_EXPLORER_STATS_HEIGHT_REM,
+                    )}
+                    aria-valuemax={bodyHeightRem > 0 ? roundRem(split.maxRem) : undefined}
+                    aria-valuenow={roundRem(effectiveStatsHeightRem)}
+                    tabIndex={0}
+                    className={classes.divider}
+                    data-dragging={resize.dragRem !== null ? "true" : undefined}
+                    {...resize.handleProps}
+                  />
+                )}
               </>
             )}
-            <section aria-label={t("Board.Database.Games")} className={classes.gamesSection}>
-              {gamesContent}
-            </section>
+            {!gamesHidden && (
+              <section aria-label={t("Board.Database.Games")} className={classes.gamesSection}>
+                {gamesContent}
+              </section>
+            )}
           </>
         )}
       </div>

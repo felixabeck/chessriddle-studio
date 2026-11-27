@@ -24,6 +24,16 @@
   flex-shrink: 0;
 }
 
+.chromeSlot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chromeSlot:empty {
+  display: none;
+}
+
 .grip {
   flex-shrink: 0;
   cursor: grab;

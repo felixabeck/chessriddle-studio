@@ -2,7 +2,7 @@
 id: databases
 title: Databaser, utforsker, stillingssøk, spillere og turneringer
 summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
@@ -32,7 +32,7 @@ På spillerkortet åpner du fanen {{label:Home.Personal.Preparation}} for å sam
 
 På analysebrettet åpner du {{label:Board.Tabs.Database}} for å bruke åpningsutforskeren:
 - Velg {{label:Board.Database.LichessAll}} eller {{label:Board.Database.LichessMaster}} i kildemenyen og i {{label:Board.Database.Compare}} (nettutforskerne for Lichess krever en innlogget Lichess-konto på [[page:accounts]]).
-- {{label:Board.Database.Stats}} (trekkstatistikk) vises øverst og {{label:Board.Database.Games}} (samsvarende partier) nederst; dra skillelinjen mellom dem for å fordele høyden. Kolonnen {{label:Board.Area.Notation}} viser trekkene fra stillingen på brettet, med det neste trekket i fet skrift.
+- {{label:Board.Database.Stats}} (trekkstatistikk) vises øverst og {{label:Board.Database.Games}} (samsvarende partier) nederst; mens begge områdene vises, kan du dra skillelinjen mellom dem for å fordele høyden. Bruk {{label:Board.Database.HideGames}} eller {{label:Board.Database.ShowGames}} for å skjule eller vise partilisten, og tannhjulet for innstillinger til å åpne eller folde sammen kildekontrollene — begge ligger i panelhodet når panelet er en egen flis, og på den øverste kontrollraden når det ligger i fanene. Kolonnen {{label:Board.Area.Notation}} viser trekkene fra stillingen på brettet, med det neste trekket i fet skrift.
 - Klikk {{label:Board.Database.Compare}} for å vise to kilder side ved side, eller åpne {{label:Board.Database.Local.Position}} for å bytte mellom {{label:Board.Database.Local.Exact}} og {{label:Board.Database.Local.Partial}} stillingssøk (inkludert {{label:Board.Database.Local.SimilarStructure}} for bondestruktursøk og {{label:Fen.Empty}} for egendefinerte mønstre).
 - Du kan også vise {{label:Board.Tabs.Database}} som et eget område på analysebrettet og bruke {{label:Board.Area.ReturnToTabs}} for å legge den tilbake i fanene.
 - Når {{label:Databases.OpeningTree.Prepare}} åpner et brett for en databasespiller, starter utforskeren med referansedatabasen din som en ekstra kolonne ved siden av motstanderens partier; klikk {{label:Board.Database.RemoveReference}} for å skjule en kolonne eller {{label:Board.Database.AddColumn}} for å legge til en til.

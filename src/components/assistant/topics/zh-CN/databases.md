@@ -2,7 +2,7 @@
 id: databases
 title: 数据库、开局探索器、局面搜索、棋手与赛事
 summary: 添加或下载棋局数据库、选择参考数据库、在探索器中搜索局面，以及浏览对局、棋手和赛事。
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 数据库与您的 PGN 文件一起位于 [[page:library]] ({{label:SideBar.Library}}) 中，并保存在 [[setting:databases-directory]]。
@@ -32,7 +32,7 @@ source: 526f05192ead329f
 
 在分析棋盘上，打开 {{label:Board.Tabs.Database}} 标签页以使用开局探索器：
 - 在来源下拉菜单和 {{label:Board.Database.Compare}} 中选择 {{label:Board.Database.LichessAll}} 或 {{label:Board.Database.LichessMaster}}（Lichess 在线探索器需要在 [[page:accounts]] 中登录 Lichess 账户）。
-- 上方显示 {{label:Board.Database.Stats}}（着法统计），下方显示 {{label:Board.Database.Games}}（匹配对局）；拖动中间的分隔条可分配高度。{{label:Board.Area.Notation}} 列会显示从当前棋盘局面开始的后续着法，并将下一步着法加粗。
+- 上方显示 {{label:Board.Database.Stats}}（着法统计），下方显示 {{label:Board.Database.Games}}（匹配对局）；当两个区域同时显示时，可拖动中间的分隔条分配高度。使用 {{label:Board.Database.HideGames}} 或 {{label:Board.Database.ShowGames}} 隐藏或显示对局列表，使用设置齿轮展开或折叠来源控件——当面板作为独立图块显示时，这两个图标位于面板标题栏中；当其位于标签页中时，位于顶部控制行上。{{label:Board.Area.Notation}} 列会显示从当前棋盘局面开始的后续着法，并将下一步着法加粗。
 - 点击 {{label:Board.Database.Compare}} 可并排查看两个来源，或打开 {{label:Board.Database.Local.Position}} 在 {{label:Board.Database.Local.Exact}} 与 {{label:Board.Database.Local.Partial}} 局面搜索之间切换（包括用于兵型结构搜索的 {{label:Board.Database.Local.SimilarStructure}} 和用于自定义模板的 {{label:Fen.Empty}}）。
 - 你也可以在分析棋盘上将 {{label:Board.Tabs.Database}} 显示为独立区域，并使用 {{label:Board.Area.ReturnToTabs}} 将其放回标签页中。
 - 当通过 {{label:Databases.OpeningTree.Prepare}} 为数据库棋手打开棋盘时，探索器会先把参考数据库作为额外一列显示在对手对局旁；点击 {{label:Board.Database.RemoveReference}} 可隐藏一列，点击 {{label:Board.Database.AddColumn}} 可再添加一列。

@@ -15,6 +15,7 @@ import {
   DEFAULT_LICHESS_OPTIONS,
   DEFAULT_MASTER_OPTIONS,
   EXPLORER_DIVIDER_HEIGHT_PX,
+  EXPLORER_GAMES_COLLAPSED_KEY,
   EXPLORER_STATS_HEIGHT_KEY,
   explorerGamesSourceFamily,
   explorerSortFamily,
@@ -122,6 +123,7 @@ vi.mock("@/chessground/Chessground", () => ({ Chessground: () => null }));
 vi.mock("@/components/boards/PiecesGrid", () => ({ default: () => null }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
+import PanelArea, { PanelAreaChromeContext } from "@/components/boards/PanelArea";
 import DatabasePanel from "./DatabasePanel";
 import { fetchOnlineOpening } from "./useOnlineExplorer";
 
@@ -494,10 +496,10 @@ describe("DatabasePanel", () => {
     return { promise, resolve, reject };
   }
 
-  async function renderPanel(
+  async function renderNode(
     store: ReturnType<typeof createJotaiStore>,
     swrConfig: SWRConfiguration,
-    children?: ReactNode,
+    node: ReactNode,
     panelTabId = tabId,
   ) {
     await act(async () => {
@@ -506,16 +508,30 @@ describe("DatabasePanel", () => {
           <JotaiProvider store={store}>
             <TreeStateContext.Provider value={treeStore}>
               <WorkspaceTabScope tabId={panelTabId}>
-                <SWRConfig value={swrConfig}>
-                  {children}
-                  <DatabasePanel />
-                </SWRConfig>
+                <SWRConfig value={swrConfig}>{node}</SWRConfig>
               </WorkspaceTabScope>
             </TreeStateContext.Provider>
           </JotaiProvider>
         </MantineProvider>,
       );
     });
+  }
+
+  async function renderPanel(
+    store: ReturnType<typeof createJotaiStore>,
+    swrConfig: SWRConfiguration,
+    children?: ReactNode,
+    panelTabId = tabId,
+  ) {
+    await renderNode(
+      store,
+      swrConfig,
+      <>
+        {children}
+        <DatabasePanel />
+      </>,
+      panelTabId,
+    );
   }
 
   function regionPanel(value: "games" | "stats") {
@@ -3260,6 +3276,322 @@ describe("DatabasePanel", () => {
       String(DEFAULT_EXPLORER_STATS_HEIGHT_REM),
     );
   });
+
+  describe("games collapse and PanelArea chrome portal", () => {
+    const defaultSwrConfig: SWRConfiguration = {
+      provider: () => new Map(),
+      dedupingInterval: 0,
+      shouldRetryOnError: false,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    };
+
+    const gamesToggleButton = () =>
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.HideGames"], button[aria-label="Board.Database.ShowGames"]',
+      );
+
+    const settingsToggleButton = () =>
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.HideSettings"], button[aria-label="Board.Database.ShowSettings"]',
+      );
+
+    function prepareOnlineStore() {
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "lch_all");
+      store.set(sessionsAtom, [validSession]);
+      mocks.getLichessGames.mockResolvedValue(mockExplorerData);
+      mocks.getPublicLichessJson.mockResolvedValue(`[White "W1"]\n[Black "B1"]\n\n1. d4 d5 *`);
+      mocks.lexPgn.mockResolvedValue([
+        { type: "Header", value: { tag: "White", value: "W1" } },
+        { type: "Header", value: { tag: "Black", value: "B1" } },
+      ]);
+      return store;
+    }
+
+    function prepareLocalStore(
+      databases: ManagedDatabaseInfo[] = [
+        {
+          type: "success",
+          title: "Primary DB",
+          description: "",
+          player_count: 10,
+          event_count: 2,
+          game_count: 50,
+          storage_size: "1000",
+          filename: "primary.db3",
+          indexed: true,
+          file: { id: { id: "primary-db" }, kind: "database" },
+        },
+        {
+          type: "success",
+          title: "Secondary DB",
+          description: "",
+          player_count: 10,
+          event_count: 2,
+          game_count: 30,
+          storage_size: "1000",
+          filename: "secondary.db3",
+          indexed: true,
+          file: { id: { id: "secondary-db" }, kind: "database" },
+        },
+      ],
+    ) {
+      const store = createJotaiStore();
+      store.set(tabsAtom, [validTab]);
+      store.set(activeTabAtom, tabId);
+      store.set(dbTypeFamily(tabId), "local");
+      store.set(referenceDbAtom, databases[0]?.file ?? null);
+      mocks.getDatabases.mockResolvedValue({
+        databases,
+        unread: [],
+        workspaceFilenames: [],
+        root: { id: { id: "database-root" }, kind: "databaseRoot" },
+      } satisfies DatabaseList);
+      mocks.searchPosition.mockResolvedValue([[], []]);
+      return store;
+    }
+
+    test("hides and shows the games region via the collapse control and persists the preference", async () => {
+      await mountExplorer();
+
+      const toggle = gamesToggleButton();
+      expect(toggle).not.toBeNull();
+      expect(toggle!.getAttribute("aria-label")).toBe("Board.Database.HideGames");
+      expect(toggle!.getAttribute("aria-pressed")).toBe("true");
+      expect(container.querySelector('section[aria-label="Board.Database.Games"]')).not.toBeNull();
+      expect(container.querySelector('[role="separator"]')).not.toBeNull();
+
+      await act(async () => toggle!.click());
+      expect(localStorage.getItem(EXPLORER_GAMES_COLLAPSED_KEY)).toBe("true");
+      expect(container.querySelector('section[aria-label="Board.Database.Games"]')).toBeNull();
+      expect(container.querySelector('[role="separator"]')).toBeNull();
+      expect(gamesToggleButton()!.getAttribute("aria-label")).toBe("Board.Database.ShowGames");
+      expect(gamesToggleButton()!.getAttribute("aria-pressed")).toBe("false");
+      expect(regionPanel("stats").getAttribute("data-expanded")).toBe("true");
+
+      await act(async () => gamesToggleButton()!.click());
+      expect(localStorage.getItem(EXPLORER_GAMES_COLLAPSED_KEY)).toBe("false");
+      expect(container.querySelector('section[aria-label="Board.Database.Games"]')).not.toBeNull();
+      expect(container.querySelector('[role="separator"]')).not.toBeNull();
+      expect(gamesToggleButton()!.getAttribute("aria-label")).toBe("Board.Database.HideGames");
+      expect(gamesToggleButton()!.getAttribute("aria-pressed")).toBe("true");
+      expect(regionPanel("stats").hasAttribute("data-expanded")).toBe(false);
+    });
+
+    test.each([
+      [null, false],
+      ["true", true],
+      ["false", false],
+      ["not json", false],
+      ['"yes"', false],
+    ])("the games-collapse preference %s hydrates as hidden=%s", async (stored, hidden) => {
+      if (stored === null) localStorage.removeItem(EXPLORER_GAMES_COLLAPSED_KEY);
+      else localStorage.setItem(EXPLORER_GAMES_COLLAPSED_KEY, stored);
+
+      await mountExplorer();
+      expect(container.querySelector('section[aria-label="Board.Database.Games"]') === null).toBe(
+        hidden,
+      );
+      expect(container.querySelector('[role="separator"]') === null).toBe(hidden);
+    });
+
+    test("omits HideGames/ShowGames when no source is available", async () => {
+      const store = prepareLocalStore([]);
+      await renderPanel(store, defaultSwrConfig);
+      await vi.waitFor(() => expect(settingsToggleButton()?.disabled).toBe(true));
+
+      expect(gamesToggleButton()).toBeNull();
+    });
+
+    test("omits HideGames/ShowGames during partial search and keeps the games section visible even when explorer-games-collapsed is true", async () => {
+      localStorage.setItem(EXPLORER_GAMES_COLLAPSED_KEY, "true");
+      const store = prepareLocalStore();
+      store.set(localOptionsFamily(tabId), (options) => ({ ...options, type: "partial" }));
+      await renderPanel(store, defaultSwrConfig);
+      await vi.waitFor(() =>
+        expect(
+          container.querySelector('section[aria-label="Board.Database.Games"]'),
+        ).not.toBeNull(),
+      );
+
+      expect(gamesToggleButton()).toBeNull();
+      expect(container.querySelector('section[aria-label="Board.Database.Stats"]')).toBeNull();
+      expect(container.querySelector('[role="separator"]')).toBeNull();
+      expect(localStorage.getItem(EXPLORER_GAMES_COLLAPSED_KEY)).toBe("true");
+    });
+
+    test("collapsing games removes stats inline height without writing explorer-stats-height and re-expanding restores it", async () => {
+      localStorage.setItem(EXPLORER_STATS_HEIGHT_KEY, "12");
+      await mountExplorer();
+
+      expect(regionPanel("stats").style.height).toBe("12rem");
+      expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("12");
+
+      await act(async () => gamesToggleButton()!.click());
+      expect(regionPanel("stats").style.height).toBe("");
+      expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("12");
+
+      await act(async () => gamesToggleButton()!.click());
+      expect(regionPanel("stats").style.height).toBe("12rem");
+      expect(localStorage.getItem(EXPLORER_STATS_HEIGHT_KEY)).toBe("12");
+    });
+
+    test("tab mount keeps settings gear and games-collapse in the panel container with collapsed overlay padding", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      await mountExplorer();
+
+      expect(container.querySelector("[data-panel-header]")).toBeNull();
+      expect(settingsToggleButton()).not.toBeNull();
+      expect(gamesToggleButton()).not.toBeNull();
+      const collapsedSources = container.querySelector<HTMLElement>("[data-collapsed]");
+      expect(collapsedSources).not.toBeNull();
+      expect(collapsedSources!.getAttribute("data-overlay-actions")).toBe("true");
+    });
+
+    test("tile mount portals gear and games-collapse into [data-panel-header] before ReturnToTabs inside data-no-drag and gear pointer-down does not start drag", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      const store = prepareOnlineStore();
+      const beginDrag = vi.fn();
+
+      await renderNode(
+        store,
+        defaultSwrConfig,
+        <PanelArea
+          panel="database"
+          title="Database"
+          icon={<span data-testid="db-icon" />}
+          onReturn={vi.fn()}
+          onDragStart={beginDrag}
+          onSuppressClick={vi.fn()}
+          onStartPlacing={vi.fn()}
+        >
+          <DatabasePanel />
+        </PanelArea>,
+      );
+
+      const header = container.querySelector<HTMLElement>('[data-panel-header="database"]');
+      expect(header).not.toBeNull();
+      const gear = header!.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.ShowSettings"]',
+      );
+      const gamesToggle = header!.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Database.HideGames"]',
+      );
+      const returnButton = header!.querySelector<HTMLButtonElement>(
+        'button[aria-label="Board.Area.ReturnToTabs"]',
+      );
+      expect(gear).not.toBeNull();
+      expect(gamesToggle).not.toBeNull();
+      expect(returnButton).not.toBeNull();
+
+      // Only one instance of each button exists (none left in the panel body).
+      expect(
+        container.querySelectorAll(
+          'button[aria-label="Board.Database.ShowSettings"], button[aria-label="Board.Database.HideSettings"]',
+        ),
+      ).toHaveLength(1);
+      expect(
+        container.querySelectorAll(
+          'button[aria-label="Board.Database.HideGames"], button[aria-label="Board.Database.ShowGames"]',
+        ),
+      ).toHaveLength(1);
+
+      // Both live inside data-no-drag and before ReturnToTabs in DOM order.
+      expect(gear!.closest('[data-no-drag="true"]')).not.toBeNull();
+      expect(gamesToggle!.closest('[data-no-drag="true"]')).not.toBeNull();
+      const headerButtons = Array.from(header!.querySelectorAll("button"));
+      expect(headerButtons.indexOf(gear!)).toBeLessThan(headerButtons.indexOf(returnButton!));
+      expect(headerButtons.indexOf(gamesToggle!)).toBeLessThan(
+        headerButtons.indexOf(returnButton!),
+      );
+
+      // Collapsed captions drop overlay padding when chrome is portaled out.
+      const collapsedSources = container.querySelector<HTMLElement>("[data-collapsed]");
+      expect(collapsedSources).not.toBeNull();
+      expect(collapsedSources!.hasAttribute("data-overlay-actions")).toBe(false);
+
+      // Pointer-down on the gear must not begin an arrange drag; pointer-down on the title does.
+      await act(async () => {
+        gear!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      });
+      expect(beginDrag).not.toHaveBeenCalled();
+
+      const titleEl = Array.from(header!.querySelectorAll("*")).find(
+        (el) => el.textContent === "Database" && el.children.length === 0,
+      );
+      expect(titleEl).toBeDefined();
+      await act(async () => {
+        titleEl!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      });
+      expect(beginDrag).toHaveBeenCalledTimes(1);
+    });
+
+    test("expanded Position/Compare cluster stays outside .sources and .sources contains only [data-explorer-source] cells", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "false");
+      const store = prepareLocalStore();
+
+      await renderNode(
+        store,
+        defaultSwrConfig,
+        <PanelArea
+          panel="database"
+          title="Database"
+          icon={<span />}
+          onReturn={vi.fn()}
+          onDragStart={vi.fn()}
+          onSuppressClick={vi.fn()}
+          onStartPlacing={vi.fn()}
+        >
+          <DatabasePanel />
+        </PanelArea>,
+      );
+
+      await vi.waitFor(() =>
+        expect(container.querySelectorAll("[data-explorer-source]")).toHaveLength(1),
+      );
+      const sourceCell = container.querySelector<HTMLElement>("[data-explorer-source]")!;
+      const sourcesGrid = sourceCell.parentElement!;
+      expect(
+        Array.from(sourcesGrid.children).every((child) =>
+          child.hasAttribute("data-explorer-source"),
+        ),
+      ).toBe(true);
+
+      const compareBtn = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.getAttribute("aria-label") === "Board.Database.CompareWith",
+      );
+      expect(compareBtn).toBeDefined();
+      expect(sourcesGrid.contains(compareBtn!)).toBe(false);
+      // Position cluster precedes `.sources` in document order.
+      expect(
+        Boolean(
+          compareBtn!.compareDocumentPosition(sourcesGrid) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ).toBe(true);
+    });
+
+    test("PH-16: tile context with slot=null suppresses in-body chrome and collapsed overlay padding", async () => {
+      localStorage.setItem(HEADER_COLLAPSED_KEY, "true");
+      const store = prepareOnlineStore();
+
+      await renderNode(
+        store,
+        defaultSwrConfig,
+        <PanelAreaChromeContext.Provider value={{ slot: null }}>
+          <DatabasePanel />
+        </PanelAreaChromeContext.Provider>,
+      );
+
+      expect(settingsToggleButton()).toBeNull();
+      expect(gamesToggleButton()).toBeNull();
+      const collapsedSources = container.querySelector<HTMLElement>("[data-collapsed]");
+      expect(collapsedSources).not.toBeNull();
+      expect(collapsedSources!.hasAttribute("data-overlay-actions")).toBe(false);
+    });
+  });
 });
 
 describe("explorerStatsSplitRange and persisted height", () => {
@@ -3333,5 +3665,31 @@ describe("explorerStatsSplitRange and persisted height", () => {
     expect(defaultStore.get(defaultFresh.explorerStatsHeightAtom)).toBe(
       DEFAULT_EXPLORER_STATS_HEIGHT_REM,
     );
+  });
+
+  test("PH-17: explorerGamesCollapsedAtom reads pre-seeded storage synchronously on first access", async () => {
+    localStorage.setItem(EXPLORER_GAMES_COLLAPSED_KEY, "true");
+    vi.resetModules();
+    const collapsedFresh = await import("@/state/atoms/explorer");
+    const collapsedStore = createJotaiStore();
+    expect(collapsedStore.get(collapsedFresh.explorerGamesCollapsedAtom)).toBe(true);
+
+    localStorage.setItem(EXPLORER_GAMES_COLLAPSED_KEY, "false");
+    vi.resetModules();
+    const expandedFresh = await import("@/state/atoms/explorer");
+    const expandedStore = createJotaiStore();
+    expect(expandedStore.get(expandedFresh.explorerGamesCollapsedAtom)).toBe(false);
+
+    localStorage.setItem(EXPLORER_GAMES_COLLAPSED_KEY, "not json");
+    vi.resetModules();
+    const corruptFresh = await import("@/state/atoms/explorer");
+    const corruptStore = createJotaiStore();
+    expect(corruptStore.get(corruptFresh.explorerGamesCollapsedAtom)).toBe(false);
+
+    localStorage.removeItem(EXPLORER_GAMES_COLLAPSED_KEY);
+    vi.resetModules();
+    const defaultFresh = await import("@/state/atoms/explorer");
+    const defaultStore = createJotaiStore();
+    expect(defaultStore.get(defaultFresh.explorerGamesCollapsedAtom)).toBe(false);
   });
 });

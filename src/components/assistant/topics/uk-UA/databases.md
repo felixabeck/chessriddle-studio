@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -32,7 +32,7 @@ source: 526f05192ead329f
 
 На дошці аналізу відкрийте вкладку {{label:Board.Tabs.Database}}, щоб скористатися оглядачем дебютів:
 - Виберіть {{label:Board.Database.LichessAll}} або {{label:Board.Database.LichessMaster}} у меню джерел і в {{label:Board.Database.Compare}} (онлайн-оглядачі Lichess вимагають авторизованого облікового запису Lichess на сторінці [[page:accounts]]).
-- {{label:Board.Database.Stats}} (статистика ходів) відображається вгорі, а {{label:Board.Database.Games}} (відповідні партії) — унизу; перетягніть роздільник між ними, щоб розподілити висоту. Стовпець {{label:Board.Area.Notation}} показує ходи від позиції на дошці, виділяючи наступний хід напівжирним.
+- {{label:Board.Database.Stats}} (статистика ходів) відображається вгорі, а {{label:Board.Database.Games}} (відповідні партії) — унизу; поки показані обидві області, перетягніть роздільник між ними, щоб розподілити висоту. Використовуйте {{label:Board.Database.HideGames}} або {{label:Board.Database.ShowGames}}, щоб приховати чи показати список партій, і значок шестерні налаштувань, щоб розгорнути чи згорнути елементи керування джерелами — обидві кнопки розміщені в заголовку панелі, коли вона є окремою плиткою, і у верхньому рядку керування, коли вона у вкладках. Стовпець {{label:Board.Area.Notation}} показує ходи від позиції на дошці, виділяючи наступний хід напівжирним.
 - Натисніть {{label:Board.Database.Compare}}, щоб порівняти два джерела поруч, або відкрийте {{label:Board.Database.Local.Position}} для перемикання між пошуком позиції {{label:Board.Database.Local.Exact}} і {{label:Board.Database.Local.Partial}} (включно з {{label:Board.Database.Local.SimilarStructure}} для пошуку за пішаковою структурою та {{label:Fen.Empty}} для довільних шаблонів).
 - Ви також можете показати {{label:Board.Tabs.Database}} як окрему область на дошці аналізу та скористатися {{label:Board.Area.ReturnToTabs}}, щоб повернути її до вкладок.
 - Коли кнопка {{label:Databases.OpeningTree.Prepare}} відкриває дошку для гравця з бази даних, оглядач починає з довідкової бази як додаткового стовпця поруч із партіями суперника; натисніть {{label:Board.Database.RemoveReference}}, щоб приховати стовпець, або {{label:Board.Database.AddColumn}}, щоб додати ще один.

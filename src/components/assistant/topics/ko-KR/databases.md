@@ -2,7 +2,7 @@
 id: databases
 title: 데이터베이스, 탐색기, 포지션 검색, 선수 및 토너먼트
 summary: 기보 데이터베이스 추가 또는 다운로드, 참조 데이터베이스 지정, 탐색기에서 포지션 검색, 대국·선수·토너먼트 탐색하기.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 데이터베이스는 PGN 파일과 함께 [[page:library]] ({{label:SideBar.Library}})에 표시되며 [[setting:databases-directory]]에 저장됩니다.
@@ -32,7 +32,7 @@ source: 526f05192ead329f
 
 분석 보드에서 오프닝 탐색기를 사용하려면 {{label:Board.Tabs.Database}} 탭을 여세요:
 - 소스 드롭다운과 {{label:Board.Database.Compare}}에서 {{label:Board.Database.LichessAll}} 또는 {{label:Board.Database.LichessMaster}}를 선택하세요(Lichess 온라인 탐색기를 사용하려면 [[page:accounts]]에서 Lichess 계정에 로그인해야 합니다).
-- 위쪽에는 {{label:Board.Database.Stats}}(수 통계), 아래쪽에는 {{label:Board.Database.Games}}(일치하는 대국)이 표시되며 가운데 구분선을 끌어 높이를 나눌 수 있습니다. {{label:Board.Area.Notation}} 열에는 보드 국면에서 이어지는 수가 표시되며 다음 수는 굵게 강조됩니다.
+- 위쪽에는 {{label:Board.Database.Stats}}(수 통계), 아래쪽에는 {{label:Board.Database.Games}}(일치하는 대국)이 표시되며 두 영역이 모두 표시된 동안 가운데 구분선을 끌어 높이를 나눌 수 있습니다. {{label:Board.Database.HideGames}} 또는 {{label:Board.Database.ShowGames}}로 대국 목록을 숨기거나 표시하고 설정 톱니바퀴로 소스 제어 영역을 펼치거나 접을 수 있으며, 두 버튼은 패널이 별도 타일일 때는 패널 헤더에, 탭 안에 있을 때는 상단 제어 행에 배치됩니다. {{label:Board.Area.Notation}} 열에는 보드 국면에서 이어지는 수가 표시되며 다음 수는 굵게 강조됩니다.
 - {{label:Board.Database.Compare}}을(를) 클릭해 두 소스를 나란히 보거나, {{label:Board.Database.Local.Position}}을 열어 {{label:Board.Database.Local.Exact}}와 {{label:Board.Database.Local.Partial}} 포지션 검색(폰 구조 검색용 {{label:Board.Database.Local.SimilarStructure}} 및 사용자 지정 패턴용 {{label:Fen.Empty}} 포함)을 전환할 수 있습니다.
 - 분석 보드에서 {{label:Board.Tabs.Database}} 패널을 별도 영역으로 표시할 수도 있으며, {{label:Board.Area.ReturnToTabs}}로 다시 탭으로 되돌릴 수 있습니다.
 - {{label:Databases.OpeningTree.Prepare}}로 데이터베이스 선수의 보드를 열면 탐색기가 참조 데이터베이스를 상대 대국 옆의 추가 열로 먼저 표시합니다. {{label:Board.Database.RemoveReference}}을(를) 클릭해 열을 숨기거나 {{label:Board.Database.AddColumn}}을(를) 클릭해 다른 열을 추가할 수 있습니다.

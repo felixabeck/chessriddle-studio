@@ -715,3 +715,15 @@ finding ids and date.
 - **Ruled out:** Creating a standalone UI mockup before implementation.
 - **Felix's reason:** "I'm not sure if it's worth it because maybe it's better to just build it and then in the end I can still correct it when I see how it works in practice."
 - **Date:** 2026-11-27.
+
+## 2026-11-27 — Unified panel headers and collapsible Database games region
+
+- **Question:** How should analysis-board panel windows lay out their headers, where should Database's settings gear live, and how should users give move statistics more height?
+- **Choice:** Every analysis-board panel window uses one shared `PanelHeader` component:
+  - Database puts its settings gear and a new games-region collapse control on the first header line via a `PanelArea` chrome slot when shown as a tile, and keeps both icons on its top control row when shown inside the tab strip. Position/Compare/AddColumn stay as a left-packed cluster above `.sources`, never inside the multi-source column alignment grid.
+  - The Database matching-games region can be collapsed so move statistics use the full panel height, remembered app-wide (`explorer-games-collapsed`, default expanded, hydrated before first paint) without rewriting the saved split height. Partial search always keeps the games list visible.
+  - Engine (`BestMoves`) joins `PanelHeader` in this run's second phase (`d-20261127-28`).
+- **Ruled out:** Leaving Database's gear on a sparse second line under the tile header, hiding only the Notation column, restoring the old Statistics/Games switch, or adding a Settings-page toggle for the games list.
+- **Felix's reason:** Database was inconsistent with Engine and Notation, leaving empty space on the top header line; he asked for one central header component reused across panel windows, putting settings and header options on the first line, and collapsing the whole games region so move statistics can use the full height ("Yes, I think it's sensible to unify all of this. And then also make the changes to the database window that we talked about before.").
+- **Technical record:** `d-20261127-26`, `d-20261127-27`, `d-20261127-28`, and `d-20261127-30` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-panel-header-unify.md`.
+- **Date:** 2026-11-27.

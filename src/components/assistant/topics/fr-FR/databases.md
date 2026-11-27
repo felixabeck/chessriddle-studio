@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: 526f05192ead329f
+source: 221e2b80a6351752
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -32,7 +32,7 @@ Sur la fiche d’un joueur, ouvrez l’onglet {{label:Home.Personal.Preparation}
 
 Sur l’échiquier d’analyse, ouvrez {{label:Board.Tabs.Database}} pour utiliser l’explorateur d’ouvertures :
 - Choisissez {{label:Board.Database.LichessAll}} ou {{label:Board.Database.LichessMaster}} dans le menu des sources et dans {{label:Board.Database.Compare}} (les explorateurs en ligne Lichess nécessitent un compte Lichess connecté sur [[page:accounts]]).
-- {{label:Board.Database.Stats}} (statistiques de coups) s’affiche en haut et {{label:Board.Database.Games}} (parties correspondantes) en bas ; faites glisser le séparateur entre les deux pour partager la hauteur. La colonne {{label:Board.Area.Notation}} montre les coups à partir de la position sur l’échiquier, avec le coup suivant en gras.
+- {{label:Board.Database.Stats}} (statistiques de coups) s’affiche en haut et {{label:Board.Database.Games}} (parties correspondantes) en bas ; tant que les deux zones sont affichées, faites glisser le séparateur entre elles pour partager la hauteur. Utilisez {{label:Board.Database.HideGames}} ou {{label:Board.Database.ShowGames}} pour masquer ou afficher la liste des parties, et la roue dentée des réglages pour ouvrir ou replier les contrôles de sources — les deux se trouvent dans l’en-tête du panneau lorsqu’il forme sa propre tuile et sur la ligne supérieure de contrôles lorsqu’il est dans les onglets. La colonne {{label:Board.Area.Notation}} montre les coups à partir de la position sur l’échiquier, avec le coup suivant en gras.
 - Cliquez sur {{label:Board.Database.Compare}} afin d’afficher deux sources côte à côte, ou ouvrez {{label:Board.Database.Local.Position}} pour basculer entre la recherche de position {{label:Board.Database.Local.Exact}} et {{label:Board.Database.Local.Partial}} (y compris {{label:Board.Database.Local.SimilarStructure}} pour la recherche par structure de pions et {{label:Fen.Empty}} pour des motifs personnalisés).
 - Vous pouvez aussi afficher {{label:Board.Tabs.Database}} dans sa propre zone sur l’échiquier d’analyse et utiliser {{label:Board.Area.ReturnToTabs}} pour le replacer dans les onglets.
 - Lorsque {{label:Databases.OpeningTree.Prepare}} ouvre un échiquier pour un joueur de la base de données, l’explorateur commence avec votre base de référence comme colonne supplémentaire à côté des parties de l’adversaire ; cliquez sur {{label:Board.Database.RemoveReference}} pour masquer une colonne ou sur {{label:Board.Database.AddColumn}} pour en ajouter une autre.
