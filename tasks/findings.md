@@ -30091,7 +30091,7 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 
 ### Scheduled frontend mutation sweep red on master: four survivors in empty-drawing command hydration
 
-* **ID:** f-20261127-17 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-17 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
 * **Impact class:** behaviour
 * **CI run:** 45986600389
@@ -30104,3 +30104,8 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Proof:** a new `tabStorage` test that fails if the empty-drawing branch trims commands or rewrites shapes; Stryker restricted to `tabStorage.ts` around that `finishNode` commands path scores 100 with those four mutants gone.
 * **Related:** f-20261126-08 (previous scheduled workspace-storage red; different survivors, handled).
 * **Found by:** Grok, game-review build, 2026-11-27
+* **Handled (2026-11-27, Grok, game-review build):** commit `741564775`. Folded the redundant `shapes.length > 0` ternary in `migrateLegacyNode` into the existing `if`, so empty-drawing hydration keeps `node.commands` byte-for-byte. New test persists `"  [%opaque keep]  "` with an existing shape and asserts both survive `TabStorageRepository.read` and `migrateTreeForStorage`. Hand-applied `if (true)` turns that test red (received `"[%opaque keep]"`). Related Vitest 7933 passed. Five agy lenses (correctness, root-cause, tests, minimalism, persisted-state, role sensitive) APPROVED.
+  * **Proof:** `pnpm exec vitest run src/state/store/tabStorage.test.ts -t "keeps padded non-drawing commands"` fails under `if (true)` and passes after restore; `agent-gate pnpm exec vitest related --run --passWithNoTests src/state/store/tabStorage.ts src/state/store/tabStorage.test.ts` 7933 passed.
+* **Repair owner:** build-game-review-game-review-20261127-071118-cfe0f504 on tuxedo-atlas, 2026-11-27T12:27:49Z
+* **CI run:** 45986600389
+<!-- ledger-meta {"command":"close","effect_lines":4,"effect_sha256":"6d6d3e4834d154cce93e22b3c45091ce689f68d9ba02907069026ff1fcb52676","header_sha256":"3ae311afd806bc21d1670b08fdd255e0908c9594f24627c271f8e3b78f29fe3a","header_status":"handled","input_sha256":"11ed11c60ddf32ef79c0cd2041d011ca28415da0b80c546da7207c10247111cb","kind":"mutation-receipt","operation":"7b2605428d0f58c51be2e52f97b84cd4ec61f833160f9a21f4ec19c18e7ed325","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-17"],"target":"f-20261127-17","v":1} -->
