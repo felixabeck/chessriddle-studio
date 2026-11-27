@@ -192,14 +192,19 @@ test("board-arrange: database area below the board renders cleanly and 200% font
     await expect(dbArea).toBeVisible();
     await expect(cgBoard).toBeVisible();
 
-    const assertBoardInsideTile = async () => {
-        const tileBox = (await boardTile.boundingBox())!;
-        const boardBox = (await cgBoard.boundingBox())!;
-        expect(boardBox.y).toBeGreaterThanOrEqual(tileBox.y - 1);
-        expect(boardBox.y + boardBox.height).toBeLessThanOrEqual(tileBox.y + tileBox.height + 1);
-        expect(boardBox.x).toBeGreaterThanOrEqual(tileBox.x - 1);
-        expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width + 1);
-    };
+    // A viewport change reaches the board through ResizeObserver frames, so the boxes are read
+    // until the layout has settled instead of once.
+    const assertBoardInsideTile = () =>
+        expect(async () => {
+            const tileBox = (await boardTile.boundingBox())!;
+            const boardBox = (await cgBoard.boundingBox())!;
+            expect(boardBox.y).toBeGreaterThanOrEqual(tileBox.y - 1);
+            expect(boardBox.y + boardBox.height).toBeLessThanOrEqual(
+                tileBox.y + tileBox.height + 1,
+            );
+            expect(boardBox.x).toBeGreaterThanOrEqual(tileBox.x - 1);
+            expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width + 1);
+        }).toPass();
 
     // At 1440x900 and 800x720 (both 2 panes -> mosaic) with Database below the board, the board
     // must shrink to stay fully inside its tile.
