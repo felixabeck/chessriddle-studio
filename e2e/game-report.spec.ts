@@ -242,6 +242,9 @@ test("game report: a run fills the Report tab from the native result", async ({
     await expect(moments.nth(0)).toContainText("2. Qh5?!");
     await expect(moments.nth(0)).toContainText("Better: Nf3");
     await expect(moments.nth(1)).toContainText("3... Nf6??");
+    await expect(moments.nth(1)).toContainText("Allows mate");
+    await expect(moments.nth(1)).toContainText("Turning point");
+    await expect(moments.nth(1)).toContainText("Time trouble");
     await expect(moments.nth(1)).toContainText("Better: g6");
 
     await assertReportHasNoHorizontalOverflow(panel);
@@ -282,9 +285,22 @@ test("game report: a run fills the Report tab from the native result", async ({
         expect(contrastRatio(color, layers)).toBeGreaterThanOrEqual(4.5);
     }
 
-    // A key moment goes to its move.
-    await moments.nth(1).click();
-    await expect(page.locator('[data-notation-current="true"] button')).toContainText("f6??");
+    // Focusing a key moment goes to the position before the move (D4) and marks the row current.
+    await moments.nth(1).getByRole("button").first().click();
+    await expect(moments.nth(1)).toHaveAttribute("data-current", "true");
+    await expect(page.locator('[data-notation-current="true"] button')).toContainText("c4");
+
+    // Previous moment walks back to 2. Qh5?! (position before it is 1... e5).
+    await panel.getByRole("button", { name: "Previous moment", exact: true }).click();
+    await expect(moments.nth(0)).toHaveAttribute("data-current", "true");
+    await expect(page.locator('[data-notation-current="true"] button')).toContainText("e5");
+
+    // Side filter narrows the list to one side and restores both.
+    await panel.getByText("Black", { exact: true }).click();
+    await expect(moments).toHaveCount(1);
+    await expect(moments.nth(0)).toContainText("3... Nf6??");
+    await panel.getByText("Both", { exact: true }).click();
+    await expect(moments).toHaveCount(2);
 });
 
 test("game report: the running label stays readable over the bar and its track", async ({

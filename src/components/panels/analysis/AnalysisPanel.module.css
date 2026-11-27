@@ -265,33 +265,131 @@
   }
 }
 
-/* Report panel: key moments. A row is one button; its evaluation change uses tabular figures. */
+/* Report panel: key moments and walkthrough (O5). Columns stay together at any panel width. */
+.keyMomentsToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  margin-bottom: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.walkthroughButtons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
 .keyMoments {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.keyMoment {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--mantine-spacing-sm);
-  align-items: baseline;
+.keyMomentRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   width: 100%;
-  padding: 4px 8px;
+  min-width: 0;
+  padding: 6px 8px;
   border-left: 3px solid var(--key-moment-color);
   border-radius: var(--cf-radius-sm);
 }
 
 @media (hover: hover) {
-  .keyMoment:hover {
+  .keyMomentRow:hover {
     background: var(--cf-primary-row-hover);
   }
 }
 
-.keyMoment:focus-visible {
+.keyMomentHighlighted {
+  background: var(--cf-primary-row-hover);
+}
+
+.keyMomentCurrent {
+  background: var(--cf-primary-hover);
+  box-shadow: inset 0 0 0 1px var(--cf-primary);
+}
+
+.keyMomentMain {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  column-gap: var(--mantine-spacing-xs);
+  row-gap: 4px;
+  align-items: baseline;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  border-radius: var(--cf-radius-xs);
+  cursor: pointer;
+}
+
+@container (min-width: 34rem) {
+  .keyMomentMain {
+    grid-template-columns: 2.5rem 5rem 8rem minmax(0, 1fr);
+    column-gap: var(--mantine-spacing-sm);
+  }
+}
+
+.keyMomentMain:focus-visible {
   outline: 2px solid var(--cf-ring);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+.keyMomentNumber {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+
+.keyMomentMove {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.keyMomentMeta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+@container (min-width: 34rem) {
+  .keyMomentMeta {
+    grid-column: auto;
+  }
+}
+
+.mistakeKind {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  overflow-wrap: anywhere;
+}
+
+.momentTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--cf-radius-full);
+  background: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border-strong);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--cf-foreground);
+  white-space: nowrap;
+}
+
+.momentTagTrouble {
+  color: var(--cf-annotation-red-text);
 }
 
 .figure {
@@ -299,10 +397,37 @@
 }
 
 .evalChange {
+  font-size: var(--mantine-font-size-sm);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.betterMove {
-  grid-column: 1 / -1;
+.betterLineRow {
+  min-width: 0;
+}
+
+.betterLineLink {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border-radius: var(--cf-radius-xs);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .betterLineLink:hover {
+    color: var(--cf-foreground);
+  }
+}
+
+.betterLineLink:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: 2px;
+}
+
+.betterLineText {
+  overflow-wrap: anywhere;
 }

@@ -23,6 +23,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,8 @@ import {
   showVariationArrowsAtom,
   snapArrowsAtom,
   invisibleFamily,
+  matchesReviewFocus,
+  reviewFocusFamily,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
@@ -74,6 +77,7 @@ import {
   childMoveArrow,
   chooserArrows,
   continuationBrushes,
+  reviewFocusArrows,
 } from "@/components/boards/continuationArrows";
 import { FidePlayerDialogs } from "../common/FidePlayerDialogs";
 import { lineTitleOf } from "@/utils/lineTitle";
@@ -167,8 +171,26 @@ function Board({
   );
   const headers = useStore(store, (s) => s.headers);
   const currentNode = useStore(store, (s) => s.currentNode());
-  const positionPath = useStore(store, (s) => s.position.join(","));
+  const position = useStore(
+    store,
+    useShallow((s) => s.position),
+  );
+  const positionPath = position.join(",");
   const documentId = useStore(store, (s) => s.documentId);
+  const summaryCreatedAt = useStore(store, (s) => s.report.summary?.createdAt ?? null);
+  const [reviewFocus, setReviewFocus] = useAtom(useTabAtom(reviewFocusFamily));
+  const reviewFocusMatches = matchesReviewFocus(reviewFocus, {
+    documentId,
+    path: position,
+    fen: currentNode.fen,
+    summaryCreatedAt,
+  });
+
+  useEffect(() => {
+    if (reviewFocus !== null && !reviewFocusMatches) {
+      setReviewFocus(null);
+    }
+  }, [reviewFocus, reviewFocusMatches, setReviewFocus]);
 
   const tabId = useOwnerTabId();
   const evalBarScore = useEvalBarScore({
@@ -307,6 +329,13 @@ function Board({
         shapes.push({ orig, dest, brush: "green" });
       }
     }
+    if (reviewFocusMatches && !isPractice && !notationHidden && pos && reviewFocus) {
+      for (const arrow of reviewFocusArrows(pos, reviewFocus.playedSan, reviewFocus.betterSan)) {
+        if (!shapes.find((s) => s.orig === arrow.orig && s.dest === arrow.dest)) {
+          shapes.push(arrow);
+        }
+      }
+    }
     if (showArrows && evalOpen && arrows.size > 0 && pos) {
       const entries = Array.from(arrows.entries()).sort((a, b) => a[0] - b[0]);
       for (const [i, moves] of entries) {
@@ -389,6 +418,8 @@ function Board({
     showVariationArrows,
     currentNode.children,
     notationHidden,
+    reviewFocusMatches,
+    reviewFocus,
   ]);
 
   const treeHasClock = useMemo(() => hasTreeClock(root), [root]);

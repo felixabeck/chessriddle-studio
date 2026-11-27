@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   enginesAtom: Symbol("enginesAtom"),
   referenceDbAtom: Symbol("referenceDbAtom"),
   reportModalOpenAtom: Symbol("reportModalOpenAtom"),
+  reviewFocusAtom: Symbol("reviewFocusAtom"),
   reportSettingsAtom: Symbol("reportSettingsAtom"),
   cancelAnalysis: vi.fn(),
   getProgress: vi.fn(),
@@ -29,8 +30,10 @@ const mocks = vi.hoisted(() => ({
   prepareAnalysis: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   setReportingMode: vi.fn(),
+  setReviewFocus: vi.fn(),
   setReportSettings: vi.fn(),
   reportingMode: false,
+  reviewFocus: null as unknown,
   progressId: undefined as string | undefined,
   progress: {
     finished: false,
@@ -106,6 +109,8 @@ vi.mock("@/platform/tauri", () => ({
 vi.mock("@/state/atoms", async () => ({
   activeTabAtom: mocks.activeTabAtom,
   reportModalOpenFamily: () => mocks.reportModalOpenAtom,
+  matchesReviewFocus: () => false,
+  reviewFocusFamily: () => mocks.reviewFocusAtom,
   enginesAtom: mocks.enginesAtom,
   referenceDbAtom: (await import("jotai")).atom(null),
 }));
@@ -119,6 +124,7 @@ vi.mock("jotai", async (importOriginal) => ({
   },
   useAtom: (atom: symbol) => {
     if (atom === mocks.reportModalOpenAtom) return [mocks.reportingMode, mocks.setReportingMode];
+    if (atom === mocks.reviewFocusAtom) return [mocks.reviewFocus, mocks.setReviewFocus];
     return [mocks.reportSettings, mocks.setReportSettings];
   },
 }));
@@ -182,11 +188,13 @@ vi.mock("@mantine/core", () => ({
     variant: _variant,
     size: _size,
     leftSection: _leftSection,
+    rightSection: _rightSection,
     ...props
   }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: string;
     size?: string;
     leftSection?: React.ReactNode;
+    rightSection?: React.ReactNode;
   }) => <button {...props}>{children}</button>,
   Checkbox: () => <input type="checkbox" />,
   Grid: Object.assign(({ children }: { children: React.ReactNode }) => <div>{children}</div>, {
@@ -196,6 +204,28 @@ vi.mock("@mantine/core", () => ({
   NumberInput: () => <input type="number" />,
   Paper: box("div"),
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SegmentedControl: ({
+    data,
+    value,
+    onChange,
+  }: {
+    data: { value: string; label: string }[];
+    value: string;
+    onChange?: (value: string) => void;
+  }) => (
+    <div>
+      {data.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          aria-pressed={value === item.value}
+          onClick={() => onChange?.(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  ),
   Select: () => <select />,
   Stack: box("div"),
   Table: Object.assign(box("table"), {
@@ -219,6 +249,8 @@ vi.mock("@mantine/core", () => ({
   VisuallyHidden: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("lucide-react", () => ({
+  ChevronLeft: () => null,
+  ChevronRight: () => null,
   Info: () => null,
   RotateCcw: () => null,
   ScanSearch: () => null,
@@ -912,7 +944,7 @@ test("a summary of another game shows the changed-game hint instead", async () =
   });
 });
 
-test("a key moment row goes to its move and names the report's better move", async () => {
+test("a key moment row goes to the position before its move and links the better move", async () => {
   store.getState().makeMoves({ payload: ["e5"] });
   store.getState().goToStart();
   store.getState().makeMoves({ payload: ["d4"] });
@@ -929,7 +961,7 @@ test("a key moment row goes to its move and names the report's better move", asy
       },
     };
   });
-  store.getState().goToStart();
+  store.getState().goToMove([0]);
   await renderPanel();
   const rows = host.querySelectorAll('[data-testid="report-key-moment"]');
   expect(rows).toHaveLength(1);
@@ -937,6 +969,21 @@ test("a key moment row goes to its move and names the report's better move", asy
   expect(rows[0].textContent).toContain("+0.20 → -0.80");
   expect(rows[0].textContent).toContain("Board.Analysis.Report.BetterMove");
   expect(mocks.t).toHaveBeenCalledWith("Board.Analysis.Report.BetterMove", { move: "d4" });
-  await act(async () => (rows[0] as HTMLButtonElement).click());
-  expect(store.getState().position).toEqual([0]);
+  const rowButtons = rows[0].querySelectorAll<HTMLButtonElement>("button");
+  await act(async () => rowButtons[0].click());
+  // D4: focusing a moment goes to the position before the move.
+  expect(store.getState().position).toEqual([]);
+  expect(mocks.setReviewFocus).toHaveBeenCalledWith(
+    expect.objectContaining({
+      documentId: store.getState().documentId,
+      path: [],
+      fen: store.getState().root.fen,
+      summaryCreatedAt: null,
+      playedSan: "e4",
+      betterSan: "d4",
+    }),
+  );
+  // Clicking the better-line link goes to that child move.
+  await act(async () => rowButtons[1].click());
+  expect(store.getState().position).toEqual([1]);
 });

@@ -13,7 +13,13 @@ import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { Scoreboard } from "./Scoreboard";
 import ReportPanel from "./ReportPanel";
 import { TimeStrip } from "./TimeStrip";
-import type { AnnotationCounts, GameStats } from "@/utils/chess";
+import { disposeTabAtoms, reviewFocusFamily } from "@/state/atoms";
+import {
+  type AnnotationCounts,
+  type GameStats,
+  getMainLine,
+  reportRootFingerprint,
+} from "@/utils/chess";
 import { getMoveTimeUsage } from "@/utils/gameReview";
 import { defaultTree } from "@/utils/treeReducer";
 
@@ -32,6 +38,11 @@ const mocks = vi.hoisted(() => ({
   cancelAnalysis: vi.fn(),
   getProgress: vi.fn().mockResolvedValue(null),
   notifyUnlessCancelled: vi.fn(),
+  chartProps: null as null | {
+    isAnalysing: boolean;
+    highlightedMovePath?: number[] | null;
+    onHoverMove?: (movePath: number[] | null) => void;
+  },
 }));
 
 vi.mock("react-i18next", () => ({
@@ -59,7 +70,14 @@ vi.mock("@/hooks/useProgress", () => ({
   }),
 }));
 vi.mock("@/components/common/EvalChart", () => ({
-  default: () => <div data-testid="mock-eval-chart" />,
+  default: (props: {
+    isAnalysing: boolean;
+    highlightedMovePath?: number[] | null;
+    onHoverMove?: (movePath: number[] | null) => void;
+  }) => {
+    mocks.chartProps = props;
+    return <div data-testid="mock-eval-chart" />;
+  },
 }));
 vi.mock("./ReportModal", () => ({ default: () => null }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
@@ -85,6 +103,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  disposeTabAtoms("tab-1");
+  mocks.chartProps = null;
   host.remove();
 });
 
@@ -471,7 +491,7 @@ const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
   { eager: true, import: "default" },
 );
 
-const phase2FiniteKeys = [
+const phase2And3FiniteKeys = [
   "Board.Analysis.Opening",
   "Board.Analysis.Middlegame",
   "Board.Analysis.Endgame",
@@ -483,7 +503,20 @@ const phase2FiniteKeys = [
   "Board.Analysis.Report.EvalDirectionLabel",
   "Board.Analysis.Report.Evaluation",
   "Board.Analysis.Report.EvaluationDesc",
+  "Board.Analysis.Report.FilterBlack",
+  "Board.Analysis.Report.FilterBoth",
+  "Board.Analysis.Report.FilterSide",
+  "Board.Analysis.Report.FilterWhite",
   "Board.Analysis.Report.Metric",
+  "Board.Analysis.Report.MistakeKind.AllowsMate",
+  "Board.Analysis.Report.MistakeKind.Decisive",
+  "Board.Analysis.Report.MistakeKind.LosesMaterial",
+  "Board.Analysis.Report.MistakeKind.MissesMate",
+  "Board.Analysis.Report.MistakeKind.MissesMaterial",
+  "Board.Analysis.Report.MistakeKind.MissesWin",
+  "Board.Analysis.Report.NextMoment",
+  "Board.Analysis.Report.NoMomentsForSide",
+  "Board.Analysis.Report.PreviousMoment",
   "Board.Analysis.Report.Provenance",
   "Board.Analysis.Report.Regenerate",
   "Board.Analysis.Report.Summary.BalancedAgainBlack",
@@ -493,6 +526,8 @@ const phase2FiniteKeys = [
   "Board.Analysis.Report.Summary.TookLeadWhite",
   "Board.Analysis.Report.Summary.TurnedGameBlack",
   "Board.Analysis.Report.Summary.TurnedGameWhite",
+  "Board.Analysis.Report.Tag.TimeTrouble",
+  "Board.Analysis.Report.Tag.TurningPoint",
   "Board.Analysis.Report.TimeBarLabel",
   "Board.Analysis.Report.TimeLeft",
   "Board.Analysis.Report.TimeSpent",
@@ -501,10 +536,381 @@ const phase2FiniteKeys = [
   "Board.Analysis.Report.WinChanceDesc",
 ] as const;
 
+test("key moments: selection goes to before-path, previous/next walk filtered rows, filter uses halfMoves, and row/chart highlight each other", async () => {
+  // 1. e4 e5 2. Qh5?! Nc6 3. Bc4 Nf6?? 4. Qxf7#
+  store
+    .getState()
+    .makeMoves({ payload: ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#"], mainline: true });
+  // Add a child variation g6 at the position before 3...Nf6 so its better line is a link.
+  store.getState().goToMove([0, 0, 0, 0, 0]);
+  store.getState().makeMoves({ payload: ["g6"] });
+  store.getState().goToStart();
+
+  const createdAt = Date.UTC(2026, 10, 27);
+  store.setState((state) => {
+    const e4 = state.root.children[0];
+    const e5 = e4.children[0];
+    const qh5 = e5.children[0];
+    const nc6 = qh5.children[0];
+    const bc4 = nc6.children[0];
+    const [nf6, g6] = bc4.children;
+    const qxf7 = nf6.children[0];
+    const updatedRoot = {
+      ...state.root,
+      score: cp(20),
+      children: [
+        {
+          ...e4,
+          score: cp(20),
+          clock: 295,
+          children: [
+            {
+              ...e5,
+              score: cp(25),
+              clock: 290,
+              children: [
+                {
+                  ...qh5,
+                  nags: [6], // ?!
+                  score: cp(-60),
+                  clock: 280,
+                  children: [
+                    {
+                      ...nc6,
+                      score: cp(-40),
+                      clock: 270,
+                      children: [
+                        {
+                          ...bc4,
+                          score: cp(-50),
+                          clock: 260,
+                          children: [
+                            {
+                              ...nf6,
+                              nags: [4], // ??
+                              score: { value: { type: "mate" as const, value: 1 }, wdl: null },
+                              clock: 20, // <= 30s -> time trouble
+                              children: [{ ...qxf7, score: null, clock: 255 }],
+                            },
+                            g6,
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    return {
+      headers: { ...state.headers, time_control: "300+3" },
+      root: updatedRoot,
+      report: {
+        ...state.report,
+        summary: {
+          engine: "Stockfish 17",
+          goMode: { t: "Time" as const, c: 500 },
+          createdAt,
+          missingEvaluations: 0,
+          novelty: "notRequested" as const,
+          fingerprint: reportRootFingerprint(updatedRoot.fen, getMainLine(updatedRoot)),
+          facts: [
+            { mainlineIndex: 3, kind: "decisive" as const, betterLine: ["Nf3", "Nc6"] },
+            { mainlineIndex: 6, kind: "allowsMate" as const, betterLine: ["g6", "Qf3"] },
+          ],
+        },
+      },
+    };
+  });
+
+  await renderReport();
+
+  const rows = () => [...host.querySelectorAll<HTMLLIElement>('[data-testid="report-key-moment"]')];
+  expect(rows()).toHaveLength(2);
+  expect(rows()[0].textContent).toContain("2. Qh5?!");
+  expect(rows()[0].textContent).toContain("Board.Analysis.Report.MistakeKind.Decisive");
+  expect(rows()[0].textContent).toContain("Board.Analysis.Report.BetterMove:Nf3 Nc6");
+  // No child Nf3 before 2.Qh5 -> better line is plain text (only 1 button in row 0).
+  expect(rows()[0].querySelectorAll("button")).toHaveLength(1);
+
+  expect(rows()[1].textContent).toContain("3... Nf6??");
+  expect(rows()[1].textContent).toContain("Board.Analysis.Report.MistakeKind.AllowsMate");
+  expect(rows()[1].textContent).toContain("Board.Analysis.Report.Tag.TurningPoint");
+  expect(rows()[1].textContent).toContain("Board.Analysis.Report.Tag.TimeTrouble");
+  expect(rows()[1].textContent).toContain("Board.Analysis.Report.BetterMove:g6 4. Qf3");
+  // Child g6 exists before 3...Nf6 -> better line is a link (2 buttons in row 1).
+  expect(rows()[1].querySelectorAll("button")).toHaveLength(2);
+
+  // Selecting row 0 focuses before-path [0, 0] and sets transient per-tab review focus.
+  await act(async () => rows()[0].querySelector("button")!.click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(rows()[0].getAttribute("data-current")).toBe("true");
+  expect(rows()[1].hasAttribute("data-current")).toBe(false);
+  expect(atoms.get(reviewFocusFamily("tab-1"))).toEqual({
+    documentId: store.getState().documentId,
+    path: [0, 0],
+    fen: store.getState().currentNode().fen,
+    summaryCreatedAt: createdAt,
+    playedSan: "Qh5",
+    betterSan: "Nf3",
+  });
+  expect(mocks.chartProps?.highlightedMovePath).toEqual([0, 0, 0]);
+
+  // Previous is disabled at first moment; Next moves to second moment.
+  const findBtn = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label)!;
+  expect(findBtn("Board.Analysis.Report.PreviousMoment").disabled).toBe(true);
+  expect(findBtn("Board.Analysis.Report.NextMoment").disabled).toBe(false);
+
+  await act(async () => findBtn("Board.Analysis.Report.NextMoment").click());
+  expect(store.getState().position).toEqual([0, 0, 0, 0, 0]);
+  expect(rows()[1].getAttribute("data-current")).toBe("true");
+  expect(findBtn("Board.Analysis.Report.NextMoment").disabled).toBe(true);
+  expect(findBtn("Board.Analysis.Report.PreviousMoment").disabled).toBe(false);
+
+  await act(async () => findBtn("Board.Analysis.Report.PreviousMoment").click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(rows()[0].getAttribute("data-current")).toBe("true");
+
+  // Hovering a row highlights its move on the chart; leaving falls back to the focused moment.
+  await act(async () => {
+    rows()[1].dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    rows()[1].dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  expect(mocks.chartProps?.highlightedMovePath).toEqual([0, 0, 0, 0, 0, 0]);
+  await act(async () => {
+    rows()[1].dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    rows()[1].dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+  expect(mocks.chartProps?.highlightedMovePath).toEqual([0, 0, 0]);
+
+  // Chart hovering a move highlights its row.
+  await act(async () => mocks.chartProps?.onHoverMove?.([0, 0, 0, 0, 0, 0]));
+  expect(rows()[1].getAttribute("data-highlighted")).toBe("true");
+  expect(rows()[0].hasAttribute("data-highlighted")).toBe(false);
+  await act(async () => mocks.chartProps?.onHoverMove?.(null));
+  expect(rows()[1].hasAttribute("data-highlighted")).toBe(false);
+
+  // Clicking the better-line link on row 1 navigates to the g6 child [0, 0, 0, 0, 0, 1].
+  await act(async () => rows()[1].querySelectorAll("button")[1].click());
+  expect(store.getState().position).toEqual([0, 0, 0, 0, 0, 1]);
+
+  // Side filter: Black shows only 3...Nf6??, White shows only 2.Qh5?!.
+  const blackRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="black"]')!;
+  await act(async () => blackRadio.click());
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain("3... Nf6??");
+
+  const whiteRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="white"]')!;
+  await act(async () => whiteRadio.click());
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain("2. Qh5?!");
+});
+
+test("side filter derives mover colour from root-anchored halfMoves on a Black-to-move start FEN", async () => {
+  // Position after 1. e4, Black to move (halfMoves starts at 1, first move e5 has halfMoves = 2 -> Black).
+  store.getState().setFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+  store.getState().makeMoves({ payload: ["e5"], mainline: true });
+  store.setState((state) => ({
+    root: {
+      ...state.root,
+      score: cp(20),
+      children: [{ ...state.root.children[0], nags: [4], score: cp(300) }],
+    },
+  }));
+  store.getState().goToStart();
+  await renderReport();
+
+  const rows = () => [...host.querySelectorAll('[data-testid="report-key-moment"]')];
+  expect(rows()).toHaveLength(1);
+
+  const whiteRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="white"]')!;
+  await act(async () => whiteRadio.click());
+  expect(rows()).toHaveLength(0);
+  expect(host.textContent).toContain("Board.Analysis.Report.NoMomentsForSide");
+
+  const blackRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="black"]')!;
+  await act(async () => blackRadio.click());
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0].textContent).toContain("1... e5??");
+});
+
+function seedScholarsMateMoments({ markE4 = false }: { markE4?: boolean } = {}) {
+  store
+    .getState()
+    .makeMoves({ payload: ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#"], mainline: true });
+  store.getState().goToStart();
+
+  const createdAt = Date.UTC(2026, 10, 27);
+  store.setState((state) => {
+    const e4 = state.root.children[0];
+    const e5 = e4.children[0];
+    const qh5 = e5.children[0];
+    const nc6 = qh5.children[0];
+    const bc4 = nc6.children[0];
+    const nf6 = bc4.children[0];
+    const qxf7 = nf6.children[0];
+    const updatedRoot = {
+      ...state.root,
+      score: cp(20),
+      children: [
+        {
+          ...e4,
+          nags: markE4 ? [2] : [],
+          score: cp(20),
+          children: [
+            {
+              ...e5,
+              score: cp(25),
+              children: [
+                {
+                  ...qh5,
+                  nags: [6],
+                  score: cp(-60),
+                  children: [
+                    {
+                      ...nc6,
+                      score: cp(-40),
+                      children: [
+                        {
+                          ...bc4,
+                          score: cp(-50),
+                          children: [
+                            {
+                              ...nf6,
+                              nags: [4],
+                              score: { value: { type: "mate" as const, value: 1 }, wdl: null },
+                              children: [{ ...qxf7, score: null }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    return {
+      root: updatedRoot,
+      report: {
+        ...state.report,
+        summary: {
+          engine: "Stockfish 17",
+          goMode: { t: "Time" as const, c: 500 },
+          createdAt,
+          missingEvaluations: 0,
+          novelty: "notRequested" as const,
+          fingerprint: reportRootFingerprint(updatedRoot.fen, getMainLine(updatedRoot)),
+          facts: [
+            { mainlineIndex: 3, kind: "decisive" as const, betterLine: ["Nf3", "Nc6"] },
+            { mainlineIndex: 6, kind: "allowsMate" as const, betterLine: ["g6", "Qf3"] },
+          ],
+        },
+      },
+    };
+  });
+}
+
+test("previous/next walkthrough steps only through filtered rows and handles an unfocused filter switch", async () => {
+  seedScholarsMateMoments({ markE4: true });
+  await renderReport();
+
+  const rows = () => [...host.querySelectorAll<HTMLLIElement>('[data-testid="report-key-moment"]')];
+  const findBtn = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label)!;
+  const sideRadio = (value: "both" | "white" | "black") =>
+    host.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)!;
+
+  // All three moments visible in "both": 1. e4?, 2. Qh5?!, 3... Nf6??.
+  expect(rows()).toHaveLength(3);
+
+  // Filter White: two rows (1. e4?, 2. Qh5?!).
+  await act(async () => sideRadio("white").click());
+  expect(rows()).toHaveLength(2);
+  expect(rows()[0].textContent).toContain("1. e4?");
+  expect(rows()[1].textContent).toContain("2. Qh5?!");
+
+  // Select first White row (1. e4?, beforePath []): Next goes to 2. Qh5?! (beforePath [0, 0]), then disables.
+  await act(async () => rows()[0].querySelector("button")!.click());
+  expect(store.getState().position).toEqual([]);
+  await act(async () => findBtn("Board.Analysis.Report.NextMoment").click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(rows()[1].getAttribute("data-current")).toBe("true");
+  expect(findBtn("Board.Analysis.Report.NextMoment").disabled).toBe(true);
+
+  // Previous returns to 1. e4?.
+  await act(async () => findBtn("Board.Analysis.Report.PreviousMoment").click());
+  expect(store.getState().position).toEqual([]);
+  expect(rows()[0].getAttribute("data-current")).toBe("true");
+
+  // Select Black's 3... Nf6?? in "both", then filter White so currentIndex === -1.
+  await act(async () => sideRadio("both").click());
+  await act(async () => rows()[2].querySelector("button")!.click());
+  expect(store.getState().position).toEqual([0, 0, 0, 0, 0]);
+  await act(async () => sideRadio("white").click());
+  expect(rows().every((r) => !r.hasAttribute("data-current"))).toBe(true);
+
+  // From unfocused filter state: Next selects first White moment (1. e4?).
+  await act(async () => findBtn("Board.Analysis.Report.NextMoment").click());
+  expect(store.getState().position).toEqual([]);
+  expect(rows()[0].getAttribute("data-current")).toBe("true");
+
+  // Re-select Black's 3... Nf6??, filter White again: Previous selects last White moment (2. Qh5?!).
+  await act(async () => sideRadio("both").click());
+  await act(async () => rows()[2].querySelector("button")!.click());
+  await act(async () => sideRadio("white").click());
+  await act(async () => findBtn("Board.Analysis.Report.PreviousMoment").click());
+  expect(store.getState().position).toEqual([0, 0]);
+  expect(rows()[1].getAttribute("data-current")).toBe("true");
+});
+
+test("keyboard focus on a key moment row highlights its move on the chart and blur clears it", async () => {
+  seedScholarsMateMoments();
+  await renderReport();
+
+  const firstRowButton = host
+    .querySelector<HTMLLIElement>('[data-testid="report-key-moment"]')!
+    .querySelector<HTMLButtonElement>("button")!;
+
+  expect(mocks.chartProps?.highlightedMovePath).toBeNull();
+  await act(async () => firstRowButton.focus());
+  expect(mocks.chartProps?.highlightedMovePath).toEqual([0, 0, 0]);
+
+  await act(async () => firstRowButton.blur());
+  expect(mocks.chartProps?.highlightedMovePath).toBeNull();
+});
+
+test("mistake-kind labels from review facts disappear when the summary fingerprint is outdated", async () => {
+  seedScholarsMateMoments();
+  await renderReport();
+
+  expect(host.textContent).toContain("Board.Analysis.Report.MistakeKind.Decisive");
+  expect(host.textContent).toContain("Board.Analysis.Report.MistakeKind.AllowsMate");
+
+  await act(async () => {
+    store.setState((state) => ({
+      report: {
+        ...state.report,
+        summary: { ...state.report.summary!, fingerprint: "different-game-fingerprint" },
+      },
+    }));
+  });
+
+  expect(host.textContent).not.toContain("Board.Analysis.Report.MistakeKind.Decisive");
+  expect(host.textContent).not.toContain("Board.Analysis.Report.MistakeKind.AllowsMate");
+});
+
 test("ships all 16 locales", () => expect(Object.keys(catalogues)).toHaveLength(16));
 
 test.each(Object.entries(catalogues))(
-  "every phase 2 finite message resolves without fallback in %s",
+  "every phase 2 and 3 finite message resolves without fallback in %s",
   async (_path, catalogue) => {
     const instance = createInstance();
     await instance.init({
@@ -514,7 +920,7 @@ test.each(Object.entries(catalogues))(
       nsSeparator: false,
       resources: { test: catalogue },
     });
-    for (const key of phase2FiniteKeys) {
+    for (const key of phase2And3FiniteKeys) {
       expect({
         key,
         value: catalogue.translation[key],

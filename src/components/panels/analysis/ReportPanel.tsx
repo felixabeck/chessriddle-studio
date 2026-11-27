@@ -1,10 +1,11 @@
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
 import { tauri } from "@/platform/tauri";
-import { Button, Group, Paper, Stack, Text, UnstyledButton } from "@mantine/core";
+import { Button, Paper, Stack, Text } from "@mantine/core";
+import equal from "fast-deep-equal";
 import type { TFunction } from "i18next";
 import { RotateCcw, ScanSearch } from "lucide-react";
 import { useAtom } from "jotai";
-import { useCallback, useContext, useEffect, useMemo } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import EvalChart from "@/components/common/EvalChart";
@@ -12,9 +13,8 @@ import ProgressButton from "@/components/common/ProgressButton";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useProgress } from "@/hooks/useProgress";
-import { reportModalOpenFamily } from "@/state/atoms";
-import { ANNOTATION_INFO } from "@/utils/annotation";
-import { getGameStats, getMainLine, type KeyMoment, reportRootFingerprint } from "@/utils/chess";
+import { matchesReviewFocus, reportModalOpenFamily, reviewFocusFamily } from "@/state/atoms";
+import { getGameStats, getMainLine, reportRootFingerprint } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
 import {
   type GameSummary,
@@ -22,17 +22,15 @@ import {
   type SummaryMoveRef,
   summarizeGame,
 } from "@/utils/gameReview";
-import { formatScore } from "@/utils/score";
 import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import { reportEngineFailure } from "./engineFailure";
-import { ExplainedLabel } from "./ExplainedLabel";
+import { buildKeyMomentItems, type KeyMomentItem, KeyMoments } from "./KeyMoments";
 import ReportModal from "./ReportModal";
 import { Scoreboard } from "./Scoreboard";
 import { TimeStrip } from "./TimeStrip";
 
 const MS_PER_SECOND = 1000;
-const NO_VALUE = "–";
 
 function ReportPanel() {
   const { t } = useTranslation();
@@ -43,7 +41,12 @@ function ReportPanel() {
   const root = useStore(store, (s) => s.root);
   const headers = useStore(store, (s) => s.headers);
   const position = useStore(store, (s) => s.position);
+  const currentNode = useStore(store, (s) => s.currentNode());
+  const documentId = useStore(store, (s) => s.documentId);
   const [reportingMode, setReportingMode] = useAtom(useTabAtom(reportModalOpenFamily));
+  const [reviewFocus, setReviewFocus] = useAtom(useTabAtom(reviewFocusFamily));
+  const [hoveredMomentPath, setHoveredMomentPath] = useState<number[] | null>(null);
+  const [chartHoveredPath, setChartHoveredPath] = useState<number[] | null>(null);
 
   const inProgress = useStore(store, (s) => s.report.inProgress);
   const operationId = useStore(store, (s) => s.report.operationId);
@@ -151,6 +154,53 @@ function ReportPanel() {
     !!summary && summary.fingerprint === reportRootFingerprint(root.fen, moves);
   const hasMoves = root.children.length > 0;
 
+  const momentItems = useMemo(
+    () =>
+      buildKeyMomentItems({
+        root,
+        moments: stats.keyMoments,
+        facts: summary?.facts,
+        summaryCurrent,
+        gameSummary,
+        timeUsage,
+      }),
+    [root, stats.keyMoments, summary?.facts, summaryCurrent, gameSummary, timeUsage],
+  );
+
+  const summaryCreatedAt = summary?.createdAt ?? null;
+  const activeReviewFocus = matchesReviewFocus(reviewFocus, {
+    documentId,
+    path: position,
+    fen: currentNode.fen,
+    summaryCreatedAt,
+  })
+    ? reviewFocus
+    : null;
+
+  const focusedMomentPath = useMemo(() => {
+    if (!activeReviewFocus) return null;
+    return (
+      momentItems.find((item) => equal(item.beforePath, activeReviewFocus.path))?.moment.path ??
+      null
+    );
+  }, [activeReviewFocus, momentItems]);
+
+  const focusMoment = useCallback(
+    (item: KeyMomentItem) => {
+      const current = store.getState();
+      setReviewFocus({
+        documentId: current.documentId,
+        path: item.beforePath,
+        fen: item.beforeFen,
+        summaryCreatedAt: current.report.summary?.createdAt ?? null,
+        playedSan: item.moment.san,
+        betterSan: item.betterLine[0] ?? null,
+      });
+      goToMove(item.beforePath);
+    },
+    [goToMove, setReviewFocus, store],
+  );
+
   const modal = (
     <ReportModal
       tab={ownerTabId}
@@ -239,7 +289,11 @@ function ReportPanel() {
                 </Stack>
               ) : (
                 <Stack gap="xs">
-                  <EvalChart isAnalysing={inProgress} />
+                  <EvalChart
+                    isAnalysing={inProgress}
+                    highlightedMovePath={hoveredMomentPath ?? focusedMomentPath}
+                    onHoverMove={setChartHoveredPath}
+                  />
                   <TimeStrip
                     usage={timeUsage}
                     paths={mainlinePaths}
@@ -251,8 +305,15 @@ function ReportPanel() {
             </Paper>
           </div>
 
-          {stats.keyMoments.length > 0 && (
-            <KeyMoments moments={stats.keyMoments} goToMove={goToMove} />
+          {momentItems.length > 0 && (
+            <KeyMoments
+              items={momentItems}
+              focusedBeforePath={activeReviewFocus?.path ?? null}
+              chartHoveredPath={chartHoveredPath}
+              onSelectMoment={focusMoment}
+              onSelectBetterLine={goToMove}
+              onHoverMoment={setHoveredMomentPath}
+            />
           )}
         </div>
       </div>
@@ -313,68 +374,6 @@ function ReportProvenance({ summary }: { summary: ReportSummary }) {
       {summary.missingEvaluations > 0 &&
         ` ${t("Board.Analysis.Report.MissingEvaluations", { positions: summary.missingEvaluations })}`}
     </Text>
-  );
-}
-
-/** The marked mainline moves in game order; a row goes to its move. */
-function KeyMoments({
-  moments,
-  goToMove,
-}: {
-  moments: KeyMoment[];
-  goToMove: (path: number[]) => void;
-}) {
-  const { t } = useTranslation();
-  const formatEval = (score: KeyMoment["before"]) => (score ? formatScore(score.value) : NO_VALUE);
-  return (
-    <Paper withBorder p="md">
-      <Group justify="space-between" align="baseline" gap="xs" mb="xs" wrap="wrap">
-        <Text fw={600} id="report-key-moments">
-          {t("Board.Analysis.Report.KeyMoments")}
-        </Text>
-        <ExplainedLabel
-          label={t("Board.Analysis.Report.EvalDirectionLabel")}
-          explanation={t("Board.Analysis.Report.EvalDirectionDesc")}
-          size="xs"
-          dimmed
-        />
-      </Group>
-      <Stack
-        gap={2}
-        component="ul"
-        aria-labelledby="report-key-moments"
-        className={classes.keyMoments}
-      >
-        {moments.map((moment) => {
-          return (
-            <li key={moment.halfMoves}>
-              <UnstyledButton
-                className={classes.keyMoment}
-                // The mark's colour is a bar, not text: NAG hues on the card miss text contrast.
-                style={{
-                  "--key-moment-color": `var(--mantine-color-${ANNOTATION_INFO[moment.annotation].color}-6)`,
-                }}
-                onClick={() => goToMove(moment.path)}
-                data-testid="report-key-moment"
-              >
-                <Text component="span" fw={600}>
-                  {formatMoveNumber(moment.halfMoves)} {moment.san}
-                  {moment.annotation}
-                </Text>
-                <Text component="span" fz="sm" className={classes.evalChange}>
-                  {formatEval(moment.before)} → {formatEval(moment.after)}
-                </Text>
-                {moment.betterMove && (
-                  <Text component="span" fz="sm" c="dimmed" className={classes.betterMove}>
-                    {t("Board.Analysis.Report.BetterMove", { move: moment.betterMove })}
-                  </Text>
-                )}
-              </UnstyledButton>
-            </li>
-          );
-        })}
-      </Stack>
-    </Paper>
   );
 }
 

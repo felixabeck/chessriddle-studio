@@ -31,9 +31,11 @@ vi.mock("@/state/tabScope", () => ({
 }));
 vi.mock("@/state/atoms", async () => {
   const { atom } = await import("jotai");
+  const { matchesReviewFocus } = await import("@/state/atoms/boardPanels");
   const evalOpen = atom(false);
   const showComments = atom(false);
   const notationHidden = atom(false);
+  const reviewFocus = atom(null);
   return {
     autoPromoteAtom: atom(false),
     createBestMovesAtom: () => atom(new Map()),
@@ -42,6 +44,8 @@ vi.mock("@/state/atoms", async () => {
     evalOpenFamily: () => evalOpen,
     showCommentsFamily: () => showComments,
     invisibleFamily: () => notationHidden,
+    matchesReviewFocus,
+    reviewFocusFamily: () => reviewFocus,
     enableBoardScrollAtom: atom(false),
     materialDisplayAtom: atom("diff"),
     moveHighlightAtom: atom(false),
