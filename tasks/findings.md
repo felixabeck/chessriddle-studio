@@ -29877,3 +29877,18 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, repair of f-20261127-03, 2026-11-27.
 * **Observed 2026-11-27:** CI run 45922505242 went red exactly as described ("oauth-credentials lines regressed: 9552/10899, baseline 9554/10899"). d-20261127-04 then restored the earlier baseline counts and changed only app-infrastructure functions (5000/7493, identical in CI and two local runs), so one entry of 18 now has no margin instead of all 18. The general variance policy remains open.
 <!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"8b0e66aca814d049b6176a3a53feadf5b15711a2ee1ff924f178b04083ab2941","input_sha256":"3ac7f2a9395fb5ee8c4fd4920100fb1f02a50844cc025b533f325e8d29e58e97","kind":"mutation-receipt","operation":"231fc97923524861bee7a705ace0db448395ad87609918b25f04a9b1ec611138","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-04"],"target":"f-20261127-04","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The scoresheet photo build lowered app-infrastructure backend function coverage below its baseline (CI rust job red on master)
+
+* **ID:** f-20261127-05 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45935946250
+* **Repair owner:** Claude Code build session 654468e5 (scoresheet-photo-panel) on tuxedo-felix, 2026-11-27T04:12Z
+* **Failure scenario:** `pnpm coverage:backend:check` in the `rust` job of the Test workflow on master `c5a3633db` (first red run 45935946250, again in 45936168045 on `dd3dfea0e`): `app-infrastructure functions regressed: 5078/7620, baseline 5000/7493`. The scoresheet photo build added 127 functions in that area (path-authority read-only default-root and workspace openers for the photo sweep, the photo store and sweep helpers), 78 of them covered, so the area's function share fell from 66.73 % to 66.64 %.
+* **Fix:** cover the new native functions with tests (the ratchet must not be rebaselined, docs/coverage.md); then the push gates and a green Test run on master.
+* **Spotted outside diff:** -
+* The same run's `rust-macos-test` failure (`db::content_validation_tests::content_validation_metadata_returns_during_active_scan_and_only_one_of_many_scans_takes_gateway`) passed on `c5a3633db` and failed only on the records-only commit `dd3dfea0e`; it is a timing flake, not this regression.
