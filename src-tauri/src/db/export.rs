@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) struct PgnGame {
     orientation: Option<String>,
+    scoresheet_photos: Option<String>,
     event: Option<String>,
     site: Option<String>,
     date: Option<String>,
@@ -107,6 +108,17 @@ impl PgnGame {
         if let Some(orientation) = self.orientation.as_deref() {
             write_decoded_pgn_tag(writer, "Orientation", orientation)?;
         }
+        if let Some(photos) = self
+            .scoresheet_photos
+            .as_deref()
+            .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
+        {
+            write_decoded_pgn_tag(
+                writer,
+                crate::coach::scoresheet_photo_store::SCORESHEET_PHOTOS_TAG,
+                photos,
+            )?;
+        }
         writeln!(writer)?;
         if let Some(moves) = self.moves.as_deref() {
             if !moves.is_empty() {
@@ -207,27 +219,55 @@ pub(super) fn export_to_pgn_blocking(
         let db = &mut **database_connection
             .as_mut()
             .ok_or_else(|| Error::Conflict("database export source is unavailable".into()))?;
-        let (white_players, black_players) = diesel::alias!(players as white, players as black);
-        let rows = games::table
-            .inner_join(white_players.on(games::white_id.eq(white_players.field(players::id))))
-            .inner_join(black_players.on(games::black_id.eq(black_players.field(players::id))))
-            .inner_join(events::table.on(games::event_id.eq(events::id)))
-            .inner_join(sites::table.on(games::site_id.eq(sites::id)))
-            .load_iter::<(Game, Player, Player, Event, Site), DefaultLoadingMode>(db)?;
-        #[cfg(test)]
-        let rows = rows.inspect(|_| {
-            EXPORT_ROW_COUNT.with(|counter| {
-                if let Some(counter) = counter.borrow().as_ref() {
-                    counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-            });
-        });
-        write_pgn_rows(temporary, rows, cancellation)
+        stream_database_to_pgn(db, temporary, false, cancellation)
     })?;
     crate::infra::fs::require_durable(
         installed.outcome,
         crate::error::DurabilityStage::DatabasePgnReplacement,
     )
+}
+
+pub(super) fn stream_database_to_pgn<W: Write>(
+    db: &mut SqliteConnection,
+    destination: W,
+    order_by_id: bool,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let (white_players, black_players) = diesel::alias!(players as white, players as black);
+    let base = games::table
+        .inner_join(white_players.on(games::white_id.eq(white_players.field(players::id))))
+        .inner_join(black_players.on(games::black_id.eq(black_players.field(players::id))))
+        .inner_join(events::table.on(games::event_id.eq(events::id)))
+        .inner_join(sites::table.on(games::site_id.eq(sites::id)));
+    if scoresheet_photos_table_exists(db)? {
+        let mut query = base
+            .left_join(scoresheet_photos::table.on(games::id.eq(scoresheet_photos::game_id)))
+            .select((
+                games::all_columns,
+                white_players.fields(players::all_columns),
+                black_players.fields(players::all_columns),
+                events::all_columns,
+                sites::all_columns,
+                scoresheet_photos::photos.nullable(),
+            ))
+            .into_boxed();
+        if order_by_id {
+            query = query.order(games::id.asc());
+        }
+        let rows = query
+            .load_iter::<(Game, Player, Player, Event, Site, Option<String>), DefaultLoadingMode>(
+                db,
+            )?;
+        write_pgn_rows_with_photos(destination, rows, cancellation)
+    } else {
+        let mut query = base.into_boxed();
+        if order_by_id {
+            query = query.order(games::id.asc());
+        }
+        let rows =
+            query.load_iter::<(Game, Player, Player, Event, Site), DefaultLoadingMode>(db)?;
+        write_pgn_rows(destination, rows, cancellation)
+    }
 }
 
 pub(super) fn write_pgn_rows<W, I>(
@@ -239,6 +279,26 @@ where
     W: Write,
     I: IntoIterator<Item = diesel::QueryResult<(Game, Player, Player, Event, Site)>>,
 {
+    write_pgn_rows_with_photos(
+        destination,
+        rows.into_iter().map(|row| {
+            row.map(|(game, white, black, event, site)| (game, white, black, event, site, None))
+        }),
+        cancellation,
+    )
+}
+
+pub(super) fn write_pgn_rows_with_photos<W, I>(
+    destination: W,
+    rows: I,
+    cancellation: &CancellationToken,
+) -> Result<(), Error>
+where
+    W: Write,
+    I: IntoIterator<
+        Item = diesel::QueryResult<(Game, Player, Player, Event, Site, Option<String>)>,
+    >,
+{
     let mut writer = BufWriter::new(destination);
     let mut rows = rows.into_iter();
     loop {
@@ -247,11 +307,17 @@ where
         }
         let Some(row) = rows.next() else { break };
         #[cfg(test)]
+        EXPORT_ROW_COUNT.with(|counter| {
+            if let Some(counter) = counter.borrow().as_ref() {
+                counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        #[cfg(test)]
         if let Some(block) = take_export_write_block() {
             block.entered.wait();
             block.release.wait();
         }
-        let (game, white, black, event, site) = row.map_err(Error::from)?;
+        let (game, white, black, event, site, scoresheet_photos) = row.map_err(Error::from)?;
         let initial_fen = game
             .fen
             .as_deref()
@@ -267,6 +333,7 @@ where
         })?;
         PgnGame {
             orientation: game.orientation,
+            scoresheet_photos,
             event: event
                 .name
                 .filter(|name| event.id != 0 && database_index_name(Some(name)).is_some()),

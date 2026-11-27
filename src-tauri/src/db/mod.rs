@@ -461,6 +461,7 @@ pub struct TempGame {
     pub position: Chess,
     pub material_count: MaterialColor,
     pub orientation: Option<String>,
+    pub scoresheet_photos: Option<String>,
 }
 
 impl TempGame {
@@ -525,8 +526,93 @@ impl TempGame {
             orientation: self.orientation.as_deref(),
         };
 
-        Ok(create_game(db, new_game)?.id)
+        let game_id = create_game(db, new_game)?.id;
+        if let Some(photos) = self
+            .scoresheet_photos
+            .as_deref()
+            .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
+        {
+            upsert_scoresheet_photos(db, game_id, photos)?;
+        }
+        Ok(game_id)
     }
+}
+
+/// Stay below SQLite's `SQLITE_MAX_VARIABLE_NUMBER` (999 on older builds).
+pub(super) const SCORESHEET_PHOTOS_BIND_CHUNK_SIZE: usize = 500;
+
+pub(super) fn scoresheet_photos_table_exists(db: &mut SqliteConnection) -> Result<bool, Error> {
+    migrations::table_exists(db, "ScoresheetPhotos")
+}
+
+pub(super) fn upsert_scoresheet_photos(
+    db: &mut SqliteConnection,
+    game_id: i32,
+    photos: &str,
+) -> Result<(), diesel::result::Error> {
+    db.batch_execute(
+        "CREATE TABLE IF NOT EXISTS ScoresheetPhotos (
+            GameID INTEGER PRIMARY KEY REFERENCES Games(ID) ON DELETE CASCADE,
+            Photos TEXT NOT NULL
+        );",
+    )?;
+    diesel::insert_into(scoresheet_photos::table)
+        .values((
+            scoresheet_photos::game_id.eq(game_id),
+            scoresheet_photos::photos.eq(photos),
+        ))
+        .on_conflict(scoresheet_photos::game_id)
+        .do_update()
+        .set(scoresheet_photos::photos.eq(photos))
+        .execute(db)?;
+    Ok(())
+}
+
+pub(super) fn delete_scoresheet_photos(
+    db: &mut SqliteConnection,
+    game_id: i32,
+) -> Result<(), Error> {
+    if !scoresheet_photos_table_exists(db)? {
+        return Ok(());
+    }
+    diesel::delete(scoresheet_photos::table.filter(scoresheet_photos::game_id.eq(game_id)))
+        .execute(db)?;
+    Ok(())
+}
+
+pub(super) fn load_game_scoresheet_photos(
+    db: &mut SqliteConnection,
+    game_id: i32,
+) -> Result<Option<String>, Error> {
+    if !scoresheet_photos_table_exists(db)? {
+        return Ok(None);
+    }
+    Ok(scoresheet_photos::table
+        .filter(scoresheet_photos::game_id.eq(game_id))
+        .select(scoresheet_photos::photos)
+        .first::<String>(db)
+        .optional()?)
+}
+
+pub(super) fn load_scoresheet_photos_for_games(
+    db: &mut SqliteConnection,
+    game_ids: &[i32],
+    cancellation: &CancellationToken,
+) -> Result<HashMap<i32, String>, Error> {
+    cancellation_check(cancellation)?;
+    if game_ids.is_empty() || !scoresheet_photos_table_exists(db)? {
+        return Ok(HashMap::new());
+    }
+    let mut photos_by_game = HashMap::new();
+    for chunk in game_ids.chunks(SCORESHEET_PHOTOS_BIND_CHUNK_SIZE) {
+        cancellation_check(cancellation)?;
+        let rows: Vec<(i32, String)> = scoresheet_photos::table
+            .filter(scoresheet_photos::game_id.eq_any(chunk))
+            .select((scoresheet_photos::game_id, scoresheet_photos::photos))
+            .load(db)?;
+        photos_by_game.extend(rows);
+    }
+    Ok(photos_by_game)
 }
 
 // d-20261102-06: absent index names use id 0, with exact, case-sensitive markers.
@@ -733,6 +819,12 @@ impl Visitor for Importer {
             let decoded = value.decode();
             let value = decode_pgn_text(&decoded);
             self.game.orientation = BoardOrientation::from_pgn(&value).map(|_| value.into_owned());
+        } else if key == crate::coach::scoresheet_photo_store::SCORESHEET_PHOTOS_TAG.as_bytes() {
+            let decoded = value.decode();
+            let value = decode_pgn_text(&decoded);
+            self.game.scoresheet_photos =
+                crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag(&value)
+                    .map(str::to_owned);
         } else if key == b"FEN" {
             if value.as_bytes() == b"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" {
                 self.game.fen = None;
@@ -1264,6 +1356,8 @@ mod insert_db_game_tests;
 mod player_game_count_tests;
 #[cfg(test)]
 mod query_sort_tests;
+#[cfg(test)]
+mod scoresheet_photos_tests;
 
 #[cfg(test)]
 static CONVERSION_BEFORE_REVISION: crate::infra::test_hooks::KeyedTestHooks<String> =
@@ -2165,9 +2259,10 @@ fn insert_db_game_from_reader(
             let id = game.insert_to_db(db)?;
             refresh_derived_database_data(db)?;
             let row = games::table.find(id).first::<Game>(db)?;
+            let photos = load_game_scoresheet_photos(db, id)?;
             inserted = Some(InsertedDbGame {
                 id,
-                stamp: game_row_stamp(&row),
+                stamp: game_row_stamp_with_photos(&row, photos.as_deref()),
             });
             Ok(())
         },
@@ -2267,7 +2362,8 @@ fn write_parsed_db_game(
         .first::<Game>(db)
         .optional()?
         .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
-    if game_row_stamp(&existing) != expected_stamp {
+    let existing_photos = load_game_scoresheet_photos(db, game_id)?;
+    if game_row_stamp_with_photos(&existing, existing_photos.as_deref()) != expected_stamp {
         return Err(Error::StaleGame);
     }
     let game_time = temp_game.time.clone().or(existing.time);
@@ -2310,10 +2406,24 @@ fn write_parsed_db_game(
         return Err(Error::GameNotFound(game_id.to_string()));
     }
 
+    if let Some(photos) = temp_game
+        .scoresheet_photos
+        .as_deref()
+        .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
+    {
+        upsert_scoresheet_photos(db, game_id, photos)?;
+    } else {
+        delete_scoresheet_photos(db, game_id)?;
+    }
+
     maintain_metadata(db)?;
 
     let written = games::table.find(game_id).first::<Game>(db)?;
-    Ok(game_row_stamp(&written))
+    let written_photos = load_game_scoresheet_photos(db, game_id)?;
+    Ok(game_row_stamp_with_photos(
+        &written,
+        written_photos.as_deref(),
+    ))
 }
 
 #[tauri::command]

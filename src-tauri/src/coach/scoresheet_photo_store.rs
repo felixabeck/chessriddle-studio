@@ -37,6 +37,13 @@ use crate::{
 /// Exact length of a valid photo id: 32 SHA-256 bytes encoded as lowercase hex.
 pub(crate) const PHOTO_ID_HEX_LEN: usize = 64;
 
+/// PGN header tag name carrying a game's comma-separated scoresheet photo ids.
+pub(crate) const SCORESHEET_PHOTOS_TAG: &str = "ScoresheetPhotos";
+
+/// Maximum byte length of a valid `ScoresheetPhotos` PGN tag value (4 × 64 hex chars + 3 commas).
+pub(crate) const MAX_SCORESHEET_PHOTOS_TAG_LEN: usize =
+    MAX_SCORESHEET_PHOTOS * PHOTO_ID_HEX_LEN + (MAX_SCORESHEET_PHOTOS - 1);
+
 /// Process-wide serialization lock shared by `store`, `read`, and the orphan sweep's delete step.
 /// Never held across `.await`.
 static PHOTO_STORE_LOCK: Mutex<()> = Mutex::new(());
@@ -92,6 +99,23 @@ pub(crate) fn is_valid_photo_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Strictly validates an untrusted `ScoresheetPhotos` PGN tag value (1–4 comma-separated lowercase
+/// 64-hex photo ids, bounded length). Returns `Some(raw)` when valid, or `None` when absent or
+/// malformed.
+pub(crate) fn validate_scoresheet_photos_tag(raw: &str) -> Option<&str> {
+    if raw.is_empty() || raw.len() > MAX_SCORESHEET_PHOTOS_TAG_LEN {
+        return None;
+    }
+    let mut count = 0usize;
+    for part in raw.split(',') {
+        count += 1;
+        if count > MAX_SCORESHEET_PHOTOS || !is_valid_photo_id(part) {
+            return None;
+        }
+    }
+    Some(raw)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -829,5 +853,37 @@ mod tests {
 
         let result = read_future.await.expect("join read task");
         assert_eq!(result, Err(PhotoStoreError::Cancelled));
+    }
+
+    #[test]
+    fn validate_scoresheet_photos_tag_accepts_one_to_four_ids_and_rejects_malformed() {
+        let id1 = "a".repeat(PHOTO_ID_HEX_LEN);
+        let id2 = "0123456789abcdef".repeat(4);
+        let id3 = "f".repeat(PHOTO_ID_HEX_LEN);
+        let id4 = "9".repeat(PHOTO_ID_HEX_LEN);
+
+        assert_eq!(validate_scoresheet_photos_tag(&id1), Some(id1.as_str()));
+        let two = format!("{id1},{id2}");
+        assert_eq!(validate_scoresheet_photos_tag(&two), Some(two.as_str()));
+        let four = format!("{id1},{id2},{id3},{id4}");
+        assert_eq!(four.len(), MAX_SCORESHEET_PHOTOS_TAG_LEN);
+        assert_eq!(validate_scoresheet_photos_tag(&four), Some(four.as_str()));
+
+        let five = format!("{four},{id1}");
+        for invalid in [
+            "",
+            "not-a-hash",
+            &"A".repeat(PHOTO_ID_HEX_LEN),
+            &"a".repeat(PHOTO_ID_HEX_LEN - 1),
+            &"a".repeat(PHOTO_ID_HEX_LEN + 1),
+            &format!("{id1},"),
+            &format!(",{id1}"),
+            &format!("{id1}, {id2}"),
+            &format!("{id1},,{id2}"),
+            &format!("../{id1}"),
+            &five,
+        ] {
+            assert_eq!(validate_scoresheet_photos_tag(invalid), None, "{invalid}");
+        }
     }
 }

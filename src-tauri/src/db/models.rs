@@ -173,6 +173,9 @@ pub struct NormalizedGame {
     pub orientation: Option<BoardOrientation>,
     #[specta(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoresheet_photos: Option<String>,
+    #[specta(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stamp: Option<String>,
     #[specta(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]

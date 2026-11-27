@@ -451,7 +451,7 @@ fn migrate_legacy_database(conn: &mut SqliteConnection) -> Result<(), Error> {
     })
 }
 
-fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool, Error> {
+pub(super) fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool, Error> {
     Ok(
         sql_query("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?")
             .bind::<Text, _>(name)

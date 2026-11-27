@@ -3,6 +3,7 @@ import { logFailureSafely, safeFailureContext } from "@/platform/errors";
 import { tauri, type NativeReadOptions } from "@/platform/tauri";
 import { decodePgnTagValue, parsePGN } from "./chess";
 import { databaseHandleKey } from "./db";
+import { parseScoresheetPhotosTag, SCORESHEET_PHOTOS_TAG } from "./scoresheet";
 import { applyGameEndLoadDefault, type TreeState } from "./treeReducer";
 
 /** Seed only the initial view. A remembered choice always wins and no edit is made. */
@@ -30,7 +31,21 @@ export async function seedDatabaseOrientation(
 
 export function databaseGameHeaders(game: NormalizedGame) {
     // Event and Site retain PGN escapes in the database. Tree headers contain decoded text.
-    return { ...game, event: decodePgnTagValue(game.event), site: decodePgnTagValue(game.site) };
+    const { scoresheet_photos, ...rest } = game;
+    const headers: Omit<NormalizedGame, "scoresheet_photos"> & {
+        other?: Record<string, string>;
+    } = {
+        ...rest,
+        event: decodePgnTagValue(game.event),
+        site: decodePgnTagValue(game.site),
+    };
+    if (
+        typeof scoresheet_photos === "string" &&
+        parseScoresheetPhotosTag(scoresheet_photos) !== null
+    ) {
+        headers.other = { [SCORESHEET_PHOTOS_TAG]: scoresheet_photos };
+    }
+    return headers;
 }
 
 /** Convert a row using its own starting position, headers and row stamp. */

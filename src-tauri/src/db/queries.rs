@@ -856,7 +856,7 @@ pub(super) fn load_games(
         let games: Vec<(Game, Player, Player, Event, Site)> =
             sqlite_cancellation::with_sqlite_cancellation(cancellation, || sql_query.load(db))?;
         cancellation_check(cancellation)?;
-        let mut normalized_games = normalize_games(games, cancellation)?;
+        let mut normalized_games = load_and_normalize_games(db, games, cancellation)?;
         linked_collections::qualify_games(db, file, authority, &mut normalized_games)?;
 
         Ok(QueryResponse {
@@ -969,8 +969,15 @@ pub(super) fn infer_owner_orientation(
     )
 }
 
-/// Hash the stored row, independently of joined names and decoded movetext.
+/// Hash the stored row without a scoresheet photo reference.
+#[cfg(test)]
 pub(super) fn game_row_stamp(game: &Game) -> String {
+    game_row_stamp_with_photos(game, None)
+}
+
+/// Hash the stored row and optional `ScoresheetPhotos` value, independently of joined names and
+/// decoded movetext.
+pub(super) fn game_row_stamp_with_photos(game: &Game, scoresheet_photos: Option<&str>) -> String {
     use sha2::{Digest, Sha256};
 
     fn field(hash: &mut Sha256, value: Option<&[u8]>) {
@@ -1028,18 +1035,40 @@ pub(super) fn game_row_stamp(game: &Game) -> String {
     if game.orientation.is_some() {
         text!(game.orientation);
     }
+    // Preserve the exact pre-scoresheet-photos stamp for rows without a photo reference.
+    if let Some(photos) = scoresheet_photos {
+        hash.update(b"scoresheet_photos");
+        field(&mut hash, Some(photos.as_bytes()));
+    }
     format!("{:x}", hash.finalize())
 }
 
-pub(super) fn normalize_games(
+pub(super) fn load_and_normalize_games(
+    db: &mut SqliteConnection,
     games: Vec<(Game, Player, Player, Event, Site)>,
+    cancellation: &CancellationToken,
+) -> Result<Vec<NormalizedGame>, Error> {
+    let game_ids: Vec<i32> = games.iter().map(|(game, ..)| game.id).collect();
+    let photos_by_game = sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+        load_scoresheet_photos_for_games(db, &game_ids, cancellation)
+    })?;
+    normalize_games(games, &photos_by_game, cancellation)
+}
+
+fn normalize_games(
+    games: Vec<(Game, Player, Player, Event, Site)>,
+    scoresheet_photos: &HashMap<i32, String>,
     cancellation: &CancellationToken,
 ) -> Result<Vec<NormalizedGame>, Error> {
     games
         .into_iter()
         .map(|(game, white, black, event, site)| {
             cancellation_check(cancellation)?;
-            let stamp = game_row_stamp(&game);
+            let raw_photos = scoresheet_photos.get(&game.id).map(String::as_str);
+            let stamp = game_row_stamp_with_photos(&game, raw_photos);
+            let valid_photos = raw_photos
+                .and_then(crate::coach::scoresheet_photo_store::validate_scoresheet_photos_tag)
+                .map(str::to_owned);
             let fen: Fen = game
                 .fen
                 .map(|f| {
@@ -1061,6 +1090,7 @@ pub(super) fn normalize_games(
                     .orientation
                     .as_deref()
                     .and_then(BoardOrientation::from_pgn),
+                scoresheet_photos: valid_photos,
                 stamp: Some(stamp),
                 linked: None,
                 id: game.id,

@@ -4,7 +4,9 @@ pub(super) fn test_game_stamp(state: &AppState, file: &DatabaseHandle, game_id: 
     let target =
         resolve_database(&state.pgn_path_authority, file, PathOperation::DatabaseRead).unwrap();
     let mut db = state.database_repository.connection(&target, None).unwrap();
-    game_row_stamp(&games::table.find(game_id).first::<Game>(&mut *db).unwrap())
+    let row = games::table.find(game_id).first::<Game>(&mut *db).unwrap();
+    let photos = load_game_scoresheet_photos(&mut db, game_id).unwrap();
+    game_row_stamp_with_photos(&row, photos.as_deref())
 }
 
 const ORIGINAL: &str = "[White \"White\"]\n[Black \"Black\"]\n[Result \"*\"]\n\n1. e4 e5 *";
@@ -246,6 +248,24 @@ fn row_stamps_cover_every_column_and_unambiguous_optional_fields() {
     assert_eq!(
         stamp,
         "b9815ed9853d2a9b971d64c41750bf9d8fc92b054bdf95da89a40dc7989039bb"
+    );
+    assert_eq!(stamp, game_row_stamp_with_photos(&original, None));
+    let photo_a = "a".repeat(64);
+    let photo_b = "b".repeat(64);
+    assert_ne!(stamp, game_row_stamp_with_photos(&original, Some(&photo_a)));
+    assert_ne!(
+        game_row_stamp_with_photos(&original, Some(&photo_a)),
+        game_row_stamp_with_photos(&original, Some(&photo_b)),
+    );
+    assert_ne!(
+        game_row_stamp_with_photos(
+            &Game {
+                orientation: Some("white".into()),
+                ..Game::default()
+            },
+            None,
+        ),
+        game_row_stamp_with_photos(&original, Some("white")),
     );
     assert_ne!(
         game_row_stamp(&Game {

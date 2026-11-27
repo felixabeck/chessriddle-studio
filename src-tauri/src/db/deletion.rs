@@ -607,6 +607,24 @@ pub(super) fn delete_duplicated_games_transaction(db: &mut SqliteConnection) -> 
     // columns with absence folded, through the signature's own marker set (d-20261102-06).
     let date = SignatureField::Date.normalized_sql();
     let round = SignatureField::Round.normalized_sql();
+    let has_photo_rows = scoresheet_photos_table_exists(db)?
+        && scoresheet_photos::table
+            .select(scoresheet_photos::game_id)
+            .limit(1)
+            .first::<i32>(db)
+            .optional()?
+            .is_some();
+    // When ScoresheetPhotos has rows, rank photo-carrying duplicates ahead of plain ones in the
+    // single duplicate window so a photo game survives without a second scan. When the table is
+    // absent or empty, run the original query unchanged.
+    let (join_clause, order_clause) = if has_photo_rows {
+        (
+            "\n                LEFT JOIN ScoresheetPhotos sp ON sp.GameID = g.ID",
+            "CASE WHEN sp.Photos IS NOT NULL THEN 0 ELSE 1 END, g.ID",
+        )
+    } else {
+        ("", "g.ID")
+    };
     db.batch_execute(&format!(
         "
         DELETE FROM Games
@@ -614,8 +632,8 @@ pub(super) fn delete_duplicated_games_transaction(db: &mut SqliteConnection) -> 
             SELECT ID
             FROM (
                 SELECT g.ID,
-                    ROW_NUMBER() OVER (PARTITION BY g.EventID, g.SiteID, {round}, g.WhiteID, g.BlackID, g.Moves, {date}, NULLIF(g.UTCTime, ''), g.FEN, COALESCE(g.Result, '*'), g.WhiteElo, g.BlackElo, g.TimeControl ORDER BY g.ID) AS RowNum
-                FROM Games g
+                    ROW_NUMBER() OVER (PARTITION BY g.EventID, g.SiteID, {round}, g.WhiteID, g.BlackID, g.Moves, {date}, NULLIF(g.UTCTime, ''), g.FEN, COALESCE(g.Result, '*'), g.WhiteElo, g.BlackElo, g.TimeControl ORDER BY {order_clause}) AS RowNum
+                FROM Games g{join_clause}
             ) AS Subquery
             WHERE RowNum > 1
         );

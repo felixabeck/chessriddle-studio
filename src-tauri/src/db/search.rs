@@ -31,9 +31,8 @@ use crate::{
             database_setup_to_chess, database_start_position, decode_move,
             try_iter_mainline_move_bytes_cancellable,
         },
-        get_db_or_create, get_pawn_home,
+        get_db_or_create, get_pawn_home, load_and_normalize_games,
         models::*,
-        normalize_games,
         schema::*,
         search_index::{GameResult, IndexSource, MmapSearchIndex, SearchGameEntryRef},
         DatabaseRepository,
@@ -1950,7 +1949,7 @@ pub(super) fn search_position_blocking<R: tauri::Runtime>(
             if cancellation.is_cancelled() {
                 return Err(Error::Cancellation);
             }
-            let mut normalized_games = normalize_games(games, cancellation)?;
+            let mut normalized_games = load_and_normalize_games(db, games, cancellation)?;
             super::linked_collections::qualify_games(
                 db,
                 &database_handle,

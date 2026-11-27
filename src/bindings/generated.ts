@@ -2417,7 +2417,7 @@ export type ModelList = { models: ModelInfo[];
  * The provider listed more than [`MAX_MODELS`] models and the rest was dropped.
  */
 truncated: boolean }
-export type NormalizedGame = { orientation?: BoardOrientation; stamp?: string | null; linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
+export type NormalizedGame = { orientation?: BoardOrientation; scoresheet_photos?: string | null; stamp?: string | null; linked?: LinkedGameLocator | null; id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
 /**
  * The novelty phase's outcome. `position` is the 0-based index into
  * [`GameAnalysis::positions`] of the first position absent from the reference database, never 0.

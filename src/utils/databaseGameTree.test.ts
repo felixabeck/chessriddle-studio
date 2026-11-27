@@ -116,3 +116,57 @@ test.each(["b".repeat(64), undefined])(
         expect(native.inferGameOrientation).not.toHaveBeenCalled();
     },
 );
+
+test("reopening a database game carries a valid ScoresheetPhotos reference into headers.other", async () => {
+    const photos = `${"a".repeat(64)},${"0123456789abcdef".repeat(4)}`;
+    const row: NormalizedGame = {
+        id: 12,
+        stamp: "c".repeat(64),
+        scoresheet_photos: photos,
+        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        event: "Club",
+        event_id: 1,
+        site: "Berlin",
+        site_id: 1,
+        white: "Alice",
+        white_id: 1,
+        black: "Bob",
+        black_id: 2,
+        result: "*",
+        moves: "1. e4 e5 *",
+    };
+    native.lexPgn.mockReset().mockResolvedValue([
+        { type: "San", value: "e4" },
+        { type: "San", value: "e5" },
+        { type: "Outcome", value: "*" },
+    ] satisfies Token[]);
+
+    const tree = await databaseGameToTree(row);
+    expect(tree.headers.other).toEqual({ ScoresheetPhotos: photos });
+    expect("scoresheet_photos" in tree.headers).toBe(false);
+});
+
+test.each([undefined, null, "", "not-a-hash", "A".repeat(64), `${"a".repeat(64)},`])(
+    "absent or malformed scoresheet_photos (%s) is omitted from headers.other",
+    (scoresheet_photos) => {
+        const row: NormalizedGame = {
+            id: 13,
+            scoresheet_photos,
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            event: "Club",
+            event_id: 1,
+            site: "Berlin",
+            site_id: 1,
+            white: "Alice",
+            white_id: 1,
+            black: "Bob",
+            black_id: 2,
+            result: "*",
+            moves: "1. e4 e5 *",
+        };
+
+        const headers = databaseGameHeaders(row);
+        expect(headers.other).toBeUndefined();
+        expect("scoresheet_photos" in headers).toBe(false);
+    },
+);

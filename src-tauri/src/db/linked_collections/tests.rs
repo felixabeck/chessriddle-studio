@@ -9481,4 +9481,39 @@ mod native_tests {
             "non-UUID .atomic-* file must be kept"
         );
     }
+
+    #[test]
+    fn migrate_database_to_linked_collection_preserves_scoresheet_photos_tag() {
+        let fixture = Fixture::new();
+        let photos = format!("{},{}", "a".repeat(64), "b".repeat(64));
+        let photo_pgn = format!(
+            "[Event \"Club\"]\n[Site \"Berlin\"]\n[Date \"2026.11.26\"]\n[Round \"1\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"*\"]\n[ScoresheetPhotos \"{photos}\"]\n\n1. e4 e5 *\n"
+        );
+        let database = fixture.reference("photo-migration", &photo_pgn);
+        let intent = fixture.migration(database, None, MigrationChoice::Database);
+        let collection = fixture
+            .service
+            .migrate(
+                &fixture.state.pgn_path_authority,
+                &fixture.state.workspace_mutation,
+                intent,
+                &CancellationToken::new(),
+            )
+            .unwrap();
+        let migrated_file = fixture
+            .state
+            .pgn_path_authority
+            .with_mut(|authority| {
+                authority
+                    .resolve(collection.file.path_ref(), PathOperation::ReadPgn, &[])?
+                    .into_read_file()
+            })
+            .unwrap()
+            .unwrap();
+        let migrated_pgn = std::io::read_to_string(migrated_file).unwrap();
+        assert!(
+            migrated_pgn.contains(&format!("[ScoresheetPhotos \"{photos}\"]")),
+            "migrated linked collection PGN must keep ScoresheetPhotos tag: {migrated_pgn}"
+        );
+    }
 }

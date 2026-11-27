@@ -146,7 +146,25 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    #[sql_name = "ScoresheetPhotos"]
+    scoresheet_photos (game_id) {
+        #[sql_name = "GameID"]
+        game_id -> Integer,
+        #[sql_name = "Photos"]
+        photos -> Text,
+    }
+}
+
 diesel::joinable!(games -> events (event_id));
 diesel::joinable!(games -> sites (site_id));
 
-diesel::allow_tables_to_appear_in_same_query!(comments, events, games, info, players, sites,);
+diesel::allow_tables_to_appear_in_same_query!(
+    comments,
+    events,
+    games,
+    info,
+    players,
+    scoresheet_photos,
+    sites,
+);

@@ -1272,15 +1272,7 @@ impl CollectionService {
         let installed =
             atomic_create_at_identified(self.root.descriptor(), OsStr::new(leaf), |file| {
                 db.transaction::<_, Error, _>(|db| {
-                    let (white, black) = diesel::alias!(players as white, players as black);
-                    let rows = games::table
-                        .inner_join(white.on(games::white_id.eq(white.field(players::id))))
-                        .inner_join(black.on(games::black_id.eq(black.field(players::id))))
-                        .inner_join(events::table.on(games::event_id.eq(events::id)))
-                        .inner_join(sites::table.on(games::site_id.eq(sites::id)))
-                        .order(games::id.asc())
-                        .load_iter::<(Game, Player, Player, Event, Site), DefaultLoadingMode>(db)?;
-                    write_pgn_rows(&mut *file, rows, cancellation)
+                    super::export::stream_database_to_pgn(db, &mut *file, true, cancellation)
                 })?;
                 owner(authority::opened_file_identity(file)?)
             })?;
