@@ -30051,7 +30051,7 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 
 ### Visible board Clock fails axe `aria-progressbar-name` and inactive-turn `color-contrast`
 
-* **ID:** f-20261127-15 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
 
 * **Where:** `src/components/boards/Clock.tsx:52` (`opacity: turn !== color ? 0.5 : 1`) and `:61` (`<Progress size="xs" w="100%" ... />`).
@@ -30060,7 +30060,14 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Fix direction:** Add an accessible name (`aria-label`) to the clock `<Progress>` and replace `opacity: 0.5` on the inactive clock with a scheme-aware dimmed text/surface treatment that preserves >= 4.5:1 contrast.
 
 Handled. Clock papers stay fully opaque; `opacity: 0.5` is gone. Whose turn is a gold inset ring (`box-shadow: inset 0 0 0 1.5px var(--cf-primary)` on `.clock[data-active]`), matching TimeStrip. Progress was already absent; it is not restored. DESIGN.md Board clocks row records full opacity and the ring. Proof: `Clock.render.test.tsx` (inactive opacity empty, `data-active` on whose turn, no progressbar); `theme.test.ts` eval-bar pair 4.5:1 in light/dark/dim; `e2e/game-report.spec.ts` two clocks, no progressbar, opacity chain all 1, digits >= 4.5:1, `assertAccessible()` with no exclude; `clock-times-annotate-clock-times.png` updated in the container. Commit `c81535d99`. Rejected: dimming inactive text toward bg (15% already fails light/dark at 3.89:1) and dimming the paper toward card/inset (also fails 4.5:1). Leftover opacity on Practice rows, BestMoves stats and GameSelector index filed during review (inbox during this run).
-<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"1aa3c6a99df8eb2cf8c22d1f8536921a0a05233f458d5d43fd2f97b256dd706f","header_sha256":"9b87ac14de7fb42ed6a7660249c8e083ed0de29145b9d2f02b063f6e9ec6d1a4","header_status":"handled","input_sha256":"ed8e0253a5871292fda488828db22f2a8d39004c01c6b90267dd901332a010c6","kind":"mutation-receipt","operation":"a5c4c753fedae9b6ed3da7e7ecda107198948d38fb417c042ba9a80230ef58b9","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-15"],"target":"f-20261127-15","v":1} -->
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"1aa3c6a99df8eb2cf8c22d1f8536921a0a05233f458d5d43fd2f97b256dd706f","header_sha256":"6bfefe2f344e43630e847de78984cd8349c27d69b1674b15b3bcb5ba8f773c16","header_status":"open","input_sha256":"ed8e0253a5871292fda488828db22f2a8d39004c01c6b90267dd901332a010c6","kind":"mutation-receipt","operation":"a5c4c753fedae9b6ed3da7e7ecda107198948d38fb417c042ba9a80230ef58b9","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-15"],"target":"f-20261127-15","v":1} -->
+
+Reopened. Same e2e red as f-20261127-11. `game-interrupted-game-interruption.png` (228 px) still showed the inactive White clock at opacity 0.5; the close only updated `clock-times-annotate-clock-times.png`. The other 13 moved snapshots in that run are the tab-label change (f-20261127-11), not the clocks.
+
+* **CI run:** 46025303071
+* **First red:** Test run 46024657570 on `1c73404fc` (job `e2e`).
+* **Repair owner:** 0a17f348-c189-4394-b690-a15696ba3a44 on tuxedo-felix, 2026-11-27T16:05:00Z
+<!-- ledger-meta {"command":"set-header","effect_lines":5,"effect_sha256":"7d5cf0f9eae882cd264fd56cdaf208cf6bc52aa3d1e019bce9e6525b6860124c","header_sha256":"6bfefe2f344e43630e847de78984cd8349c27d69b1674b15b3bcb5ba8f773c16","header_status":"open","input_sha256":"d3a5e1352d298b9be6129accf48dd5396d25a815ae1dc895048a202ab93e8273","kind":"mutation-receipt","operation":"73d1bcffb3c050b149a247b5a980758ce7b7f85801dd1fc6de520cb3deb87110","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-15"],"target":"f-20261127-15","v":1} -->
 
 ---
 
