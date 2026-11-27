@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "此局面尚未收錄在 ChessDB 中。",
     "Board.Analysis.Opening": "開局",
     "Board.Analysis.PauseAllEngines": "暫停所有引擎",
-    "Board.Analysis.RegenerateReport": "重新產生報告",
     "Board.Analysis.ReorderEngine": "重新排序引擎",
     "Board.Analysis.Report": "報告",
     "Board.Analysis.Report.AccuracyDesc": "衡量著法與引擎最佳選擇的接近程度（0% 到 100%）。",

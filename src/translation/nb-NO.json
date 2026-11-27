@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Denne stillingen finnes ikke i ChessDB ennå.",
     "Board.Analysis.Opening": "Åpning",
     "Board.Analysis.PauseAllEngines": "Sett alle motorer på pause",
-    "Board.Analysis.RegenerateReport": "Lag rapporten på nytt",
     "Board.Analysis.ReorderEngine": "Endre rekkefølge på motor",
     "Board.Analysis.Report": "Rapport",
     "Board.Analysis.Report.AccuracyDesc": "Måler fra 0 % til 100 % hvor nær trekkene lå motorens beste valg.",

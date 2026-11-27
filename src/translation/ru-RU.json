@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Этой позиции пока нет в ChessDB.",
     "Board.Analysis.Opening": "Дебют",
     "Board.Analysis.PauseAllEngines": "Приостановить все движки",
-    "Board.Analysis.RegenerateReport": "Пересоздать отчёт",
     "Board.Analysis.ReorderEngine": "Изменить порядок движков",
     "Board.Analysis.Report": "Отчёт",
     "Board.Analysis.Report.AccuracyDesc": "Показывает от 0% до 100%, насколько ходы совпадали с лучшими вариантами движка.",

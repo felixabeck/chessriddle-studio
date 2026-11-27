@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Гэтай пазіцыі пакуль няма ў ChessDB.",
     "Board.Analysis.Opening": "Дэбют",
     "Board.Analysis.PauseAllEngines": "Прыпыніць усе рухавікі",
-    "Board.Analysis.RegenerateReport": "Стварыць справаздачу нанова",
     "Board.Analysis.ReorderEngine": "Змяніць парадак рухавіка",
     "Board.Analysis.Report": "Справаздача",
     "Board.Analysis.Report.AccuracyDesc": "Паказвае ад 0% да 100%, наколькі хады адпавядалі найлепшым выбарам рухавіка.",

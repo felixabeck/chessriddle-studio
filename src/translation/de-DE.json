@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Diese Stellung ist noch nicht in ChessDB.",
     "Board.Analysis.Opening": "Eröffnung",
     "Board.Analysis.PauseAllEngines": "Alle Engines pausieren",
-    "Board.Analysis.RegenerateReport": "Bericht neu erstellen",
     "Board.Analysis.ReorderEngine": "Engine neu anordnen",
     "Board.Analysis.Report": "Bericht",
     "Board.Analysis.Report.AccuracyDesc": "Misst von 0 % bis 100 %, wie nah die Züge an den besten Engine-Zügen lagen.",

@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Esta posición aún no está en ChessDB.",
     "Board.Analysis.Opening": "Apertura",
     "Board.Analysis.PauseAllEngines": "Pausar todos los motores",
-    "Board.Analysis.RegenerateReport": "Volver a generar el informe",
     "Board.Analysis.ReorderEngine": "Reordenar motor",
     "Board.Analysis.Report": "Reporte",
     "Board.Analysis.Report.AccuracyDesc": "Mide qué tan cerca estuvieron las jugadas de las mejores opciones del motor, del 0 % al 100 %.",

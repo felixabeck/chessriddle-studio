@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Tej pozycji nie ma jeszcze w ChessDB.",
     "Board.Analysis.Opening": "Debiut",
     "Board.Analysis.PauseAllEngines": "Wstrzymaj wszystkie silniki",
-    "Board.Analysis.RegenerateReport": "Wygeneruj raport ponownie",
     "Board.Analysis.ReorderEngine": "Zmień kolejność silnika",
     "Board.Analysis.Report": "Raport",
     "Board.Analysis.Report.AccuracyDesc": "Mierzy w skali od 0% do 100%, jak blisko zagrane ruchy były najlepszych wyborów silnika.",

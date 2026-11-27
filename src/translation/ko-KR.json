@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "이 포지션은 아직 ChessDB에 없습니다.",
     "Board.Analysis.Opening": "오프닝",
     "Board.Analysis.PauseAllEngines": "모든 엔진 일시 정지",
-    "Board.Analysis.RegenerateReport": "보고서 다시 만들기",
     "Board.Analysis.ReorderEngine": "엔진 순서 변경",
     "Board.Analysis.Report": "보고서",
     "Board.Analysis.Report.AccuracyDesc": "둔 수가 엔진의 최선 수에 얼마나 가까웠는지 0%에서 100% 사이로 나타냅니다.",

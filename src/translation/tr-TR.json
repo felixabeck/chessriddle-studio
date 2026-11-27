@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Bu konum henüz ChessDB'de yok.",
     "Board.Analysis.Opening": "Açılış",
     "Board.Analysis.PauseAllEngines": "Tüm motorları duraklat",
-    "Board.Analysis.RegenerateReport": "Raporu yeniden oluştur",
     "Board.Analysis.ReorderEngine": "Motor sırasını değiştir",
     "Board.Analysis.Report": "Rapor",
     "Board.Analysis.Report.AccuracyDesc": "Oynanan hamlelerin motorun en iyi tercihlerine %0 ile %100 arasında ne kadar yaklaştığını ölçer.",

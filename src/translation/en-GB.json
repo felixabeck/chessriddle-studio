@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "This position is not in ChessDB yet.",
     "Board.Analysis.Opening": "Opening",
     "Board.Analysis.PauseAllEngines": "Pause all engines",
-    "Board.Analysis.RegenerateReport": "Regenerate report",
     "Board.Analysis.ReorderEngine": "Reorder engine",
     "Board.Analysis.Report": "Report",
     "Board.Analysis.Report.AccuracyDesc": "Measures how closely a player’s moves matched the engine’s best choices, from 0% to 100%.",

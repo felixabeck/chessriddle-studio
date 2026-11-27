@@ -112,7 +112,6 @@
     "Board.Analysis.NotInChessDB": "Цієї позиції ще немає в ChessDB.",
     "Board.Analysis.Opening": "Дебют",
     "Board.Analysis.PauseAllEngines": "Призупинити всі рушії",
-    "Board.Analysis.RegenerateReport": "Створити звіт заново",
     "Board.Analysis.ReorderEngine": "Змінити порядок рушіїв",
     "Board.Analysis.Report": "Звіт",
     "Board.Analysis.Report.AccuracyDesc": "Вимірює від 0% до 100%, наскільки ходи збігалися з найкращими виборами рушія.",
