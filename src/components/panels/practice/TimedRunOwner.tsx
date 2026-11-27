@@ -292,6 +292,7 @@ async function driveRun(options: {
           skipChapter(plan.file, plan.game);
           continue;
         }
+        const wasFirst = first;
         first = false;
 
         const openedByRun = outcome.openedByRun || run.openedTabIds.includes(outcome.tabId);
@@ -322,6 +323,16 @@ async function driveRun(options: {
           step.signal,
           owns,
         );
+        if (wasFirst) {
+          await consumeUnusedLaunchTab(
+            options.store,
+            run.newTabId,
+            outcome.tabId,
+            options.closeTab.current,
+            step.signal,
+            owns,
+          );
+        }
         if (step.signal.aborted || !owns()) throw abortError();
 
         type GateOutcome = "ready" | "skip" | "left";
@@ -450,6 +461,28 @@ async function closePreviousIfOwned(
   if (CLOSE_BLOCKED_TREE_STATUSES.has(tabStorage.getStatus(treeKey).kind)) return;
   if (signal.aborted || !owns()) return;
   await closeTab(previous.tabId);
+}
+
+async function consumeUnusedLaunchTab(
+  store: ReturnType<typeof useStore>,
+  newTabId: string,
+  currentTabId: string,
+  closeTab: (tabId: string | null, discard?: boolean) => Promise<void>,
+  signal: AbortSignal,
+  owns: () => boolean,
+) {
+  if (newTabId === currentTabId) return;
+  const launchTab = store.get(tabsAtom).find((entry) => entry.value === newTabId);
+  if (!launchTab || launchTab.type !== "new") return;
+  if (signal.aborted || !owns()) return;
+  try {
+    await closeTab(newTabId);
+  } catch (error) {
+    if (isAbortError(error) || signal.aborted) throw error;
+    warnSafely(
+      `Timed run failed to close unused launch tab ${newTabId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function waitForGate(

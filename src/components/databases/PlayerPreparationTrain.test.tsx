@@ -38,6 +38,9 @@ const harness = vi.hoisted(() => ({
   readRepertoireIndex: vi.fn(),
   fetchBatchStatistics: vi.fn(),
   openFile: vi.fn(),
+  closeTab: vi.fn<(tabId: string | null, discard?: boolean) => Promise<void>>(
+    async () => undefined,
+  ),
   navigate: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
   notifyShow: vi.fn(),
@@ -107,7 +110,7 @@ vi.mock("@/components/panels/practice/prepareTimedRun", async (importOriginal) =
 }));
 vi.mock("@/components/tabs/TabCommands", () => ({
   useTabCommands: () => ({
-    closeTab: vi.fn(async () => undefined),
+    closeTab: harness.closeTab,
     selectTab: (tabId: string) => {
       const current = harness.store;
       if (!current) return;
@@ -350,6 +353,8 @@ describe("PlayerPreparation training run", () => {
     harness.refreshRepertoireIndex.mockResolvedValue(undefined);
     harness.readRepertoireIndex.mockReturnValue(twoChapterSnapshot());
     harness.fetchBatchStatistics.mockResolvedValue(twoChapterStats());
+    harness.openFile.mockReset();
+    harness.closeTab.mockReset().mockResolvedValue(undefined);
     harness.navigate.mockResolvedValue(undefined);
     harness.tauri.listPracticeDecks.mockResolvedValue({ decks: [], anomalies: [] });
     harness.tauri.readPracticeEpoch.mockResolvedValue({ epoch: "epoch-1" });
@@ -602,6 +607,55 @@ describe("PlayerPreparation training run", () => {
     expect(tabId).not.toBe("other-analysis");
     const request = store.get(practiceRunRequestFamily(tabId));
     expect(request).toMatchObject({
+      runId: run.id,
+      positionKeys: [AFTER_E4],
+    });
+  });
+
+  test("with real TimedRunOwner: consumes the unused launch New Tab when the first candidate chapter is already open", async () => {
+    const existingTab: Tab = {
+      value: "existing-rep-a",
+      name: repFileA.name,
+      type: "analysis",
+      gameOrigin: { kind: "file", file: repFileA, gameNumber: 0 },
+    };
+    store.set(tabsAtom, [existingTab]);
+    store.set(activeTabAtom, "existing-rep-a");
+    store.set(tabFamily("existing-rep-a"), "info");
+    store.set(practiceTabFamily("existing-rep-a"), "build");
+    store.set(practiceSegmentGateFamily("existing-rep-a"), { synced: true, status: "ready" });
+
+    harness.closeTab.mockImplementation(async (tabId: string | null) => {
+      if (!tabId) return;
+      const current = store.get(tabsAtom);
+      const index = current.findIndex((tab) => tab.value === tabId);
+      if (index === -1) return;
+      const remaining = current.filter((tab) => tab.value !== tabId);
+      store.set(tabsAtom, remaining);
+      if (store.get(activeTabAtom) === tabId) {
+        store.set(activeTabAtom, remaining[index]?.value ?? remaining[index - 1]?.value ?? null);
+      }
+    });
+
+    await renderWithOwner(true);
+
+    const startBtn = container.querySelector<HTMLButtonElement>("[data-preparation-train-start]")!;
+    await act(async () => startBtn.click());
+
+    await vi.waitFor(() => {
+      const run = store.get(timedRunAtom);
+      expect(run?.phase).toBe("running");
+      expect(run?.currentSegment?.status).toBe("active");
+    });
+
+    const run = store.get(timedRunAtom)!;
+    expect(harness.openFile).not.toHaveBeenCalled();
+    expect(harness.closeTab).toHaveBeenCalledWith(run.newTabId);
+    expect(store.get(tabsAtom).some((t) => t.value === run.newTabId)).toBe(false);
+    expect(store.get(tabsAtom).map((t) => t.value)).toEqual(["existing-rep-a"]);
+    expect(store.get(activeTabAtom)).toBe("existing-rep-a");
+    expect(run.currentSegment?.tabId).toBe("existing-rep-a");
+    expect(store.get(practiceRunRequestFamily("existing-rep-a"))).toMatchObject({
       runId: run.id,
       positionKeys: [AFTER_E4],
     });

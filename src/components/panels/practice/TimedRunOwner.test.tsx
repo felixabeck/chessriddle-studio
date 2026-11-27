@@ -26,7 +26,9 @@ const harness = vi.hoisted(() => ({
   store: null as ReturnType<typeof createStore> | null,
   liveSubs: 0,
   openFile: vi.fn(),
-  closeTab: vi.fn(async () => undefined),
+  closeTab: vi.fn<(tabId: string | null, discard?: boolean) => Promise<void>>(
+    async () => undefined,
+  ),
   dirty: new Map<string, boolean>(),
   treeStatus: new Map<string, "available" | "not-read" | "unreadable" | "unavailable">(),
   notify: vi.fn(),
@@ -765,6 +767,183 @@ function openFileOwnerId(call: unknown[] | undefined) {
   return (call?.[2] as { ownerId?: string } | undefined)?.ownerId;
 }
 
+function installRemovingCloseTabMock() {
+  harness.closeTab.mockImplementation(async (tabId: string | null) => {
+    if (!tabId) return;
+    const current = store.get(tabsAtom);
+    const index = current.findIndex((tab) => tab.value === tabId);
+    if (index === -1) return;
+    const remaining = current.filter((tab) => tab.value !== tabId);
+    store.set(tabsAtom, remaining);
+    if (store.get(activeTabAtom) === tabId) {
+      store.set(activeTabAtom, remaining[index]?.value ?? remaining[index - 1]?.value ?? null);
+    }
+  });
+}
+
+test("consumes the unused launch New Tab after reusing an already-open first chapter and keeps neighbor tabs", async () => {
+  const fileA = fileWorkspaceKey(metadata("a").handle);
+  const existing = fileTab("existing-a", "a");
+  const neighbor = fileTab("neighbor", "z");
+  store.set(tabsAtom, [homeTab(), existing, neighbor]);
+  store.set(activeTabAtom, "home");
+  store.set(tabFamily("existing-a"), "info");
+  store.set(practiceTabFamily("existing-a"), "build");
+  store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  installRemovingCloseTabMock();
+  await renderOwner();
+  await act(async () => {
+    store.set(
+      timedRunLaunchAtom,
+      launch({
+        candidates: [dueCandidate("a", "a1")],
+        chapters: [{ file: fileA, game: 0, metadata: metadata("a") }],
+      }),
+    );
+  });
+  await flush();
+  expect(harness.openFile).not.toHaveBeenCalled();
+  expect(harness.closeTab).toHaveBeenCalledTimes(1);
+  expect(harness.closeTab).toHaveBeenCalledWith("home");
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual(["existing-a", "neighbor"]);
+  expect(store.get(activeTabAtom)).toBe("existing-a");
+  expect(store.get(timedRunAtom)?.phase).toBe("running");
+  expect(store.get(timedRunAtom)?.currentSegment?.status).toBe("active");
+  expect(store.get(practiceRunRequestFamily("existing-a"))).toBeTruthy();
+});
+
+test("a rejected closeTab on the unused launch tab does not cancel the run or skip the first segment", async () => {
+  const fileA = fileWorkspaceKey(metadata("a").handle);
+  const existing = fileTab("existing-a", "a");
+  store.set(tabsAtom, [homeTab(), existing]);
+  store.set(activeTabAtom, "home");
+  store.set(tabFamily("existing-a"), "info");
+  store.set(practiceTabFamily("existing-a"), "build");
+  store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  harness.closeTab.mockRejectedValueOnce(new Error("close refused"));
+  await renderOwner();
+  await act(async () => {
+    store.set(
+      timedRunLaunchAtom,
+      launch({
+        candidates: [dueCandidate("a", "a1")],
+        chapters: [{ file: fileA, game: 0, metadata: metadata("a") }],
+      }),
+    );
+  });
+  await flush();
+  expect(harness.openFile).not.toHaveBeenCalled();
+  expect(harness.closeTab).toHaveBeenCalledWith("home");
+  expect(harness.notify).not.toHaveBeenCalled();
+  expect(store.get(activeTabAtom)).toBe("existing-a");
+  expect(store.get(timedRunAtom)?.phase).toBe("running");
+  expect(store.get(timedRunAtom)?.currentSegment).toMatchObject({
+    tabId: "existing-a",
+    status: "active",
+  });
+  expect(store.get(practiceRunRequestFamily("existing-a"))).toBeTruthy();
+});
+
+test("an AbortError from closeTab on the unused launch tab cancels the run without activating the segment", async () => {
+  const fileA = fileWorkspaceKey(metadata("a").handle);
+  const existing = fileTab("existing-a", "a");
+  store.set(tabsAtom, [homeTab(), existing]);
+  store.set(activeTabAtom, "home");
+  store.set(tabFamily("existing-a"), "info");
+  store.set(practiceTabFamily("existing-a"), "build");
+  store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  harness.closeTab.mockRejectedValueOnce(new DOMException("Cancellation", "AbortError"));
+  await renderOwner();
+  await act(async () => {
+    store.set(
+      timedRunLaunchAtom,
+      launch({
+        candidates: [dueCandidate("a", "a1")],
+        chapters: [{ file: fileA, game: 0, metadata: metadata("a") }],
+      }),
+    );
+  });
+  await flush();
+  expect(harness.closeTab).toHaveBeenCalledWith("home");
+  expect(harness.notify).not.toHaveBeenCalled();
+  expect(store.get(timedRunAtom)?.phase).toBe("cancelled");
+  expect(store.get(timedRunAtom)?.currentSegment?.status).not.toBe("active");
+  expect(store.get(practiceRunRequestFamily("existing-a"))).toBeFalsy();
+});
+
+test("does not close the launch tab when it is no longer a new tab", async () => {
+  const fileA = fileWorkspaceKey(metadata("a").handle);
+  const existing = fileTab("existing-a", "a");
+  store.set(tabsAtom, [{ ...homeTab(), type: "analysis" as const }, existing]);
+  store.set(activeTabAtom, "home");
+  store.set(tabFamily("existing-a"), "info");
+  store.set(practiceTabFamily("existing-a"), "build");
+  store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  installRemovingCloseTabMock();
+  await renderOwner();
+  await act(async () => {
+    store.set(
+      timedRunLaunchAtom,
+      launch({
+        candidates: [dueCandidate("a", "a1")],
+        chapters: [{ file: fileA, game: 0, metadata: metadata("a") }],
+      }),
+    );
+  });
+  await flush();
+  expect(harness.openFile).not.toHaveBeenCalled();
+  expect(harness.closeTab).not.toHaveBeenCalled();
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual(["home", "existing-a"]);
+  expect(store.get(activeTabAtom)).toBe("existing-a");
+  expect(store.get(timedRunAtom)?.phase).toBe("running");
+  expect(store.get(timedRunAtom)?.currentSegment).toMatchObject({
+    tabId: "existing-a",
+    status: "active",
+  });
+});
+
+test("does not close the launch tab when it is the first segment tab", async () => {
+  const chapterMeta = metadata("a");
+  const fileA = fileWorkspaceKey(chapterMeta.handle);
+  store.set(tabsAtom, [
+    {
+      value: "home",
+      name: chapterMeta.name,
+      type: "new" as const,
+      gameOrigin: {
+        kind: "file" as const,
+        file: chapterMeta,
+        gameNumber: 0,
+      },
+    },
+  ]);
+  store.set(activeTabAtom, "home");
+  store.set(tabFamily("home"), "info");
+  store.set(practiceTabFamily("home"), "build");
+  store.set(practiceSegmentGateFamily("home"), { synced: true, status: "ready" });
+  installRemovingCloseTabMock();
+  await renderOwner();
+  await act(async () => {
+    store.set(
+      timedRunLaunchAtom,
+      launch({
+        candidates: [dueCandidate("a", "a1")],
+        chapters: [{ file: fileA, game: 0, metadata: chapterMeta }],
+      }),
+    );
+  });
+  await flush();
+  expect(harness.openFile).not.toHaveBeenCalled();
+  expect(harness.closeTab).not.toHaveBeenCalled();
+  expect(store.get(tabsAtom).map((tab) => tab.value)).toEqual(["home"]);
+  expect(store.get(activeTabAtom)).toBe("home");
+  expect(store.get(timedRunAtom)?.phase).toBe("running");
+  expect(store.get(timedRunAtom)?.currentSegment).toMatchObject({
+    tabId: "home",
+    status: "active",
+  });
+});
+
 test("opening the next chapter does not cancel while a reused chapter tab is still active", async () => {
   const existing = fileTab("existing-a", "a");
   store.set(tabsAtom, [homeTab(), existing]);
@@ -772,6 +951,7 @@ test("opening the next chapter does not cancel while a reused chapter tab is sti
   store.set(tabFamily("existing-a"), "info");
   store.set(practiceTabFamily("existing-a"), "build");
   store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  installRemovingCloseTabMock();
   harness.openFile.mockImplementation(async (file: FileMetadata) => {
     admitOpenedTab("tab-b", "b", [existing]);
     expect(file.name).toBe("b.pgn");
@@ -785,11 +965,14 @@ test("opening the next chapter does not cancel while a reused chapter tab is sti
   expect(harness.openFile).not.toHaveBeenCalled();
   expect(store.get(activeTabAtom)).toBe("existing-a");
   expect(store.get(timedRunAtom)?.openedTabIds).toEqual([]);
+  expect(harness.closeTab).toHaveBeenCalledTimes(1);
+  expect(harness.closeTab).toHaveBeenCalledWith("home");
   await endSegment("existing-a", "queue-exhausted", 1);
   expect(harness.openFile).toHaveBeenCalledTimes(1);
   expect(store.get(timedRunAtom)?.phase).toBe("running");
   expect(store.get(practiceRunRequestFamily("tab-b"))).toBeTruthy();
-  expect(harness.closeTab).not.toHaveBeenCalled();
+  expect(harness.closeTab).toHaveBeenCalledTimes(1);
+  expect(harness.closeTab).not.toHaveBeenCalledWith("existing-a");
 });
 
 test("first openFile replaces New Tab with ownerId and a later open appends without it", async () => {
@@ -976,6 +1159,7 @@ test("closePreviousIfOwned never closes a tab the run did not open", async () =>
   store.set(tabFamily("existing-a"), "practice");
   store.set(practiceTabFamily("existing-a"), "train");
   store.set(practiceSegmentGateFamily("existing-a"), { synced: true, status: "ready" });
+  installRemovingCloseTabMock();
   harness.openFile.mockImplementation(async () => {
     admitOpenedTab("tab-b", "b", [existing]);
     return "tab-b";
@@ -985,16 +1169,25 @@ test("closePreviousIfOwned never closes a tab the run did not open", async () =>
     store.set(timedRunLaunchAtom, launch());
   });
   await flush();
+  expect(harness.closeTab).toHaveBeenCalledTimes(1);
+  expect(harness.closeTab).toHaveBeenCalledWith("home");
   await endSegment("existing-a", "queue-exhausted", 1);
-  expect(harness.closeTab).not.toHaveBeenCalled();
+  expect(harness.closeTab).toHaveBeenCalledTimes(1);
+  expect(harness.closeTab).not.toHaveBeenCalledWith("existing-a");
+  expect(store.get(timedRunAtom)?.phase).toBe("running");
   expect(store.get(practiceRunRequestFamily("tab-b"))).toBeTruthy();
 });
 
 test("a failed first open still passes ownerId newTabId to the next openFile", async () => {
   const fileC = fileWorkspaceKey(metadata("c").handle);
+  let closeCallsBeforeB: unknown[][] = [];
+  let homeTypeBeforeB: string | undefined;
+  installRemovingCloseTabMock();
   harness.openFile.mockImplementation(async (file: FileMetadata) => {
     if (file.name.startsWith("a")) return null;
     if (file.name.startsWith("b")) {
+      closeCallsBeforeB = [...harness.closeTab.mock.calls];
+      homeTypeBeforeB = store.get(tabsAtom).find((tab) => tab.value === "home")?.type;
       admitOpenedTab("tab-b", "b", [homeTab(), fileTab("other", "z")]);
       return "tab-b";
     }
@@ -1024,6 +1217,8 @@ test("a failed first open still passes ownerId newTabId to the next openFile", a
   await flush();
   expect(harness.openFile).toHaveBeenCalledTimes(2);
   expect(openFileOwnerId(harness.openFile.mock.calls[0])).toBe("home");
+  expect(closeCallsBeforeB.some((args) => args[0] === "home")).toBe(false);
+  expect(homeTypeBeforeB).toBe("new");
   expect(openFileOwnerId(harness.openFile.mock.calls[1])).toBe("home");
   expect(store.get(practiceRunRequestFamily("tab-b"))).toBeTruthy();
   await endSegment("tab-b", "queue-exhausted", 1);
