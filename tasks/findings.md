@@ -30194,6 +30194,9 @@ Re-recorded the remaining 16 container baselines that Test e2e failed on the fir
 * **CI run:** 46045214092
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"5f372da71089b6e8c3133ecf3dd05e741202f95d09b8ab7e6345807b79120402","input_sha256":"118c3b24dd618a31bdc3512e24f5155b59cfb7c5175a7bd65fe792e97e214ff3","kind":"mutation-receipt","operation":"d6b6143bdf4b5551ca44f0f4bd1c7cf038498e724c4c1edd54ce782a83ba9b5a","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-18"],"target":"f-20261127-18","v":1} -->
 
+* **Repair owner:** notation-follow-scroll direct run (Claude Code) on tuxedo-atlas, 2026-11-27T19:00:58Z
+<!-- ledger-meta {"command":"annotate","effect_lines":1,"effect_sha256":"37d0e6f2c56bbfa1dc44a1ba12ceb43300c53db716990fa47c49ba0124b8b4bd","input_sha256":"367aed7fb8c58b540299e2f965016a1ba9a6b790a96468a454e22f54909fe0df","kind":"mutation-receipt","operation":"76d90d198b3568618636d9a8fb0db6abe312bdd6f2d3d65d85fbe49e1b62cda5","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-18"],"target":"f-20261127-18","v":1} -->
+
 ---
 
 ## 2026-11-27 — filed through the inbox spool
