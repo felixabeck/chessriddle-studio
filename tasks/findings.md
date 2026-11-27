@@ -29892,3 +29892,16 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Fix:** cover the new native functions with tests (the ratchet must not be rebaselined, docs/coverage.md); then the push gates and a green Test run on master.
 * **Spotted outside diff:** -
 * The same run's `rust-macos-test` failure (`db::content_validation_tests::content_validation_metadata_returns_during_active_scan_and_only_one_of_many_scans_takes_gateway`) passed on `c5a3633db` and failed only on the records-only commit `dd3dfea0e`; it is a timing flake, not this regression.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### A queued content-validation scan can start between releasing the held gateway permits and cancellation, so a database test fails on macOS CI
+
+* **ID:** f-20261127-06 · **Status:** open · **Area:** db-search · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45936168045
+* **Failure scenario:** `rust-macos-test` in Test run 45936168045 on master `dd3dfea0e` (a records-only commit; the same test passed on `c5a3633db` one run earlier) failed `db::content_validation_tests::content_validation_metadata_returns_during_active_scan_and_only_one_of_many_scans_takes_gateway` at `src-tauri/src/db/content_validation_tests.rs:1214` with `left: 2, right: 1` for `pause.0.started`. After the test releases its three held `BLOCKING_GATEWAY` permits (`release.send(true)`), one of the six queued scans can take a freed permit and start before the loop that calls `seal_and_request_cancellation()` reaches its registry, so two scans have started instead of one.
+* **Fix:** make the test cancel (seal) all seven registries before releasing the held permits, or otherwise order release after cancellation, so a queued scan cannot start in the window; the assertion stays as strict as it is.
+* **Spotted outside diff:** found while triaging the scoresheet photo build's CI run; the test and the scan code are untouched by that build.
