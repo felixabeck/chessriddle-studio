@@ -4,7 +4,7 @@ import { Button, Paper, Stack, Text } from "@mantine/core";
 import equal from "fast-deep-equal";
 import type { TFunction } from "i18next";
 import { RotateCcw, ScanSearch } from "lucide-react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
@@ -13,7 +13,14 @@ import ProgressButton from "@/components/common/ProgressButton";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { useProgress } from "@/hooks/useProgress";
-import { matchesReviewFocus, reportModalOpenFamily, reviewFocusFamily } from "@/state/atoms";
+import {
+  coachExplainRequestFamily,
+  matchesReviewFocus,
+  reportModalOpenFamily,
+  reviewFocusFamily,
+} from "@/state/atoms";
+import { assistantAvailableAtom } from "@/state/coachAvailability";
+import { selectStripTab } from "@/state/stripTab";
 import { getGameStats, getMainLine, reportRootFingerprint } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
 import {
@@ -25,18 +32,26 @@ import {
 import type { ReportSummary } from "@/utils/treeReducer";
 import classes from "./AnalysisPanel.module.css";
 import { reportEngineFailure } from "./engineFailure";
-import { buildKeyMomentItems, type KeyMomentItem, KeyMoments } from "./KeyMoments";
+import {
+  buildExplainQuestion,
+  buildKeyMomentItems,
+  type KeyMomentItem,
+  KeyMoments,
+} from "./KeyMoments";
 import { OpeningBlock, type ReviewFocusRequest } from "./OpeningBlock";
 import ReportModal from "./ReportModal";
 import { Scoreboard } from "./Scoreboard";
 import { TimeStrip } from "./TimeStrip";
 
 const MS_PER_SECOND = 1000;
+let nextExplainRequestSeq = 0;
 
 function ReportPanel() {
   const { t } = useTranslation();
 
   const ownerTabId = useOwnerTabId();
+  const atomStore = useAtomStore();
+  const assistantAvailable = useAtomValue(assistantAvailableAtom);
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -46,6 +61,7 @@ function ReportPanel() {
   const documentId = useStore(store, (s) => s.documentId);
   const [reportingMode, setReportingMode] = useAtom(useTabAtom(reportModalOpenFamily));
   const [reviewFocus, setReviewFocus] = useAtom(useTabAtom(reviewFocusFamily));
+  const explainRequestAtom = useTabAtom(coachExplainRequestFamily);
   const [hoveredMomentPath, setHoveredMomentPath] = useState<number[] | null>(null);
   const [chartHoveredPath, setChartHoveredPath] = useState<number[] | null>(null);
 
@@ -214,6 +230,22 @@ function ReportPanel() {
     [focusReviewPosition],
   );
 
+  const explainMoment = useCallback(
+    (item: KeyMomentItem) => {
+      focusMoment(item);
+      const current = store.getState();
+      atomStore.set(explainRequestAtom, {
+        id: `explain-${++nextExplainRequestSeq}`,
+        documentId: current.documentId,
+        fen: item.beforeFen,
+        clickedAt: Date.now(),
+        question: buildExplainQuestion(t, item),
+      });
+      selectStripTab(atomStore, ownerTabId, "coach");
+    },
+    [atomStore, explainRequestAtom, focusMoment, ownerTabId, store, t],
+  );
+
   const modal = (
     <ReportModal
       tab={ownerTabId}
@@ -332,8 +364,10 @@ function ReportPanel() {
               items={momentItems}
               focusedBeforePath={activeReviewFocus?.path ?? null}
               chartHoveredPath={chartHoveredPath}
+              canExplain={assistantAvailable}
               onSelectMoment={focusMoment}
               onSelectBetterLine={goToMove}
+              onExplainMoment={explainMoment}
               onHoverMoment={setHoveredMomentPath}
             />
           )}

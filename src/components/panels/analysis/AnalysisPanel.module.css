@@ -402,6 +402,20 @@
   white-space: nowrap;
 }
 
+.keyMomentFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.explainButton {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .betterLineRow {
   min-width: 0;
 }

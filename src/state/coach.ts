@@ -110,7 +110,9 @@ export function withNoticeAccepted(accepted: readonly string[], connection: stri
  * The connections for which the user accepted the first-use notice (what is sent to whom). Kept
  * per connection handle, newest last; without an entry no turn is started for that connection.
  */
-export const coachNoticeAcceptedAtom = createNoticeAcceptedAtom("coach-notice-accepted");
+export const coachNoticeAcceptedAtom = createNoticeAcceptedAtom("coach-notice-accepted", {
+    getOnInit: true,
+});
 
 /** Opens the provider's page where the usage of a ChatGPT plan is managed, in the system browser. */
 export function openCoachUsage() {
@@ -147,6 +149,7 @@ export const coachSelectionAtom = atomWithStorage<CoachSelection>(
     "coach-selection",
     NO_SELECTION,
     createZodStorage(selectionSchema, localStorage),
+    { getOnInit: true },
 );
 
 export const COACH_EFFORT_LEVELS = ["low", "medium", "high"] as const;
@@ -222,6 +225,7 @@ export const coachEngineAtom = atomWithStorage<string | null>(
     "coach-engine",
     null,
     createZodStorage(z.string().max(MAX_ENGINE_ID_CHARS).nullable(), localStorage),
+    { getOnInit: true },
 );
 
 function usable(engine: Engine): engine is LocalEngine {

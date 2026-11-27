@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   cancelAnalysis: vi.fn(),
   coachOpenUsage: vi.fn(),
   showPageTab: vi.fn(),
-  engines: [] as unknown[],
+  engines: [] as unknown[] | undefined,
   refreshRepertoireIndex: vi.fn(),
   repertoireContext: vi.fn(),
   currency: { key: null, collection: null, pending: false } as Record<string, unknown>,
@@ -53,11 +53,19 @@ vi.mock("@/chessground/Chessground", () => ({
 }));
 vi.mock("@/state/atoms", async (original) => ({
   ...(await original<typeof import("@/state/atoms")>()),
-  enginesAtom: atom(() => mocks.engines),
+  enginesAtom: atom<unknown[] | undefined>([]),
 }));
 
-const { coachTurnFamily, fileWorkspaceAtom, referenceDbAtom } = await import("@/state/atoms");
-const { coachNoticeAcceptedAtom, coachSelectionAtom } = await import("@/state/coach");
+const {
+  COACH_EXPLAIN_REQUEST_MAX_AGE_MS,
+  coachExplainRequestFamily,
+  coachTurnFamily,
+  enginesAtom,
+  fileWorkspaceAtom,
+  referenceDbAtom,
+} = await import("@/state/atoms");
+const { coachConnectionsAtom, coachNoticeAcceptedAtom, coachSelectionAtom } =
+  await import("@/state/coach");
 const { applyCoachTurnEvent } = await import("@/state/coachTurns");
 const { closeTreeStore, createTreeStore } = await import("@/state/store/tree");
 const { settingsNavigationRequestAtom } = await import("@/state/settingsNavigation");
@@ -128,6 +136,7 @@ beforeEach(() => {
   mocks.currency = { key: null, collection: null, pending: false };
   Element.prototype.scrollTo = vi.fn();
   atoms = createStore();
+  atoms.set(enginesAtom, mocks.engines as never);
   tree = createTreeStore(TAB);
   tree.getState().setState(defaultTree());
   tree.getState().makeMoves({ payload: ["e4", "e5"] });
@@ -137,13 +146,16 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await act(async () => root.unmount());
   host.remove();
   closeTreeStore(TAB);
   coachTurnFamily.remove(TAB);
+  coachExplainRequestFamily.remove(TAB);
 });
 
 async function render({ selected = true, accepted = true } = {}) {
+  atoms.set(enginesAtom, mocks.engines as never);
   if (selected)
     atoms.set(coachSelectionAtom, { connection: "conn-1", model: "plain", effort: null });
   if (accepted) atoms.set(coachNoticeAcceptedAtom, ["conn-1"]);
@@ -620,4 +632,304 @@ test("a line whose position left the game cannot be inserted, and a new conversa
   await act(async () => button("Coach.NewConversation").click());
   expect(tree.getState().coachSession).toBeUndefined();
   expect(host.textContent).toContain("Coach.Empty");
+});
+
+function makeExplainRequest(
+  overrides: Partial<{
+    id: string;
+    documentId: number;
+    fen: string;
+    clickedAt: number;
+    question: string;
+  }> = {},
+) {
+  const state = tree.getState();
+  return {
+    id: "req-1",
+    documentId: state.documentId,
+    fen: state.currentNode().fen,
+    clickedAt: Date.now(),
+    question: "Explain why 2. Qh5?! is worse than Nf3.",
+    ...overrides,
+  };
+}
+
+test("O7 CoachPanel holds a pending explain request while connections and models load, then sends once when ready", async () => {
+  const conns = deferred<ConnectionSummary[]>();
+  const models = deferred<{
+    models: {
+      id: string;
+      name: string;
+      effortLevels: string[];
+      defaultEffort: null;
+      supportsTools: null;
+    }[];
+    truncated: boolean;
+  }>();
+  mocks.coachConnections.mockReturnValue(conns.promise);
+  mocks.coachModels.mockReturnValue(models.promise);
+  mocks.coachTurn.mockResolvedValue(answer);
+
+  const req = makeExplainRequest();
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render();
+
+  // Still loading connections: request stays pending, nothing sent, no draft.
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toEqual(req);
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+
+  // Connections resolve, models still loading: request stays pending, draft empty.
+  await act(async () => conns.resolve([connection]));
+  await act(async () => {});
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toEqual(req);
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    "",
+  );
+
+  // Models resolve: request is taken once, cleared, and sent through the typed-question path.
+  await act(async () =>
+    models.resolve({
+      models: [
+        { id: "plain", name: "Plain", effortLevels: [], defaultEffort: null, supportsTools: null },
+      ],
+      truncated: false,
+    }),
+  );
+  await act(async () => {});
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.coachTurn).toHaveBeenCalledOnce();
+  expect(mocks.coachTurn.mock.calls[0][2].message).toBe(req.question);
+
+  // Re-rendering does not send the request a second time.
+  await act(async () => {});
+  expect(mocks.coachTurn).toHaveBeenCalledOnce();
+});
+
+test("O7 CoachPanel drops a pending explain request when the user moves to another position", async () => {
+  const conns = deferred<ConnectionSummary[]>();
+  mocks.coachConnections.mockReturnValue(conns.promise);
+  mocks.coachTurn.mockResolvedValue(answer);
+
+  atoms.set(coachExplainRequestFamily(TAB), makeExplainRequest());
+  await render();
+  expect(atoms.get(coachExplainRequestFamily(TAB))).not.toBeNull();
+
+  // User navigates to another position before connections settle.
+  await act(async () => tree.getState().goToMove([0]));
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+
+  await act(async () => conns.resolve([connection]));
+  await act(async () => {});
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    "",
+  );
+});
+
+test("O7 CoachPanel drops a pending explain request when the tab switches to another document", async () => {
+  const conns = deferred<ConnectionSummary[]>();
+  mocks.coachConnections.mockReturnValue(conns.promise);
+  mocks.coachTurn.mockResolvedValue(answer);
+
+  atoms.set(coachExplainRequestFamily(TAB), makeExplainRequest());
+  await render();
+  expect(atoms.get(coachExplainRequestFamily(TAB))).not.toBeNull();
+
+  // Replace the game with a new document at the exact same position FEN.
+  await act(async () => {
+    tree.getState().setState(defaultTree());
+    tree.getState().makeMoves({ payload: ["e4", "e5"] });
+  });
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+
+  await act(async () => conns.resolve([connection]));
+  await act(async () => {});
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    "",
+  );
+});
+
+test("O7 CoachPanel drops a pending explain request once it is older than 30 seconds", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-27T10:00:00Z"));
+  const conns = deferred<ConnectionSummary[]>();
+  mocks.coachConnections.mockReturnValue(conns.promise);
+  mocks.coachTurn.mockResolvedValue(answer);
+
+  atoms.set(coachExplainRequestFamily(TAB), makeExplainRequest());
+  await render();
+  expect(atoms.get(coachExplainRequestFamily(TAB))).not.toBeNull();
+
+  // At exactly 30s it is not yet above 30s; at 30s + 1ms it is dropped.
+  await act(async () => {
+    vi.advanceTimersByTime(COACH_EXPLAIN_REQUEST_MAX_AGE_MS);
+  });
+  expect(atoms.get(coachExplainRequestFamily(TAB))).not.toBeNull();
+
+  await act(async () => {
+    vi.advanceTimersByTime(1);
+  });
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+
+  await act(async () => conns.resolve([connection]));
+  await act(async () => {});
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    "",
+  );
+});
+
+test("O7 CoachPanel puts the explain request into the draft when engines are not loaded", async () => {
+  mocks.engines = undefined;
+  atoms.set(enginesAtom, undefined as never);
+  const req = makeExplainRequest({ id: "req-undef-engine" });
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render();
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+});
+
+test("O7 CoachPanel puts the explain request into the draft when a turn is already running", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render();
+  await act(async () => {
+    atoms.set(coachTurnFamily(TAB), {
+      question: "Earlier question",
+      text: "Thinking...",
+      checking: null,
+      stopping: false,
+      orphaned: false,
+    });
+  });
+  const req = makeExplainRequest({ id: "req-running", question: "Second explain question." });
+  await act(async () => {
+    atoms.set(coachExplainRequestFamily(TAB), req);
+  });
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+});
+
+test("O7 CoachPanel puts the explain request into the draft when connections fail to load", async () => {
+  const { CoachCommandError } = await import("@/platform/coach");
+  mocks.coachConnections.mockRejectedValueOnce(new CoachCommandError("storage"));
+  const req = makeExplainRequest({ id: "req-conn-failed" });
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render();
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+
+  // Recovering connections mounts the composer with the preserved draft and does not auto-send.
+  mocks.coachConnections.mockResolvedValue([connection]);
+  await act(async () => {
+    await atoms.set(coachConnectionsAtom);
+  });
+  await act(async () => {});
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+});
+
+test("O7 CoachPanel puts the explain request into the draft when models fail to load", async () => {
+  const { CoachCommandError } = await import("@/platform/coach");
+  mocks.coachModels.mockRejectedValue(new CoachCommandError("keyRejected"));
+  const req = makeExplainRequest({ id: "req-models-failed" });
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render();
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+});
+
+test("O7 CoachPanel puts the explain request into the draft when no effective connection is chosen", async () => {
+  mocks.coachConnections.mockResolvedValue([
+    connection,
+    { ...connection, handle: "conn-2", label: "LM Studio" },
+  ]);
+  const req = makeExplainRequest({ id: "req-no-connection" });
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render({ selected: false });
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+});
+
+test("O7 CoachPanel puts the explain request into the draft when no model is chosen", async () => {
+  atoms.set(coachSelectionAtom, { connection: "conn-1", model: null, effort: null });
+  const req = makeExplainRequest({ id: "req-no-model" });
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render({ selected: false });
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    req.question,
+  );
+});
+
+test("O7 CoachPanel drops an already-expired explain request synchronously when settled", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  await render();
+
+  const expired = makeExplainRequest({
+    id: "req-expired-sync",
+    clickedAt: Date.now() - COACH_EXPLAIN_REQUEST_MAX_AGE_MS - 1,
+  });
+  await act(async () => {
+    atoms.set(coachExplainRequestFamily(TAB), expired);
+  });
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  expect(mocks.coachTurn).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Coach.Ask"]')?.value).toBe(
+    "",
+  );
+});
+
+test("O7 CoachPanel opens the first-use notice when not yet accepted for the chosen connection", async () => {
+  mocks.coachTurn.mockResolvedValue(answer);
+  const req = makeExplainRequest();
+  atoms.set(coachExplainRequestFamily(TAB), req);
+  await render({ accepted: false });
+
+  expect(atoms.get(coachExplainRequestFamily(TAB))).toBeNull();
+  expect(mocks.prepareAnalysis).not.toHaveBeenCalled();
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog).not.toBeNull();
+  expect(dialog.textContent).toContain("Coach.Notice.Body:Ollama");
+
+  // Accepting the notice sends the exact explain question once.
+  await act(async () => button("Coach.Notice.Accept", dialog).click());
+  await act(async () => {});
+  expect(mocks.coachTurn).toHaveBeenCalledOnce();
+  expect(mocks.coachTurn.mock.calls[0][2].message).toBe(req.question);
 });

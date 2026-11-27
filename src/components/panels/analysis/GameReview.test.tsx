@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { createInstance } from "i18next";
+import { createInstance, type TFunction } from "i18next";
 import { Provider, createStore as createAtomStore } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,11 +10,24 @@ import { createTreeStore, type TreeStore } from "@/state/store/tree";
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
+import { buildExplainQuestion, type KeyMomentItem } from "./KeyMoments";
 import { Scoreboard } from "./Scoreboard";
 import ReportPanel from "./ReportPanel";
 import { TimeStrip } from "./TimeStrip";
 import { openingNameCache } from "@/hooks/useOpeningName";
-import { disposeTabAtoms, fileWorkspaceAtom, reviewFocusFamily, sessionsAtom } from "@/state/atoms";
+import {
+  coachExplainRequestFamily,
+  disposeTabAtoms,
+  fileWorkspaceAtom,
+  reviewFocusFamily,
+  sessionsAtom,
+  tabFamily,
+} from "@/state/atoms";
+import {
+  assistantAvailableAtom,
+  coachEnabledAtom,
+  refreshAssistantAvailabilityAtom,
+} from "@/state/coachAvailability";
 import type { RepertoireSnapshot } from "@/state/repertoireIndex";
 import {
   type AnnotationCounts,
@@ -23,6 +36,7 @@ import {
   reportRootFingerprint,
 } from "@/utils/chess";
 import { getMoveTimeUsage } from "@/utils/gameReview";
+import { formatScore } from "@/utils/score";
 import { defaultTree, getBoardState } from "@/utils/treeReducer";
 
 const zeroCounts: AnnotationCounts = {
@@ -41,12 +55,18 @@ const mocks = vi.hoisted(() => ({
     if ("played" in options && "repertoire" in options && "file" in options && "move" in options) {
       return `${key}:${String(options.move)}:${String(options.played)}:${String(options.repertoire)}:${String(options.file)}`;
     }
+    if ("before" in options && "after" in options) {
+      return `${key}:${String(options.move)}:${String(options.kind ?? "")}:${String(options.before)}:${String(options.after)}`;
+    }
+    if ("better" in options) return `${key}:${String(options.better)}`;
     if ("move" in options) return `${key}:${String(options.move)}`;
     return key;
   },
   cancelAnalysis: vi.fn(),
   getProgress: vi.fn().mockResolvedValue(null),
   getOpeningFromFens: vi.fn().mockResolvedValue(""),
+  coachAvailable: vi.fn().mockResolvedValue(false),
+  coachHasConnection: vi.fn().mockResolvedValue(false),
   refreshRepertoireIndex: vi.fn().mockResolvedValue(undefined),
   readRepertoireIndex: vi.fn().mockReturnValue(null),
   notifyUnlessCancelled: vi.fn(),
@@ -71,6 +91,8 @@ vi.mock("@/platform/tauri", () => ({
     cancelAnalysis: mocks.cancelAnalysis,
     getProgress: mocks.getProgress,
     getOpeningFromFens: mocks.getOpeningFromFens,
+    coachAvailable: mocks.coachAvailable,
+    coachHasConnection: mocks.coachHasConnection,
   },
 }));
 vi.mock("@/state/repertoireIndex", () => ({
@@ -118,6 +140,8 @@ beforeEach(() => {
   store = createTreeStore();
   openingNameCache.clear();
   mocks.getOpeningFromFens.mockReset().mockResolvedValue("");
+  mocks.coachAvailable.mockReset().mockResolvedValue(false);
+  mocks.coachHasConnection.mockReset().mockResolvedValue(false);
   mocks.refreshRepertoireIndex.mockReset().mockResolvedValue(undefined);
   mocks.readRepertoireIndex.mockReset().mockReturnValue(null);
 });
@@ -512,7 +536,7 @@ const catalogues = import.meta.glob<{ translation: Record<string, string> }>(
   { eager: true, import: "default" },
 );
 
-const phase2To4FiniteKeys = [
+const phase2To5FiniteKeys = [
   "Board.Analysis.Opening",
   "Board.Analysis.Middlegame",
   "Board.Analysis.Endgame",
@@ -524,6 +548,11 @@ const phase2To4FiniteKeys = [
   "Board.Analysis.Report.EvalDirectionLabel",
   "Board.Analysis.Report.Evaluation",
   "Board.Analysis.Report.EvaluationDesc",
+  "Board.Analysis.Report.Explain",
+  "Board.Analysis.Report.ExplainQuestion.Ask",
+  "Board.Analysis.Report.ExplainQuestion.AskWithBetter",
+  "Board.Analysis.Report.ExplainQuestion.Played",
+  "Board.Analysis.Report.ExplainQuestion.PlayedWithKind",
   "Board.Analysis.Report.FilterBlack",
   "Board.Analysis.Report.FilterBoth",
   "Board.Analysis.Report.FilterSide",
@@ -936,7 +965,7 @@ test("mistake-kind labels from review facts disappear when the summary fingerpri
 test("ships all 16 locales", () => expect(Object.keys(catalogues)).toHaveLength(16));
 
 test.each(Object.entries(catalogues))(
-  "every phase 2 to 4 finite message resolves without fallback in %s",
+  "every phase 2 to 5 finite message resolves without fallback in %s",
   async (_path, catalogue) => {
     const instance = createInstance();
     await instance.init({
@@ -946,7 +975,7 @@ test.each(Object.entries(catalogues))(
       nsSeparator: false,
       resources: { test: catalogue },
     });
-    for (const key of phase2To4FiniteKeys) {
+    for (const key of phase2To5FiniteKeys) {
       expect({
         key,
         value: catalogue.translation[key],
@@ -965,6 +994,10 @@ test.each(Object.entries(catalogues))(
           played: "Qh5",
           repertoire: "Nf3, Bc4",
           file: "White Repertoire",
+          kind: "Allows mate",
+          before: "-0.50",
+          after: "+M1",
+          better: "g6 4. Qf3",
         }),
       }).toEqual({
         key,
@@ -1204,4 +1237,144 @@ test("O6 opening block looks up the mainline-end opening, hides non-text/empty a
     await Promise.resolve();
   });
   expect(host.querySelector('[data-testid="report-opening-block"]')).toBeNull();
+});
+
+test("O7 Explain action is hidden without a connection, and when available focuses the moment, posts the request and shows the Coach tab", async () => {
+  // 1. e4! e5 2. Qh5?! Nc6 3. Bc4 Nf6?? 4. Qxf7#
+  seedScholarsMateMoments();
+  // Mark 1. e4 as Good (!) so we verify Explain is NOT rendered for positive marks.
+  store.setState((state) => {
+    const e4 = state.root.children[0];
+    return {
+      root: {
+        ...state.root,
+        children: [{ ...e4, nags: [1] }],
+      },
+    };
+  });
+
+  // Without a connection (`assistantAvailableAtom` false): no Explain button anywhere.
+  await renderReport();
+  expect(atoms.get(assistantAvailableAtom)).toBe(false);
+  const explainButtons = () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].filter(
+      (b) => b.textContent === "Board.Analysis.Report.Explain",
+    );
+  expect(explainButtons()).toHaveLength(0);
+
+  // Enable Coach + connection so `assistantAvailableAtom` becomes true.
+  mocks.coachAvailable.mockResolvedValue(true);
+  mocks.coachHasConnection.mockResolvedValue(true);
+  // Fresh atom store so `coachAvailableAtom` reads the mocked true value.
+  atoms = createAtomStore();
+  atoms.set(tabFamily("tab-1"), "report");
+  atoms.get(coachEnabledAtom);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await atoms.set(refreshAssistantAvailabilityAtom);
+  });
+  expect(atoms.get(assistantAvailableAtom)).toBe(true);
+
+  await renderReport();
+
+  const rows = [...host.querySelectorAll<HTMLLIElement>('[data-testid="report-key-moment"]')];
+  expect(rows).toHaveLength(3);
+  // Row 0 is 1. e4! -> no Explain button; Row 1 (2. Qh5?!) and Row 2 (3... Nf6??) each have one.
+  expect(
+    [...rows[0].querySelectorAll("button")].filter(
+      (b) => b.textContent === "Board.Analysis.Report.Explain",
+    ),
+  ).toHaveLength(0);
+  expect(explainButtons()).toHaveLength(2);
+
+  // Click Explain on 3... Nf6?? (row 2): focuses before-path [0,0,0,0,0], sets request, opens Coach tab.
+  const nf6BeforeFen =
+    store.getState().root.children[0].children[0].children[0].children[0].children[0].fen;
+  const nf6ExplainBtn = [...rows[2].querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Board.Analysis.Report.Explain",
+  )!;
+  await act(async () => nf6ExplainBtn.click());
+
+  expect(store.getState().position).toEqual([0, 0, 0, 0, 0]);
+  expect(atoms.get(reviewFocusFamily("tab-1"))).toEqual({
+    documentId: store.getState().documentId,
+    path: [0, 0, 0, 0, 0],
+    fen: nf6BeforeFen,
+    summaryCreatedAt: store.getState().report.summary?.createdAt ?? null,
+    playedSan: "Nf6",
+    betterSan: "g6",
+  });
+  const firstRequest = atoms.get(coachExplainRequestFamily("tab-1"));
+  expect(firstRequest).not.toBeNull();
+  expect(firstRequest!.documentId).toBe(store.getState().documentId);
+  expect(firstRequest!.fen).toBe(nf6BeforeFen);
+  expect(firstRequest!.question).toContain("Board.Analysis.Report.ExplainQuestion.PlayedWithKind");
+  expect(firstRequest!.question).toContain("3... Nf6??");
+  expect(firstRequest!.question).toContain("Board.Analysis.Report.MistakeKind.AllowsMate");
+  expect(firstRequest!.question).toContain("Board.Analysis.Report.ExplainQuestion.AskWithBetter");
+  expect(firstRequest!.question).toContain("g6 4. Qf3");
+  expect(firstRequest!.question.length).toBeLessThan(4000);
+  expect(atoms.get(tabFamily("tab-1"))).toBe("coach");
+
+  // A second Explain click replaces the previous request with a new unique id.
+  const qh5ExplainBtn = [...rows[1].querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Board.Analysis.Report.Explain",
+  )!;
+  await act(async () => qh5ExplainBtn.click());
+  const secondRequest = atoms.get(coachExplainRequestFamily("tab-1"));
+  expect(secondRequest).not.toBeNull();
+  expect(secondRequest!.id).not.toBe(firstRequest!.id);
+  expect(secondRequest!.question).toContain("2. Qh5?!");
+  expect(store.getState().position).toEqual([0, 0]);
+});
+
+test("O7 buildExplainQuestion handles missing mistakeKind, empty betterLine, missing evals, and formatted evals", () => {
+  const t = mocks.t as unknown as TFunction;
+  const baseItem: KeyMomentItem = {
+    moment: {
+      path: [0, 0, 0],
+      halfMoves: 3,
+      san: "Qh5",
+      annotation: "?!",
+      before: null,
+      after: null,
+      betterMove: null,
+    },
+    mainlineIndex: 3,
+    color: "white",
+    beforePath: [0, 0],
+    beforeFen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+    mistakeKind: null,
+    betterLine: [],
+    betterChildPath: null,
+    isTurningPoint: false,
+    inTimeTrouble: false,
+  };
+
+  // No mistakeKind, empty betterLine, missing before/after evals -> Played + Ask + "–" placeholders.
+  const minimal = buildExplainQuestion(t, baseItem);
+  expect(minimal).toContain("Board.Analysis.Report.ExplainQuestion.Played:");
+  expect(minimal).not.toContain("Board.Analysis.Report.ExplainQuestion.PlayedWithKind");
+  expect(minimal).toContain("2. Qh5?!");
+  expect(minimal).toContain(":–:–");
+  expect(minimal).toMatch(/Board\.Analysis\.Report\.ExplainQuestion\.Ask$/);
+  expect(minimal).not.toContain("Board.Analysis.Report.ExplainQuestion.AskWithBetter");
+
+  // Present evals, mistakeKind, and betterLine -> formatted formatScore strings + PlayedWithKind + AskWithBetter.
+  const beforeScore = cp(-50);
+  const afterScore: Score = { value: { type: "mate", value: 1 }, wdl: null };
+  const full = buildExplainQuestion(t, {
+    ...baseItem,
+    moment: { ...baseItem.moment, before: beforeScore, after: afterScore },
+    mistakeKind: "allowsMate",
+    betterLine: ["Nf3", "Nc6"],
+  });
+  expect(full).toContain("Board.Analysis.Report.ExplainQuestion.PlayedWithKind:");
+  expect(full).toContain("Board.Analysis.Report.MistakeKind.AllowsMate");
+  expect(full).toContain(formatScore(beforeScore.value));
+  expect(full).toContain(formatScore(afterScore.value));
+  expect(full).toContain("Board.Analysis.Report.ExplainQuestion.AskWithBetter:Nf3 Nc6");
 });

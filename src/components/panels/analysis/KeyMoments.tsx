@@ -6,6 +6,7 @@ import type { TFunction } from "i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AiChatIcon } from "@/components/common/iconCatalog";
 import { ANNOTATION_INFO, annotationTextColor, type BasicAnnotation } from "@/utils/annotation";
 import type { KeyMoment } from "@/utils/chess";
 import { formatMoveNumber } from "@/utils/format";
@@ -153,12 +154,42 @@ function formatMistakeKind(t: TFunction, kind: MistakeKind): string {
   }
 }
 
+/**
+ * Builds the translated Coach explanation question for a marked key moment (O7).
+ * Uses literal keys so i18next extraction retains every sentence variant.
+ */
+export function buildExplainQuestion(t: TFunction, item: KeyMomentItem): string {
+  const { moment } = item;
+  const move = `${formatMoveNumber(moment.halfMoves)} ${moment.san}${moment.annotation}`;
+  const before = moment.before ? formatScore(moment.before.value) : NO_VALUE;
+  const after = moment.after ? formatScore(moment.after.value) : NO_VALUE;
+  const played = item.mistakeKind
+    ? t("Board.Analysis.Report.ExplainQuestion.PlayedWithKind", {
+        move,
+        kind: formatMistakeKind(t, item.mistakeKind),
+        before,
+        after,
+      })
+    : t("Board.Analysis.Report.ExplainQuestion.Played", {
+        move,
+        before,
+        after,
+      });
+  const better = formatBetterLine(item.betterLine, moment.halfMoves);
+  const ask = better
+    ? t("Board.Analysis.Report.ExplainQuestion.AskWithBetter", { better })
+    : t("Board.Analysis.Report.ExplainQuestion.Ask");
+  return `${played} ${ask}`;
+}
+
 interface KeyMomentsProps {
   items: readonly KeyMomentItem[];
   focusedBeforePath: number[] | null;
   chartHoveredPath: number[] | null;
+  canExplain?: boolean;
   onSelectMoment: (item: KeyMomentItem) => void;
   onSelectBetterLine: (path: number[]) => void;
+  onExplainMoment?: (item: KeyMomentItem) => void;
   onHoverMoment: (movePath: number[] | null) => void;
 }
 
@@ -167,8 +198,10 @@ export function KeyMoments({
   items,
   focusedBeforePath,
   chartHoveredPath,
+  canExplain = false,
   onSelectMoment,
   onSelectBetterLine,
+  onExplainMoment,
   onHoverMoment,
 }: KeyMomentsProps) {
   const { t } = useTranslation();
@@ -273,6 +306,8 @@ export function KeyMoments({
             const markHue = ANNOTATION_INFO[moment.annotation].color;
             const formattedBetter = formatBetterLine(item.betterLine, moment.halfMoves);
             const hasMeta = item.mistakeKind !== null || item.isTurningPoint || item.inTimeTrouble;
+            const showExplain =
+              Boolean(canExplain && onExplainMoment) && isMistakeAnnotation(moment.annotation);
 
             return (
               <li
@@ -336,20 +371,44 @@ export function KeyMoments({
                     </span>
                   )}
                 </UnstyledButton>
-                {formattedBetter && (
-                  <div className={classes.betterLineRow}>
-                    {item.betterChildPath ? (
-                      <UnstyledButton
+                {(formattedBetter || showExplain) && (
+                  <div className={classes.keyMomentFooter}>
+                    {formattedBetter && (
+                      <div className={classes.betterLineRow}>
+                        {item.betterChildPath ? (
+                          <UnstyledButton
+                            type="button"
+                            className={classes.betterLineLink}
+                            onClick={() => onSelectBetterLine(item.betterChildPath!)}
+                          >
+                            {t("Board.Analysis.Report.BetterMove", { move: formattedBetter })}
+                          </UnstyledButton>
+                        ) : (
+                          <Text
+                            component="span"
+                            fz="xs"
+                            c="dimmed"
+                            className={classes.betterLineText}
+                          >
+                            {t("Board.Analysis.Report.BetterMove", { move: formattedBetter })}
+                          </Text>
+                        )}
+                      </div>
+                    )}
+                    {showExplain && (
+                      <Button
                         type="button"
-                        className={classes.betterLineLink}
-                        onClick={() => onSelectBetterLine(item.betterChildPath!)}
+                        variant="subtle"
+                        size="compact-xs"
+                        className={classes.explainButton}
+                        leftSection={<AiChatIcon size="0.875rem" aria-hidden />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onExplainMoment?.(item);
+                        }}
                       >
-                        {t("Board.Analysis.Report.BetterMove", { move: formattedBetter })}
-                      </UnstyledButton>
-                    ) : (
-                      <Text component="span" fz="xs" c="dimmed" className={classes.betterLineText}>
-                        {t("Board.Analysis.Report.BetterMove", { move: formattedBetter })}
-                      </Text>
+                        {t("Board.Analysis.Report.Explain")}
+                      </Button>
                     )}
                   </div>
                 )}

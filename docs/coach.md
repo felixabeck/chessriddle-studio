@@ -69,6 +69,8 @@ Bounds: 6 model rounds, 4 tool calls per round, 5 minutes in total, a 2-second b
 
 The model never changes the game. A line in an answer previews on the board when clicked, and a button inserts it as a variation.
 
+Game Review offers a second entry point into the same path: when at least one AI connection exists (`assistantAvailableAtom`), each key moment marked `?!`, `?` or `??` shows an "Explain" action that focuses the position before the move, places a transient per-tab request (`coachExplainRequestFamily`) holding a translated question about that moment, and opens the Coach tab. `CoachPanel` waits for connections and the effective connection's model list to settle (without waiting for the engine list), drops any request whose document, position or 30-second lifetime no longer matches, and routes the request once through the same typed-question path (draft when busy or missing connection/model/engine, first-use notice when not yet accepted, otherwise `sendCoachMessage`). What is sent is unchanged.
+
 ## Assistant
 
 The Assistant is a read-only AI helper that explains how ChessRiddle Studio works, links directly to settings and pages in the app, and can prepare a feedback draft when something is missing or broken. It changes no setting, file, database, or game, and never sends feedback itself.

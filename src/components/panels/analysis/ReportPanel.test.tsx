@@ -105,6 +105,8 @@ vi.mock("@/platform/tauri", () => ({
     analyzeGame: mocks.analyzeGame,
     prepareAnalysis: mocks.prepareAnalysis,
     getOpeningFromFens: vi.fn().mockResolvedValue(""),
+    coachAvailable: vi.fn().mockResolvedValue(false),
+    coachHasConnection: vi.fn().mockResolvedValue(false),
   },
 }));
 vi.mock("@/state/atoms", async () => {
@@ -114,6 +116,7 @@ vi.mock("@/state/atoms", async () => {
     reportModalOpenFamily: () => mocks.reportModalOpenAtom,
     matchesReviewFocus: () => false,
     reviewFocusFamily: () => mocks.reviewFocusAtom,
+    coachExplainRequestFamily: () => atom(null),
     enginesAtom: mocks.enginesAtom,
     referenceDbAtom: atom(null),
     fileWorkspaceAtom: atom(null),
@@ -138,10 +141,16 @@ vi.mock("jotai", async (importOriginal) => {
     },
   };
 });
-vi.mock("jotai/utils", () => ({ atomWithStorage: () => mocks.reportSettingsAtom }));
+vi.mock("jotai/utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("jotai/utils")>()),
+  atomWithStorage: () => mocks.reportSettingsAtom,
+}));
 vi.mock("@/state/repertoireIndex", () => ({
   refreshRepertoireIndex: vi.fn().mockResolvedValue(undefined),
   readRepertoireIndex: vi.fn().mockReturnValue(null),
+}));
+vi.mock("@/state/stripTab", () => ({
+  selectStripTab: vi.fn(),
 }));
 vi.mock("@/components/files/notifyError", () => ({
   notifyUnlessCancelled: mocks.notifyUnlessCancelled,
@@ -261,6 +270,9 @@ vi.mock("@mantine/core", () => ({
     </button>
   ),
   VisuallyHidden: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("@/components/common/iconCatalog", () => ({
+  AiChatIcon: () => null,
 }));
 vi.mock("lucide-react", () => ({
   ChevronLeft: () => null,

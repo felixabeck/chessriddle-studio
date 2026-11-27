@@ -1,12 +1,19 @@
 import { Button, Stack, Text } from "@mantine/core";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
-import { useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
 import { useTabCommands } from "@/components/tabs/TabCommands";
-import { coachTurnFamily, enginesAtom, fileWorkspaceAtom, referenceDbAtom } from "@/state/atoms";
+import {
+  COACH_EXPLAIN_REQUEST_MAX_AGE_MS,
+  coachExplainRequestFamily,
+  coachTurnFamily,
+  enginesAtom,
+  fileWorkspaceAtom,
+  referenceDbAtom,
+} from "@/state/atoms";
 import {
   coachEngineAtom,
   coachNoticeAcceptedAtom,
@@ -38,10 +45,15 @@ function CoachPanel() {
   const tab = useOwnerTabId();
   const tree = useContext(TreeStateContext)!;
   const session = useStore(tree, (state) => state.coachSession);
+  const documentId = useStore(tree, (state) => state.documentId);
+  const currentFen = useStore(tree, (state) => state.currentNode().fen);
   const running = useAtomValue(useTabAtom(coachTurnFamily));
+  const explainRequestAtom = useTabAtom(coachExplainRequestFamily);
+  const explainRequest = useAtomValue(explainRequestAtom);
 
   const modelSelection = useAiModelSelection();
-  const { connectionsState, reloadConnections, connections, chosen } = modelSelection;
+  const { connectionsState, reloadConnections, connections, connection, modelsState, chosen } =
+    modelSelection;
   const engines = useAtomValue(enginesAtom);
   const engine = effectiveCoachEngine(engines, useAtomValue(coachEngineAtom));
   const [accepted, setAccepted] = useAtom(coachNoticeAcceptedAtom);
@@ -70,28 +82,105 @@ function CoachPanel() {
 
   const question = draft.trim();
   const ready = chosen.connection && chosen.model && engine;
-  const send = (text: string) => {
-    if (!chosen.connection || !chosen.model || !engine) return;
-    setDraft("");
-    void sendCoachMessage(atoms, {
-      tab,
-      tree,
-      question: text,
-      connection: chosen.connection.handle,
-      model: chosen.model.id,
-      effort: chosen.effort,
+  const send = useCallback(
+    (text: string) => {
+      if (!chosen.connection || !chosen.model || !engine) return;
+      setDraft("");
+      void sendCoachMessage(atoms, {
+        tab,
+        tree,
+        question: text,
+        connection: chosen.connection.handle,
+        model: chosen.model.id,
+        effort: chosen.effort,
+        engine,
+        referenceDb,
+      });
+      // The context of this question is read already; the index is brought up to date for the next.
+      void refreshRepertoireIndex(workspace);
+    },
+    [
+      atoms,
+      chosen.connection,
+      chosen.effort,
+      chosen.model,
       engine,
       referenceDb,
-    });
-    // The context of this question is read already; the index is brought up to date for the next.
-    void refreshRepertoireIndex(workspace);
-  };
+      tab,
+      tree,
+      workspace,
+    ],
+  );
   const submit = () => {
     if (!ready || running || question === "" || !chosen.connection) return;
     // Nothing leaves this computer for a connection before its notice was accepted.
     if (!accepted.includes(chosen.connection.handle)) setNotice(question);
     else send(question);
   };
+
+  // A Game Review "Explain" request waits until connections and the effective connection's model
+  // list have settled (never waiting for the engine list), drops on document/position/age mismatch,
+  // and then routes once through the same typed-question path (O7, D6, D8, P-01, P-12, P-13).
+  const connectionsSettled = connectionsState.status !== "loading";
+  const modelsSettled =
+    connection === null ||
+    (modelsState.connection === connection &&
+      (modelsState.status === "ready" || modelsState.status === "failed"));
+  const coachSettled = connectionsSettled && modelsSettled;
+
+  useEffect(() => {
+    if (!explainRequest) return undefined;
+    const clearIfCurrent = () => {
+      if (atoms.get(explainRequestAtom)?.id === explainRequest.id) {
+        atoms.set(explainRequestAtom, null);
+        return true;
+      }
+      return false;
+    };
+
+    const ageMs = Date.now() - explainRequest.clickedAt;
+    if (
+      explainRequest.documentId !== documentId ||
+      explainRequest.fen !== currentFen ||
+      ageMs > COACH_EXPLAIN_REQUEST_MAX_AGE_MS
+    ) {
+      clearIfCurrent();
+      return undefined;
+    }
+
+    if (!coachSettled) {
+      const remainingMs = Math.max(0, COACH_EXPLAIN_REQUEST_MAX_AGE_MS - ageMs) + 1;
+      const timer = setTimeout(() => {
+        clearIfCurrent();
+      }, remainingMs);
+      return () => clearTimeout(timer);
+    }
+
+    if (!clearIfCurrent()) return undefined;
+    const text = explainRequest.question.trim();
+    if (text === "") return undefined;
+    if (running || !chosen.connection || !chosen.model || !engine) {
+      setDraft(text);
+    } else if (!accepted.includes(chosen.connection.handle)) {
+      setNotice(text);
+    } else {
+      send(text);
+    }
+    return undefined;
+  }, [
+    accepted,
+    atoms,
+    chosen.connection,
+    chosen.model,
+    coachSettled,
+    currentFen,
+    documentId,
+    engine,
+    explainRequest,
+    explainRequestAtom,
+    running,
+    send,
+  ]);
 
   // Send stays disabled until both are chosen; this says why, or why the model list is missing.
   const missingChoice = aiSelectionHint(modelSelection, errors, t);

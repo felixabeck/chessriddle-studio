@@ -79,6 +79,27 @@ export function matchesReviewFocus(
 
 export const reviewFocusFamily = tabAtomFamily((_tab: string) => atom<ReviewFocus | null>(null));
 
+/** Maximum age of a Game Review Coach explanation request before it is dropped (D8). */
+export const COACH_EXPLAIN_REQUEST_MAX_AGE_MS = 30_000;
+
+/**
+ * Transient per-tab request from Game Review ("Explain") to the Coach panel (O7). Never
+ * persisted; disposed with the tab. At most one request per tab exists; a newer one replaces it.
+ */
+export interface CoachExplainRequest {
+    id: string;
+    documentId: number;
+    /** Full FEN of the focused position (before the played move). */
+    fen: string;
+    /** Click time (`Date.now()`); requests older than `COACH_EXPLAIN_REQUEST_MAX_AGE_MS` are dropped. */
+    clickedAt: number;
+    question: string;
+}
+
+export const coachExplainRequestFamily = tabAtomFamily((_tab: string) =>
+    atom<CoachExplainRequest | null>(null),
+);
+
 /** The Coach turn that runs in a tab now; driven by `src/state/coachTurns.ts`. */
 export const coachTurnFamily = tabAtomFamily((_tab: string) =>
     atom<import("../coachSession").CoachRunningTurn | null>(null),
