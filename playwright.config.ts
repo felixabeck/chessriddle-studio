@@ -118,6 +118,11 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
         },
         {
+            name: "clock-times",
+            testMatch: /clock-times\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },
+        },
+        {
             name: "coach",
             testMatch: /coach\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },

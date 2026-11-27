@@ -60,7 +60,8 @@
   grid-template-areas:
     "header header header"
     "white centre black"
-    "white-elo result black-elo";
+    "white-elo result black-elo"
+    "time-control time-control time-control";
 }
 
 /* At full width the colour labels and the event share one row, the event taking what the labels
@@ -88,7 +89,8 @@
       "white-elo black-elo"
       "event event"
       "centre centre"
-      "result result";
+      "result result"
+      "time-control time-control";
   }
 }
 
@@ -105,7 +107,8 @@
       "black-elo"
       "event"
       "centre"
-      "result";
+      "result"
+      "time-control";
   }
 
   .grid > .right,
@@ -166,6 +169,22 @@
 
 .result {
   grid-area: result;
+}
+
+.timeControl {
+  grid-area: time-control;
+  min-width: 0;
+  margin-top: var(--mantine-spacing-xs);
+}
+
+.timeControlFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: var(--mantine-spacing-xs);
+}
+
+.timeControlSummary {
+  overflow-wrap: break-word;
 }
 
 .input:focus-visible,

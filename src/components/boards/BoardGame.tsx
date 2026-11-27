@@ -1282,7 +1282,7 @@ function BoardGame({ tabId: ownerTabId }: { tabId: string }) {
               {(gameState === "playing" || gameState === "gameOver") && (
                 <Stack h="100%">
                   <Box flex={1}>
-                    <GameInfo headers={headers} />
+                    <GameInfo headers={headers} timeControlReadOnly />
                   </Box>
                   <Group grow>
                     {gameState === "playing" && (

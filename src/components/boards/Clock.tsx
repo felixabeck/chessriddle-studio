@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { positionFromFen } from "@/utils/chessops";
-import { getClockInfo } from "@/utils/clock";
+import { formatTimeControl, getClockInfo, resolveTimeControl } from "@/utils/clock";
 import { formatDecimal } from "@/utils/format";
 import { TreeStateContext } from "../common/TreeStateContext";
 import classes from "./Clock.module.css";
@@ -46,6 +46,8 @@ function Clock({
     spent === undefined
       ? undefined
       : formatMoveTime(spent, i18n.language, (value) => t("Common.SecondsShort", { value }));
+  const resolvedControl = resolveTimeControl(headers, color);
+  const clockTitle = resolvedControl ? formatTimeControl(resolvedControl, t) : undefined;
 
   return (
     <Group gap={6} wrap="nowrap" align="center">
@@ -62,6 +64,7 @@ function Clock({
       )}
       <Paper
         className={`${classes.clock} ${color === "black" ? classes.blackClock : classes.whiteClock}`}
+        title={clockTitle}
         styles={{
           root: {
             opacity: turn !== color ? 0.5 : 1,

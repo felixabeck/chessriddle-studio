@@ -30,6 +30,7 @@ const fixtures = vi.hoisted(() => ({
   resignGame: vi.fn(),
   resetTree: vi.fn(),
   setEngineLogs: [] as unknown[],
+  gameInfoProps: null as any,
   setHeaders: vi.fn(),
   setResult: vi.fn(),
   startGame: vi.fn(),
@@ -241,7 +242,12 @@ vi.mock("../common/EngineLogsView", () => ({
   },
 }));
 vi.mock("../common/FileInput", () => ({ default: () => null }));
-vi.mock("../common/GameInfo", () => ({ default: () => null }));
+vi.mock("../common/GameInfo", () => ({
+  default: (props: unknown) => {
+    fixtures.gameInfoProps = props;
+    return null;
+  },
+}));
 vi.mock("../common/GameNotation", async () => {
   const { useContext } = await vi.importActual<typeof import("react")>("react");
   const { MoveDeletionContext } = await vi.importActual<
@@ -415,6 +421,7 @@ beforeEach(() => {
     return true;
   });
   fixtures.setEngineLogs = [];
+  fixtures.gameInfoProps = null;
   const rootNode = () => ({ fen: INITIAL_FEN, children: [] as any[] });
   fixtures.tree = {
     position: [] as number[],
@@ -693,6 +700,25 @@ test("settingUp reset clears a retained interruption after remount", async () =>
   await render();
   expect(store.get(gameInterruptionFamily("tab-a"))).toBeNull();
   expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+test("passes timeControlReadOnly to GameInfo while playing and after game over", async () => {
+  await render();
+  await start();
+  expect(fixtures.gameInfoProps).toMatchObject({ timeControlReadOnly: true });
+
+  await act(async () =>
+    fixtures.listeners.get("gameOver")?.({
+      payload: {
+        gameId: store.get(gameIdFamily("tab-a")),
+        session: 1n,
+        revision: 1n,
+        result: { type: "whiteWins", reason: "checkmate" },
+        moves: [],
+      },
+    }),
+  );
+  expect(fixtures.gameInfoProps).toMatchObject({ timeControlReadOnly: true });
 });
 
 test("native castling promotes an existing O-O variation and preserves its endpoint", async () => {

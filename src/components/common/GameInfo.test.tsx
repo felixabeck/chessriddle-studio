@@ -17,7 +17,17 @@ import { TreeStateContext } from "./TreeStateContext";
 
 dayjs.extend(customParseFormat);
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts
+        ? `${key}(${Object.entries(opts)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `${k}=${v}`)
+            .join(",")})`
+        : key,
+  }),
+}));
 const fideInfo = vi.hoisted(() =>
   vi.fn((_props: { opened: boolean; setOpened: (opened: boolean) => void; name: string }) => null),
 );
@@ -576,3 +586,514 @@ test("Enter and Space reopen the result list after Escape closed it", async () =
   await pressResultKey("Space");
   expect(resultListOpen()).toBe(true);
 });
+
+function timeControlSelect() {
+  const label = [...host.querySelectorAll<HTMLLabelElement>("label")].find(
+    (el) => el.textContent === "GameInfo.TimeControl",
+  );
+  return (label?.control as HTMLInputElement | null) ?? null;
+}
+
+async function pickTimeControlOption(value: string) {
+  const restore = stubScrollIntoView();
+  try {
+    await act(async () => timeControlSelect()!.click());
+    const listbox = document.getElementById(
+      timeControlSelect()!.getAttribute("aria-controls") ?? "",
+    )!;
+    const option = listbox.querySelector<HTMLElement>(`[role="option"][value="${value}"]`)!;
+    expect(option).not.toBeNull();
+    await act(async () => option.click());
+  } finally {
+    restore();
+  }
+}
+
+function customField(labelKey: string) {
+  const label = [...host.querySelectorAll<HTMLLabelElement>("label")].find(
+    (el) => el.textContent === labelKey,
+  );
+  return (label?.control as HTMLInputElement | null) ?? null;
+}
+
+test.each([
+  ["5400+30", "TimeControl.MinutesShort(minutes=90)", "TimeControl.WithIncrement"],
+  [
+    "40/5400+30:1800+30",
+    "TimeControl.MovesInTime(count=40,time=TimeControl.MinutesShort(minutes=90))",
+    "TimeControl.ThenTime(time=TimeControl.MinutesShort(minutes=30))",
+  ],
+  [
+    "40/5400+30:900+30",
+    "TimeControl.MovesInTime(count=40,time=TimeControl.MinutesShort(minutes=90))",
+    "TimeControl.ThenTime(time=TimeControl.MinutesShort(minutes=15))",
+  ],
+  ["3600+30", "TimeControl.MinutesShort(minutes=60)", "TimeControl.WithIncrement"],
+] as const)(
+  "Time control preset %s writes its exact PGN string and displays plain words",
+  async (pgn, expectedPart1, expectedPart2) => {
+    await act(async () => root.render(<Editor />));
+    expect(timeControlSelect()!.value).toBe("GameInfo.TimeControlNone");
+
+    await pickTimeControlOption(pgn);
+    expect(store.getState().headers.time_control).toBe(pgn);
+    expect(timeControlSelect()!.value).toContain(expectedPart1);
+    expect(timeControlSelect()!.value).toContain(expectedPart2);
+  },
+);
+
+test("picking None removes time_control", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, time_control: "5400+30" });
+  await act(async () => root.render(<Editor />));
+  await pickTimeControlOption("none");
+  expect(store.getState().headers.time_control).toBeUndefined();
+});
+
+test("Custom fields produce 40/5400+30:1800+30 and stay mounted across intermediate preset values", async () => {
+  await act(async () => root.render(<Editor />));
+  await pickTimeControlOption("custom");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "90"));
+  // Increment is still empty, so nothing is written yet.
+  expect(store.getState().headers.time_control).toBeUndefined();
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlIncrement")!, "30"));
+  expect(store.getState().headers.time_control).toBe("5400+30");
+  // Custom form remains open while the user continues into the second period.
+  expect(customField("GameInfo.TimeControlAfterMove")).not.toBeNull();
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlAfterMove")!, "40"));
+  // Only one half of the optional pair is filled -> invalid, tag stays at 5400+30.
+  expect(store.getState().headers.time_control).toBe("5400+30");
+  expect(customField("GameInfo.TimeControlAddMinutes")!.getAttribute("aria-invalid")).toBe("true");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlAddMinutes")!, "30"));
+  expect(store.getState().headers.time_control).toBe("40/5400+30:1800+30");
+});
+
+test("invalid custom input shows field errors and writes nothing", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, time_control: "600+5" });
+  await act(async () => root.render(<Editor />));
+
+  const minutes = customField("GameInfo.TimeControlMinutes")!;
+  const increment = customField("GameInfo.TimeControlIncrement")!;
+  const afterMove = customField("GameInfo.TimeControlAfterMove")!;
+  const addMinutes = customField("GameInfo.TimeControlAddMinutes")!;
+  expect(minutes.value).toBe("10");
+  expect(increment.value).toBe("5");
+
+  for (const bad of ["0", "601", "1.5", "abc", ""]) {
+    await act(async () => setNativeInputValue(minutes, bad));
+    expect(minutes.getAttribute("aria-invalid")).toBe("true");
+    expect(store.getState().headers.time_control).toBe("600+5");
+  }
+
+  await act(async () => setNativeInputValue(minutes, "10"));
+  await act(async () => setNativeInputValue(increment, "601"));
+  expect(increment.getAttribute("aria-invalid")).toBe("true");
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  await act(async () => setNativeInputValue(increment, "5"));
+  for (const badAfterMove of ["0", "201"]) {
+    await act(async () => setNativeInputValue(afterMove, badAfterMove));
+    expect(afterMove.getAttribute("aria-invalid")).toBe("true");
+    expect(host.textContent).toContain("GameInfo.TimeControlRangeError(max=200,min=1)");
+    expect(store.getState().headers.time_control).toBe("600+5");
+  }
+
+  await act(async () => setNativeInputValue(afterMove, ""));
+  await act(async () => setNativeInputValue(addMinutes, "15"));
+  expect(afterMove.getAttribute("aria-invalid")).toBe("true");
+  expect(store.getState().headers.time_control).toBe("600+5");
+});
+
+test.each([
+  ["90+0", "TimeControl.WithIncrement("],
+  ["0+1", "TimeControl.WithIncrement("],
+  ["5400+30:1800+30", "TimeControl.PeriodsWithIncrement("],
+  ["40/5400+30:1800+10", "TimeControl.ThenTime("],
+  ["300", "TimeControl.MinutesShort(minutes=5)"],
+  ["?", "?"],
+])(
+  "unrepresentable tag %s shows read-only text without Custom fields and is never silently altered",
+  async (rawTag, expectedSummary) => {
+    store.getState().setHeaders({ ...defaultTree().headers, time_control: rawTag });
+    await act(async () => root.render(<Editor />));
+
+    expect(timeControlSelect()!.value).toBe("");
+    expect(timeControlSelect()!.placeholder).toBe("GameInfo.TimeControlUnlisted");
+    expect(customField("GameInfo.TimeControlMinutes")).toBeNull();
+    expect(store.getState().headers.time_control).toBe(rawTag);
+    expect(host.textContent).toContain(expectedSummary);
+
+    // Picking Custom starts empty without altering the stored tag until valid.
+    await pickTimeControlOption("custom");
+    expect(customField("GameInfo.TimeControlMinutes")!.value).toBe("");
+    expect(store.getState().headers.time_control).toBe(rawTag);
+  },
+);
+
+test("side tags leave select unselected, show per-side summary, and are cleared on None/preset or first valid Custom write", async () => {
+  // Differing side tags
+  store.getState().setHeaders({
+    ...defaultTree().headers,
+    time_control: "5400+30",
+    white_time_control: "600+5",
+    black_time_control: "300+2",
+  });
+  await act(async () => root.render(<Editor />));
+
+  expect(timeControlSelect()!.value).toBe("");
+  expect(timeControlSelect()!.placeholder).toBe("GameInfo.TimeControlPerSide");
+  expect(host.textContent).toContain("GameInfo.TimeControlSides(");
+
+  // Picking a preset EQUAL to the shared tag still fires onChange and clears side tags immediately.
+  await pickTimeControlOption("5400+30");
+  expect(store.getState().headers.time_control).toBe("5400+30");
+  expect(store.getState().headers.white_time_control).toBeUndefined();
+  expect(store.getState().headers.black_time_control).toBeUndefined();
+
+  // Re-seed side tags and verify None clears them immediately.
+  await act(async () =>
+    store.getState().setHeaders({
+      ...defaultTree().headers,
+      time_control: "5400+30",
+      white_time_control: "600+5",
+      black_time_control: "300+2",
+    }),
+  );
+  await pickTimeControlOption("none");
+  expect(store.getState().headers.time_control).toBeUndefined();
+  expect(store.getState().headers.white_time_control).toBeUndefined();
+  expect(store.getState().headers.black_time_control).toBeUndefined();
+
+  // CR-1: Custom keeps side tags until its first valid write.
+  await act(async () =>
+    store.getState().setHeaders({
+      ...defaultTree().headers,
+      white_time_control: "600+5",
+      black_time_control: "300+2",
+    }),
+  );
+  await pickTimeControlOption("custom");
+  expect(store.getState().headers.white_time_control).toBe("600+5");
+  expect(store.getState().headers.black_time_control).toBe("300+2");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "15"));
+  // Invalid/incomplete -> side tags stay untouched.
+  expect(store.getState().headers.white_time_control).toBe("600+5");
+  expect(store.getState().headers.black_time_control).toBe("300+2");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlIncrement")!, "10"));
+  // First valid write clears side tags and writes time_control.
+  expect(store.getState().headers.time_control).toBe("900+10");
+  expect(store.getState().headers.white_time_control).toBeUndefined();
+  expect(store.getState().headers.black_time_control).toBeUndefined();
+});
+
+test("displays both-sides-unresolved and one-side-unresolved per-side texts", async () => {
+  // Both unresolved with distinct raw tags
+  store.getState().setHeaders({
+    ...defaultTree().headers,
+    white_time_control: "garbage",
+    black_time_control: "bad",
+  });
+  await act(async () => root.render(<Editor />));
+  expect(host.textContent).toContain("GameInfo.TimeControlSides(black=bad,white=garbage)");
+
+  // Both unresolved, only one side has a tag -> other side is unknown
+  await act(async () =>
+    store.getState().setHeaders({
+      ...defaultTree().headers,
+      white_time_control: "garbage",
+    }),
+  );
+  expect(host.textContent).toContain(
+    "GameInfo.TimeControlSides(black=GameInfo.TimeControlUnknown,white=garbage)",
+  );
+
+  // One side resolved, other side unresolved (no tag)
+  await act(async () =>
+    store.getState().setHeaders({
+      ...defaultTree().headers,
+      white_time_control: "600+5",
+    }),
+  );
+  expect(host.textContent).toContain("black=GameInfo.TimeControlUnknown");
+  expect(host.textContent).toContain("minutes=10");
+});
+
+test("read-only GameInfo (without store and with timeControlReadOnly) hides dropdown and shows only resolved controls", async () => {
+  // Without tree store, no tag -> nothing shown
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={defaultTree().headers} />
+      </MantineProvider>,
+    ),
+  );
+  expect(timeControlSelect()).toBeNull();
+  expect(host.textContent).not.toContain("GameInfo.TimeControlSummary");
+
+  // Unparseable tag without store -> nothing shown
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={{ ...defaultTree().headers, time_control: "?" }} />
+      </MantineProvider>,
+    ),
+  );
+  expect(host.textContent).not.toContain("GameInfo.TimeControlSummary");
+
+  // Differing side tags without store -> White/Black summary shown
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo
+          headers={{
+            ...defaultTree().headers,
+            white_time_control: "600+5",
+            black_time_control: "300+2",
+          }}
+        />
+      </MantineProvider>,
+    ),
+  );
+  expect(timeControlSelect()).toBeNull();
+  expect(host.textContent).toContain("GameInfo.TimeControlSummary(");
+  expect(host.textContent).toContain("GameInfo.TimeControlSides(");
+
+  // With tree store + timeControlReadOnly -> no dropdown, resolved plain words shown
+  store.getState().setHeaders({ ...defaultTree().headers, time_control: "5400+30" });
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <TreeStateContext.Provider value={store}>
+          <GameInfo headers={store.getState().headers} timeControlReadOnly />
+        </TreeStateContext.Provider>
+      </MantineProvider>,
+    ),
+  );
+  expect(timeControlSelect()).toBeNull();
+  expect(host.textContent).toContain("GameInfo.TimeControlSummary(");
+  expect(host.textContent).toContain("minutes=90");
+});
+
+test("undo and redo of a Custom write reopen Custom with the restored values", async () => {
+  await act(async () => root.render(<Editor />));
+  await pickTimeControlOption("custom");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "10"));
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlIncrement")!, "5"));
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  await act(async () => store.getState().undo());
+  expect(store.getState().headers.time_control).toBeUndefined();
+  expect(timeControlSelect()!.value).toBe("GameInfo.TimeControlNone");
+  expect(customField("GameInfo.TimeControlMinutes")).toBeNull();
+
+  await act(async () => store.getState().redo());
+  expect(store.getState().headers.time_control).toBe("600+5");
+  expect(timeControlSelect()!.value).toBe("GameInfo.TimeControlCustom");
+  expect(customField("GameInfo.TimeControlMinutes")!.value).toBe("10");
+  expect(customField("GameInfo.TimeControlIncrement")!.value).toBe("5");
+});
+
+test("same-key Custom write clears the echo marker so undo and redo still re-sync Custom", async () => {
+  await act(async () =>
+    store
+      .getState()
+      .setHeaders({ ...defaultTree().headers, white: "Alice", time_control: "5400+30" }),
+  );
+  await act(async () => root.render(<Editor />));
+
+  await pickTimeControlOption("custom");
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "10"));
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlIncrement")!, "5"));
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  // Type invalid minutes then the original "10" again, writing the already-stored tag key.
+  const minutes = customField("GameInfo.TimeControlMinutes")!;
+  await act(async () => setNativeInputValue(minutes, "0"));
+  expect(minutes.getAttribute("aria-invalid")).toBe("true");
+  await act(async () => setNativeInputValue(minutes, "10"));
+  expect(minutes.getAttribute("aria-invalid")).not.toBe("true");
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  // Undo back to the preset then redo back to "600+5": Custom must re-open with 10/5.
+  await act(async () => store.getState().undo());
+  expect(store.getState().headers.time_control).toBe("5400+30");
+  expect(customField("GameInfo.TimeControlMinutes")).toBeNull();
+
+  await act(async () => store.getState().redo());
+  expect(store.getState().headers.time_control).toBe("600+5");
+  expect(timeControlSelect()!.value).toBe("GameInfo.TimeControlCustom");
+  expect(customField("GameInfo.TimeControlMinutes")!.value).toBe("10");
+  expect(customField("GameInfo.TimeControlIncrement")!.value).toBe("5");
+});
+
+test("an external header change resets a stale Custom draft", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, time_control: "600+5" });
+  await act(async () => root.render(<Editor />));
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "0"));
+  expect(customField("GameInfo.TimeControlMinutes")!.getAttribute("aria-invalid")).toBe("true");
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  await act(async () =>
+    store.getState().setHeaders({ ...store.getState().headers, time_control: "900+10" }),
+  );
+  expect(customField("GameInfo.TimeControlMinutes")!.value).toBe("15");
+  expect(customField("GameInfo.TimeControlIncrement")!.value).toBe("10");
+  expect(customField("GameInfo.TimeControlMinutes")!.getAttribute("aria-invalid")).not.toBe("true");
+});
+
+test("switching to another document with an identical tag resets a stale Custom draft", async () => {
+  const storeA = createTreeStore();
+  const storeB = createTreeStore();
+  storeA.getState().setHeaders({ ...defaultTree().headers, time_control: "600+5" });
+  storeB.getState().setHeaders({ ...defaultTree().headers, time_control: "600+5" });
+
+  function SwitchableEditor({ activeStore }: { activeStore: TreeStore }) {
+    const headers = useStore(activeStore, (state) => state.headers);
+    return (
+      <MantineProvider env="test">
+        <TreeStateContext.Provider value={activeStore}>
+          <GameInfo headers={headers} />
+        </TreeStateContext.Provider>
+      </MantineProvider>
+    );
+  }
+
+  await act(async () => root.render(<SwitchableEditor activeStore={storeA} />));
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlMinutes")!, "0"));
+  expect(customField("GameInfo.TimeControlMinutes")!.getAttribute("aria-invalid")).toBe("true");
+
+  await act(async () => root.render(<SwitchableEditor activeStore={storeB} />));
+  expect(customField("GameInfo.TimeControlMinutes")!.value).toBe("10");
+  expect(customField("GameInfo.TimeControlIncrement")!.value).toBe("5");
+  expect(customField("GameInfo.TimeControlMinutes")!.getAttribute("aria-invalid")).not.toBe("true");
+});
+
+test("read-only mode with one side resolved and the other invalid shows unknown without leaking raw tag", async () => {
+  const headers = {
+    ...defaultTree().headers,
+    white_time_control: "600+5",
+    black_time_control: "garbage",
+  };
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={headers} />
+      </MantineProvider>,
+    ),
+  );
+  expect(timeControlSelect()).toBeNull();
+  expect(host.textContent).toContain("GameInfo.TimeControlSummary(");
+  expect(host.textContent).toContain("black=GameInfo.TimeControlUnknown");
+  expect(host.textContent).toContain("minutes=10");
+  expect(host.textContent).not.toContain("garbage");
+});
+
+test("Custom validation reports cleared Increment, blurred empty required fields, and out-of-range Add (min)", async () => {
+  store.getState().setHeaders({ ...defaultTree().headers, time_control: "600+5" });
+  await act(async () => root.render(<Editor />));
+
+  // Clearing Increment shows its error and preserves the stored tag.
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlIncrement")!, ""));
+  expect(customField("GameInfo.TimeControlIncrement")!.getAttribute("aria-invalid")).toBe("true");
+  expect(host.textContent).toContain("GameInfo.TimeControlRangeError(max=600,min=0)");
+  expect(store.getState().headers.time_control).toBe("600+5");
+
+  // Switching to Custom on a fresh game and blurring untouched empty Minutes/Increment marks them touched.
+  await act(async () =>
+    store.getState().setHeaders({ ...defaultTree().headers, time_control: undefined }),
+  );
+  await pickTimeControlOption("custom");
+  const minutes = customField("GameInfo.TimeControlMinutes")!;
+  const increment = customField("GameInfo.TimeControlIncrement")!;
+  expect(minutes.getAttribute("aria-invalid")).not.toBe("true");
+  expect(increment.getAttribute("aria-invalid")).not.toBe("true");
+
+  await act(async () => {
+    minutes.focus();
+    minutes.blur();
+    increment.focus();
+    increment.blur();
+  });
+  expect(minutes.getAttribute("aria-invalid")).toBe("true");
+  expect(increment.getAttribute("aria-invalid")).toBe("true");
+
+  // Valid base control + After move, then out-of-range Add (min) "0" and "601" write nothing.
+  await act(async () => setNativeInputValue(minutes, "90"));
+  await act(async () => setNativeInputValue(increment, "30"));
+  expect(store.getState().headers.time_control).toBe("5400+30");
+
+  await act(async () => setNativeInputValue(customField("GameInfo.TimeControlAfterMove")!, "40"));
+  for (const invalidAdd of ["0", "601"]) {
+    await act(async () =>
+      setNativeInputValue(customField("GameInfo.TimeControlAddMinutes")!, invalidAdd),
+    );
+    expect(customField("GameInfo.TimeControlAddMinutes")!.getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(host.textContent).toContain("GameInfo.TimeControlRangeError(max=600,min=1)");
+    expect(store.getState().headers.time_control).toBe("5400+30");
+  }
+});
+
+test.each([
+  ["40/5400+30", "TimeControl.MovesInTime(count=40"],
+  ["40/5400+30:20/1800+30:900+30", "TimeControl.ThenMovesInTime(count=20"],
+  ["40/5400+30:20/1800+30", "TimeControl.ThenMovesInTime(count=20"],
+  ["201/5400+30:1800+30", "TimeControl.MovesInTime(count=201"],
+  ["05400+30", "TimeControl.MinutesShort(minutes=90)"],
+])(
+  "non-Custom-representable tag %s renders as read-only text rather than a Custom form",
+  async (rawTag, expectedSummaryPart) => {
+    store.getState().setHeaders({ ...defaultTree().headers, time_control: rawTag });
+    await act(async () => root.render(<Editor />));
+
+    expect(timeControlSelect()!.value).toBe("");
+    expect(timeControlSelect()!.placeholder).toBe("GameInfo.TimeControlUnlisted");
+    expect(customField("GameInfo.TimeControlMinutes")).toBeNull();
+    expect(host.textContent).toContain(expectedSummaryPart);
+  },
+);
+
+const TIME_CONTROL_KEYS = [
+  "GameInfo.TimeControl",
+  "GameInfo.TimeControlNone",
+  "GameInfo.TimeControlCustom",
+  "GameInfo.TimeControlPerSide",
+  "GameInfo.TimeControlUnlisted",
+  "GameInfo.TimeControlMinutes",
+  "GameInfo.TimeControlIncrement",
+  "GameInfo.TimeControlAfterMove",
+  "GameInfo.TimeControlAddMinutes",
+  "GameInfo.TimeControlUnknown",
+] as const;
+
+test.each(supportedLocales)(
+  "ships every TimeControl key in %s with fallback disabled",
+  async (locale) => {
+    const i18n = await catalogueI18n(locale);
+    for (const key of TIME_CONTROL_KEYS) {
+      expect(i18n.t(key).trim()).toBeTruthy();
+      expect(i18n.t(key)).not.toBe(key);
+    }
+    const sides = i18n.t("GameInfo.TimeControlSides", { white: "A", black: "B" });
+    expect(sides).toContain("A");
+    expect(sides).toContain("B");
+    expect(sides).not.toMatch(/\{\{|\}\}/);
+
+    const summary = i18n.t("GameInfo.TimeControlSummary", { value: "90 min" });
+    expect(summary).toContain("90 min");
+    expect(summary).not.toMatch(/\{\{|\}\}/);
+
+    const rangeErr = i18n.t("GameInfo.TimeControlRangeError", { min: 1, max: 600 });
+    expect(rangeErr).toContain("1");
+    expect(rangeErr).toContain("600");
+    expect(rangeErr).not.toMatch(/\{\{|\}\}/);
+  },
+);

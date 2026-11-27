@@ -8,17 +8,21 @@ import {
   OptionsDropdown,
   type OptionsFilter,
   Select,
+  Stack,
   Text,
+  TextInput,
   useCombobox,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
+import type { TFunction } from "i18next";
 import { memo, useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
 import type { Color } from "chessops";
+import { formatTimeControl, parseTimeControl, resolveTimeControl } from "@/utils/clock";
 import { lineTitleOf } from "@/utils/lineTitle";
 import { externalLinkProps } from "./ExternalLink";
 import {
@@ -32,7 +36,8 @@ import { InlineInput } from "./InlineInput";
 import { TreeStateContext } from "./TreeStateContext";
 
 const EMPTY_STORE = createStore(() => ({
-  setHeaders: () => {},
+  documentId: 0,
+  setHeaders: (_headers: GameHeaders) => {},
 }));
 
 const SITE_PLATFORM_LABELS = new Map([
@@ -51,7 +56,16 @@ function sitePlatformLabel(site: string): string | null {
   }
 }
 
-function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: boolean }) {
+function GameInfo({
+  headers,
+  simplified,
+  timeControlReadOnly = false,
+}: {
+  headers: GameHeaders;
+  simplified?: boolean;
+  /** Locks the Time control row in contexts whose setup owns the control (e.g. played games). */
+  timeControlReadOnly?: boolean;
+}) {
   const { t } = useTranslation();
   const contextStore = useContext(TreeStateContext);
   const store = contextStore || EMPTY_STORE;
@@ -324,6 +338,11 @@ function GameInfo({ headers, simplified }: { headers: GameHeaders; simplified?: 
             }
             disabled={disabled}
           />
+          <TimeControlField
+            store={store}
+            headers={headers}
+            readOnly={disabled || timeControlReadOnly}
+          />
         </div>
       )}
     </Box>
@@ -493,5 +512,448 @@ const filterTerminationSuggestions: OptionsFilter = ({ options, search }) => {
   if (query === "" || items.some((item) => item.value.toLowerCase() === query)) return options;
   return items.filter((item) => item.value.toLowerCase().includes(query));
 };
+
+const TIME_CONTROL_PRESETS = [
+  "5400+30",
+  "40/5400+30:1800+30",
+  "40/5400+30:900+30",
+  "3600+30",
+] as const;
+
+const MIN_TIME_CONTROL_MINUTES = 1;
+const MAX_TIME_CONTROL_MINUTES = 600;
+const MIN_TIME_CONTROL_INCREMENT = 0;
+const MAX_TIME_CONTROL_INCREMENT = 600;
+const MIN_TIME_CONTROL_AFTER_MOVE = 1;
+const MAX_TIME_CONTROL_AFTER_MOVE = 200;
+
+type CustomTimeControlDraft = {
+  minutes: string;
+  increment: string;
+  afterMove: string;
+  addMinutes: string;
+};
+
+type CustomTimeControlTouched = {
+  minutes: boolean;
+  increment: boolean;
+};
+
+const EMPTY_CUSTOM_DRAFT: CustomTimeControlDraft = {
+  minutes: "",
+  increment: "",
+  afterMove: "",
+  addMinutes: "",
+};
+
+const EMPTY_CUSTOM_TOUCHED: CustomTimeControlTouched = {
+  minutes: false,
+  increment: false,
+};
+
+function isPresetTimeControl(tag: string | null | undefined): boolean {
+  return !!tag && (TIME_CONTROL_PRESETS as readonly string[]).includes(tag);
+}
+
+function isWholeInRange(value: number, min: number, max: number): boolean {
+  return Number.isInteger(value) && value >= min && value <= max;
+}
+
+function formatCustomTimeControlTag({
+  minutes,
+  increment,
+  afterMove,
+  addMinutes,
+}: {
+  minutes: number;
+  increment: number;
+  afterMove?: number;
+  addMinutes?: number;
+}): string {
+  const firstPeriod = `${minutes * 60}+${increment}`;
+  if (afterMove === undefined || addMinutes === undefined) {
+    return firstPeriod;
+  }
+  return `${afterMove}/${firstPeriod}:${addMinutes * 60}+${increment}`;
+}
+
+/**
+ * Extracts Custom-form field strings when `tag` matches `S+I` or `N/S+I:T+I` exactly
+ * with whole minutes (1-600), shared increment (0-600), and optional moves (1-200).
+ */
+function parseRepresentableCustom(tag: string): CustomTimeControlDraft | null {
+  const fields = parseTimeControl(tag);
+  if (!fields) return null;
+
+  if (fields.length === 1) {
+    const [first] = fields;
+    if (first.moves !== undefined || first.increment === undefined) return null;
+    const minutes = first.seconds / 60_000;
+    const increment = first.increment / 1000;
+    if (
+      !isWholeInRange(minutes, MIN_TIME_CONTROL_MINUTES, MAX_TIME_CONTROL_MINUTES) ||
+      !isWholeInRange(increment, MIN_TIME_CONTROL_INCREMENT, MAX_TIME_CONTROL_INCREMENT)
+    ) {
+      return null;
+    }
+    if (formatCustomTimeControlTag({ minutes, increment }) !== tag) return null;
+    return {
+      minutes: String(minutes),
+      increment: String(increment),
+      afterMove: "",
+      addMinutes: "",
+    };
+  }
+
+  if (fields.length === 2) {
+    const [first, second] = fields;
+    if (
+      first.moves === undefined ||
+      second.moves !== undefined ||
+      first.increment === undefined ||
+      second.increment === undefined ||
+      first.increment !== second.increment
+    ) {
+      return null;
+    }
+    const minutes = first.seconds / 60_000;
+    const addMinutes = second.seconds / 60_000;
+    const increment = first.increment / 1000;
+    if (
+      !isWholeInRange(first.moves, MIN_TIME_CONTROL_AFTER_MOVE, MAX_TIME_CONTROL_AFTER_MOVE) ||
+      !isWholeInRange(minutes, MIN_TIME_CONTROL_MINUTES, MAX_TIME_CONTROL_MINUTES) ||
+      !isWholeInRange(addMinutes, MIN_TIME_CONTROL_MINUTES, MAX_TIME_CONTROL_MINUTES) ||
+      !isWholeInRange(increment, MIN_TIME_CONTROL_INCREMENT, MAX_TIME_CONTROL_INCREMENT)
+    ) {
+      return null;
+    }
+    if (
+      formatCustomTimeControlTag({
+        minutes,
+        increment,
+        afterMove: first.moves,
+        addMinutes,
+      }) !== tag
+    ) {
+      return null;
+    }
+    return {
+      minutes: String(minutes),
+      increment: String(increment),
+      afterMove: String(first.moves),
+      addMinutes: String(addMinutes),
+    };
+  }
+
+  return null;
+}
+
+function initialCustomState(headers: GameHeaders): {
+  customOpen: boolean;
+  draft: CustomTimeControlDraft;
+} {
+  const hasSideTags = Boolean(headers.white_time_control || headers.black_time_control);
+  if (hasSideTags || !headers.time_control || isPresetTimeControl(headers.time_control)) {
+    return { customOpen: false, draft: EMPTY_CUSTOM_DRAFT };
+  }
+  const representable = parseRepresentableCustom(headers.time_control);
+  if (!representable) {
+    return { customOpen: false, draft: EMPTY_CUSTOM_DRAFT };
+  }
+  return { customOpen: true, draft: representable };
+}
+
+function parseWholeInt(raw: string, min: number, max: number): "empty" | "invalid" | number {
+  const trimmed = raw.trim();
+  if (trimmed === "") return "empty";
+  if (!/^\d+$/.test(trimmed)) return "invalid";
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || !isWholeInRange(parsed, min, max)) return "invalid";
+  return parsed;
+}
+
+function validateCustomDraft(
+  draft: CustomTimeControlDraft,
+  touched: CustomTimeControlTouched,
+  t: TFunction,
+): {
+  pgn: string | null;
+  errors: {
+    minutes?: string;
+    increment?: string;
+    afterMove?: string;
+    addMinutes?: string;
+  };
+} {
+  const minutes = parseWholeInt(draft.minutes, MIN_TIME_CONTROL_MINUTES, MAX_TIME_CONTROL_MINUTES);
+  const increment = parseWholeInt(
+    draft.increment,
+    MIN_TIME_CONTROL_INCREMENT,
+    MAX_TIME_CONTROL_INCREMENT,
+  );
+  const afterMove = parseWholeInt(
+    draft.afterMove,
+    MIN_TIME_CONTROL_AFTER_MOVE,
+    MAX_TIME_CONTROL_AFTER_MOVE,
+  );
+  const addMinutes = parseWholeInt(
+    draft.addMinutes,
+    MIN_TIME_CONTROL_MINUTES,
+    MAX_TIME_CONTROL_MINUTES,
+  );
+
+  const errors = {
+    minutes:
+      minutes === "invalid" || (minutes === "empty" && touched.minutes)
+        ? t("GameInfo.TimeControlRangeError", {
+            min: MIN_TIME_CONTROL_MINUTES,
+            max: MAX_TIME_CONTROL_MINUTES,
+          })
+        : undefined,
+    increment:
+      increment === "invalid" || (increment === "empty" && touched.increment)
+        ? t("GameInfo.TimeControlRangeError", {
+            min: MIN_TIME_CONTROL_INCREMENT,
+            max: MAX_TIME_CONTROL_INCREMENT,
+          })
+        : undefined,
+    afterMove:
+      afterMove === "invalid" || (afterMove === "empty" && addMinutes !== "empty")
+        ? t("GameInfo.TimeControlRangeError", {
+            min: MIN_TIME_CONTROL_AFTER_MOVE,
+            max: MAX_TIME_CONTROL_AFTER_MOVE,
+          })
+        : undefined,
+    addMinutes:
+      addMinutes === "invalid" || (addMinutes === "empty" && afterMove !== "empty")
+        ? t("GameInfo.TimeControlRangeError", {
+            min: MIN_TIME_CONTROL_MINUTES,
+            max: MAX_TIME_CONTROL_MINUTES,
+          })
+        : undefined,
+  };
+
+  if (typeof minutes !== "number" || typeof increment !== "number") {
+    return { pgn: null, errors };
+  }
+  if (afterMove === "empty" && addMinutes === "empty") {
+    return { pgn: formatCustomTimeControlTag({ minutes, increment }), errors };
+  }
+  if (typeof afterMove === "number" && typeof addMinutes === "number") {
+    return {
+      pgn: formatCustomTimeControlTag({ minutes, increment, afterMove, addMinutes }),
+      errors,
+    };
+  }
+  return { pgn: null, errors };
+}
+
+function sideDisplayText(
+  headers: GameHeaders,
+  side: "white" | "black",
+  t: TFunction,
+  resolvedOnly: boolean,
+): string {
+  const resolved = resolveTimeControl(headers, side);
+  if (resolved) return formatTimeControl(resolved, t);
+  if (resolvedOnly) return t("GameInfo.TimeControlUnknown");
+  const sideTag = side === "white" ? headers.white_time_control : headers.black_time_control;
+  return sideTag || headers.time_control || t("GameInfo.TimeControlUnknown");
+}
+
+function formatTimeControlSummary(
+  headers: GameHeaders,
+  t: TFunction,
+  resolvedOnly: boolean,
+): string | null {
+  if (resolvedOnly) {
+    const whiteResolved = resolveTimeControl(headers, "white");
+    const blackResolved = resolveTimeControl(headers, "black");
+    if (!whiteResolved && !blackResolved) return null;
+  } else if (!headers.time_control && !headers.white_time_control && !headers.black_time_control) {
+    return null;
+  }
+
+  const whiteText = sideDisplayText(headers, "white", t, resolvedOnly);
+  const blackText = sideDisplayText(headers, "black", t, resolvedOnly);
+  if (whiteText === blackText) return whiteText;
+  return t("GameInfo.TimeControlSides", { white: whiteText, black: blackText });
+}
+
+function timeControlTagKey(documentId: number, headers: GameHeaders): string {
+  return `${documentId}\0${headers.time_control ?? ""}\0${headers.white_time_control ?? ""}\0${headers.black_time_control ?? ""}`;
+}
+
+function TimeControlField({
+  store,
+  headers,
+  readOnly,
+}: {
+  store: typeof EMPTY_STORE | NonNullable<React.ContextType<typeof TreeStateContext>>;
+  headers: GameHeaders;
+  readOnly: boolean;
+}) {
+  const { t } = useTranslation();
+  const documentId = useStore(store, (s) => s.documentId);
+  const setHeaders = useStore(store, (s) => s.setHeaders);
+  const tagKey = timeControlTagKey(documentId, headers);
+
+  const [prevTagKey, setPrevTagKey] = useState(tagKey);
+  const [lastWrittenTagKey, setLastWrittenTagKey] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(() => initialCustomState(headers).customOpen);
+  const [draft, setDraft] = useState<CustomTimeControlDraft>(
+    () => initialCustomState(headers).draft,
+  );
+  const [touched, setTouched] = useState<CustomTimeControlTouched>(EMPTY_CUSTOM_TOUCHED);
+
+  if (prevTagKey !== tagKey) {
+    setPrevTagKey(tagKey);
+    // Consume the echo marker once so later undo/redo or external updates to that same tag re-sync.
+    setLastWrittenTagKey(null);
+    if (lastWrittenTagKey !== tagKey) {
+      const initial = initialCustomState(headers);
+      setCustomOpen(initial.customOpen);
+      setDraft(initial.draft);
+      setTouched(EMPTY_CUSTOM_TOUCHED);
+    }
+  }
+
+  if (readOnly) {
+    const readOnlySummary = formatTimeControlSummary(headers, t, true);
+    if (!readOnlySummary) return null;
+    return (
+      <Box className={classes.timeControl}>
+        <Text size="xs" c="dimmed" className={classes.timeControlSummary}>
+          {t("GameInfo.TimeControlSummary", { value: readOnlySummary })}
+        </Text>
+      </Box>
+    );
+  }
+
+  const hasSideTags = Boolean(headers.white_time_control || headers.black_time_control);
+  const hasSharedPreset = !hasSideTags && isPresetTimeControl(headers.time_control);
+  const selectValue = customOpen
+    ? "custom"
+    : hasSideTags
+      ? null
+      : !headers.time_control
+        ? "none"
+        : hasSharedPreset
+          ? headers.time_control
+          : null;
+  const placeholder = hasSideTags
+    ? t("GameInfo.TimeControlPerSide")
+    : headers.time_control && !hasSharedPreset
+      ? t("GameInfo.TimeControlUnlisted")
+      : undefined;
+
+  const commitTimeControl = (nextTag: string | undefined) => {
+    const nextHeaders: GameHeaders = {
+      ...headers,
+      time_control: nextTag,
+      white_time_control: undefined,
+      black_time_control: undefined,
+    };
+    const nextTagKey = timeControlTagKey(documentId, nextHeaders);
+    setLastWrittenTagKey(nextTagKey);
+    setHeaders(nextHeaders);
+  };
+
+  const handleSelectChange = (value: string | null) => {
+    if (!value) return;
+    if (value === "custom") {
+      setCustomOpen(true);
+      setDraft(EMPTY_CUSTOM_DRAFT);
+      setTouched(EMPTY_CUSTOM_TOUCHED);
+      return;
+    }
+    setCustomOpen(false);
+    setDraft(EMPTY_CUSTOM_DRAFT);
+    setTouched(EMPTY_CUSTOM_TOUCHED);
+    commitTimeControl(value === "none" ? undefined : value);
+  };
+
+  const handleDraftChange = (field: keyof CustomTimeControlDraft, value: string) => {
+    const nextDraft = { ...draft, [field]: value };
+    const nextTouched: CustomTimeControlTouched =
+      field === "minutes" || field === "increment" ? { ...touched, [field]: true } : touched;
+    setDraft(nextDraft);
+    setTouched(nextTouched);
+    const { pgn } = validateCustomDraft(nextDraft, nextTouched, t);
+    if (pgn !== null) {
+      commitTimeControl(pgn);
+    }
+  };
+
+  const { errors } = validateCustomDraft(draft, touched, t);
+  const summary = formatTimeControlSummary(headers, t, false);
+  const selectData = [
+    { value: "none", label: t("GameInfo.TimeControlNone") },
+    ...TIME_CONTROL_PRESETS.map((preset) => ({
+      value: preset,
+      label: formatTimeControl(preset, t),
+    })),
+    { value: "custom", label: t("GameInfo.TimeControlCustom") },
+  ];
+
+  return (
+    <Stack gap="xs" className={classes.timeControl}>
+      <Select
+        size="xs"
+        w="100%"
+        label={t("GameInfo.TimeControl")}
+        allowDeselect={false}
+        withCheckIcon
+        value={selectValue}
+        placeholder={placeholder}
+        data={selectData}
+        onChange={handleSelectChange}
+      />
+      {summary && (customOpen || !hasSharedPreset) && (
+        <Text size="xs" c="dimmed" className={classes.timeControlSummary}>
+          {summary}
+        </Text>
+      )}
+      {customOpen && (
+        <div className={classes.timeControlFields}>
+          <TextInput
+            size="xs"
+            inputMode="numeric"
+            label={t("GameInfo.TimeControlMinutes")}
+            value={draft.minutes}
+            error={errors.minutes}
+            onChange={(e) => handleDraftChange("minutes", e.currentTarget.value)}
+            onBlur={() => setTouched((prev) => ({ ...prev, minutes: true }))}
+          />
+          <TextInput
+            size="xs"
+            inputMode="numeric"
+            label={t("GameInfo.TimeControlIncrement")}
+            value={draft.increment}
+            error={errors.increment}
+            onChange={(e) => handleDraftChange("increment", e.currentTarget.value)}
+            onBlur={() => setTouched((prev) => ({ ...prev, increment: true }))}
+          />
+          <TextInput
+            size="xs"
+            inputMode="numeric"
+            label={t("GameInfo.TimeControlAfterMove")}
+            value={draft.afterMove}
+            error={errors.afterMove}
+            onChange={(e) => handleDraftChange("afterMove", e.currentTarget.value)}
+          />
+          <TextInput
+            size="xs"
+            inputMode="numeric"
+            label={t("GameInfo.TimeControlAddMinutes")}
+            value={draft.addMinutes}
+            error={errors.addMinutes}
+            onChange={(e) => handleDraftChange("addMinutes", e.currentTarget.value)}
+          />
+        </div>
+      )}
+    </Stack>
+  );
+}
 
 export default memo(GameInfo);
