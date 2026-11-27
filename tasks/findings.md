@@ -30016,3 +30016,20 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 * **Fix:** after a successful type or name write, update matching `tab.gameOrigin.file` records (name and metadata) in the tab list, or have FileFreshnessGate reconcile sidecar type from the listing.
 * **Related:** f-20261126-10 asks colour and writes Orientation on convert; it deliberately does not sync open-tab sidecar type.
 * **Found by:** Grok drain session 15b83869-bb15-4dae-938a-52c4e97b88c1, 2026-11-27
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Clock-times push left 14 e2e screenshot baselines stale
+
+* **ID:** f-20261127-16 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 34341be4-16eb-480c-9feb-16366ec4136d
+
+* **Impact class:** tooling
+* **CI run:** 45989505612
+* **Where:** `e2e/game-end.spec.ts`, `e2e/board-arrange.spec.ts`, `e2e/focus-mode.spec.ts`, `e2e/saved-layouts.spec.ts`, `e2e/game-references.spec.ts`, `e2e/game-interruption.spec.ts`, `e2e/new-game-to-file.spec.ts`, `e2e/workspace-tabs.spec.ts`, `e2e/board-keyboard.spec.ts` (14 tests, all `toHaveScreenshot` mismatches).
+* **Failure scenario:** job `e2e` of Test runs 45989505612 (`5204b89e3`) and 45990064007 (`ccd82b33d`) failed 14 screenshot comparisons. The clock-times build (`311cc0f38..5204b89e3`) added the Annotate Clock field, the Info panel Time control row and board clocks for games with clock values; its proof ran only `clock-times`, `annotation-comment-before` and `new-game-to-database`, so other specs whose screenshots include the Annotate or Info panel kept the old baselines.
+* **Fix:** confirm each diff shows only the intended new Clock field / Time control row, regenerate those baselines in the container, and run the whole e2e suite in the container before pushing.
+* **Repair owner:** 34341be4-16eb-480c-9feb-16366ec4136d on tuxedo-atlas, 2026-11-27T11:41:47Z
+* **First red:** Test run 45989505612 on `5204b89e3` (job `e2e`).
