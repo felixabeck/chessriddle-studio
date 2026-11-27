@@ -30041,3 +30041,17 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 
 Handled. The 14 stale baselines (Info panel Time control row shifting the content below it) were regenerated in the container after inspecting every Playwright diff image; only the new row and the shift changed. Proof: `node scripts/run-e2e-container.mjs --update-snapshots=changed` over the 9 specs (83 passed), then the full container suite `node scripts/run-e2e-container.mjs` → 582 passed. Commit 4e6b15819. CI run 45989505612.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"0f067c81f30842113ba4a0710bf3a4aba97c21948ffe39a1ee094c90ecf1d8e4","header_sha256":"0b5e353fb050f084aac1c4c97ce9b7eb3fe19eb71940fec725ae93f08f2c143b","header_status":"handled","input_sha256":"e4314f84ae544b716ab548fb8dd8948780b9187d6d514dda2b6d72dfb8688f2e","kind":"mutation-receipt","operation":"2aea20fcc3493f012f87055a14403ad290e8173f3f104e3070da4ebcf9c3be8b","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-16"],"target":"f-20261127-16","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Visible board Clock fails axe `aria-progressbar-name` and inactive-turn `color-contrast`
+
+* **ID:** f-20261127-15 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
+
+* **Where:** `src/components/boards/Clock.tsx:52` (`opacity: turn !== color ? 0.5 : 1`) and `:61` (`<Progress size="xs" w="100%" ... />`).
+* **Failure scenario:** Opening a game with `[%clk ...]` annotations makes `<Clock />` visible (`visibility: visible`). Running `assertAccessible()` flags `aria-progressbar-name` on the Mantine `<Progress>` inside `.blackClock` / `.whiteClock` and `color-contrast` (1.88:1 in light, 2.44:1 in dark, 2.91:1 in dim) on the inactive clock's text because `opacity: 0.5` dims the whole clock paper below WCAG 4.5:1.
+* **Evidence:** Observed during `pnpm test:e2e:container` on `e2e/game-report.spec.ts` after adding `[%clk ...]` annotations to the fixture PGN (`game-report`, `game-report-dark`, `game-report-narrow`, `game-report-320`, `game-report-scaled`, `game-report-wide`, `game-report-dim`).
+* **Fix direction:** Add an accessible name (`aria-label`) to the clock `<Progress>` and replace `opacity: 0.5` on the inactive clock with a scheme-aware dimmed text/surface treatment that preserves >= 4.5:1 contrast.
