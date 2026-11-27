@@ -2,10 +2,15 @@ import { AreaChart, type ChartReferenceLineProps } from "@mantine/charts";
 import { Alert, Box, LoadingOverlay, Paper, SegmentedControl, Stack, Text } from "@mantine/core";
 import equal from "fast-deep-equal";
 import { useAtom } from "jotai";
-import { useCallback, useContext, useMemo } from "react";
+import { useCallback, useContext, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { CategoricalChartFunc } from "recharts/types/chart/types";
 import { useStore } from "zustand";
+import {
+  type ExplanationOpenState,
+  ExplanationTooltip,
+  useExplanationOpen,
+} from "@/components/common/ExplanationTooltip";
 import { isTreeViewDeferred, useTreeView } from "@/state/deferredTreeView";
 import { reportTypeAtom } from "@/state/atoms";
 import {
@@ -31,7 +36,11 @@ import { TreeStateContext } from "./TreeStateContext";
 
 interface EvalChartProps {
   isAnalysing: boolean;
+  highlightedMovePath?: number[] | null;
+  onHoverMove?: (movePath: number[] | null) => void;
 }
+
+type ChartType = "CP" | "WDL";
 
 type DataPoint = {
   name: string;
@@ -50,8 +59,6 @@ type DataPoint = {
 /** Engine WDL values are per mille. */
 const WDL_SCALE = 1000;
 const WDL_FRACTION_DIGITS = 1;
-
-const annotationAreaProps = { isAnimationActive: false, dot: <CustomDot /> };
 
 function getYValue(node: TreeNode): number | undefined {
   const score = displayedScore(node);
@@ -76,13 +83,21 @@ function getYValue(node: TreeNode): number | undefined {
   return undefined;
 }
 
-function EvalChart(props: EvalChartProps) {
+function EvalChart({ isAnalysing, highlightedMovePath = null, onHoverMove }: EvalChartProps) {
   const { t, i18n } = useTranslation();
 
   const store = useContext(TreeStateContext)!;
   const { root } = useTreeView(store);
   const position = useStore(store, (s) => s.position);
   const goToMove = useStore(store, (s) => s.goToMove);
+
+  const cpExplanation = useExplanationOpen();
+  const wdlExplanation = useExplanationOpen();
+  const explanationByType: Record<ChartType, ExplanationOpenState> = {
+    CP: cpExplanation,
+    WDL: wdlExplanation,
+  };
+  const lastHoveredPathRef = useRef<number[] | null>(null);
 
   function gradientOffset(data: DataPoint[]) {
     const dataMax = Math.max(...data.map((i) => (i.yValue !== "none" ? i.yValue : 0)));
@@ -144,6 +159,16 @@ function EvalChart(props: EvalChartProps) {
     });
   }, [nodes, t, i18n.language]);
 
+  const reportHoveredMove = useCallback(
+    (nextPath: number[] | null) => {
+      if (!onHoverMove) return;
+      if (equal(lastHoveredPathRef.current, nextPath)) return;
+      lastHoveredPathRef.current = nextPath;
+      onHoverMove(nextPath);
+    },
+    [onHoverMove],
+  );
+
   const onChartClick = useCallback<CategoricalChartFunc>(
     (e) => {
       if (store.getState().root !== root) return;
@@ -155,22 +180,47 @@ function EvalChart(props: EvalChartProps) {
     [data, goToMove, root, store],
   );
 
+  const onChartMouseMove = useCallback<CategoricalChartFunc>(
+    (e) => {
+      if (!onHoverMove) return;
+      const match = e?.activeLabel ? data.find((point) => point.name === e.activeLabel) : undefined;
+      reportHoveredMove(match ? match.movePath : null);
+    },
+    [data, onHoverMove, reportHoveredMove],
+  );
+
+  const onChartMouseLeave = useCallback(() => {
+    reportHoveredMove(null);
+  }, [reportHoveredMove]);
+
   const phases = useMemo(() => {
     const validBoards = nodes.map((n) => positionFromFen(n.node.fen)[0]).filter((b) => b !== null);
     return getGamePhases(validBoards);
   }, [nodes]);
 
   const currentPositionName = data.find((point) => equal(point.movePath, position))?.name;
+  const highlightedPositionName = highlightedMovePath
+    ? data.find((point) => equal(point.movePath, highlightedMovePath))?.name
+    : undefined;
 
   const middlegamePositionName =
     phases.middlegamePly !== null ? data[phases.middlegamePly]?.name : null;
   const endgamePositionName = phases.endgamePly !== null ? data[phases.endgamePly]?.name : null;
 
-  const referenceLines: ChartReferenceLineProps[] = [
+  const sharedReferenceLines: ChartReferenceLineProps[] = [
     {
       x: currentPositionName,
       color: "var(--cf-primary)",
     },
+    ...(highlightedPositionName
+      ? [
+          {
+            x: highlightedPositionName,
+            color: "var(--cf-primary)",
+            strokeDasharray: "2 2",
+          },
+        ]
+      : []),
     ...(middlegamePositionName
       ? [
           {
@@ -195,6 +245,14 @@ function EvalChart(props: EvalChartProps) {
       : []),
   ];
 
+  const cpReferenceLines: ChartReferenceLineProps[] = [
+    {
+      y: 0,
+      color: "var(--cf-border-strong)",
+    },
+    ...sharedReferenceLines,
+  ];
+
   const colouroffset = gradientOffset(data);
 
   const [chartType, setChartType] = useAtom(reportTypeAtom);
@@ -203,16 +261,74 @@ function EvalChart(props: EvalChartProps) {
     return !data.some((point) => point.White !== 0 || point.Black !== 0 || point.Draw !== 0);
   }, [data]);
 
+  const areaProps = useMemo(
+    () => ({
+      isAnimationActive: false,
+      dot: <CustomDot highlightedName={highlightedPositionName} />,
+    }),
+    [highlightedPositionName],
+  );
+
+  const renderToggleOption = (value: ChartType, label: string, explanation: string) => {
+    const hook = explanationByType[value];
+    return {
+      value,
+      label: (
+        <ExplanationTooltip label={explanation} opened={hook.opened}>
+          <span
+            className={classes.toggleLabel}
+            data-chart-toggle={value}
+            onMouseEnter={hook.onMouseEnter}
+            onMouseLeave={hook.onMouseLeave}
+          >
+            {label}
+          </span>
+        </ExplanationTooltip>
+      ),
+    };
+  };
+
   return (
     <Stack>
       <Box pos="relative">
-        <LoadingOverlay visible={props.isAnalysing === true} />
+        <LoadingOverlay visible={isAnalysing === true} />
         <SegmentedControl
           aria-label={t("Board.Analysis.Report.ChartType")}
-          data={["CP", "WDL"]}
+          data={[
+            renderToggleOption(
+              "CP",
+              t("Board.Analysis.Report.Evaluation"),
+              t("Board.Analysis.Report.EvaluationDesc"),
+            ),
+            renderToggleOption(
+              "WDL",
+              t("Board.Analysis.Report.WinChance"),
+              t("Board.Analysis.Report.WinChanceDesc"),
+            ),
+          ]}
           size="xs"
           value={chartType}
-          onChange={(v) => setChartType(v as "CP" | "WDL")}
+          onChange={(v) => setChartType(v as ChartType)}
+          onFocusCapture={(event) => {
+            const val = (event.target as HTMLInputElement).value;
+            if (val === "CP") {
+              wdlExplanation.onBlur();
+              cpExplanation.onFocus();
+            } else if (val === "WDL") {
+              cpExplanation.onBlur();
+              wdlExplanation.onFocus();
+            }
+          }}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              cpExplanation.onBlur();
+              wdlExplanation.onBlur();
+            }
+          }}
+          onKeyDownCapture={(event) => {
+            cpExplanation.onKeyDown(event);
+            wdlExplanation.onKeyDown(event);
+          }}
         />
         {chartType === "CP" && (
           <AreaChart
@@ -231,12 +347,14 @@ function EvalChart(props: EvalChartProps) {
             splitOffset={colouroffset}
             activeDotProps={{ r: 3, strokeWidth: 1 }}
             dotProps={{ r: 0 }}
-            referenceLines={referenceLines}
+            referenceLines={cpReferenceLines}
             areaChartProps={{
               onClick: onChartClick,
+              onMouseMove: onChartMouseMove,
+              onMouseLeave: onChartMouseLeave,
               style: { cursor: "pointer" },
             }}
-            areaProps={annotationAreaProps}
+            areaProps={areaProps}
             gridAxis="none"
             tooltipProps={{
               content: ({ payload, active }) => (
@@ -268,12 +386,14 @@ function EvalChart(props: EvalChartProps) {
               fillOpacity={0.8}
               activeDotProps={{ r: 3, strokeWidth: 1 }}
               dotProps={{ r: 0 }}
-              referenceLines={referenceLines}
+              referenceLines={sharedReferenceLines}
               areaProps={(series) =>
-                series.name === "White" ? annotationAreaProps : { isAnimationActive: false }
+                series.name === "White" ? areaProps : { isAnimationActive: false }
               }
               areaChartProps={{
                 onClick: onChartClick,
+                onMouseMove: onChartMouseMove,
+                onMouseLeave: onChartMouseLeave,
                 style: { cursor: "pointer" },
               }}
               gridAxis="none"
@@ -301,7 +421,7 @@ function CustomTooltip({
   if (active && payload && payload.length && payload[0].payload) {
     const dataPoint = payload[0].payload;
     return (
-      <Paper px="md" py="sm" withBorder shadow="md" radius="md">
+      <Paper px="md" py="sm" withBorder radius="md" className={classes.chartTooltip}>
         <Text className={classes.tooltipTitle} c={annotationTextColor(dataPoint.color)}>
           {dataPoint.name}
         </Text>
@@ -316,17 +436,27 @@ function CustomTooltip({
   return null;
 }
 
-function CustomDot(props: { cx?: number; cy?: number; payload?: DataPoint }) {
-  const { cx, cy, payload } = props;
-  if (!payload || !payload.annotation || !isBasicAnnotation(payload.annotation)) return null;
+function CustomDot(props: {
+  cx?: number;
+  cy?: number;
+  payload?: DataPoint;
+  highlightedName?: string;
+}) {
+  const { cx, cy, payload, highlightedName } = props;
+  if (!payload) return null;
+  const isHighlighted = highlightedName !== undefined && payload.name === highlightedName;
+  const hasBasicMark = payload.annotation && isBasicAnnotation(payload.annotation);
+  if (!hasBasicMark && !isHighlighted) return null;
+  const fill = hasBasicMark ? `var(--mantine-color-${payload.color}-7)` : "var(--cf-primary)";
   return (
     <circle
       cx={cx}
       cy={cy}
-      r={4}
-      fill={`var(--mantine-color-${payload.color}-7)`}
-      stroke="var(--mantine-color-body)"
-      strokeWidth={1}
+      r={isHighlighted ? 6 : 4}
+      fill={fill}
+      stroke={isHighlighted ? "var(--cf-primary)" : "var(--mantine-color-body)"}
+      strokeWidth={isHighlighted ? 2 : 1}
+      data-highlighted={isHighlighted || undefined}
       style={{ pointerEvents: "none" }}
     />
   );

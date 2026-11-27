@@ -11,6 +11,21 @@
   color: var(--cf-foreground);
 }
 
+.chartTooltip {
+  background-color: var(--cf-popover);
+  color: var(--cf-popover-foreground);
+  border-color: var(--cf-border);
+  box-shadow: var(--cf-shadow-elevated);
+}
+
 .tooltipTitle {
   font-weight: bold;
+}
+
+.toggleLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }

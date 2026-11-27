@@ -15,6 +15,256 @@
   overflow: hidden;
 }
 
+/* Report panel layout (O10): size container stacking below 48rem and pairing scoreboard beside
+   chart + time strip from 48rem. */
+.panelContainer {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.panelScroll {
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  padding: var(--mantine-spacing-xs);
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+  min-width: 0;
+  padding-bottom: var(--mantine-spacing-md);
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+  align-items: start;
+  min-width: 0;
+}
+
+@container (min-width: 48rem) {
+  .overviewGrid {
+    grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  }
+}
+
+.headerBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+.provenanceText {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.summaryText {
+  overflow-wrap: anywhere;
+}
+
+/* Scoreboard (O2). */
+.scoreboardCard {
+  min-width: 0;
+}
+
+.scoreboardTable {
+  width: 100%;
+}
+
+.scoreboardTable th,
+.scoreboardTable td {
+  overflow-wrap: anywhere;
+  padding-inline: 4px;
+}
+
+.sideColumn {
+  width: 28%;
+}
+
+.labelColumn {
+  width: 44%;
+}
+
+.playerHeader {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.playerName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.heroRow td,
+.heroRow th {
+  padding-block: 8px;
+}
+
+.heroAccuracy {
+  font-size: var(--mantine-font-size-xl);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.metricCell {
+  text-align: center;
+}
+
+.sectionEndRow td,
+.sectionEndRow th {
+  border-bottom: 1px solid var(--cf-border);
+  padding-bottom: 10px;
+}
+
+.qualityLabel {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+}
+
+.markCell {
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.qualityName {
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+/* Explained labels (O8). */
+.explainedTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  border-radius: var(--cf-radius-xs);
+  cursor: help;
+  text-align: center;
+  max-width: 100%;
+}
+
+.explainedTriggerXs {
+  font-size: var(--mantine-font-size-xs);
+}
+
+.explainedTriggerDimmed {
+  color: var(--mantine-color-dimmed);
+}
+
+.explainedTrigger:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: 2px;
+}
+
+.infoIcon {
+  flex-shrink: 0;
+  color: var(--mantine-color-dimmed);
+}
+
+/* Time strip (O4). */
+.timeStripWrap {
+  min-width: 0;
+}
+
+.timeStripTrack {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 2.25rem;
+  padding: 4px;
+  background: var(--cf-surface-inset);
+  border: 1px solid var(--cf-border);
+  border-radius: var(--cf-radius-sm);
+}
+
+.timeSlot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.timeBarButton {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-inline: 0.5px;
+  border-radius: var(--cf-radius-xs);
+  cursor: pointer;
+}
+
+.timeBarButton:focus-visible {
+  outline: 2px solid var(--cf-ring);
+  outline-offset: -1px;
+}
+
+.timeBarFill {
+  display: block;
+  width: 100%;
+  min-height: 3px;
+  border-radius: 2px 2px 0 0;
+  transition: opacity 120ms ease;
+}
+
+.timeBarWhite {
+  background: var(--cf-eval-bar-light);
+  border: 1px solid var(--cf-border-strong);
+}
+
+.timeBarBlack {
+  background: var(--cf-eval-bar-dark);
+  border: 1px solid var(--cf-border-strong);
+}
+
+[data-mantine-color-scheme="dark"] .timeBarBlack {
+  background: var(--cf-background);
+}
+
+[data-mantine-color-scheme="dark"][data-cf-theme-variant="dim"] .timeBarBlack {
+  background: var(--cf-eval-bar-dark);
+}
+
+.timeBarTrouble {
+  box-shadow: inset 0 2px 0 var(--cf-destructive);
+}
+
+.timeBarCurrent {
+  outline: 1.5px solid var(--cf-primary);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeBarFill {
+    transition: none;
+  }
+}
+
 /* Report panel: key moments. A row is one button; its evaluation change uses tabular figures. */
 .keyMoments {
   list-style: none;
@@ -55,9 +305,4 @@
 
 .betterMove {
   grid-column: 1 / -1;
-}
-
-.annotationTable th,
-.annotationTable td {
-  overflow-wrap: anywhere;
 }

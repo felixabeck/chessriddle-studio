@@ -1379,6 +1379,7 @@ const fontScaleByProject: Record<string, number> = {
     "guide-scaled": 200,
     "chessbase-guide-scaled": 200,
     "first-engine-install-scaled": 200,
+    "game-report-scaled": 200,
     "workspace-tabs": 100,
     "board-keyboard": 100,
     "database-files": 200,

@@ -103,6 +103,27 @@ export default defineConfig({
             use: { ...chromium, viewport: { width: 1024, height: 800 }, colorScheme: "light" },
         },
         {
+            name: "game-report-320",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 320, height: 720 }, colorScheme: "light" },
+        },
+        {
+            name: "game-report-scaled",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "light" },
+        },
+        {
+            // Wide viewport giving the Report panel at least 48rem beside the board.
+            name: "game-report-wide",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1720, height: 900 }, colorScheme: "light" },
+        },
+        {
+            name: "game-report-dim",
+            testMatch: /game-report\.spec\.ts/,
+            use: { ...chromium, viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
+        },
+        {
             name: "game-end",
             testMatch: /game-end\.spec\.ts/,
             use: { ...chromium, viewport: { width: 1280, height: 900 }, colorScheme: "light" },

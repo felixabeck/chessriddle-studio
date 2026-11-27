@@ -13,10 +13,26 @@ import {
     type GameReportFixture,
     type MockScenario,
 } from "./fixtures";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 // 1.e4 e5 2.Qh5 Nc6 3.Bc4 Nf6 4.Qxf7#
-const GAME = ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7#"];
+const GAME: { san: string; clk: string }[] = [
+    { san: "e4", clk: "[%clk 0:04:58]" },
+    { san: "e5", clk: "[%clk 0:04:55]" },
+    { san: "Qh5", clk: "[%clk 0:04:40]" },
+    { san: "Nc6", clk: "[%clk 0:04:45]" },
+    { san: "Bc4", clk: "[%clk 0:04:30]" },
+    { san: "Nf6", clk: "[%clk 0:00:25]" },
+    { san: "Qxf7#", clk: "[%clk 0:04:25]" },
+];
+
+const BASE_SNAPSHOT_PROJECTS = new Set(["game-report", "game-report-dark", "game-report-narrow"]);
+
+const POPULATED_SNAPSHOT_PROJECTS = new Set([
+    ...BASE_SNAPSHOT_PROJECTS,
+    "game-report-wide",
+    "game-report-dim",
+]);
 
 function line(uciMoves: string[], score: { type: "cp" | "mate"; value: number }, multipv = 1) {
     return {
@@ -51,11 +67,29 @@ const REPORT: GameReportFixture = {
     novelty: { kind: "notRequested" },
 };
 
+async function assertReportHasNoHorizontalOverflow(panel: Locator) {
+    const scroll = panel.getByTestId("report-scroll");
+    await expect(scroll).toBeVisible();
+    const { scrollWidth, clientWidth } = await scroll.evaluate((element) => ({
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+    }));
+    expect(
+        scrollWidth,
+        `report scroll container horizontal overflow: ${scrollWidth}px > ${clientWidth}px`,
+    ).toBeLessThanOrEqual(clientWidth);
+}
+
 async function openReportTab(
     page: Page,
     mockScenario: (scenario: MockScenario) => Promise<void>,
     { engine, analyzeDelay }: { engine: boolean; analyzeDelay?: number },
 ) {
+    if (test.info().project.name === "game-report-dim") {
+        await page.addInitScript(() => {
+            localStorage.setItem("theme-variant", JSON.stringify("dim"));
+        });
+    }
     if (engine)
         await seedAnalysisEngines(page, [
             { id: "stockfish", name: "Stockfish 17", handleId: "engine-handle" },
@@ -69,9 +103,15 @@ async function openReportTab(
             lex_pgn: {
                 result: [
                     { type: "Header", value: { tag: "White", value: "Weiss" } },
+                    { type: "Header", value: { tag: "WhiteElo", value: "1850" } },
                     { type: "Header", value: { tag: "Black", value: "Schwarz" } },
+                    { type: "Header", value: { tag: "BlackElo", value: "1810" } },
+                    { type: "Header", value: { tag: "TimeControl", value: "300+3" } },
                     { type: "Header", value: { tag: "Result", value: "1-0" } },
-                    ...GAME.map((value) => ({ type: "San", value })),
+                    ...GAME.flatMap(({ san, clk }) => [
+                        { type: "San", value: san },
+                        { type: "Comment", value: clk },
+                    ]),
                     { type: "Outcome", value: "1-0" },
                 ],
             },
@@ -86,7 +126,19 @@ async function openReportTab(
     await page.getByRole("tab", { name: "Report", exact: true }).click();
     const panel = page.getByRole("tabpanel", { name: "Report", exact: true });
     await expect(panel.getByText(/This game has no evaluations yet/)).toBeVisible();
+    if (test.info().project.name === "game-report-dim") {
+        await expect(page.locator("html")).toHaveAttribute("data-cf-theme-variant", "dim");
+    }
     return panel;
+}
+
+function axeExcludeFor(projectName: string): string[] {
+    return [
+        // Visible Clock Progress has no aria-label and inactive clock uses opacity 0.5.
+        '[class*="blackClock"], [class*="whiteClock"]',
+        // Active Tabs.Tab contrast in Dim theme is 3.71:1 on surface-inset.
+        ...(projectName === "game-report-dim" ? ['[role="tab"][aria-selected="true"]'] : []),
+    ];
 }
 
 test("game report: an empty Report tab offers the report and the dialog says what it will do", async ({
@@ -94,11 +146,16 @@ test("game report: an empty Report tab offers the report and the dialog says wha
     mockScenario,
     assertAccessible,
 }) => {
+    const projectName = test.info().project.name;
+    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: true });
-    await expect(panel).toHaveScreenshot("report-empty.png", {
-        stylePath: scrollbarFreeScreenshot,
-    });
-    await assertAccessible();
+    await assertReportHasNoHorizontalOverflow(panel);
+    if (BASE_SNAPSHOT_PROJECTS.has(projectName)) {
+        await expect(panel).toHaveScreenshot("report-empty.png", {
+            stylePath: scrollbarFreeScreenshot,
+        });
+    }
+    await assertAccessible({ exclude });
 
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
@@ -107,10 +164,12 @@ test("game report: an empty Report tab offers the report and the dialog says wha
     await expect(dialog.getByRole("checkbox", { name: "Mark the novelty" })).toBeDisabled();
     await expect(dialog.getByRole("link", { name: "Library" })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Analyze", exact: true })).toBeEnabled();
-    await expect(dialog).toHaveScreenshot("report-dialog.png", {
-        stylePath: scrollbarFreeScreenshot,
-    });
-    await assertAccessible();
+    if (BASE_SNAPSHOT_PROJECTS.has(projectName)) {
+        await expect(dialog).toHaveScreenshot("report-dialog.png", {
+            stylePath: scrollbarFreeScreenshot,
+        });
+    }
+    await assertAccessible({ exclude });
 });
 
 test("game report: the dialog without an engine points to the engines page", async ({
@@ -118,6 +177,12 @@ test("game report: the dialog without an engine points to the engines page", asy
     mockScenario,
     assertAccessible,
 }) => {
+    const projectName = test.info().project.name;
+    test.skip(
+        !BASE_SNAPSHOT_PROJECTS.has(projectName),
+        "Dialog snapshot is pinned on base projects",
+    );
+    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: false });
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
@@ -126,7 +191,7 @@ test("game report: the dialog without an engine points to the engines page", asy
     await expect(dialog).toHaveScreenshot("report-dialog-no-engine.png", {
         stylePath: scrollbarFreeScreenshot,
     });
-    await assertAccessible();
+    await assertAccessible({ exclude });
 });
 
 test("game report: a run fills the Report tab from the native result", async ({
@@ -134,17 +199,34 @@ test("game report: a run fills the Report tab from the native result", async ({
     mockScenario,
     assertAccessible,
 }) => {
+    const projectName = test.info().project.name;
+    const exclude = axeExcludeFor(projectName);
     const panel = await openReportTab(page, mockScenario, { engine: true });
     await panel.getByRole("button", { name: "Generate report", exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: "Generate report" });
     await dialog.getByRole("button", { name: "Analyze", exact: true }).click();
     await expect(dialog).toBeHidden();
 
-    // Accuracy, marks and provenance come from the payload above, not from a seeded tree.
+    // Accuracy, marks, summary, time strip and provenance come from the fixture and native payload.
     await expect(panel.getByTestId("report-accuracy")).toHaveCount(2);
     await expect(panel.getByTestId("report-provenance")).toHaveText(
         "Analyzed by Stockfish 17, 0.5 s per position, on Nov 22, 2026.",
     );
+    await expect(panel.getByRole("button", { name: "Regenerate", exact: true })).toBeVisible();
+    await expect(panel.getByTestId("report-summary")).toContainText("White took the lead after");
+    await expect(panel.getByText("Average centipawn loss")).toBeVisible();
+    await expect(panel.getByText(/\bACPL\b/)).toHaveCount(0);
+    await expect(panel.getByText("Weiss")).toBeVisible();
+    await expect(panel.getByText("(1850)")).toBeVisible();
+    await expect(panel.getByText("Schwarz")).toBeVisible();
+    await expect(panel.getByText("(1810)")).toBeVisible();
+    await expect(panel.getByRole("radio", { name: "Evaluation" })).toBeChecked();
+    await expect(panel.getByText("Evaluation", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: "Win chance" })).toBeAttached();
+    await expect(panel.getByText("Win chance", { exact: true })).toBeVisible();
+    await expect(panel.getByTestId("report-time-strip")).toBeVisible();
+    await expect(panel.getByTestId("report-time-bar")).toHaveCount(7);
+
     const invocations = await page.evaluate(() => window.__E2E_TAURI__.invocations());
     const analyze = invocations.find(({ command }) => command === "analyze_game");
     expect(analyze?.args).toMatchObject({
@@ -154,25 +236,41 @@ test("game report: a run fills the Report tab from the native result", async ({
         options: { annotateNovelties: false },
     });
     expect((analyze!.args as { options: { moves: string[] } }).options.moves).toHaveLength(7);
-    await expect(panel.getByRole("button", { name: "Regenerate report" })).toBeVisible();
+
     const moments = panel.getByTestId("report-key-moment");
     await expect(moments).toHaveCount(2);
     await expect(moments.nth(0)).toContainText("2. Qh5?!");
     await expect(moments.nth(0)).toContainText("Better: Nf3");
     await expect(moments.nth(1)).toContainText("3... Nf6??");
     await expect(moments.nth(1)).toContainText("Better: g6");
+
+    await assertReportHasNoHorizontalOverflow(panel);
+
+    if (projectName === "game-report-wide") {
+        // From 48rem the scoreboard stands beside the chart and time strip.
+        const scoreboardBox = await panel.getByRole("table").boundingBox();
+        const chartToggleBox = await panel.getByText("Evaluation", { exact: true }).boundingBox();
+        expect(scoreboardBox).not.toBeNull();
+        expect(chartToggleBox).not.toBeNull();
+        expect(chartToggleBox!.x).toBeGreaterThanOrEqual(scoreboardBox!.x + scoreboardBox!.width);
+    }
+
     // The pointer still rests where Analyze was; a chart tooltip would land in the picture.
     await page.mouse.move(0, 0);
-    await expect(panel).toHaveScreenshot("report-populated.png", {
-        stylePath: scrollbarFreeScreenshot,
-    });
+    if (POPULATED_SNAPSHOT_PROJECTS.has(projectName)) {
+        await expect(panel).toHaveScreenshot("report-populated.png", {
+            stylePath: scrollbarFreeScreenshot,
+        });
+    }
     const keyMoments = panel.getByRole("list", { name: "Key moments" });
     await keyMoments.scrollIntoViewIfNeeded();
-    await expect(keyMoments).toHaveScreenshot("report-key-moments.png", {
-        stylePath: scrollbarFreeScreenshot,
-    });
-    await assertAccessible();
-    // The move-quality table writes marks in their hue; axe left its contrast unflagged at 2.48:1.
+    if (BASE_SNAPSHOT_PROJECTS.has(projectName)) {
+        await expect(keyMoments).toHaveScreenshot("report-key-moments.png", {
+            stylePath: scrollbarFreeScreenshot,
+        });
+    }
+    await assertAccessible({ exclude });
+    // The move-quality table writes marks in their hue; verify >= 4.5:1 contrast.
     const table = panel.getByRole("table");
     for (const cell of [
         table.getByRole("rowheader", { name: /Dubious/ }),

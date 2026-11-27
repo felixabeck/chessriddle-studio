@@ -26,8 +26,24 @@ vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 // for each series. The dots layer is rendered because withDots defaults to true.
 // The tooltip is rendered as recharts would while the first point is hovered.
 vi.mock("@mantine/charts", () => ({
-  AreaChart: ({ data, series, referenceLines, areaProps, type, tooltipProps }: any) => (
-    <div data-chart-type={type}>
+  AreaChart: ({
+    data,
+    series,
+    referenceLines,
+    areaProps,
+    areaChartProps,
+    type,
+    tooltipProps,
+  }: any) => (
+    <div
+      data-chart-type={type}
+      onMouseMove={(e) =>
+        areaChartProps?.onMouseMove?.({
+          activeLabel: (e.target as HTMLElement).getAttribute("data-hover-label") ?? data[0]?.name,
+        })
+      }
+      onMouseLeave={() => areaChartProps?.onMouseLeave?.()}
+    >
       <div data-tooltip>
         {tooltipProps.content({ active: true, payload: [{ payload: data[0] }] })}
       </div>
@@ -36,6 +52,7 @@ vi.mock("@mantine/charts", () => ({
           key={index}
           data-reference-line
           data-x={line.x}
+          data-y={line.y}
           data-label={line.label}
           data-label-position={line.labelPosition}
         />
@@ -121,13 +138,16 @@ afterEach(async () => {
   host.remove();
 });
 
-async function renderChart() {
+async function renderChart(props?: {
+  highlightedMovePath?: number[] | null;
+  onHoverMove?: (movePath: number[] | null) => void;
+}) {
   await act(async () =>
     root.render(
       <MantineProvider>
         <Provider store={atoms}>
           <TreeStateContext.Provider value={store}>
-            <EvalChart isAnalysing={false} />
+            <EvalChart isAnalysing={false} {...props} />
           </TreeStateContext.Provider>
         </Provider>
       </MantineProvider>,
@@ -138,21 +158,27 @@ async function renderChart() {
 function referenceLines() {
   return [...host.querySelectorAll("[data-reference-line]")].map((line) => ({
     x: line.getAttribute("data-x"),
+    y: line.getAttribute("data-y"),
     label: line.getAttribute("data-label"),
     labelPosition: line.getAttribute("data-label-position"),
   }));
 }
 
-const expectedReferenceLines = [
-  { x: "1... e5", label: null, labelPosition: null },
-  { x: "1. e4!", label: "Board.Analysis.Middlegame", labelPosition: "insideTopLeft" },
-  { x: "1... e5", label: "Board.Analysis.Endgame", labelPosition: "insideTopLeft" },
+const expectedSharedReferenceLines = [
+  { x: "1... e5", y: null, label: null, labelPosition: null },
+  { x: "1. e4!", y: null, label: "Board.Analysis.Middlegame", labelPosition: "insideTopLeft" },
+  { x: "1... e5", y: null, label: "Board.Analysis.Endgame", labelPosition: "insideTopLeft" },
 ];
 
-test("CP renders both phase labels inside the chart and one annotation dot per layer", async () => {
+const expectedCpReferenceLines = [
+  { x: null, y: "0", label: null, labelPosition: null },
+  ...expectedSharedReferenceLines,
+];
+
+test("CP renders zero line, both phase labels inside the chart and one annotation dot per layer", async () => {
   await renderChart();
   expect(host.querySelector("[data-chart-type]")?.getAttribute("data-chart-type")).toBe("split");
-  expect(referenceLines()).toEqual(expectedReferenceLines);
+  expect(referenceLines()).toEqual(expectedCpReferenceLines);
   expect(host.querySelectorAll("svg circle")).toHaveLength(2);
   const layers = [...host.querySelectorAll('[data-series="yValue"] [data-layer]')];
   expect(layers.map((layer) => layer.getAttribute("data-layer"))).toEqual(["area", "dots"]);
@@ -162,12 +188,12 @@ test("CP renders both phase labels inside the chart and one annotation dot per l
   }
 });
 
-test("switching to WDL preserves the current, middlegame and endgame reference lines", async () => {
+test("switching to WDL omits the zero line and preserves the current, middlegame and endgame reference lines", async () => {
   await renderChart();
-  expect(referenceLines()).toEqual(expectedReferenceLines);
+  expect(referenceLines()).toEqual(expectedCpReferenceLines);
   await act(async () => atoms.set(reportTypeAtom, "WDL"));
   expect(host.querySelector("[data-chart-type]")?.getAttribute("data-chart-type")).toBe("percent");
-  expect(referenceLines()).toEqual(expectedReferenceLines);
+  expect(referenceLines()).toEqual(expectedSharedReferenceLines);
 });
 
 test("a live engine score is plotted ahead of the saved score", async () => {
@@ -269,10 +295,136 @@ test("the WDL tooltip shows one translated, locale-formatted line per outcome", 
   ]);
 });
 
-test("the CP/WDL control has an accessible name", async () => {
+test("the Evaluation / Win chance control keeps CP/WDL stored values and shows O8 explanations on hover and focus", async () => {
   await renderChart();
   const control = host.querySelector('[aria-label="Board.Analysis.Report.ChartType"]');
   expect(control).not.toBeNull();
-  expect(control!.textContent).toContain("CP");
-  expect(control!.textContent).toContain("WDL");
+  expect(control!.textContent).toContain("Board.Analysis.Report.Evaluation");
+  expect(control!.textContent).toContain("Board.Analysis.Report.WinChance");
+
+  const radios = [...host.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  expect(radios.map((radio) => radio.value)).toEqual(["CP", "WDL"]);
+
+  await act(async () => radios[1].click());
+  expect(atoms.get(reportTypeAtom)).toBe("WDL");
+  await act(async () => radios[0].click());
+  expect(atoms.get(reportTypeAtom)).toBe("CP");
+
+  const tooltips = () =>
+    [...document.querySelectorAll('[role="tooltip"]')].map((node) => node.textContent);
+
+  // Hover on Evaluation label, then verify mouseleave closes it.
+  const cpLabel = host.querySelector<HTMLElement>('[data-chart-toggle="CP"]')!;
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() => expect(tooltips()).toContain("Board.Analysis.Report.EvaluationDesc"));
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+  await vi.waitFor(() => expect(tooltips()).not.toContain("Board.Analysis.Report.EvaluationDesc"));
+
+  // Focus on Win chance radio, dismiss with Escape on the radio (bubbles to SegmentedControl onKeyDownCapture),
+  // then blur + re-focus to verify it re-opens.
+  await act(async () => radios[1].focus());
+  await vi.waitFor(() => expect(tooltips()).toContain("Board.Analysis.Report.WinChanceDesc"));
+  await act(async () => {
+    radios[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  await vi.waitFor(() => expect(tooltips()).not.toContain("Board.Analysis.Report.WinChanceDesc"));
+  await act(async () => radios[1].blur());
+  await act(async () => radios[1].focus());
+  await vi.waitFor(() => expect(tooltips()).toContain("Board.Analysis.Report.WinChanceDesc"));
+
+  // Focusing the Evaluation (CP) radio while Win chance is focus-open switches to EvaluationDesc and closes WinChanceDesc.
+  await act(async () => radios[0].focus());
+  await vi.waitFor(() => {
+    expect(tooltips()).toContain("Board.Analysis.Report.EvaluationDesc");
+    expect(tooltips()).not.toContain("Board.Analysis.Report.WinChanceDesc");
+  });
+  await act(async () => radios[0].blur());
+  await vi.waitFor(() => expect(tooltips()).not.toContain("Board.Analysis.Report.EvaluationDesc"));
+
+  // Hover-open Evaluation, Escape on window closes it, then mouseleave + new mouseenter re-opens it.
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() => expect(tooltips()).toContain("Board.Analysis.Report.EvaluationDesc"));
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  await vi.waitFor(() => expect(tooltips()).not.toContain("Board.Analysis.Report.EvaluationDesc"));
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+  });
+  await vi.waitFor(() => expect(tooltips()).toContain("Board.Analysis.Report.EvaluationDesc"));
+  await act(async () => {
+    cpLabel.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    cpLabel.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+});
+
+test("highlightedMovePath highlights an unannotated move in CP and WDL modes and onHoverMove deduplicates and clears", async () => {
+  const onHoverMove = vi.fn();
+  // [0, 0] is "1... e5", which has no NAG annotations.
+  await renderChart({ highlightedMovePath: [0, 0], onHoverMove });
+
+  expect(referenceLines().some((line) => line.x === "1... e5")).toBe(true);
+  expect(
+    host.querySelectorAll('[data-point="1... e5"] circle[data-highlighted="true"]'),
+  ).toHaveLength(2);
+
+  // Same highlight works in WDL mode.
+  await act(async () => atoms.set(reportTypeAtom, "WDL"));
+  expect(referenceLines().some((line) => line.x === "1... e5")).toBe(true);
+  expect(
+    host.querySelectorAll(
+      '[data-series="White"] [data-point="1... e5"] circle[data-highlighted="true"]',
+    ),
+  ).toHaveLength(2);
+
+  // Hover on a non-first point ("1... e5"), repeat same point (deduped), then non-matching label -> null.
+  const e5Point = host.querySelector<HTMLElement>('[data-series="White"] [data-point="1... e5"]')!;
+  e5Point.setAttribute("data-hover-label", "1... e5");
+  await act(async () => {
+    e5Point.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  });
+  expect(onHoverMove).toHaveBeenCalledTimes(1);
+  expect(onHoverMove).toHaveBeenCalledWith([0, 0]);
+
+  await act(async () => {
+    e5Point.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  });
+  expect(onHoverMove).toHaveBeenCalledTimes(1);
+
+  e5Point.setAttribute("data-hover-label", "nonexistent move");
+  await act(async () => {
+    e5Point.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  });
+  expect(onHoverMove).toHaveBeenCalledTimes(2);
+  expect(onHoverMove).toHaveBeenLastCalledWith(null);
+
+  // Moving back to a point then leaving the chart also clears hovered move.
+  e5Point.setAttribute("data-hover-label", "1. e4!");
+  await act(async () => {
+    e5Point.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  });
+  expect(onHoverMove).toHaveBeenCalledTimes(3);
+  expect(onHoverMove).toHaveBeenLastCalledWith([0]);
+
+  const chart = host.querySelector("[data-chart-type]")!;
+  await act(async () => {
+    chart.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    chart.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+  });
+  expect(onHoverMove).toHaveBeenCalledTimes(4);
+  expect(onHoverMove).toHaveBeenLastCalledWith(null);
 });

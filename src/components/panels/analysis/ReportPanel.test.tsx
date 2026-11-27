@@ -181,10 +181,13 @@ vi.mock("@mantine/core", () => ({
     children,
     variant: _variant,
     size: _size,
+    leftSection: _leftSection,
     ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string }) => (
-    <button {...props}>{children}</button>
-  ),
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: string;
+    size?: string;
+    leftSection?: React.ReactNode;
+  }) => <button {...props}>{children}</button>,
   Checkbox: () => <input type="checkbox" />,
   Grid: Object.assign(({ children }: { children: React.ReactNode }) => <div>{children}</div>, {
     Col: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -203,6 +206,7 @@ vi.mock("@mantine/core", () => ({
     Td: box("td"),
   }),
   Text: box("span"),
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   UnstyledButton: ({
     children,
     c: _c,
@@ -212,8 +216,13 @@ vi.mock("@mantine/core", () => ({
       {children}
     </button>
   ),
+  VisuallyHidden: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
-vi.mock("lucide-react", () => ({ ScanSearch: () => null }));
+vi.mock("lucide-react", () => ({
+  Info: () => null,
+  RotateCcw: () => null,
+  ScanSearch: () => null,
+}));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -448,7 +457,7 @@ test("annotation counts are labelled buttons that jump to the move; zero counts 
   // The table names its columns.
   expect([...host.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual([
     "Common.WHITE",
-    "Board.Analysis.Report.MoveQuality",
+    "Board.Analysis.Report.Metric",
     "Common.BLACK",
   ]);
 
@@ -845,7 +854,7 @@ const summary = {
   novelty: "notFound" as const,
 };
 
-test("a summary of the current game shows its provenance and the regenerate label", async () => {
+test("a summary of the current game shows its provenance and the quiet regenerate action", async () => {
   const { root } = store.getState();
   store.setState((state) => ({
     report: {
@@ -863,7 +872,28 @@ test("a summary of the current game shows its provenance and the regenerate labe
     positions: 2,
   });
   expect(host.querySelector('[data-testid="report-outdated"]')).toBeNull();
+  expect(mocks.progressButtonProps).toBeNull();
+  const regenerate = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Board.Analysis.Report.Regenerate",
+  );
+  expect(regenerate).toBeDefined();
+  await act(async () => regenerate!.click());
+  expect(mocks.setReportingMode).toHaveBeenCalledWith(true);
+});
+
+test("during an active run on a current report, the progress control stays visible", async () => {
+  const { root } = store.getState();
+  store.setState((state) => ({
+    report: {
+      ...state.report,
+      inProgress: true,
+      operationId: "op-running",
+      summary: { ...summary, fingerprint: reportRootFingerprint(root.fen, getMainLine(root)) },
+    },
+  }));
+  await renderPanel();
   expect(mocks.progressButtonProps).toMatchObject({
+    id: "op-running",
     labels: { action: "Board.Analysis.RegenerateReport" },
   });
 });

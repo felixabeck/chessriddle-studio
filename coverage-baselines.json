@@ -45,6 +45,7 @@
           "src/components/common/Comment.tsx",
           "src/components/common/CompleteMoveCell.tsx",
           "src/components/common/EvalChart.tsx",
+          "src/components/common/ExplanationTooltip.tsx",
           "src/components/common/GameInfo.tsx",
           "src/components/common/GameNotation.tsx",
           "src/components/common/GameReference.tsx",
