@@ -29839,7 +29839,7 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### Backend coverage CI fails since the PDF import: hayro 0.9 needs rustc 1.92 but the coverage nightly is 1.89
 
-* **ID:** f-20261127-03 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45914524821
 * **Repair owner:** 93bbb2cf-735b-4b10-9674-372fa0805ae9 on tuxedo-atlas, 2026-11-27T00:43:36Z
@@ -29851,7 +29851,12 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
 * **Fix:** e859a7273 moves the coverage nightly to nightly-2025-10-15 (builds hayro 0.9.0, which needs Rust 1.92), rewrites backend-coverage-baselines.json through the writer guard from a conservative two-run merge, and lowers the app-infrastructure function floor 73 to 66 under d-20261127-03 (LLVM 21 counts one function record per generic instantiation).
 * **Proof:** two local coverage runs on nightly-2025-10-15 both print "Coverage ratchet and area floors passed"; tools:parity:check OK and tools:parity:test 151/151; checks:pre-review green; correctness, root-cause and tests lenses approved. CI on the pushed HEAD is the settling proof; a red there reopens this finding.
-<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"6103ca34670f9d9634d394119708e69a2c1dbfbc38f911a3d39cd97622811c6d","header_sha256":"ff7f5feb2682f941be16695141d3851f203ccaf0cec5a6877ecf20f72cdeca14","header_status":"handled","input_sha256":"cb3049285b58f628b9ca8ad1bce69d97bbb896fa9ac27d7ea947a9f2a749eb1e","kind":"mutation-receipt","operation":"2f2a57478ce3a08a2e809de6b53a65a5b27e28937c1dcd0bf2802fa3f5d17a70","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-03"],"target":"f-20261127-03","v":1} -->
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"6103ca34670f9d9634d394119708e69a2c1dbfbc38f911a3d39cd97622811c6d","header_sha256":"07322c66864f4a4b3108a432b7e9f83ae282207071b953239ad5035532cdbb02","header_status":"open","input_sha256":"cb3049285b58f628b9ca8ad1bce69d97bbb896fa9ac27d7ea947a9f2a749eb1e","kind":"mutation-receipt","operation":"2f2a57478ce3a08a2e809de6b53a65a5b27e28937c1dcd0bf2802fa3f5d17a70","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-03"],"target":"f-20261127-03","v":1} -->
+
+* **CI run:** 45922505242
+* **Repair owner:** 93bbb2cf-735b-4b10-9674-372fa0805ae9 on tuxedo-atlas, 2026-11-27T01:49Z
+* **Reopened:** the rust job on c875f951a went red only on "oauth-credentials lines regressed: 9552/10899, baseline 9554/10899", the run-to-run variance f-20261127-04 describes. Cause: d-20261127-03 rewrote every backend metric to exact current counts, removing the slack the September baseline had. Measured on CI run 45922505242's LCOV, only app-infrastructure functions fails the pre-d-03 baseline; the repair restores that baseline and changes only that metric.
+<!-- ledger-meta {"command":"set-header","effect_lines":3,"effect_sha256":"b8796335da34e3835e0b23b2c31a50f915791aae45b7b1a48d4515cd459d9cc6","header_sha256":"07322c66864f4a4b3108a432b7e9f83ae282207071b953239ad5035532cdbb02","header_status":"open","input_sha256":"4d1f276350c5065d2464fd5d42a79fea9a005ba1f0f103cf5f8e2950b1e6ec86","kind":"mutation-receipt","operation":"c5d39b11e0c3704b348d93d673aa050492de80c5c60b033af2cbfb7bddcaf7f6","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-03"],"target":"f-20261127-03","v":1} -->
 
 ---
 
