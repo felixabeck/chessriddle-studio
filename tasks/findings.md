@@ -30203,3 +30203,33 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 * **Fix direction:** give each segment an accessible name from its existing tooltip text (for example "2 Wins") through the shared `ResultBar` segment API, the way f-20261029-08 named the WDL bar sections. Then drop the exclusion this finding owns in the new `database-files` live-count test.
 * **Related:** f-20261029-08 (WDL evaluation bar sections unnamed, handled) — same class, different component.
 * **Found by:** Claude Code build session for the live game count (d-20261127-22), browser verification stage.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Dim gold-on-10%-pill labels miss 4.5:1 on Accordion, Combobox, Menu and TrainingSettings
+
+* **ID:** f-20261127-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 0a17f348-c189-4394-b690-a15696ba3a44
+* **Impact class:** ux
+* **Spotted outside diff:** yes, review-root-cause of f-20261127-11 (drain session 0a17f348-c189-4394-b690-a15696ba3a44)
+* **Where:** `src/styles/Accordion.module.css:10-14` (`.control[data-active]`), `src/styles/Combobox.module.css:32-37` (`.option[data-combobox-active], .option[aria-selected="true"]`), `src/styles/Menu.module.css:24-30` (`.item[aria-selected="true"]` / `aria-checked` / datatable page-size active), `src/components/chessriddle/TrainingSettings.module.css:15-19` (`&[data-checked]`). All four still set `color: var(--cf-primary)` over `background: color-mix(in srgb, var(--cf-primary) 10%, ...)`.
+* **Failure scenario:** With Dim active (`data-cf-theme-variant="dim"`), open an Accordion header, a selected Combobox option, a checked Menu item, or a checked TrainingSettings category chip. `--cf-primary` (`hsl(42 53.2% 54.7%)`) over a 10% gold tint of `--cf-card` / `--cf-popover` computes to 4.16:1, over `--cf-interactive` to 3.71:1, and over `--cf-surface-inset` to 3.22:1 — all below WCAG AA 4.5:1. Same mechanism as the Dim Report tab that f-20261127-11 closed.
+* **Fix:** Use `color: var(--cf-foreground)` on those active/selected/checked labels, keeping the 10% gold fill and quiet gold ring as the active cue (the Tabs treatment in DESIGN.md and f-20261127-11). Update the DESIGN.md Accordion / Combobox / Menu rows to say the selected label is `--cf-foreground`.
+* **Related:** f-20261127-11 (Tabs active label; Root `-`, so named here).
+* **Proof:** `src/styles/theme.test.ts` already pins `--cf-foreground` on 10% `--cf-primary` over inset at >= 4.5:1 in light/dark/dim; add the card/interactive mixes those four surfaces actually sit on, and an e2e `paintedText` assertion on one selected Accordion or Menu item under `game-report-dim` or a settings spec.
+* **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
+
+### Practice move rows, engine stats and game-list index still dim text with opacity
+
+* **ID:** f-20261127-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 0a17f348-c189-4394-b690-a15696ba3a44
+* **Impact class:** ux
+* **Spotted outside diff:** yes, review-root-cause of f-20261127-15 (drain session 0a17f348-c189-4394-b690-a15696ba3a44)
+* **Where:** `src/components/panels/practice/RepertoireInfo.tsx:849` (`opacity: dimmed ? 0.45 : 1` on the clickable move `<UnstyledButton>` that contains notation and `c="dimmed"` stats; `dimmed` is passed at `:695`), `src/components/panels/analysis/BestMoves.tsx:253` (`opacity={dimmed ? 0.5 : 1}` on the depth/score `<Group>` that contains `c="dimmed"` text), `src/components/panels/info/GameSelector.module.css:51` (`.index { opacity: 0.5 }`).
+* **Failure scenario:** Open a repertoire Practice card that lists a dimmed move row, or an analysis engine line whose stats Group is dimmed, or the Info panel game list: the whole control composites toward the background at 0.45–0.5, so notation, depth/score and row numbers fall below WCAG AA 4.5:1 (same whole-element opacity mechanism as the inactive clock in f-20261127-15, measured there at 1.88–2.91:1).
+* **Fix:** Keep the dimmed/index cue with a colour or style that stays at 4.5:1 (DESIGN.md / d-20261124-04: never reduced opacity for text). `--mantine-color-dimmed` is already the AA secondary colour.
+* **Related:** f-20261127-15 (board clocks; Root `-`, named here). f-20261124-02 handled the same opacity-on-text defect for analysis moves after the game end (d-20261124-04).
+* **Proof:** `paintedText` / ancestor opacity chain of 1 and `contrastRatio >= 4.5` on one dimmed Practice move row, one dimmed BestMoves stats group, and one GameSelector `.index` in light/dark/dim.
+* **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
