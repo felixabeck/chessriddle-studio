@@ -30340,7 +30340,7 @@ Closed. Commit `5df2ba1af`. Practice rare-move rows, engine stats Group, inert e
 
 ### Unnamed Mantine Progress bars outside ResultBar fail axe aria-progressbar-name
 
-* **ID:** f-20261127-26 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-26 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 425223d4-8f8f-4ebb-b079-97973c6bfedc
 * **Impact class:** ux
 * **Spotted outside diff:** yes, review-root-cause of f-20261127-20
@@ -30350,3 +30350,6 @@ Closed. Commit `5df2ba1af`. Practice rare-move rows, engine stats Group, inert e
 * **Fix:** Give each bar an accessible name from the adjacent visible label (coverage, learned progress, search status, download). ProgressButton can reuse its button label.
 * **Related:** f-20261127-20 (ResultBar segments; Root `-`, so named here). f-20261029-08 (ScoreBubble WDL sections).
 * **Found by:** Grok drain session 425223d4-8f8f-4ebb-b079-97973c6bfedc, 2026-11-27
+
+Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverage (`Board.Practice.Build.YourCoverage`), PracticePanel learned `Progress.Section` (`Board.Practice.LearnedProgress`), DatabaseLoader (`label`), Databases processing games (`Home.Databases.ProcessingGames`), ProgressButton (`label`). Engine Progress already named via `engine.name`. Rejected: renaming ResultBar again (handled in f-20261127-20). Proof: unit tests assert `aria-label` on each bar. Same commit as f-20261127-21. Lenses r3 APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"61bb89e6437438f03e195602066915260f7d73ecf408aff512e4b0d8aa9639d7","header_sha256":"3385bb49a5fbca054d342bc32eee35b915ae9480e84b1ad48a00fe7e47fc7140","header_status":"handled","input_sha256":"c8f5d6808c1e8db40d56603d86b3701afc5d701ebacb66a0b9f3fe13543e10ea","kind":"mutation-receipt","operation":"2b68fa09038e82e9549995771b3fa9dfd70854808f336d32e21d8b160bd5000f","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-26"],"target":"f-20261127-26","v":1} -->
