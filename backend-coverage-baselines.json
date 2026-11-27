@@ -84,86 +84,86 @@
   "areas": {
     "app-infrastructure": {
       "lines": {
-        "covered": 17185,
-        "total": 19960
+        "covered": 7450,
+        "total": 9180
       },
       "functions": {
         "covered": 5000,
         "total": 7493
       },
       "branches": {
-        "covered": 2619,
-        "total": 3264
+        "covered": 2052,
+        "total": 4322
       }
     },
     "filesystem-native-boundaries": {
       "lines": {
-        "covered": 6879,
-        "total": 7623
+        "covered": 2952,
+        "total": 3625
       },
       "functions": {
-        "covered": 886,
-        "total": 1295
+        "covered": 340,
+        "total": 634
       },
       "branches": {
-        "covered": 1016,
-        "total": 1222
+        "covered": 926,
+        "total": 2038
       }
     },
     "oauth-credentials": {
       "lines": {
-        "covered": 9554,
-        "total": 10899
+        "covered": 998,
+        "total": 1539
       },
       "functions": {
-        "covered": 1590,
-        "total": 1986
+        "covered": 176,
+        "total": 301
       },
       "branches": {
-        "covered": 1523,
-        "total": 1894
+        "covered": 163,
+        "total": 272
       }
     },
     "database-search": {
       "lines": {
-        "covered": 13653,
-        "total": 15205
+        "covered": 4704,
+        "total": 5423
       },
       "functions": {
-        "covered": 1599,
-        "total": 2050
+        "covered": 525,
+        "total": 738
       },
       "branches": {
-        "covered": 2112,
-        "total": 2658
+        "covered": 721,
+        "total": 1014
       }
     },
     "engine-game-chess": {
       "lines": {
-        "covered": 7315,
-        "total": 8062
+        "covered": 4400,
+        "total": 5602
       },
       "functions": {
-        "covered": 1208,
-        "total": 1524
+        "covered": 702,
+        "total": 893
       },
       "branches": {
-        "covered": 1071,
-        "total": 1338
+        "covered": 679,
+        "total": 1094
       }
     },
     "auxiliary-domain-services": {
       "lines": {
-        "covered": 3359,
-        "total": 4240
+        "covered": 2057,
+        "total": 2716
       },
       "functions": {
-        "covered": 519,
-        "total": 837
+        "covered": 237,
+        "total": 408
       },
       "branches": {
-        "covered": 560,
-        "total": 612
+        "covered": 327,
+        "total": 360
       }
     }
   }

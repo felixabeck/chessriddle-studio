@@ -107,12 +107,13 @@ focused tests before the baseline is refreshed.
 
 On 2026-11-27, `d-20261127-03` moved the coverage toolchain from `nightly-2025-06-01` to
 `nightly-2025-10-15` (LLVM 21) because hayro needs rustc 1.92 (`f-20261127-03`). That llvm-cov
-exports one `FN` record per generic instantiation and fewer `BRDA` records, so the backend
-baseline was rewritten through the writer guard from a conservative merge of two local runs
-(a record counts as covered only when both runs covered it; they differed by one line and one
-branch, `f-20261127-04`), and the
-app-infrastructure function floor was re-derived from it, 73 → 66 %; the other floors are
-unchanged.
+exports one `FN` record per generic instantiation and fewer `BRDA` records, so `d-20261127-03`
+re-derived the app-infrastructure function floor, 73 → 66 %. Only that metric fails the earlier
+baseline under the new nightly, so `d-20261127-04` changed that one entry to the measured
+5000/7493; every other baseline entry and floor is unchanged. A full rewrite to current counts was
+tried first and went red in CI on two lines of run-to-run variance (`f-20261127-04`). The one
+changed entry still has no margin: it was identical in CI and two local runs, but a run covering
+one function fewer would turn it red.
 
 After adding coverage, deliberately refresh the frontend baseline so the new gains become
 binding. First require a green full coverage run against the existing baseline. Obtain the
