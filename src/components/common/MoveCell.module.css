@@ -2,7 +2,8 @@
    them, and the analysis-move rule below sets --notation-unannotated-move-color. */
 .cell {
   /* Gold fill of the current move, shared by the notation's current move and an unannotated
-     previewed engine-line move. MoveCell.tsx never sets these inline, so they hold. */
+     previewed engine-line move. Dark and Dim keep this 10% fill and find the cell with an
+     opaque gold ring instead. MoveCell.tsx never sets these inline, so they hold. */
   --move-current-fill: color-mix(in srgb, var(--cf-primary) 10%, transparent);
   --move-current-hover: color-mix(in srgb, var(--cf-primary) 20%, transparent);
   appearance: none;
@@ -99,6 +100,12 @@
 [data-notation-current="true"] .cell {
   background: var(--move-current-fill);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cf-primary) 20%, transparent);
+}
+
+/* Dark and Dim keep the 10% gold fill so annotation text stays at 4.5:1, and
+   find the current move through an opaque gold ring instead. */
+[data-mantine-color-scheme="dark"] [data-notation-current="true"] .cell {
+  box-shadow: inset 0 0 0 1px var(--cf-primary);
 }
 
 [data-notation-current="true"] .cell:hover {

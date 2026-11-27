@@ -735,6 +735,15 @@ finding ids and date.
 - **Technical record:** `d-20261127-26`, `d-20261127-27`, `d-20261127-28`, and `d-20261127-30` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-panel-header-unify.md`.
 - **Date:** 2026-11-27.
 
+## 2026-11-27 — Dark-mode notation marks stay ChessRiddle gold, not a picker
+
+- **Question:** Should Dark mode let the user pick the accent colour, and the unfinished-variation dash, because the gold current-move wash is too quiet and the blue dashed open-variation mark does not fit?
+- **Choice:** No picker. ChessRiddle gold stays the accent. Dark and Dim find the current move with a solid gold ring on the existing 10% fill. The unfinished-variation dash uses the warm brown `chart-4` token instead of the info blue, still distinct from gold so a move that is both current and unfinished stays readable.
+- **Ruled out:** A user-facing accent picker, a second colour control for open variations, painting the dash in gold, and raising the current-move fill (annotation text would fall below 4.5:1).
+- **Felix's reason:** He called a picker a nice-to-have and chose option A (fix the defaults) after Grok and Antigravity agreed that the demand is the two marks being hard to see, which a better default answers for every dark-mode user.
+- **Technical record:** `d-20261127-32`.
+- **Date:** 2026-11-27.
+
 ## 2026-11-27 — Save-to of the current game updates it; copy is named a copy
 
 - **Question:** Opening a database game, editing info, and using “In Datenbank speichern” produced a second identical game because autosave had already written the origin silently. Should that be fixed, and how, given a suggestion of an “Infos gespeichert” popup?

@@ -258,8 +258,8 @@ describe("notation mark colours", () => {
                 /^color-mix\(in srgb, (hsl\([^)]+\)) (\d+)%, (black|white)\)$/,
             );
             if (!mixed) throw new Error(`unparsed ${value}`);
-            // The info hue: no move-quality mark uses it.
-            expect(mixed[1]).toBe(tokens["chart-6"]);
+            // The warm brown hue: no move-quality mark uses it.
+            expect(mixed[1]).toBe(tokens["chart-4"]);
             const mark = mix(
                 hsl(mixed[1]),
                 mixed[3] === "black" ? [0, 0, 0] : [255, 255, 255],

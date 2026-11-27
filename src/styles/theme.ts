@@ -304,15 +304,16 @@ function schemeVariables(theme: MantineTheme, scheme: ChessRiddleScheme) {
     for (const hue of ANNOTATION_HUES) {
         variables[`--cf-annotation-${hue}-text`] = annotationTextShade(hue, scheme);
     }
-    // The open-variation mark and its count: the info hue, which no move-quality mark uses,
-    // shaded to read as text at 4.5:1 on the card, the page and the inset variation blocks.
-    // Dim inset is lighter than dark, so the mix leans further toward white.
+    // The open-variation mark and its count: the warm brown chart-4 hue, which no
+    // move-quality mark uses, shaded to read as text at 4.5:1 on the card, the page
+    // and the inset variation blocks. Light mixes 75% with black so the mark still
+    // clears inset; Dim inset is lighter than dark, so the mix leans further toward white.
     variables["--cf-open-variation"] =
         scheme === "light"
-            ? `color-mix(in srgb, ${tokens["chart-6"]} 80%, black)`
+            ? `color-mix(in srgb, ${tokens["chart-4"]} 75%, black)`
             : scheme === "dim"
-              ? `color-mix(in srgb, ${tokens["chart-6"]} 55%, white)`
-              : `color-mix(in srgb, ${tokens["chart-6"]} 70%, white)`;
+              ? `color-mix(in srgb, ${tokens["chart-4"]} 55%, white)`
+              : `color-mix(in srgb, ${tokens["chart-4"]} 70%, white)`;
     for (const fill of ANNOTATION_FILLS) {
         variables[`--cf-annotation-${fill}-on-fill`] = annotationFillForeground(
             theme,
