@@ -12412,8 +12412,8 @@ Former private decision identifier: d-20261029-14
 * **Rejected:** Restore-only in `test.yml` with `mutation.yml` as publisher, which matches the letter of the guard but adds an explicit seeding step to a second workflow and delays protection until the next daily sweep. A bounded retry, because the observed 504 outage outlasted a rerun 20 minutes later. `--allow-missing-actionlint`, which drops the lint.
 * **Reason:** d-20261101-06 rejected per-push publication because stale mutation results could persist. A binary at a pinned version cannot go stale in that sense, and the key changes with the checker that holds the pin. This narrows only the test's reach and leaves d-20261101-06's rule for mutation results unchanged.
 * **Reversal path:** Remove the step from `test.yml` and restore the regular expression `/uses: actions\/cache(?:\/save)?@/u`, along with its table row.
-* **Decided by:** Claude Code (Opus 5.5) next-finding drain, final-gate repair, full auto, 2026-11-08 · **Superseded-by:** -
-<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"ac5ea6c5c32107d0678dbb1b0e8bdb26f0a7954d326d721e237f5998921af22e","input_sha256":"b6f7342b4d17890946dbaa1d86bd6529ee34a1c5d82f8a437f9a92277efac91a","kind":"mutation-receipt","operation":"38413b30f6dee73624461c2f8327712723510b59cd2b548a6d97a404270bf3c5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-12"],"target":"decisions-ledger","v":1} -->
+* **Decided by:** Claude Code (Opus 5.5) next-finding drain, final-gate repair, full auto, 2026-11-08 · **Superseded-by:** d-20261127-10
+<!-- ledger-meta {"command":"record-decision","effect_lines":9,"effect_sha256":"94315cfacf3dddc5a2967450ace1706266240febbdd28abdefd6747d1904732d","input_sha256":"b6f7342b4d17890946dbaa1d86bd6529ee34a1c5d82f8a437f9a92277efac91a","kind":"mutation-receipt","operation":"38413b30f6dee73624461c2f8327712723510b59cd2b548a6d97a404270bf3c5","options":{"section":null},"request_id_sha256":null,"results":["d-20261108-12"],"target":"decisions-ledger","v":1} -->
 
 ### d-20261108-13 — Where does the player Overview get its per-colour statistics and opponent ratings?
 
