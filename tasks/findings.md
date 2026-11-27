@@ -30187,3 +30187,19 @@ Re-recorded the remaining 16 container baselines that Test e2e failed on the fir
 
 Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` updates matching file Recent rows (name and type, lastOpened unchanged) when the IPC resolves or rejects as durability-uncertain, the same moment open tabs are patched. `recentFilesAtom` now lives on `documentPreferences.atomWithStorage` so a Library write hydrates persisted recents without wiping `localStorage["recent-files"]` when the atom is not subscribed. Rename trims the dialog name to match native `validate_name`. Rejected: refuse-to-open from Recent against a listing that has not refreshed (the filed failure is opening before that refresh); import-time `getOnInit` on `atomWithStorage` (fails `initialization.test.ts` "real state import leaves fixture storage untouched"). Proof: `pnpm exec vitest --run src/state/atoms.recentFiles.test.ts src/state/atoms.recentFiles.getOnInit.test.ts src/state/initialization.test.ts src/components/files/FilesPage.test.tsx` → 223 passed; related `agent-gate pnpm exec vitest related --run --passWithNoTests` on the five paths → 7697 passed, 1 skipped. Commit 6294bf7a2.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"03fcceadd3c9ae06d971c28207ab452575f4454b7d6cff4ff8c5c174b4d1d10e","header_sha256":"a36506fd98c0789ed522d30521b37f351b807929324730f162c3fd291636992f","header_status":"handled","input_sha256":"1eee22a54c78370ae7a896fa364a670ff003f1b6b83a1ba99e9579f3b00f5a8f","kind":"mutation-receipt","operation":"996b04cf1d122fb2b0ac801b816843dd076ad4c678f4dd36eea0d90a47b9b147","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-19"],"target":"f-20261127-19","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Player card Overview result bars are unnamed progress bars (axe aria-progressbar-name)
+
+* **ID:** f-20261127-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Impact class:** ux
+* **Spotted outside diff:** yes
+* **Where:** `src/components/home/PersonalCardPanels/ResultsChart.tsx` (the three `ResultBar` segments), rendered in `OverviewPanel.tsx` under `data-testid="overview-headline"`, `overview-white` and `overview-black`.
+* **Defect:** each win/draw/loss segment renders as a Mantine `Progress.Section` with `role="progressbar"` and an `aria-valuetext` of the percentage, but without an accessible name. Screen readers announce three anonymous progress bars ("100%", "0%", "0%") with no indication of what they measure.
+* **Failure scenario:** open the Players tab of a database, open a player card whose Overview shows results (for example the e2e opponent First White in `e2e/database-files.spec.ts`), and run axe: rule `aria-progressbar-name` fails for `div[data-testid="overview-headline"] .mantine-Progress-section[aria-valuetext="100%"]` and its siblings, and the same for `overview-white`. Observed 2026-11-27 in the pinned Playwright container (`pnpm test:e2e:update --project=database-files -g "live game count on the card"`).
+* **Fix direction:** give each segment an accessible name from its existing tooltip text (for example "2 Wins") through the shared `ResultBar` segment API, the way f-20261029-08 named the WDL bar sections. Then drop the exclusion this finding owns in the new `database-files` live-count test.
+* **Related:** f-20261029-08 (WDL evaluation bar sections unnamed, handled) — same class, different component.
+* **Found by:** Claude Code build session for the live game count (d-20261127-22), browser verification stage.
