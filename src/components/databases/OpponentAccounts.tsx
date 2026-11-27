@@ -1,4 +1,4 @@
-import { Button, Checkbox, Group, Paper, Progress, Select, Stack, Text } from "@mantine/core";
+import { Button, Checkbox, Group, Paper, Select, Stack, Text } from "@mantine/core";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
 import { Plus, Settings, X } from "lucide-react";
@@ -30,6 +30,7 @@ import {
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { sameDatabaseHandle } from "@/utils/db";
 import ConfirmModal from "../common/ConfirmModal";
+import { GamesLoadedProgress } from "../common/GamesLoadedProgress";
 import { IconAction } from "../common/IconAction";
 import { SiteLogo } from "../home/SiteLogo";
 import AddOpponentAccount from "./AddOpponentAccount";
@@ -75,10 +76,11 @@ export function opponentGames(
     : { kind: "unreadable" };
 }
 
-export function ImportProgress({ ticket, label }: { ticket: string; label: string }) {
-  const progress = useProgress(ticket).progress;
-  // A Lichess export has no known length, so the bar only moves between accounts.
-  return <Progress value={progress} size="sm" mt="xs" aria-label={label} animated />;
+export function ImportProgress({ ticket }: { ticket: string }) {
+  const { item } = useProgress(ticket);
+  return (
+    <GamesLoadedProgress count={item?.count ?? null} phase={item?.state ?? "running"} mt="xs" />
+  );
 }
 
 /**
@@ -281,7 +283,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
           </IconAction>
         </Group>
       </Group>
-      {inFlight && ticket !== null && <ImportProgress ticket={ticket} label={downloading} />}
+      {inFlight && ticket !== null && <ImportProgress ticket={ticket} />}
       {players !== undefined && players.length > 1 && (
         <Text size="xs" c="dimmed" mt={4} className="wrap-anywhere" data-opponent-separate>
           {t("Databases.Opponent.Separate", {

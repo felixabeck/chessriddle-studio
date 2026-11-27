@@ -180,6 +180,7 @@
           "src/components/common/Emoji.tsx",
           "src/components/common/ExternalLink.tsx",
           "src/components/common/FileInput.tsx",
+          "src/components/common/GamesLoadedProgress.tsx",
           "src/components/common/GenericCard.tsx",
           "src/components/common/GroupedSidebarTabs.tsx",
           "src/components/common/IconAction.tsx",

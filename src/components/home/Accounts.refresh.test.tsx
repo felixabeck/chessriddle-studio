@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   getDbInfo: vi.fn(),
   getLatestGameTimestamp: vi.fn(),
   issueDownloadDestination: vi.fn(),
+  getProgress: vi.fn(async () => null),
   progress: vi.fn(),
   notify: vi.fn(),
   warn: vi.fn(),
@@ -201,6 +202,7 @@ beforeEach(() => {
     accountSnapshot = accountSnapshot.filter((completion) => completion.id !== id);
   });
   mocks.importAccountGames.mockImplementation(async (request) => accountCompletion(request));
+  mocks.getProgress.mockResolvedValue(null);
   mocks.progress.mockResolvedValue(vi.fn());
   host = document.createElement("div");
   document.body.append(host);
@@ -504,7 +506,7 @@ test.each([{}, { username: "DisplaySpelling" }, { username: 17 }])(
 
     await renderAccounts();
 
-    expect(host.textContent).toContain("Common.Unknown");
+    expect(host.textContent).toContain("Common.LoadingGames");
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
     expect(host.textContent).toContain(
       "username" in profile && typeof profile.username === "string"
@@ -748,7 +750,7 @@ test("real Accounts retain post-cleanup counts across remount and revalidation o
         throw new Error("Remounted Accounts have not started listing L");
     });
   });
-  expect(host.textContent).toContain("3 / 3");
+  expect(host.textContent).toContain("Common.LoadingGames");
   expect(downloadButton().disabled).toBe(true);
 
   await act(async () => nativeImport.resolve());

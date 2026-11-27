@@ -1,4 +1,4 @@
-import { tauri, tauriSubscriptions } from "@/platform/tauri";
+import { tauri } from "@/platform/tauri";
 import {
   Alert,
   Button,
@@ -30,15 +30,14 @@ import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { useNativeRequestOwner } from "@/hooks/useNativeRequestOwner";
 import { DATABASE_LIST_KEY, refreshDatabaseList } from "@/hooks/useDatabaseList";
+import { useProgress } from "@/hooks/useProgress";
 import type { AccountCompletion, DatabaseHandle, FileWorkspaceHandle, PathRef } from "@/bindings";
+import { GamesLoadedProgress } from "@/components/common/GamesLoadedProgress";
 import { IconAction } from "@/components/common/IconAction";
-import {
-  notifyListenerError,
-  notifyUnlessCancelled,
-  runUnlessCancelled,
-} from "@/components/files/notifyError";
+import { notifyUnlessCancelled, runUnlessCancelled } from "@/components/files/notifyError";
 import {
   accountDownloadsInFlightAtom,
+  accountDownloadsStartedEmptyAtom,
   accountCompletionsAtom,
   downloadDestinationAtom,
 } from "@/state/atoms";
@@ -50,7 +49,6 @@ import {
 import type { ManagedDatabaseInfo } from "@/utils/db";
 import { accountDatabaseFilename, type AccountDatabaseIssue } from "./accountDatabase";
 import { capitalize } from "@/utils/format";
-import { useTauriListener } from "@/platform/useTauriListener";
 import { logFailureSafely, runWithAppliedRecovery, safeFailureContext } from "@/platform/errors";
 import { SiteLogo } from "./SiteLogo";
 
@@ -167,13 +165,13 @@ export function AccountCard({
     );
   });
   const [downloadsInFlight, setDownloadsInFlight] = useAtom(accountDownloadsInFlightAtom);
+  const [startedEmpty, setStartedEmpty] = useAtom(accountDownloadsStartedEmptyAtom);
   const completions = useAtomValue(accountCompletionsAtom);
   const retained = completions.get(accountKey);
   const pending = downloadsInFlight.has(accountKey) || retained?.outcome.state === "running";
-  const [progress, setProgress] = useState<{
-    id: string;
-    attempt: number | null;
-    value: number;
+  const [retainedCount, setRetainedCount] = useState<{
+    runKey: string;
+    count: number;
   } | null>(null);
   const [migrationWorkspace, setMigrationWorkspace] = useState<FileWorkspaceHandle | null>(null);
   const [collectionNotice, setCollectionNotice] = useState(false);
@@ -182,36 +180,50 @@ export function AccountCard({
   function activeProgressTicket(
     current: AccountCompletion | undefined,
     inFlight: ReadonlyMap<string, string | null>,
-  ): { id: string; attempt: number | null } | null {
+  ): { id: string; runKey: string } | null {
     if (current?.outcome.state === "running") {
-      return { id: current.progressId, attempt: current.attempt };
+      return { id: current.progressId, runKey: `${current.id}:${current.attempt}` };
     }
     const fallback = inFlight.get(accountKey);
-    return typeof fallback === "string" ? { id: fallback, attempt: null } : null;
+    return typeof fallback === "string" ? { id: fallback, runKey: `ticket:${fallback}` } : null;
   }
 
-  useTauriListener(
-    tauriSubscriptions.progress,
-    (e) => {
-      const ticket = activeProgressTicket(
-        store.get(accountCompletionsAtom).get(accountKey),
-        store.get(accountDownloadsInFlightAtom),
-      );
-      if (ticket && e.payload.id === ticket.id) {
-        setProgress({ id: ticket.id, attempt: ticket.attempt, value: e.payload.progress });
-      }
-    },
-    { onError: notifyListenerError },
-  );
-
   const currentTicket = activeProgressTicket(retained, downloadsInFlight);
-  const currentProgress =
+  const { item: progressItem } = useProgress(pending ? (currentTicket?.id ?? null) : null);
+
+  const runKey = currentTicket?.runKey ?? null;
+  const itemCount =
     pending &&
     currentTicket !== null &&
-    progress?.id === currentTicket.id &&
-    progress.attempt === currentTicket.attempt
-      ? progress.value
+    progressItem !== null &&
+    progressItem.id === currentTicket.id &&
+    !progressItem.finished &&
+    progressItem.state === "running" &&
+    progressItem.count !== null &&
+    progressItem.count !== undefined
+      ? progressItem.count
       : null;
+  const savedRunCount =
+    pending && runKey !== null && retainedCount?.runKey === runKey ? retainedCount.count : null;
+  const liveCount =
+    itemCount !== null && savedRunCount !== null
+      ? Math.max(itemCount, savedRunCount)
+      : (itemCount ?? savedRunCount);
+
+  useEffect(() => {
+    if (!pending || runKey === null) {
+      setRetainedCount(null);
+      return;
+    }
+    if (itemCount !== null) {
+      setRetainedCount((previous) => {
+        if (previous?.runKey === runKey && previous.count >= itemCount) return previous;
+        return { runKey, count: itemCount };
+      });
+    }
+  }, [pending, runKey, itemCount]);
+
+  const showTotal = startedEmpty.has(accountKey);
 
   const downloadedGames = database?.type === "success" ? database.game_count : 0;
   const effectiveTotal = Math.max(total, downloadedGames);
@@ -307,7 +319,15 @@ export function AccountCard({
                 if (store.get(accountCompletionsAtom).get(accountKey)?.outcome.state === "running")
                   return;
                 if (store.get(accountDownloadsInFlightAtom).has(accountKey)) return;
+                const emptyAtStart =
+                  database === null || (database.type === "success" && database.game_count === 0);
                 setDownloadsInFlight((previous) => new Map(previous).set(accountKey, null));
+                setStartedEmpty((previous) => {
+                  const next = new Set(previous);
+                  if (emptyAtStart) next.add(accountKey);
+                  else next.delete(accountKey);
+                  return next;
+                });
                 try {
                   let preparation: Awaited<ReturnType<typeof tauri.prepareAccountCollection>> =
                     null;
@@ -362,6 +382,12 @@ export function AccountCard({
                   setDownloadsInFlight((previous) => {
                     if (!previous.has(accountKey)) return previous;
                     const next = new Map(previous);
+                    next.delete(accountKey);
+                    return next;
+                  });
+                  setStartedEmpty((previous) => {
+                    if (!previous.has(accountKey)) return previous;
+                    const next = new Set(previous);
                     next.delete(accountKey);
                     return next;
                   });
@@ -437,30 +463,38 @@ export function AccountCard({
 
       <Card.Section inheritPadding pb="sm">
         <Stack gap={4}>
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed">
-              {t("Common.Games")}
-            </Text>
-            <Text size="xs" fw={500} miw={0} className="wrap-anywhere">
-              {associationIssue || database?.type === "error"
-                ? t("Common.Unknown")
-                : `${downloadedGames} / ${effectiveTotal}`}
-            </Text>
-          </Group>
-          <Progress
-            // An account with no games at all makes `effectiveTotal` zero; the
-            // unguarded division rendered `aria-valuenow="NaN"` and a NaN width.
-            value={pending ? 100 : downloadProgressPercent(downloadedGames, effectiveTotal)}
-            // Mantine puts `role="progressbar"` on the inner section and forwards
-            // `aria-label` to it, so the bar is named rather than anonymous.
-            aria-label={t("Home.Accounts.GamesProgress", {
-              downloaded: downloadedGames,
-              total: effectiveTotal,
-            })}
-            size="sm"
-            striped={pending}
-            animated={pending}
-          />
+          {pending ? (
+            <GamesLoadedProgress
+              count={liveCount}
+              total={showTotal ? total : undefined}
+              phase="running"
+            />
+          ) : (
+            <>
+              <Group justify="space-between">
+                <Text size="xs" c="dimmed">
+                  {t("Common.Games")}
+                </Text>
+                <Text size="xs" fw={500} miw={0} className="wrap-anywhere">
+                  {associationIssue || database?.type === "error"
+                    ? t("Common.Unknown")
+                    : `${downloadedGames} / ${effectiveTotal}`}
+                </Text>
+              </Group>
+              <Progress
+                // An account with no games at all makes `effectiveTotal` zero; the
+                // unguarded division rendered `aria-valuenow="NaN"` and a NaN width.
+                value={downloadProgressPercent(downloadedGames, effectiveTotal)}
+                // Mantine puts `role="progressbar"` on the inner section and forwards
+                // `aria-label` to it, so the bar is named rather than anonymous.
+                aria-label={t("Home.Accounts.GamesProgress", {
+                  downloaded: downloadedGames,
+                  total: effectiveTotal,
+                })}
+                size="sm"
+              />
+            </>
+          )}
           <Group justify="space-between" mt={4}>
             <Text size="xs" c="dimmed" miw={0} className="wrap-anywhere">
               {t("Home.Accounts.LastUpdate", {
@@ -468,11 +502,6 @@ export function AccountCard({
                 interpolation: { escapeValue: false },
               })}
             </Text>
-            {currentProgress !== null && (
-              <Text size="xs" c="dimmed">
-                {currentProgress.toFixed(0)}%
-              </Text>
-            )}
           </Group>
         </Stack>
       </Card.Section>

@@ -59,7 +59,7 @@ function OnlineOpponentDownload() {
               "Downloading online games. Closing this dialog keeps the download running.",
           })}
         </Text>
-        {ticket !== null && <ImportProgress ticket={ticket} label={downloading} />}
+        {ticket !== null && <ImportProgress ticket={ticket} />}
         <Group justify="right">
           <Button variant="default" className="wrap-button" onClick={close}>
             {t("Databases.Opponent.CloseDownload", { defaultValue: "Close" })}

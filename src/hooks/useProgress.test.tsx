@@ -32,17 +32,22 @@ type Progress = {
   finished: boolean;
   state: "running" | "succeeded" | "failed" | "cancelled";
   cleared: boolean;
+  count?: number | null;
 };
 
 let eventHandler: ((event: { payload: Progress }) => void) | undefined;
 let root: Root;
 let container: HTMLDivElement;
 
-function Probe({ id }: { id: string }) {
+function Probe({ id }: { id: string | null | undefined }) {
   const state = useProgress(id);
+  const count = state.item?.count ?? null;
   return (
     <>
-      <output data-generation={state.item?.generation.toString() ?? "none"}>
+      <output
+        data-generation={state.item?.generation.toString() ?? "none"}
+        data-count={count === null ? "none" : String(count)}
+      >
         {state.progress}:{String(state.finished)}
       </output>
       <button onClick={() => void state.clear()}>clear</button>
@@ -577,5 +582,132 @@ describe("useProgress", () => {
       ),
     );
     expect(container.querySelector("output")?.dataset.generation).toBe("none");
+  });
+
+  test("an absent id subscribes to nothing, skips getProgress, and returns empty state", async () => {
+    mocks.getProgress.mockResolvedValue(null);
+    await act(async () => root.render(<Probe id={null} />));
+    expect(mocks.listen).not.toHaveBeenCalled();
+    expect(mocks.getProgress).not.toHaveBeenCalled();
+    expect(container.querySelector("output")?.textContent).toBe("0:false");
+    expect(container.querySelector("output")?.dataset.generation).toBe("none");
+    expect(container.querySelector("output")?.dataset.count).toBe("none");
+
+    await act(async () => container.querySelector("button")?.click());
+    expect(mocks.clearProgress).not.toHaveBeenCalled();
+
+    // Transitioning to a real id subscribes first, then hydrates.
+    await act(async () => root.render(<Probe id="job" />));
+    expect(mocks.listen).toHaveBeenCalledOnce();
+    expect(mocks.getProgress).toHaveBeenCalledWith("job");
+  });
+
+  test("waits for listener registration after returning from an absent id before hydrating the replacement id", async () => {
+    mocks.getProgress.mockResolvedValue(null);
+    await act(async () => root.render(<Probe id="job" />));
+    expect(mocks.getProgress).toHaveBeenCalledExactlyOnceWith("job");
+
+    await act(async () => root.render(<Probe id={null} />));
+
+    let settleReplacement!: (unlisten: () => void) => void;
+    mocks.listen.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settleReplacement = resolve;
+        }),
+    );
+
+    await act(async () => root.render(<Probe id="job2" />));
+    expect(mocks.getProgress).not.toHaveBeenCalledWith("job2");
+
+    await act(async () => settleReplacement(vi.fn()));
+    expect(mocks.getProgress).toHaveBeenLastCalledWith("job2");
+  });
+
+  test("a late getProgress snapshot with equal generation and progress and a lower count does not overwrite a newer count", async () => {
+    let resolveInitial!: (value: Progress | null) => void;
+    mocks.getProgress.mockReturnValue(
+      new Promise<Progress | null>((resolve) => {
+        resolveInitial = resolve;
+      }),
+    );
+
+    await act(async () => root.render(<Probe id="job" />));
+    await act(async () => {
+      eventHandler?.({
+        payload: {
+          id: "job",
+          generation: "3",
+          progress: 0,
+          finished: false,
+          state: "running",
+          cleared: false,
+          count: 150,
+        },
+      });
+    });
+    expect(container.querySelector("output")?.dataset.count).toBe("150");
+
+    await act(async () => {
+      resolveInitial({
+        id: "job",
+        generation: "3",
+        progress: 0,
+        finished: false,
+        state: "running",
+        cleared: false,
+        count: 40,
+      });
+    });
+    expect(container.querySelector("output")?.dataset.count).toBe("150");
+
+    // A count-less update with equal generation and progress also keeps the newer count.
+    await act(async () => {
+      eventHandler?.({
+        payload: {
+          id: "job",
+          generation: "3",
+          progress: 0,
+          finished: false,
+          state: "running",
+          cleared: false,
+          count: null,
+        },
+      });
+    });
+    expect(container.querySelector("output")?.dataset.count).toBe("150");
+
+    // A higher count with equal generation and progress replaces it.
+    await act(async () => {
+      eventHandler?.({
+        payload: {
+          id: "job",
+          generation: "3",
+          progress: 0,
+          finished: false,
+          state: "running",
+          cleared: false,
+          count: 200,
+        },
+      });
+    });
+    expect(container.querySelector("output")?.dataset.count).toBe("200");
+
+    // A cleared event still clears the item and its count.
+    await act(async () => {
+      eventHandler?.({
+        payload: {
+          id: "job",
+          generation: "4",
+          progress: 0,
+          finished: true,
+          state: "cancelled",
+          cleared: true,
+          count: null,
+        },
+      });
+    });
+    expect(container.querySelector("output")?.dataset.generation).toBe("none");
+    expect(container.querySelector("output")?.dataset.count).toBe("none");
   });
 });

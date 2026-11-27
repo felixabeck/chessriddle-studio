@@ -35,6 +35,11 @@ const mocks = vi.hoisted(() => ({
     String(options?.defaultValue ?? key),
 }));
 
+const progressMock = await vi.hoisted(async () => {
+  const { createProgressMock } = await import("@/tests/progressMock");
+  return createProgressMock();
+});
+
 vi.mock("@/platform/tauri", async () => {
   const actual = await vi.importActual<typeof import("@/platform/tauri")>("@/platform/tauri");
   return {
@@ -59,7 +64,9 @@ vi.mock("./opponentLookup", () => ({
 vi.mock("./forgetDeletedDatabase", () => ({
   forgetDeletedDatabase: mocks.forgetDeletedDatabase,
 }));
-vi.mock("@/hooks/useProgress", () => ({ useProgress: () => ({ progress: 45 }) }));
+vi.mock("@/hooks/useProgress", () => ({
+  useProgress: (id: string | null | undefined) => progressMock.useProgress(id),
+}));
 vi.mock("@mantine/notifications", () => ({
   notifications: { show: mocks.notify, hide: mocks.notifyHide },
 }));
@@ -70,6 +77,7 @@ vi.mock("@/platform/errors", async (original) => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => mocks.translate(key, options),
+    i18n: { language: "en-US" },
   }),
 }));
 vi.mock("@/i18n", async (original) => ({
@@ -157,6 +165,7 @@ beforeEach(async () => {
   localStorage.clear();
   sessionStorage.clear();
   pendingSettlements = [];
+  progressMock.reset();
   const i18n = await catalogueI18n("en-US");
   t = i18n.t.bind(i18n);
   mocks.translate = (key, options) => i18n.t(key, options);
@@ -515,5 +524,47 @@ describe("OnlineOpponentDownload", () => {
       ),
     );
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  test("renders the live count line from the ticket and the final count on success", async () => {
+    progressMock.setItem({
+      id: "ticket-1",
+      generation: 1n,
+      progress: 45,
+      finished: false,
+      state: "running",
+      count: 1234,
+    });
+    const { resolve } = deferredImport();
+
+    await act(async () => {
+      await enterOnlineOpponent({ store, navigate, mutateCache, t }, LICHESS);
+    });
+
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("1,234 games loaded");
+    const runningBar = dialog.querySelector<HTMLElement>('[role="progressbar"]')!;
+    expect(runningBar.dataset.animated).toBe("true");
+
+    await act(async () => {
+      progressMock.setItem({
+        id: "ticket-1",
+        generation: 1n,
+        progress: 100,
+        finished: true,
+        state: "succeeded",
+        count: 1250,
+      });
+    });
+
+    expect(dialog.textContent).toContain("1,250 games loaded");
+    const doneBar = dialog.querySelector<HTMLElement>('[role="progressbar"]')!;
+    expect(doneBar.getAttribute("aria-valuenow")).toBe("100");
+    expect(doneBar.dataset.animated).toBeUndefined();
+
+    await act(async () => {
+      resolve({ kind: "imported", database: null, accounts: [], merged: true });
+    });
+    await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull());
   });
 });

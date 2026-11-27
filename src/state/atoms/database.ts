@@ -233,6 +233,13 @@ export const puzzleWorkspaceGenerationAtom = atom(0);
 /** In-memory only: account keys mapped to their pending download ticket; owned by AccountCard's download action. */
 export const accountDownloadsInFlightAtom = atom<ReadonlyMap<string, string | null>>(new Map());
 
+/**
+ * In-memory only: account keys whose current download was started from this card while the
+ * account's database was known to be empty. Absent keys show count only. Owned by AccountCard's
+ * download action and cleared on every exit path.
+ */
+export const accountDownloadsStartedEmptyAtom = atom<ReadonlySet<string>>(new Set<string>());
+
 /** Native account workflows survive the document's in-memory download tickets. */
 export const accountCompletionsAtom = atom<
     ReadonlyMap<string, import("@/bindings").AccountCompletion>

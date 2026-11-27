@@ -39,6 +39,11 @@ const mocks = vi.hoisted(() => ({
   pathname: "/databases/other-db",
   openOpponentCard: vi.fn(),
 }));
+
+const progressMock = await vi.hoisted(async () => {
+  const { createProgressMock } = await import("@/tests/progressMock");
+  return createProgressMock();
+});
 vi.mock("@/platform/errors", async (original) => ({
   ...(await original<typeof import("@/platform/errors")>()),
   warnSafely: mocks.warn,
@@ -48,7 +53,9 @@ vi.mock("@/hooks/useDatabaseList", () => ({
   DATABASE_LIST_KEY: "databases",
   useDatabaseList: () => ({ data: mocks.listing, error: mocks.listingError }),
 }));
-vi.mock("@/hooks/useProgress", () => ({ useProgress: () => ({ progress: 40 }) }));
+vi.mock("@/hooks/useProgress", () => ({
+  useProgress: (id: string | null | undefined) => progressMock.useProgress(id),
+}));
 vi.mock("./opponentImport", () => ({
   runOpponentImport: mocks.run,
   cancelOpponentImport: mocks.cancel,
@@ -85,6 +92,7 @@ let translate: (key: string, options?: Record<string, unknown>) => string;
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => translate(key, options),
+    i18n: { language: "en-US" },
   }),
 }));
 
@@ -199,6 +207,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.listing = { databases: [] };
   mocks.listingError = undefined;
+  progressMock.reset();
   mocks.pathname = "/databases/other-db";
   mocks.openOpponentCard.mockResolvedValue(true);
   mocks.players.mockResolvedValue([{ id: 1, name: "DrNykterstein" }]);
@@ -465,6 +474,39 @@ describe("downloading", () => {
 
     expect(button("Cancel").disabled).toBe(true);
     expect(document.body.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  test("renders the live count line from the ticket and the final count on success", async () => {
+    progressMock.setItem({
+      id: "ticket-1",
+      generation: 1n,
+      progress: 40,
+      finished: false,
+      state: "running",
+      count: 1234,
+    });
+    store.set(opponentImportsAtom, new Map([[ID, "ticket-1"]]));
+    await render();
+
+    expect(document.body.textContent).toContain("1,234 games loaded");
+    const runningBar = document.body.querySelector<HTMLElement>('[role="progressbar"]')!;
+    expect(runningBar.dataset.animated).toBe("true");
+
+    await act(async () => {
+      progressMock.setItem({
+        id: "ticket-1",
+        generation: 1n,
+        progress: 100,
+        finished: true,
+        state: "succeeded",
+        count: 1500,
+      });
+    });
+
+    expect(document.body.textContent).toContain("1,500 games loaded");
+    const doneBar = document.body.querySelector<HTMLElement>('[role="progressbar"]')!;
+    expect(doneBar.getAttribute("aria-valuenow")).toBe("100");
+    expect(doneBar.dataset.animated).toBeUndefined();
   });
 });
 

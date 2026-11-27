@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   getDatabases: vi.fn(),
   logFailureSafely: vi.fn(),
   notify: vi.fn(),
+  getProgress: vi.fn(),
   progress: vi.fn(),
   completionChanged: vi.fn(),
 }));
@@ -176,6 +177,7 @@ beforeEach(() => {
   cache = new Map();
   snapshot = [];
   unlisten = vi.fn();
+  mocks.getProgress.mockResolvedValue(null);
   mocks.progress.mockResolvedValue(vi.fn());
   mocks.completionChanged.mockImplementation(async (listener) => {
     changed = listener;
@@ -420,10 +422,18 @@ test("an importing snapshot registers the native conversion identity and clears 
   expect(store.get(databaseConversionStateAtom)).toEqual([local]);
 });
 test("a finished progress frame neither imports nor refreshes databases", async () => {
+  store.set(accountDownloadsInFlightAtom, new Map([["chesscom_felix", "ticket-1"]]));
   await renderCards();
   await act(async () =>
     mocks.progress.mock.calls[0]![0]({
-      payload: { id: "chesscom_felix", progress: 100, finished: true },
+      payload: {
+        id: "ticket-1",
+        generation: 1n,
+        progress: 100,
+        finished: true,
+        state: "succeeded",
+        cleared: false,
+      },
     }),
   );
   expect(mocks.getDatabases).not.toHaveBeenCalled();

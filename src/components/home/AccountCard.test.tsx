@@ -8,13 +8,16 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import {
   accountCompletionsAtom,
   accountDownloadsInFlightAtom,
+  accountDownloadsStartedEmptyAtom,
   downloadDestinationAtom,
 } from "@/state/atoms";
-import type { AccountCompletion } from "@/bindings";
+import type { AccountCompletion, ProgressEvent } from "@/bindings";
 
 const mocks = vi.hoisted(() => ({
   language: "en-US",
   linkedCollectionsSupported: vi.fn(async () => false),
+  prepareAccountCollection: vi.fn(),
+  ensureFileWorkspace: vi.fn(),
   getDatabaseWorkspace: vi.fn(),
   createWorkspaceDatabase: vi.fn(),
   listWorkspaceDatabases: vi.fn(),
@@ -22,9 +25,10 @@ const mocks = vi.hoisted(() => ({
   issueDownloadDestination: vi.fn(),
   importAccountGames: vi.fn(),
   getDatabases: vi.fn(),
+  getProgress: vi.fn(async (): Promise<import("@/bindings").ProgressItem | null> => null),
   progress: vi.fn(),
   notifyListenerError: vi.fn(),
-  pendingAccountCompletions: vi.fn(async () => []),
+  pendingAccountCompletions: vi.fn(async (): Promise<AccountCompletion[]> => []),
   acknowledgeAccountCompletion: vi.fn(),
   completionChanged: vi.fn(async () => vi.fn()),
 }));
@@ -38,6 +42,7 @@ vi.mock("@/platform/tauri", async () => {
   };
 });
 vi.mock("@/utils/db", () => ({ getDatabases: mocks.getDatabases }));
+vi.mock("@/utils/files", () => ({ ensureFileWorkspace: mocks.ensureFileWorkspace }));
 vi.mock("@/components/files/notifyError", async () => {
   const actual = await vi.importActual<typeof import("@/components/files/notifyError")>(
     "@/components/files/notifyError",
@@ -47,8 +52,24 @@ vi.mock("@/components/files/notifyError", async () => {
 vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { date?: string }) =>
-      key === "Home.Accounts.LastUpdate" ? `${key}: ${options?.date}` : key,
+    t: (
+      key: string,
+      options?: { date?: string; loaded?: string; total?: string; count?: number },
+    ) => {
+      if (key === "Home.Accounts.LastUpdate") return `${key}: ${options?.date}`;
+      if (key === "Common.LoadingGames") return "Loading games…";
+      if (key === "Common.GamesLoadedOf") {
+        return options?.count === 1
+          ? `${options.loaded} of ${options.total} game loaded`
+          : `${options?.loaded} of ${options?.total} games loaded`;
+      }
+      if (key === "Common.GamesLoaded") {
+        return options?.count === 1
+          ? `${options.loaded} game loaded`
+          : `${options?.loaded} games loaded`;
+      }
+      return key;
+    },
     i18n: { language: mocks.language },
   }),
 }));
@@ -79,10 +100,26 @@ test("cleanup create does not run account database recovery", async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.language = "en-US";
+  mocks.linkedCollectionsSupported.mockResolvedValue(false);
+  mocks.pendingAccountCompletions.mockResolvedValue([]);
+  mocks.getProgress.mockResolvedValue(null);
   mocks.progress.mockResolvedValue(vi.fn());
   getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
+  getDefaultStore().set(accountDownloadsStartedEmptyAtom, new Set());
   getDefaultStore().set(accountCompletionsAtom, new Map());
 });
+
+function progressPayload(overrides: Partial<ProgressEvent> & { id: string }): ProgressEvent {
+  return {
+    generation: 1n,
+    progress: 0,
+    finished: false,
+    state: "running",
+    cleared: false,
+    count: null,
+    ...overrides,
+  };
+}
 
 async function renderAccount(
   root: Root,
@@ -90,6 +127,7 @@ async function renderAccount(
   database: import("@/utils/db").ManagedDatabaseInfo | null = null,
   updatedAt = 0,
   accountHandle?: string,
+  total = 0,
 ) {
   await act(async () => {
     root.render(
@@ -100,7 +138,7 @@ async function renderAccount(
             database={database}
             title="Felix"
             updatedAt={updatedAt}
-            total={0}
+            total={total}
             stats={[]}
             logout={vi.fn()}
             reload={vi.fn()}
@@ -192,34 +230,53 @@ test.each([
 );
 
 test("a progress frame does not publish databases before or after unmount", async () => {
-  let progressListener!: (event: {
-    payload: { id: string; progress: number; finished: boolean };
-  }) => void;
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
   const cache = new Map();
   mocks.progress.mockImplementation(async (listener) => {
     progressListener = listener;
     return vi.fn();
   });
+  getDefaultStore().set(accountDownloadsInFlightAtom, new Map([["lichess_felix", "download-job"]]));
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  await renderAccount(root, cache);
-  act(() => {
-    progressListener({ payload: { id: "lichess_Felix", progress: 100, finished: true } });
-  });
+  try {
+    await renderAccount(root, cache);
+    await act(async () => {
+      progressListener({
+        payload: progressPayload({
+          id: "download-job",
+          progress: 100,
+          finished: true,
+          state: "succeeded",
+          count: 10,
+        }),
+      });
+    });
 
-  await act(async () => root.unmount());
-  act(() => {
-    progressListener({ payload: { id: "lichess_Felix", progress: 100, finished: true } });
-  });
+    await act(async () => root.unmount());
+    await act(async () => {
+      progressListener({
+        payload: progressPayload({
+          id: "download-job",
+          progress: 100,
+          finished: true,
+          state: "succeeded",
+          count: 10,
+        }),
+      });
+    });
 
-  expect(mocks.getDatabases).not.toHaveBeenCalled();
-  expect(cache.get("databases")?.data).toBeUndefined();
-  host.remove();
+    expect(mocks.getDatabases).not.toHaveBeenCalled();
+    expect(cache.get("databases")?.data).toBeUndefined();
+  } finally {
+    host.remove();
+    getDefaultStore().set(accountDownloadsInFlightAtom, new Map());
+  }
 });
 
 test("an adapter decoding error notifies only while mounted and leaves progress unchanged", async () => {
-  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
   let reportError: ((error: unknown, event: { payload: unknown }) => void) | undefined;
   const unlisten = vi.fn();
   mocks.progress.mockImplementation(async (listener, onError) => {
@@ -232,11 +289,16 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
   document.body.append(host);
   const root = createRoot(host);
   const error = new TypeError("generation must be a canonical unsigned u64 decimal string");
-  const malformed = { payload: { id: "download-job", generation: "01", progress: 99 } };
+  const malformed = { payload: { id: "download-job", generation: "01", progress: 99, count: 99 } };
   try {
     await renderAccount(root);
-    await act(async () => progressListener({ payload: { id: "download-job", progress: 35 } }));
-    expect(host.textContent).toContain("35%");
+    await act(async () =>
+      progressListener({
+        payload: progressPayload({ id: "download-job", progress: 35, count: 35 }),
+      }),
+    );
+    expect(host.textContent).toContain("35 games loaded");
+    expect(host.textContent).not.toContain("%");
 
     // The adapter drops the frame and reports its decoding error through the supplied callback.
     await act(async () => reportError?.(error, malformed));
@@ -244,14 +306,16 @@ test("an adapter decoding error notifies only while mounted and leaves progress 
       expect.objectContaining({ message: error.message }),
       malformed,
     );
-    expect(host.textContent).toContain("35%");
-    expect(host.textContent).not.toContain("99%");
+    expect(host.textContent).toContain("35 games loaded");
+    expect(host.textContent).not.toContain("99 games loaded");
 
     await act(async () => root.render(null));
     expect(unlisten).toHaveBeenCalledOnce();
     await act(async () => {
       reportError?.(error, malformed);
-      progressListener({ payload: { id: "download-job", progress: 99 } });
+      progressListener({
+        payload: progressPayload({ id: "download-job", progress: 99, count: 99 }),
+      });
     });
     expect(mocks.notifyListenerError).toHaveBeenCalledOnce();
     expect(host.textContent).toBe("");
@@ -289,8 +353,8 @@ function accountCompletionFixture(overrides: Partial<AccountCompletion> = {}): A
   };
 }
 
-test("retrying a retained terminal completion hides 100% when native reuses its progressId and renders 0%", async () => {
-  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+test("retrying a retained terminal completion hides the prior count when native reuses its progressId", async () => {
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
   mocks.progress.mockImplementation(async (listener) => {
     progressListener = listener;
     return vi.fn();
@@ -310,6 +374,14 @@ test("retrying a retained terminal completion hides 100% when native reuses its 
     outcome: { state: "running" },
     deletionPending: true,
   });
+  const terminalAttempt1 = progressPayload({
+    id: "ticket-1",
+    generation: 1n,
+    progress: 100,
+    finished: true,
+    state: "succeeded",
+    count: 100,
+  });
 
   const store = getDefaultStore();
   const host = document.createElement("div");
@@ -321,27 +393,45 @@ test("retrying a retained terminal completion hides 100% when native reuses its 
     await act(async () => {
       store.set(accountCompletionsAtom, new Map([["lichess_felix", runningAttempt1]]));
     });
-    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 100 } }));
-    expect(host.textContent).toContain("100%");
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", progress: 100, count: 100 }) }),
+    );
+    expect(host.textContent).toContain("100 games loaded");
+    expect(host.textContent).not.toContain("%");
+
+    // Attempt 1's terminal item remains in the native store when attempt 2 reuses ticket-1.
+    mocks.getProgress.mockResolvedValue(terminalAttempt1);
 
     await act(async () => {
       store.set(accountCompletionsAtom, new Map([["lichess_felix", retainedTerminal]]));
       store.set(accountDownloadsInFlightAtom, new Map([["lichess_felix", null]]));
     });
-    expect(host.textContent).not.toContain("100%");
-
-    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 95 } }));
-    expect(host.textContent).not.toContain("95%");
+    expect(host.textContent).toContain("Loading games…");
+    expect(host.textContent).not.toContain("100 games loaded");
 
     await act(async () => {
       store.set(accountDownloadsInFlightAtom, new Map());
       store.set(accountCompletionsAtom, new Map([["lichess_felix", runningAttempt2]]));
     });
-    expect(host.textContent).not.toContain("100%");
-    expect(host.textContent).not.toContain("95%");
+    await vi.waitFor(() => expect(mocks.getProgress).toHaveBeenCalledWith("ticket-1"));
+    expect(host.textContent).toContain("Loading games…");
+    expect(host.textContent).not.toContain("100 games loaded");
 
-    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 0 } }));
-    expect(host.textContent).toContain("0%");
+    // A later running item with a lower count is shown as 5, never latched at attempt 1's 100.
+    await act(async () =>
+      progressListener({
+        payload: progressPayload({
+          id: "ticket-1",
+          generation: 2n,
+          progress: 0,
+          finished: false,
+          state: "running",
+          count: 5,
+        }),
+      }),
+    );
+    expect(host.textContent).toContain("5 games loaded");
+    expect(host.textContent).not.toContain("100 games loaded");
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -350,8 +440,8 @@ test("retrying a retained terminal completion hides 100% when native reuses its 
   }
 });
 
-test("switching to a running completion with a different progressId hides 100% until a matching frame arrives", async () => {
-  let progressListener!: (event: { payload: { id: string; progress: number } }) => void;
+test("switching to a different completion id hides the previous run's count until a matching frame arrives", async () => {
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
   mocks.progress.mockImplementation(async (listener) => {
     progressListener = listener;
     return vi.fn();
@@ -370,8 +460,10 @@ test("switching to a running completion with a different progressId hides 100% u
         new Map([["lichess_felix", accountCompletionFixture({ progressId: "ticket-1" })]]),
       );
     });
-    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 100 } }));
-    expect(host.textContent).toContain("100%");
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", progress: 100, count: 100 }) }),
+    );
+    expect(host.textContent).toContain("100 games loaded");
 
     await act(async () => {
       store.set(
@@ -381,13 +473,18 @@ test("switching to a running completion with a different progressId hides 100% u
         ]),
       );
     });
-    expect(host.textContent).not.toContain("100%");
+    expect(host.textContent).toContain("Loading games…");
+    expect(host.textContent).not.toContain("100 games loaded");
 
-    await act(async () => progressListener({ payload: { id: "ticket-1", progress: 80 } }));
-    expect(host.textContent).not.toContain("80%");
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", progress: 80, count: 80 }) }),
+    );
+    expect(host.textContent).not.toContain("80 games loaded");
 
-    await act(async () => progressListener({ payload: { id: "ticket-2", progress: 25 } }));
-    expect(host.textContent).toContain("25%");
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-2", progress: 25, count: 25 }) }),
+    );
+    expect(host.textContent).toContain("25 games loaded");
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -395,8 +492,8 @@ test("switching to a running completion with a different progressId hides 100% u
   }
 });
 
-test("two mounted AccountCards for the same accountKey never show attempt 1's 100% on attempt 2", async () => {
-  const listeners = new Set<(event: { payload: { id: string; progress: number } }) => void>();
+test("two mounted AccountCards for the same accountKey never show attempt 1's count on attempt 2", async () => {
+  const listeners = new Set<(event: { payload: ProgressEvent }) => void>();
   mocks.progress.mockImplementation(async (listener) => {
     listeners.add(listener);
     return () => {
@@ -411,10 +508,10 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
       }),
   );
 
-  const emitProgress = async (id: string, progress: number) => {
+  const emitProgress = async (id: string, count: number, generation = 1n) => {
     await act(async () => {
       for (const listener of listeners) {
-        listener({ payload: { id, progress } });
+        listener({ payload: progressPayload({ id, generation, count }) });
       }
     });
   };
@@ -469,8 +566,8 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
       );
     });
     await emitProgress("ticket-1", 100);
-    expect(card0.textContent).toContain("100%");
-    expect(card1.textContent).toContain("100%");
+    expect(card0.textContent).toContain("100 games loaded");
+    expect(card1.textContent).toContain("100 games loaded");
 
     await act(async () => {
       store.set(
@@ -490,8 +587,8 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
         ]),
       );
     });
-    expect(card0.textContent).not.toContain("100%");
-    expect(card1.textContent).not.toContain("100%");
+    expect(card0.textContent).not.toContain("100 games loaded");
+    expect(card1.textContent).not.toContain("100 games loaded");
 
     // Trigger retry from card 0 only; card 1 receives no click.
     await act(async () => {
@@ -507,12 +604,12 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
         ]),
       );
     });
-    expect(card0.textContent).not.toContain("100%");
-    expect(card1.textContent).not.toContain("100%");
+    expect(card0.textContent).toContain("Loading games…");
+    expect(card1.textContent).toContain("Loading games…");
 
-    await emitProgress("ticket-1", 0);
-    expect(card0.textContent).toContain("0%");
-    expect(card1.textContent).toContain("0%");
+    await emitProgress("ticket-1", 0, 2n);
+    expect(card0.textContent).toContain("0 games loaded");
+    expect(card1.textContent).toContain("0 games loaded");
 
     await act(async () => {
       releaseWorkspace(new DOMException("Cancellation", "AbortError"));
@@ -521,6 +618,7 @@ test("two mounted AccountCards for the same accountKey never show attempt 1's 10
     await act(async () => root.unmount());
     host.remove();
     store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
     store.set(accountCompletionsAtom, new Map());
   }
 });
@@ -590,7 +688,328 @@ test("Lichess card without accountHandle enables download and sends accountHandl
     await act(async () => root.unmount());
     host.remove();
     store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
     store.set(accountCompletionsAtom, new Map());
     store.set(downloadDestinationAtom, null);
+  }
+});
+
+test("keeps the last count across a ticket change and count-less lease, stays running between chunks, and returns to idle row after", async () => {
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+
+  const store = getDefaultStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, 0, "lichess-account", 5000);
+    expect(host.textContent).toContain("0 / 5000");
+
+    // Chunk 1 starts on ticket-1.
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([
+          [
+            "lichess_felix",
+            accountCompletionFixture({ id: "op-1", attempt: 1, progressId: "ticket-1" }),
+          ],
+        ]),
+      );
+    });
+    expect(host.textContent).toContain("Loading games…");
+    expect(host.textContent).not.toContain("0 / 5000");
+
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", count: 1200 }) }),
+    );
+    expect(host.textContent).toContain("1,200 games loaded");
+    expect(host.textContent).not.toContain("%");
+
+    // Chunk 1's lease finishes while the whole run is still pending: stays running (animated).
+    await act(async () =>
+      progressListener({
+        payload: progressPayload({
+          id: "ticket-1",
+          progress: 100,
+          finished: true,
+          state: "succeeded",
+          count: 1200,
+        }),
+      }),
+    );
+    expect(host.textContent).toContain("1,200 games loaded");
+    expect(host.querySelector<HTMLElement>('[role="progressbar"]')?.dataset.animated).toBe("true");
+
+    // Chunk 2 switches to ticket-2 within the same completion id + attempt: count is retained.
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([
+          [
+            "lichess_felix",
+            accountCompletionFixture({ id: "op-1", attempt: 1, progressId: "ticket-2" }),
+          ],
+        ]),
+      );
+    });
+    expect(host.textContent).toContain("1,200 games loaded");
+
+    // A count-less lease update on ticket-2 keeps the retained count.
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-2", progress: 50, count: null }) }),
+    );
+    expect(host.textContent).toContain("1,200 games loaded");
+
+    // A newer count on ticket-2 advances the line.
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-2", progress: 75, count: 1500 }) }),
+    );
+    expect(host.textContent).toContain("1,500 games loaded");
+
+    // Run ends: live line disappears and idle row returns.
+    await act(async () => {
+      store.set(accountCompletionsAtom, new Map());
+    });
+    expect(host.textContent).toContain("0 / 5000");
+    expect(host.textContent).not.toContain("1,500 games loaded");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
+    store.set(accountCompletionsAtom, new Map());
+  }
+});
+
+test("shows total only for a run started here on a known-empty database, including after remount, and clears the start record when done", async () => {
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+  const rootHandle = { id: { id: "db-root" }, kind: "databaseRoot" as const };
+  const dbHandle = { id: { id: "db-handle" }, kind: "database" as const };
+  const destination = { id: "download-dest" };
+  mocks.getDatabaseWorkspace.mockResolvedValue({ root: rootHandle, displayName: "Databases" });
+  mocks.listWorkspaceDatabases.mockResolvedValue({
+    entries: [{ handle: dbHandle, filename: "Felix_lichess.db3", availability: "available" }],
+    unread: [],
+  });
+  mocks.issueDownloadDestination.mockResolvedValue(destination);
+
+  let finishImport!: (value: AccountCompletion) => void;
+  mocks.importAccountGames.mockImplementation(
+    () =>
+      new Promise<AccountCompletion>((resolve) => {
+        finishImport = resolve;
+      }),
+  );
+
+  const store = getDefaultStore();
+  store.set(downloadDestinationAtom, null);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, 0, "lichess-account", 5000);
+    await act(async () => {
+      host
+        .querySelector<HTMLButtonElement>('button[aria-label="Home.Accounts.DownloadGames"]')!
+        .click();
+    });
+
+    expect(store.get(accountDownloadsStartedEmptyAtom).has("lichess_felix")).toBe(true);
+    const running = accountCompletionFixture({ progressId: "ticket-1" });
+    mocks.pendingAccountCompletions.mockResolvedValue([running]);
+    await act(async () => {
+      store.set(accountCompletionsAtom, new Map([["lichess_felix", running]]));
+    });
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", count: 1234 }) }),
+    );
+    expect(host.textContent).toContain("1,234 of 5,000 games loaded");
+
+    // Remount while still running: total eligibility survives via accountDownloadsStartedEmptyAtom.
+    await act(async () => root.render(null));
+    mocks.getProgress.mockResolvedValueOnce(progressPayload({ id: "ticket-1", count: 1234 }));
+    await renderAccount(root, new Map(), null, 0, "lichess-account", 5000);
+    await vi.waitFor(() => expect(host.textContent).toContain("1,234 of 5,000 games loaded"));
+
+    // Finish the run: start record is removed.
+    mocks.pendingAccountCompletions.mockResolvedValue([]);
+    await act(async () => {
+      finishImport(
+        accountCompletionFixture({
+          outcome: { state: "succeeded", result: { collectionNotice: false } },
+        }),
+      );
+    });
+    expect(store.get(accountDownloadsStartedEmptyAtom).has("lichess_felix")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
+    store.set(accountCompletionsAtom, new Map());
+    store.set(downloadDestinationAtom, null);
+  }
+});
+
+test.each([
+  {
+    name: "known-empty loaded database (game_count === 0)",
+    database: {
+      type: "success" as const,
+      file: { id: { id: "empty-db" }, kind: "database" as const },
+      filename: "Felix_lichess.db3",
+      title: "Felix Lichess",
+      description: "",
+      player_count: 0,
+      event_count: 0,
+      game_count: 0,
+      storage_size: "0",
+      indexed: false,
+    },
+    total: 5000,
+    expectedLine: "42 of 5,000 games loaded",
+  },
+  {
+    name: "non-empty loaded database (incremental update, game_count > 0)",
+    database: {
+      type: "success" as const,
+      file: { id: { id: "existing-db" }, kind: "database" as const },
+      filename: "Felix_lichess.db3",
+      title: "Felix Lichess",
+      description: "",
+      player_count: 2,
+      event_count: 1,
+      game_count: 10,
+      storage_size: "1024",
+      indexed: false,
+    },
+    total: 5000,
+    expectedLine: "42 games loaded",
+  },
+  {
+    name: "errored database",
+    database: {
+      type: "error" as const,
+      file: { id: { id: "err-db" }, kind: "database" as const },
+      filename: "Felix_lichess.db3",
+      indexed: false,
+      error: "corrupt",
+    },
+    total: 5000,
+    expectedLine: "42 games loaded",
+  },
+  {
+    name: "zero total",
+    database: null,
+    total: 0,
+    expectedLine: "42 games loaded",
+  },
+])("total eligibility for a run started on $name", async ({ database, total, expectedLine }) => {
+  let progressListener!: (event: { payload: ProgressEvent }) => void;
+  mocks.progress.mockImplementation(async (listener) => {
+    progressListener = listener;
+    return vi.fn();
+  });
+  const rootHandle = { id: { id: "db-root" }, kind: "databaseRoot" as const };
+  const dbHandle = { id: { id: "db-handle" }, kind: "database" as const };
+  const destination = { id: "download-dest" };
+  mocks.getDatabaseWorkspace.mockResolvedValue({ root: rootHandle, displayName: "Databases" });
+  mocks.listWorkspaceDatabases.mockResolvedValue({
+    entries: [{ handle: dbHandle, filename: "Felix_lichess.db3", availability: "available" }],
+    unread: [],
+  });
+  mocks.issueDownloadDestination.mockResolvedValue(destination);
+
+  let finishImport!: (value: AccountCompletion) => void;
+  mocks.importAccountGames.mockImplementation(
+    () =>
+      new Promise<AccountCompletion>((resolve) => {
+        finishImport = resolve;
+      }),
+  );
+
+  const store = getDefaultStore();
+  store.set(downloadDestinationAtom, null);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), database, 0, "lichess-account", total);
+    await act(async () => {
+      host
+        .querySelector<HTMLButtonElement>('button[aria-label="Home.Accounts.DownloadGames"]')!
+        .click();
+    });
+    await act(async () => {
+      store.set(
+        accountCompletionsAtom,
+        new Map([["lichess_felix", accountCompletionFixture({ progressId: "ticket-1" })]]),
+      );
+    });
+    await act(async () =>
+      progressListener({ payload: progressPayload({ id: "ticket-1", count: 42 }) }),
+    );
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(expectedLine);
+
+    await act(async () => {
+      finishImport(
+        accountCompletionFixture({
+          outcome: { state: "succeeded", result: { collectionNotice: false } },
+        }),
+      );
+    });
+    expect(store.get(accountDownloadsStartedEmptyAtom).has("lichess_felix")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
+    store.set(accountCompletionsAtom, new Map());
+    store.set(downloadDestinationAtom, null);
+  }
+});
+
+test("clears the start record after an abandoned start such as migration required", async () => {
+  mocks.linkedCollectionsSupported.mockResolvedValue(true);
+  mocks.ensureFileWorkspace.mockResolvedValue({
+    id: { id: "ws" },
+    kind: "fileWorkspace",
+  });
+  mocks.prepareAccountCollection.mockResolvedValue({
+    collection: null,
+    migrationRequired: true,
+    destination: { id: "dest" },
+    pendingBatch: null,
+  });
+
+  const store = getDefaultStore();
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await renderAccount(root, new Map(), null, 0, "lichess-account", 5000);
+    await act(async () => {
+      host
+        .querySelector<HTMLButtonElement>('button[aria-label="Home.Accounts.DownloadGames"]')!
+        .click();
+    });
+    expect(mocks.importAccountGames).not.toHaveBeenCalled();
+    expect(store.get(accountDownloadsStartedEmptyAtom).has("lichess_felix")).toBe(false);
+    expect(store.get(accountDownloadsInFlightAtom).has("lichess_felix")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    store.set(accountDownloadsInFlightAtom, new Map());
+    store.set(accountDownloadsStartedEmptyAtom, new Set());
+    store.set(accountCompletionsAtom, new Map());
   }
 });

@@ -216,6 +216,7 @@
         "src/components/common/CheckboxRow.tsx",
         "src/components/common/LocalImage.tsx",
         "src/components/common/ProgressButton.tsx",
+        "src/components/common/GamesLoadedProgress.tsx",
         "src/components/common/ToggleButtonGroup.tsx",
         "src/components/common/wrappingButton.ts",
         "src/components/icons/**",
