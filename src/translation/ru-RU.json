@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Справа от вкладок",
     "Board.Arrange.ShowAsArea": "Показать «{{panel}}» как отдельную область",
     "Board.Arrange.ShowTabs": "Показать вкладки",
+    "Board.Clock.MoveTime": "Время, затраченное на этот ход",
     "Board.CopyFailed": "Не удалось скопировать PGN в буфер обмена.",
     "Board.Database.AddColumn": "Добавить столбец",
     "Board.Database.AverageRating": "Средний рейтинг",

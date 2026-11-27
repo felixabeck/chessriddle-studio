@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatClock } from "./Clock";
+import { formatClock, formatMoveTime } from "./Clock";
 
 test.each([
     [0, "00:00.0"],
@@ -22,4 +22,19 @@ test("never renders :60 for remaining time just under a minute", () => {
     for (let ms = 59000; ms <= 59999; ms++) {
         expect(formatClock(ms / 1000)).toMatch(/^00:59\.\d$/);
     }
+});
+
+test.each([
+    [0.1, "0.1 s"],
+    [9.94, "9.9 s"],
+    [10, "10 s"],
+    [59.9, "59 s"],
+    [60, "01:00"],
+    [125.4, "02:05"],
+] as const)("formatMoveTime(%s) is %s", (spent, expected) => {
+    expect(formatMoveTime(spent, "en-US", (value) => `${value} s`)).toBe(expected);
+});
+
+test("formatMoveTime uses the locale's decimal separator", () => {
+    expect(formatMoveTime(1.5, "de-DE", (value) => `${value} s`)).toBe("1,5 s");
 });

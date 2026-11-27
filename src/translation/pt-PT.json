@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "À direita dos separadores",
     "Board.Arrange.ShowAsArea": "Mostrar {{panel}} como área própria",
     "Board.Arrange.ShowTabs": "Mostrar os separadores",
+    "Board.Clock.MoveTime": "Tempo gasto neste lance",
     "Board.CopyFailed": "Não foi possível copiar o PGN para a área de transferência.",
     "Board.Database.AddColumn": "Adicionar coluna",
     "Board.Database.AverageRating": "Classificação média",

@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Rechts von den Tabs",
     "Board.Arrange.ShowAsArea": "{{panel}} als eigenen Bereich anzeigen",
     "Board.Arrange.ShowTabs": "Tabs einblenden",
+    "Board.Clock.MoveTime": "Bedenkzeit für diesen Zug",
     "Board.CopyFailed": "Die PGN konnte nicht in die Zwischenablage kopiert werden.",
     "Board.Database.AddColumn": "Spalte hinzufügen",
     "Board.Database.AverageRating": "Durchschnittswertung",

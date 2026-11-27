@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "À droite des onglets",
     "Board.Arrange.ShowAsArea": "Afficher {{panel}} dans sa propre zone",
     "Board.Arrange.ShowTabs": "Afficher les onglets",
+    "Board.Clock.MoveTime": "Temps passé sur ce coup",
     "Board.CopyFailed": "Le PGN n’a pas pu être copié dans le presse-papiers.",
     "Board.Database.AddColumn": "Ajouter une colonne",
     "Board.Database.AverageRating": "Classement moyen",

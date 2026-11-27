@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "A la derecha de las pestañas",
     "Board.Arrange.ShowAsArea": "Mostrar {{panel}} como área propia",
     "Board.Arrange.ShowTabs": "Mostrar las pestañas",
+    "Board.Clock.MoveTime": "Tiempo empleado en esta jugada",
     "Board.CopyFailed": "No se pudo copiar el PGN al portapapeles.",
     "Board.Database.AddColumn": "Añadir columna",
     "Board.Database.AverageRating": "Puntuación promedio",

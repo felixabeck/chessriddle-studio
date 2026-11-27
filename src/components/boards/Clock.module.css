@@ -7,3 +7,12 @@
   color: var(--cf-eval-bar-light);
   background-color: var(--cf-eval-bar-dark);
 }
+
+/* A pill that fits the 1.9rem player bar (BAR_HEIGHT in Board.tsx) with room to spare. */
+.clock {
+  padding: 0.3rem var(--mantine-spacing-xs);
+}
+
+.digits {
+  font-variant-numeric: tabular-nums;
+}

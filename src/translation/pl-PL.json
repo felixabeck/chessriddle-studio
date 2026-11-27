@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Po prawej od kart",
     "Board.Arrange.ShowAsArea": "Pokaż {{panel}} jako osobny obszar",
     "Board.Arrange.ShowTabs": "Pokaż karty",
+    "Board.Clock.MoveTime": "Czas poświęcony na ten ruch",
     "Board.CopyFailed": "Nie udało się skopiować PGN do schowka.",
     "Board.Database.AddColumn": "Dodaj kolumnę",
     "Board.Database.AverageRating": "Średnia ocena",

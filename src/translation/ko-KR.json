@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "탭 오른쪽",
     "Board.Arrange.ShowAsArea": "{{panel}}을(를) 별도 영역으로 표시",
     "Board.Arrange.ShowTabs": "탭 표시",
+    "Board.Clock.MoveTime": "이 수에 사용한 시간",
     "Board.CopyFailed": "PGN을 클립보드에 복사하지 못했습니다.",
     "Board.Database.AddColumn": "열 추가",
     "Board.Database.AverageRating": "평균 레이팅",

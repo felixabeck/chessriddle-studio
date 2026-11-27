@@ -2,26 +2,6 @@ import type { Chess } from "chessops";
 import { match } from "ts-pattern";
 import { type GameHeaders, getNodeAtPath, type TreeNode } from "./treeReducer";
 
-function calculateProgress(root: TreeNode, clock: number | null, tc: TimeControlField | null) {
-    if (clock === null) {
-        return 0;
-    }
-    if (tc) {
-        const seconds = tc.seconds;
-        if (seconds <= 0 || !Number.isFinite(seconds)) {
-            return 0;
-        }
-        return clock / (seconds / 1000);
-    }
-    if (root.children.length > 0 && root.children[0].clock !== undefined) {
-        if (root.children[0].clock <= 0) {
-            return 0;
-        }
-        return clock / root.children[0].clock;
-    }
-    return 0;
-}
-
 export type TimeControlField = {
     seconds: number;
     increment?: number;
@@ -31,8 +11,14 @@ export type TimeControlField = {
 type TimeControl = TimeControlField[];
 
 type ClockInfo = {
-    progress: number;
+    /** Remaining time in seconds. */
     value: number | undefined;
+    /**
+     * Seconds the side that just moved spent on the move into the current position: its previous
+     * clock plus the increment minus its clock now. Set only for that side, only when both clocks
+     * are known, and never negative (a clock that rose by more than the increment is not a move time).
+     */
+    spent?: number;
 };
 
 function parseTimeControl(timeControl: string): TimeControl | null {
@@ -118,6 +104,12 @@ export function getClockInfo({
             blackSeconds = blackTc.seconds / 1000;
         }
     }
+    const spent = moveTimeSpent({
+        root,
+        position,
+        currentClock,
+        tc: pos?.turn === "white" ? blackTc : whiteTc,
+    });
     if (whiteTime !== undefined) {
         whiteSeconds = whiteTime / 1000;
     }
@@ -128,11 +120,42 @@ export function getClockInfo({
     return {
         white: {
             value: whiteSeconds,
-            progress: calculateProgress(root, whiteSeconds ?? null, whiteTc),
+            ...(pos?.turn === "black" && spent !== undefined ? { spent } : {}),
         },
         black: {
             value: blackSeconds,
-            progress: calculateProgress(root, blackSeconds ?? null, blackTc),
+            ...(pos?.turn === "white" && spent !== undefined ? { spent } : {}),
         },
     };
+}
+
+/**
+ * The mover's time on the move into `position`. Its previous clock sits two plies up the path; for
+ * each side's first move (the first two plies from any start FEN, whichever colour moves first) it is
+ * the control's starting time instead.
+ */
+function moveTimeSpent({
+    root,
+    position,
+    currentClock,
+    tc,
+}: {
+    root: TreeNode;
+    position: number[];
+    currentClock: number | undefined;
+    tc: TimeControlField | null;
+}): number | undefined {
+    if (position.length === 0 || currentClock === undefined) return undefined;
+    const previous =
+        position.length > 2
+            ? getNodeAtPath(root, position.slice(0, -2)).clock
+            : tc
+              ? tc.seconds / 1000
+              : undefined;
+    if (previous === undefined) return undefined;
+    const spent = previous + (tc?.increment ?? 0) / 1000 - currentClock;
+    // Clocks carry tenths; round away floating-point residue such as 1.0999999. Adding 0 turns a
+    // -0 from a live clock's sub-tenth rounding into 0, which would otherwise print as "-0.0".
+    const rounded = Math.round(spent * 10) / 10 + 0;
+    return rounded >= 0 ? rounded : undefined;
 }

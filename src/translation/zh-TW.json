@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "在分頁右側",
     "Board.Arrange.ShowAsArea": "將{{panel}}顯示為獨立區域",
     "Board.Arrange.ShowTabs": "顯示分頁",
+    "Board.Clock.MoveTime": "這步棋用時",
     "Board.CopyFailed": "無法將 PGN 複製到剪貼簿。",
     "Board.Database.AddColumn": "新增欄",
     "Board.Database.AverageRating": "平均等級分",

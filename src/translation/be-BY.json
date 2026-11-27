@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Справа ад укладак",
     "Board.Arrange.ShowAsArea": "Паказаць «{{panel}}» як асобную вобласць",
     "Board.Arrange.ShowTabs": "Паказаць укладкі",
+    "Board.Clock.MoveTime": "Час, выдаткаваны на гэты ход",
     "Board.CopyFailed": "Не ўдалося скапіраваць PGN у буфер абмену.",
     "Board.Database.AddColumn": "Дадаць слупок",
     "Board.Database.AverageRating": "Сярэдні рэйтынг",

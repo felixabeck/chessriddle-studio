@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "A destra delle schede",
     "Board.Arrange.ShowAsArea": "Mostra {{panel}} come area separata",
     "Board.Arrange.ShowTabs": "Mostra le schede",
+    "Board.Clock.MoveTime": "Tempo impiegato per questa mossa",
     "Board.CopyFailed": "Impossibile copiare il PGN negli appunti.",
     "Board.Database.AddColumn": "Aggiungi colonna",
     "Board.Database.AverageRating": "Punteggio medio",

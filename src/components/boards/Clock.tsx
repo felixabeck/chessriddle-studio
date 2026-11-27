@@ -1,9 +1,11 @@
-import { Paper, Progress, Text } from "@mantine/core";
+import { Group, Paper, Text } from "@mantine/core";
 import { useContext } from "react";
+import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { positionFromFen } from "@/utils/chessops";
 import { getClockInfo } from "@/utils/clock";
+import { formatDecimal } from "@/utils/format";
 import { TreeStateContext } from "../common/TreeStateContext";
 import classes from "./Clock.module.css";
 
@@ -18,6 +20,7 @@ function Clock({
   whiteTime?: number;
   blackTime?: number;
 }) {
+  const { t, i18n } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const position = useStore(store, (s) => s.position);
@@ -35,42 +38,58 @@ function Clock({
     blackTime,
   });
 
-  const clock = match(color)
-    .with("white", () => white.value)
-    .with("black", () => black.value)
-    .otherwise(() => undefined);
-  const progress = match(color)
-    .with("white", () => white.progress)
-    .with("black", () => black.progress)
-    .otherwise(() => 0);
+  const { value: clock, spent } = match(color)
+    .with("white", () => white)
+    .with("black", () => black)
+    .exhaustive();
+  const spentText =
+    spent === undefined
+      ? undefined
+      : formatMoveTime(spent, i18n.language, (value) => t("Common.SecondsShort", { value }));
 
   return (
-    <Paper
-      className={color === "black" ? classes.blackClock : classes.whiteClock}
-      styles={{
-        root: {
-          opacity: turn !== color ? 0.5 : 1,
-          visibility: clock === undefined ? "hidden" : "visible",
-          transition: "opacity 0.15s",
-        },
-      }}
-    >
-      <Text fz="lg" fw="bold" px="xs">
-        {clock === undefined ? "0:00" : formatClock(clock)}
-      </Text>
-      <Progress
-        size="xs"
-        w="100%"
-        value={progress * 100}
-        animated={turn === color}
+    <Group gap={6} wrap="nowrap" align="center">
+      {spentText !== undefined && (
+        <Text
+          size="sm"
+          c="dimmed"
+          className={classes.digits}
+          title={t("Board.Clock.MoveTime")}
+          aria-label={`${t("Board.Clock.MoveTime")}: ${spentText}`}
+        >
+          {spentText}
+        </Text>
+      )}
+      <Paper
+        className={`${classes.clock} ${color === "black" ? classes.blackClock : classes.whiteClock}`}
         styles={{
-          section: {
-            animationDirection: "reverse",
+          root: {
+            opacity: turn !== color ? 0.5 : 1,
+            visibility: clock === undefined ? "hidden" : "visible",
+            transition: "opacity 0.15s",
           },
         }}
-      />
-    </Paper>
+      >
+        <Text fz="lg" fw="bold" lh={1} className={classes.digits}>
+          {clock === undefined ? "0:00" : formatClock(clock)}
+        </Text>
+      </Paper>
+    </Group>
   );
+}
+
+/**
+ * A move's duration: tenths under ten seconds, whole seconds under a minute, then the clock format.
+ * `seconds` wraps a locale-formatted number in the catalogue's short seconds unit.
+ */
+export function formatMoveTime(
+  spent: number,
+  locale: string,
+  seconds: (value: string) => string,
+): string {
+  if (spent < 10) return seconds(formatDecimal(spent, locale));
+  if (spent < 60) return seconds(String(Math.floor(spent)));
+  return formatClock(spent);
 }
 
 export function formatClock(seconds: number) {

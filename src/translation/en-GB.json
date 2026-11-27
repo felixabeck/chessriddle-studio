@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Right of the tabs",
     "Board.Arrange.ShowAsArea": "Show {{panel}} as its own area",
     "Board.Arrange.ShowTabs": "Show the tabs",
+    "Board.Clock.MoveTime": "Time spent on this move",
     "Board.CopyFailed": "The PGN could not be copied to the clipboard.",
     "Board.Database.AddColumn": "Add column",
     "Board.Database.AverageRating": "Average rating",

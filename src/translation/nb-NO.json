@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Til høyre for fanene",
     "Board.Arrange.ShowAsArea": "Vis {{panel}} som eget område",
     "Board.Arrange.ShowTabs": "Vis fanene",
+    "Board.Clock.MoveTime": "Tid brukt på dette trekket",
     "Board.CopyFailed": "PGN kunne ikke kopieres til utklippstavlen.",
     "Board.Database.AddColumn": "Legg til kolonne",
     "Board.Database.AverageRating": "Gjennomsnittsrating",

@@ -200,6 +200,7 @@
     "Board.Arrange.RightOfTabs": "Sekmelerin sağına",
     "Board.Arrange.ShowAsArea": "{{panel}} panelini ayrı alan olarak göster",
     "Board.Arrange.ShowTabs": "Sekmeleri göster",
+    "Board.Clock.MoveTime": "Bu hamleye harcanan süre",
     "Board.CopyFailed": "PGN panoya kopyalanamadı.",
     "Board.Database.AddColumn": "Sütun ekle",
     "Board.Database.AverageRating": "Ortalama puan",
