@@ -211,6 +211,58 @@ test("keeps a read-only lookalike site literal and brands a genuine site without
   expectSiteLink(genuineSite, "Lichess");
 });
 
+test("draft editing mode renders a Lichess site as an input and calls onHeadersChange without tree context", async () => {
+  const onHeadersChange = vi.fn();
+  const headers = {
+    ...defaultTree().headers,
+    site: "https://lichess.org/Abcd1234",
+    event: "Open",
+  };
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={headers} onHeadersChange={onHeadersChange} documentId="db:42" />
+      </MantineProvider>,
+    ),
+  );
+
+  expect(host.querySelector("a")).toBeNull();
+  const siteField = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Databases.Game.Site"]',
+  )!;
+  expect(siteField).not.toBeNull();
+  expect(siteField.disabled).toBe(false);
+  expect(siteField.value).toBe("https://lichess.org/Abcd1234");
+  expect(host.querySelector('[aria-label="GameInfo.Termination"]')).toBeNull();
+
+  await act(async () => setNativeInputValue(siteField, "Berlin"));
+  expect(onHeadersChange).toHaveBeenCalledWith(expect.objectContaining({ site: "Berlin" }));
+});
+
+test("two mounted GameInfo instances have distinct Result ids", async () => {
+  const headers = defaultTree().headers;
+  await act(async () =>
+    root.render(
+      <MantineProvider env="test">
+        <GameInfo headers={headers} />
+        <GameInfo headers={headers} onHeadersChange={vi.fn()} documentId="db:1" />
+      </MantineProvider>,
+    ),
+  );
+
+  const labels = [...host.querySelectorAll("label")].filter(
+    (label) => label.textContent === "GameInfo.Result",
+  );
+  expect(labels).toHaveLength(2);
+  const ids = labels.map((label) => label.getAttribute("for"));
+  expect(ids[0]).toBeTruthy();
+  expect(ids[1]).toBeTruthy();
+  expect(ids[0]).not.toBe(ids[1]);
+  for (const id of ids) {
+    expect([...host.querySelectorAll("[id]")].filter((el) => el.id === id)).toHaveLength(1);
+  }
+});
+
 test("the Termination field reads the effective value and edits and clears it through the store", async () => {
   const state = defaultTree();
   const node = fixtureNode("e4");
@@ -225,8 +277,13 @@ test("the Termination field reads the effective value and edits and clears it th
   expect(field.value).toBe("Abandoned");
   expect(field.placeholder).toBe("GameInfo.Termination");
   // The field sits in the result cell, under the result picker.
-  const resultCell = host.querySelector('label[for="game-result"]')!.parentElement!;
-  expect(resultCell.querySelector("#game-result")).not.toBeNull();
+  const resultLabel = [...host.querySelectorAll("label")].find(
+    (label) => label.textContent === "GameInfo.Result",
+  )!;
+  const resultId = resultLabel.getAttribute("for")!;
+  const resultCell = resultLabel.parentElement!;
+  expect(document.getElementById(resultId)).not.toBeNull();
+  expect(resultCell.contains(document.getElementById(resultId))).toBe(true);
   expect(resultCell.contains(field)).toBe(true);
   for (const value of ["Time forfeit", ""]) {
     await act(async () => {
@@ -469,7 +526,11 @@ test("each colour button opens only that player's FIDE card and closing clears i
 });
 
 function resultField() {
-  return host.querySelector<HTMLInputElement>("#game-result")!;
+  const label = [...host.querySelectorAll("label")].find(
+    (item) => item.textContent === "GameInfo.Result",
+  )!;
+  const id = label.getAttribute("for")!;
+  return document.getElementById(id) as HTMLInputElement;
 }
 
 function resultListOpen() {

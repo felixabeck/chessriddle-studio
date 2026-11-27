@@ -146,6 +146,7 @@ describe("database game deletion with real SWR revalidation", () => {
     showCard = true,
     pending = false,
     onOpen = vi.fn(),
+    onEdit = vi.fn(),
   ) {
     await act(async () =>
       root.render(
@@ -168,6 +169,7 @@ describe("database game deletion with real SWR revalidation", () => {
                 file={selectedFile}
                 pending={pending}
                 onOpen={onOpen}
+                onEdit={onEdit}
                 onDeleted={onDeleted}
               />
             )}
@@ -542,6 +544,35 @@ describe("database game deletion with real SWR revalidation", () => {
       expect(onDeleted.mock.calls).toEqual(outcome === "success" ? [[file, 42]] : []);
     },
   );
+
+  test("pencil button is disabled without selection or for a linked game, and opens edit for local games", async () => {
+    const onEdit = vi.fn();
+    await render(null, file, true, false, vi.fn(), onEdit);
+    const editBtn = () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label^="Edit game data"]')!;
+    expect(editBtn().disabled).toBe(true);
+
+    await render(game, file, true, false, vi.fn(), onEdit);
+    expect(editBtn().disabled).toBe(false);
+    expect(editBtn().getAttribute("aria-label")).toBe("Edit game data");
+    await act(async () => editBtn().click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(game);
+
+    const linkedGame: NormalizedGame = {
+      ...game,
+      linked: {
+        collection: "22222222-2222-4222-8222-222222222222",
+        generation: "source-generation",
+        ordinal: 4,
+        stamp: "a".repeat(64),
+      },
+    };
+    await render(linkedGame, file, true, false, vi.fn(), onEdit);
+    expect(editBtn().disabled).toBe(true);
+    expect(editBtn().getAttribute("aria-label")).toBe(
+      "Edit game data (read-only for linked collections)",
+    );
+  });
 
   test("card unmount during refresh owns late real fetch failures without notification", async () => {
     await render();

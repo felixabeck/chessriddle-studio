@@ -232,3 +232,18 @@ test("Apply layout 1/2/3 defaults are ctrl+alt+1..3, collision-free, and hydrate
     expect(hydrated.APPLY_LAYOUT_2).toEqual(APPLY_LAYOUT_2);
     expect(hydrated.APPLY_LAYOUT_3).toEqual(APPLY_LAYOUT_3);
 });
+
+test("EDIT_GAME_DATA default is f2, collision-free, and hydrated into older keymaps", () => {
+    const current = createStore().get(keyMapAtom);
+    expect(current.EDIT_GAME_DATA).toEqual({ name: "Edit game data", keys: "f2" });
+
+    const sharing = Object.entries(current)
+        .filter(([, binding]) => binding.keys === current.EDIT_GAME_DATA.keys)
+        .map(([actionId]) => actionId);
+    expect(sharing).toEqual(["EDIT_GAME_DATA"]);
+
+    const { EDIT_GAME_DATA, ...older } = current;
+    sessionStorage.setItem("keybinds", JSON.stringify(older));
+    const storage = createKeybindStorage(current, sessionStorage);
+    expect(storage.getItem("keybinds", current).EDIT_GAME_DATA).toEqual(EDIT_GAME_DATA);
+});

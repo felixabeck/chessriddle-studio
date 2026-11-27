@@ -73,6 +73,28 @@ export async function refreshDatabaseGameQueries(
     );
 }
 
+/** Refresh a database's game, player and tournament queries and notify any refresh failure
+ * separately under the `"database"` domain without turning a committed mutation into a write error. */
+export async function refreshDatabaseGameQueriesOrNotify(args: {
+    file: DatabaseHandle;
+    cache: Cache;
+    mutate: ScopedMutator;
+    refreshFailedTitle: string;
+    shouldNotify?: () => boolean;
+}): Promise<void> {
+    const canNotify = args.shouldNotify ?? (() => true);
+    try {
+        const refreshed = await refreshDatabaseGameQueries(args.file, args.cache, args.mutate);
+        for (const result of refreshed) {
+            if (result.status === "rejected" && canNotify()) {
+                notifyUnlessCancelled(args.refreshFailedTitle, result.reason, "database");
+            }
+        }
+    } catch (error) {
+        if (canNotify()) notifyUnlessCancelled(args.refreshFailedTitle, error, "database");
+    }
+}
+
 /** Save updated game headers, then refresh the database's queries and report any refresh failure
  * separately without turning a committed write into a save error. */
 export async function saveDbGameHeaders(args: {
@@ -92,16 +114,12 @@ export async function saveDbGameHeaders(args: {
         args.expectedStamp,
     );
     args.onSaved?.(stamp);
-    try {
-        const refreshed = await refreshDatabaseGameQueries(args.file, args.cache, args.mutate);
-        for (const result of refreshed) {
-            if (result.status === "rejected") {
-                notifyUnlessCancelled(args.refreshFailedTitle, result.reason, "database");
-            }
-        }
-    } catch (error) {
-        notifyUnlessCancelled(args.refreshFailedTitle, error, "database");
-    }
+    await refreshDatabaseGameQueriesOrNotify({
+        file: args.file,
+        cache: args.cache,
+        mutate: args.mutate,
+        refreshFailedTitle: args.refreshFailedTitle,
+    });
     return stamp;
 }
 

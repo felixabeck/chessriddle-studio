@@ -17,7 +17,7 @@ import { DateInput } from "@mantine/dates";
 import cx from "clsx";
 import dayjs from "dayjs";
 import type { TFunction } from "i18next";
-import { memo, useContext, useRef, useState } from "react";
+import { memo, useContext, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createStore, useStore } from "zustand";
 import type { Outcome } from "@/bindings";
@@ -60,17 +60,29 @@ function GameInfo({
   headers,
   simplified,
   timeControlReadOnly = false,
+  onHeadersChange,
+  documentId: documentIdProp,
 }: {
   headers: GameHeaders;
   simplified?: boolean;
   /** Locks the Time control row in contexts whose setup owns the control (e.g. played games). */
   timeControlReadOnly?: boolean;
+  /** Explicit draft editor callback; enables editing outside a TreeStateContext. */
+  onHeadersChange?: (headers: GameHeaders) => void;
+  /** Document identity for local field drafts when editing outside a TreeStateContext. */
+  documentId?: number | string;
 }) {
   const { t } = useTranslation();
   const contextStore = useContext(TreeStateContext);
   const store = contextStore || EMPTY_STORE;
-  const disabled = store === EMPTY_STORE;
-  const setHeaders = useStore(store, (s) => s.setHeaders);
+  const storeSetHeaders = useStore(store, (s) => s.setHeaders);
+  const storeDocumentId = useStore(store, (s) => s.documentId);
+  const setHeaders = onHeadersChange ?? storeSetHeaders;
+  const documentId = documentIdProp ?? storeDocumentId;
+  const isDraft = onHeadersChange !== undefined;
+  const disabled = !isDraft && store === EMPTY_STORE;
+  const resultId = useId();
+  const draftTextAttr = isDraft ? { "data-draft-text-input": "true" } : undefined;
 
   const date = headers.date
     ? dayjs(headers.date, "YYYY.MM.DD").isValid()
@@ -100,7 +112,7 @@ function GameInfo({
     : (lineTitleOf(headers).name ?? "");
 
   return (
-    <Box px="md" pt="md" className={classes.root}>
+    <Box px="md" pt="md" className={cx(classes.root, isDraft && classes.draft)}>
       <FidePlayerDialogs
         openColor={fideColor}
         setOpenColor={setFideColor}
@@ -188,6 +200,7 @@ function GameInfo({
               style={{ rowGap: 0, columnGap: "var(--mantine-spacing-xs)" }}
             >
               <InlineInput
+                {...draftTextAttr}
                 disabled={disabled}
                 value={event}
                 aria-label={t("Databases.Game.Event")}
@@ -207,6 +220,7 @@ function GameInfo({
                     {t("GameInfo.Round")}
                   </Text>
                   <input
+                    {...draftTextAttr}
                     className={classes.roundInput}
                     placeholder="?"
                     aria-label={t("GameInfo.Round")}
@@ -235,6 +249,8 @@ function GameInfo({
             </Text>
           </div>
           <input
+            {...draftTextAttr}
+            data-autofocus={isDraft ? true : undefined}
             className={cx(classes.textInput, classes.white)}
             placeholder="?"
             aria-label={t("Fen.White")}
@@ -248,7 +264,7 @@ function GameInfo({
             disabled={disabled}
           />
           <Group justify="center" className={classes.centre}>
-            {sitePlatform !== null ? (
+            {!isDraft && sitePlatform !== null ? (
               <a {...externalLinkProps(headers.site)}>
                 <Text p="sm" w={90}>
                   {sitePlatform}
@@ -256,6 +272,7 @@ function GameInfo({
               </a>
             ) : (
               <InlineInput
+                {...draftTextAttr}
                 className={classes.input}
                 aria-label={t("Databases.Game.Site")}
                 placeholder={t("GameInfo.UnknownSite")}
@@ -288,6 +305,7 @@ function GameInfo({
             />
           </Group>
           <input
+            {...draftTextAttr}
             className={cx(classes.textInput, classes.right, classes.black)}
             placeholder="?"
             aria-label={t("Fen.Black")}
@@ -301,6 +319,7 @@ function GameInfo({
             disabled={disabled}
           />
           <input
+            {...draftTextAttr}
             className={cx(classes.textInput, classes.whiteElo)}
             aria-label={t("GameInfo.WhiteElo")}
             placeholder={t("GameInfo.UnknownElo")}
@@ -311,10 +330,11 @@ function GameInfo({
             disabled={disabled}
           />
           <Box className={classes.result}>
-            <label className={classes.visuallyHidden} htmlFor="game-result">
+            <label className={classes.visuallyHidden} htmlFor={resultId}>
               {t("GameInfo.Result")}
             </label>
             <ResultField
+              id={resultId}
               value={headers.result}
               locked={disabled}
               onChange={(result) =>
@@ -329,6 +349,7 @@ function GameInfo({
             )}
           </Box>
           <input
+            {...draftTextAttr}
             className={cx(classes.textInput, classes.right, classes.blackElo)}
             aria-label={t("GameInfo.BlackElo")}
             placeholder={t("GameInfo.UnknownElo")}
@@ -339,7 +360,8 @@ function GameInfo({
             disabled={disabled}
           />
           <TimeControlField
-            store={store}
+            documentId={documentId}
+            setHeaders={setHeaders}
             headers={headers}
             readOnly={disabled || timeControlReadOnly}
           />
@@ -360,10 +382,12 @@ const RESULT_OPTIONS = (["1-0", "0-1", "1/2-1/2", "*"] satisfies Outcome[]).map(
  * keeps the plain click toggle, otherwise a click would open the list on focus and shut it again.
  */
 function ResultField({
+  id,
   value,
   locked,
   onChange,
 }: {
+  id: string;
   value: Outcome;
   /** Read-only game info: the result shows but never opens. */
   locked: boolean;
@@ -389,7 +413,7 @@ function ResultField({
           Escape closed it. The input itself is never typed into. */}
       <Combobox.Target targetType="button" withExpandedAttribute>
         <InputBase
-          id="game-result"
+          id={id}
           role="combobox"
           readOnly
           pointer={!locked}
@@ -780,22 +804,22 @@ function formatTimeControlSummary(
   return t("GameInfo.TimeControlSides", { white: whiteText, black: blackText });
 }
 
-function timeControlTagKey(documentId: number, headers: GameHeaders): string {
+function timeControlTagKey(documentId: number | string, headers: GameHeaders): string {
   return `${documentId}\0${headers.time_control ?? ""}\0${headers.white_time_control ?? ""}\0${headers.black_time_control ?? ""}`;
 }
 
 function TimeControlField({
-  store,
+  documentId,
+  setHeaders,
   headers,
   readOnly,
 }: {
-  store: typeof EMPTY_STORE | NonNullable<React.ContextType<typeof TreeStateContext>>;
+  documentId: number | string;
+  setHeaders: (headers: GameHeaders) => void;
   headers: GameHeaders;
   readOnly: boolean;
 }) {
   const { t } = useTranslation();
-  const documentId = useStore(store, (s) => s.documentId);
-  const setHeaders = useStore(store, (s) => s.setHeaders);
   const tagKey = timeControlTagKey(documentId, headers);
 
   const [prevTagKey, setPrevTagKey] = useState(tagKey);

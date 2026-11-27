@@ -2,18 +2,23 @@ import { Box, Collapse, Flex, Group, InputWrapper, Select, Stack } from "@mantin
 import { DateInput } from "@mantine/dates";
 import { EllipsisVertical } from "lucide-react";
 import dayjs from "dayjs";
+import { useAtomValue } from "jotai";
 import { DataTable } from "mantine-datatable";
-import { useContext } from "react";
+import { useCallback, useContext, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import type { GameSort, NormalizedGame, Outcome } from "@/bindings";
 import { EloRangeSlider } from "@/components/common/EloRangeSlider";
 import { IconAction } from "@/components/common/IconAction";
 import { useOpenDatabaseGame } from "@/components/common/useOpenDatabaseGame";
+import { hasCommandModifier, keyMapAtom } from "@/state/keybinds";
 import { query_games, sameDatabaseHandle } from "@/utils/db";
+import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import { DatabaseListFooter } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
 import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
+import { EditGameDataModal, type EditGameDataTarget } from "./EditGameDataModal";
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
 import layoutClasses from "./GridLayout.module.css";
@@ -69,6 +74,32 @@ function GameTable() {
   });
 
   const game = list.records.find((row) => row.id === selectedGameId);
+  const [editTarget, setEditTarget] = useState<EditGameDataTarget | null>(null);
+  const keyMap = useAtomValue(keyMapAtom);
+  const openEditModal = useCallback(
+    (targetGame: NormalizedGame | undefined) => {
+      if (!targetGame || targetGame.linked) return;
+      setEditTarget({ file, gameId: targetGame.id });
+    },
+    [file],
+  );
+  const editGameDataKeys = keyMap.EDIT_GAME_DATA.keys;
+  const editKeysAreCommand = hasCommandModifier(editGameDataKeys);
+  useHotkeys(
+    editGameDataKeys,
+    (event) => {
+      if (event.repeat) return;
+      openEditModal(game);
+    },
+    {
+      enabled: isActive && Boolean(game) && !game?.linked && editTarget === null,
+      enableOnFormTags: editKeysAreCommand,
+      enableOnContentEditable: editKeysAreCommand,
+      ignoreEventWhen: (event) => event.defaultPrevented || isHotkeySuppressed(event, null),
+      preventDefault: true,
+    },
+    [editTarget, game, isActive, openEditModal],
+  );
   const gameOpen = useOpenDatabaseGame(
     (record: NormalizedGame) => ({
       game: record,
@@ -256,18 +287,22 @@ function GameTable() {
         </>
       }
       preview={
-        <GameCard
-          game={game}
-          file={file}
-          onOpen={gameOpen.activate}
-          pending={gameOpen.pending}
-          onDeleted={(deletedFile) => {
-            if (sameDatabaseHandle(store.getState().database?.file, deletedFile)) {
-              // A refused clear is harmless because the deleted ID matches no remaining row.
-              setSelectedGameId(undefined);
-            }
-          }}
-        />
+        <>
+          <EditGameDataModal target={editTarget} onClose={() => setEditTarget(null)} />
+          <GameCard
+            game={game}
+            file={file}
+            onOpen={gameOpen.activate}
+            onEdit={openEditModal}
+            pending={gameOpen.pending}
+            onDeleted={(deletedFile) => {
+              if (sameDatabaseHandle(store.getState().database?.file, deletedFile)) {
+                // A refused clear is harmless because the deleted ID matches no remaining row.
+                setSelectedGameId(undefined);
+              }
+            }}
+          />
+        </>
       }
     />
   );

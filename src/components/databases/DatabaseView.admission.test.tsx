@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   requestKeys: vi.fn(),
   mutate: vi.fn(),
 }));
+vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/state/persistError", () => ({ reportPersistError: mocks.report }));
 vi.mock("@/hooks/useDatabaseList", () => ({
   useDatabaseList: () => ({ data: mocks.data, mutate: mocks.mutate }),

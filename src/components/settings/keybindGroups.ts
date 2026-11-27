@@ -29,6 +29,7 @@ export const KEYBIND_GROUPS = [
             "OPEN_FILE",
             "SAVE_FILE",
             "SAVE_TO_DATABASE",
+            "EDIT_GAME_DATA",
             "COPY_PGN",
             "PREVIOUS_GAME",
             "NEXT_GAME",

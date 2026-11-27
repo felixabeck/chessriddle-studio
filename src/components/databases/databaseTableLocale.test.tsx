@@ -22,6 +22,7 @@ import TournamentCard from "./TournamentCard";
 import TournamentTable from "./TournamentTable";
 
 const mocks = vi.hoisted(() => ({ empty: false }));
+vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("@/state/linkedCollections", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/state/linkedCollections")>();

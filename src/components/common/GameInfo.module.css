@@ -241,3 +241,52 @@
   cursor: default;
   background-color: transparent;
 }
+
+/* Draft-editing mode (modal dialog): give inline text fields, Date, and Result a visible field
+   affordance consistent with Input.module.css while leaving the analysis board and read-only card
+   unchanged. */
+.draft .grid {
+  gap: var(--mantine-spacing-xs);
+}
+
+.draft .textInput {
+  align-self: center;
+}
+
+.draft .result {
+  align-self: center;
+}
+
+.draft .input,
+.draft .textInput,
+.draft .roundInput,
+.draft .dateInput,
+.draft .resultInput {
+  background: var(--cf-field-fill, var(--cf-surface-inset));
+  border: 1px solid var(--cf-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: 2px var(--mantine-spacing-xs);
+  box-sizing: border-box;
+}
+
+.draft .dateInput {
+  width: calc(6em + 2 * var(--mantine-spacing-xs) + 2px);
+}
+
+.draft .resultInput {
+  display: block;
+  width: calc(6em + 2 * var(--mantine-spacing-xs) + 2px);
+  height: auto;
+  min-height: 0;
+  margin-inline: auto;
+}
+
+@media (hover: hover) {
+  .draft .input:hover,
+  .draft .textInput:hover,
+  .draft .roundInput:hover,
+  .draft .dateInput:hover,
+  .draft .resultInput:hover {
+    background: var(--cf-field-fill-hover, var(--cf-field-fill, var(--cf-surface-inset)));
+  }
+}

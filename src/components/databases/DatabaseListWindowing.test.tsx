@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
 }));
 
+vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
   return {

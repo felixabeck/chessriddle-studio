@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
       }
     | undefined,
 }));
+vi.mock("@/platform/native", () => ({ platform: () => "linux", warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/platform/tauri", async (original) => {
   const actual = await original<typeof import("@/platform/tauri")>();
   return {
@@ -796,4 +797,87 @@ test("uses row windowing only in All mode and ignores arrow keys when Games tab 
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
   });
   expect(activeDatabaseViewStore.getState().games.selectedGameId).toBeUndefined();
+});
+
+test("F2 opens Edit game data for a selected local game, ignores linked games, filters, defaultPrevented, and hidden tab", async () => {
+  await render();
+
+  // No selection -> F2 does nothing
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
+  });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+  // Select local game -> F2 while typing in a filter input does nothing
+  await act(async () => row(0).click());
+  const filterInput = host.querySelector<HTMLInputElement>(
+    'input[placeholder="Board.Database.Local.Player"]',
+  )!;
+  filterInput.focus();
+  await act(async () => {
+    filterInput.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
+  });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  filterInput.blur();
+
+  // defaultPrevented F2 (e.g. tab rename) does nothing
+  const prevented = new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true });
+  prevented.preventDefault();
+  await act(async () => {
+    document.body.dispatchEvent(prevented);
+  });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+  // Hidden Games tab -> F2 does nothing
+  activeDatabaseViewStore.getState().setActiveTab("players");
+  await render();
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
+  });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  activeDatabaseViewStore.getState().setActiveTab("games");
+  await render();
+
+  // Linked game -> F2 does nothing
+  games[0].linked = {
+    collection: "22222222-2222-4222-8222-222222222222",
+    generation: "live-source",
+    ordinal: 1,
+    stamp: "a".repeat(64),
+  };
+  await render();
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
+  });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  delete games[0].linked;
+  await render();
+
+  // Another aria-modal dialog open -> F2 does nothing
+  const otherDialog = document.createElement("div");
+  otherDialog.setAttribute("role", "dialog");
+  otherDialog.setAttribute("aria-modal", "true");
+  document.body.append(otherDialog);
+  try {
+    await act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  } finally {
+    otherDialog.remove();
+  }
+
+  // Local selected game -> cancelable F2 on the focused row opens Edit game data modal
+  // (exercises react-hotkeys-hook's own preventDefault before invoking the callback).
+  row(0).focus();
+  const f2 = new KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true });
+  await act(async () => {
+    row(0).dispatchEvent(f2);
+  });
+  expect(f2.defaultPrevented).toBe(true);
+  expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Databases.Game.EditData",
+  );
 });

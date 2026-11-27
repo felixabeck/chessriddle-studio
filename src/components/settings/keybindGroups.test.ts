@@ -44,3 +44,8 @@ test("groupedKeybindActions hides COACH_TAB when the Coach is disabled and keeps
     );
     expect(withoutCoach.extraActions).toEqual(["LEGACY_CUSTOM"]);
 });
+
+test("EDIT_GAME_DATA is listed in the tabsFiles shortcut group", () => {
+    const tabsFiles = KEYBIND_GROUPS.find((group) => group.id === "tabsFiles");
+    expect(tabsFiles?.actions).toContain("EDIT_GAME_DATA");
+});

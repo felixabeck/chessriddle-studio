@@ -76,6 +76,11 @@ const definitions = {
         name: "Save to database",
         keys: `${meta}+shift+d`,
     },
+    EDIT_GAME_DATA: {
+        labelKey: i18nKey("Settings.Keybinds.Actions.EDIT_GAME_DATA"),
+        name: "Edit game data",
+        keys: "f2",
+    },
     EDIT_POSITION: {
         labelKey: i18nKey("Settings.Keybinds.Actions.EDIT_POSITION"),
         name: "Edit position",

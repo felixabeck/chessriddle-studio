@@ -1,6 +1,6 @@
 import { tauri } from "@/platform/tauri";
 import { Box, Divider, Group, Paper, Stack, Text } from "@mantine/core";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useContext, useEffect, useRef, useState } from "react";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
@@ -12,19 +12,21 @@ import { IconAction } from "@/components/common/IconAction";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import GameInfo from "../common/GameInfo";
 import GamePreview from "./GamePreview";
-import { refreshDatabaseGameQueries } from "./databaseMutation";
+import { refreshDatabaseGameQueriesOrNotify } from "./databaseMutation";
 import classes from "./GridLayout.module.css";
 
 function GameCard({
   game,
   file,
   onOpen,
+  onEdit,
   pending,
   onDeleted,
 }: {
   game?: NormalizedGame;
   file: DatabaseHandle;
   onOpen: (game: NormalizedGame) => void | Promise<void>;
+  onEdit?: (game: NormalizedGame) => void;
   pending: boolean;
   onDeleted?: (file: DatabaseHandle, gameId: number) => void;
 }) {
@@ -66,16 +68,13 @@ function GameCard({
 
       onDeleted?.(targetFile, targetGameId);
 
-      try {
-        const refreshed = await refreshDatabaseGameQueries(targetFile, cache, globalMutate);
-        for (const result of refreshed) {
-          if (result.status === "rejected" && mounted.current) {
-            notifyUnlessCancelled(t("Databases.Game.DeletedRefreshFailed"), result.reason);
-          }
-        }
-      } catch (error) {
-        if (mounted.current) notifyUnlessCancelled(t("Databases.Game.DeletedRefreshFailed"), error);
-      }
+      await refreshDatabaseGameQueriesOrNotify({
+        file: targetFile,
+        cache,
+        mutate: globalMutate,
+        refreshFailedTitle: t("Databases.Game.DeletedRefreshFailed"),
+        shouldNotify: () => mounted.current,
+      });
     } finally {
       deletionPending.current = false;
       if (mounted.current) setDeleting(false);
@@ -98,6 +97,17 @@ function GameCard({
       <Stack gap="xs" className={classes.gameCardStack}>
         <Group justify="left" className={classes.gameActions}>
           <OpenGameButton disabled={!game} pending={pending} onOpen={() => game && onOpen(game)} />
+
+          <IconAction
+            label={
+              game?.linked ? t("Databases.Game.EditLinkedDisabled") : t("Databases.Game.EditData")
+            }
+            variant="subtle"
+            disabled={!game || Boolean(game.linked)}
+            onClick={() => game && !game.linked && onEdit?.(game)}
+          >
+            <Pencil size="1.2rem" strokeWidth={2} />
+          </IconAction>
 
           <IconAction
             label={t("Databases.Game.Delete")}
