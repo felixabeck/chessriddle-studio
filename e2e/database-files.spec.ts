@@ -3901,20 +3901,35 @@ test("database-files: windowed All mode bounds DOM across chunks, keeps ArrowDow
     expect(tabAfterEnter.name).toBe("Window White 160 - Window Black 160");
 
     // Return to the database, scroll down to another row (180), and open it with double-click.
+    // Extra All-mode chunks survive when the Games list stays mounted and reset to the
+    // first chunk when it remounts. Load until row 180 exists instead of assuming a reset.
     await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
     await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
-    await expect(footer).toContainText("Showing 100 of 250");
-    await viewport.evaluate((node) => {
-        node.scrollTop = node.scrollHeight;
-    });
-    await expect(footer).toContainText("Showing 200 of 250");
-    await viewport.evaluate((node) => {
-        node.scrollTop = Math.floor(node.scrollHeight * 0.85);
-    });
+    await expect(footer).toContainText(/Showing \d+ of 250/);
     const dblClickTarget = tablePane
         .locator("tbody tr")
         .filter({ hasText: "Window White 180" })
         .first();
+    await expect
+        .poll(
+            async () => {
+                const text = await footer.innerText();
+                const match = text.match(/Showing (\d+) of 250/);
+                const shown = match ? Number(match[1]) : 0;
+                if (shown < 180) {
+                    await viewport.evaluate((node) => {
+                        node.scrollTop = node.scrollHeight;
+                    });
+                    return 0;
+                }
+                await viewport.evaluate((node, ratio) => {
+                    node.scrollTop = Math.floor(node.scrollHeight * ratio);
+                }, 179 / shown);
+                return dblClickTarget.count();
+            },
+            { timeout: 15_000 },
+        )
+        .toBeGreaterThan(0);
     await expect(dblClickTarget).toBeVisible();
     await dblClickTarget.dblclick();
     await expect(page).toHaveURL("/");
@@ -3924,7 +3939,7 @@ test("database-files: windowed All mode bounds DOM across chunks, keeps ArrowDow
     // Return, scroll down, then sort by Plies: restarts at top (scrollTop = 0) with the new order.
     await page.locator("nav").getByRole("link", { name: "Library", exact: true }).click();
     await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
-    await expect(footer).toContainText("Showing 100 of 250");
+    await expect(footer).toContainText(/Showing \d+ of 250/);
     await viewport.evaluate((node) => {
         node.scrollTop = 1000;
     });
