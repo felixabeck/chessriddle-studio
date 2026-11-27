@@ -325,11 +325,16 @@ mod tests {
             Err(CoachError::ProviderTimeout)
         );
 
+        // A client without a read timeout: reqwest starts that timer before connecting, and
+        // Windows retries a refused loopback connection for about two seconds, so the short
+        // timeout above would fire first there. The real clients connect within 10 s and read
+        // within 120 s, so a refusal always reaches them as a connect error.
         let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/v1/models", closed.local_addr().unwrap());
         drop(closed);
+        let plain = reqwest::Client::builder().no_proxy().build().unwrap();
         assert_eq!(
-            send_bounded(client.get(&url), 1024).await,
+            send_bounded(plain.get(&url), 1024).await,
             Err(CoachError::Network)
         );
         drop(silent);
