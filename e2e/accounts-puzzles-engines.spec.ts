@@ -17,6 +17,7 @@ import {
     closeSelectedWorkspaceTab,
     openWorkspaceTabActions,
     splitTextWords,
+    waitForTransitionsSettled,
 } from "./fixtures";
 import {
     decodeCompressedOrJson,
@@ -1859,6 +1860,138 @@ test("accounts-puzzles-engines: home summary reads an account's first downloaded
         )
         .toEqual([database]);
     await expect(page.getByText("No games found", { exact: true })).toBeHidden();
+});
+
+test("accounts-puzzles-engines: a first download shows the live game count against the account total", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+    assertAccessible,
+}) => {
+    const collection = {
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "Live history",
+        file: { id: { id: "live-account-source" }, kind: "fileWorkspace" },
+        database: { id: { id: "live-account-index" }, kind: "database" },
+        status: "ready",
+        generation: "live",
+        omitted: 0,
+        account: { provider: "chesscom", account: "download-player" },
+        retiredDatabase: null,
+        fetchSinceMs: null,
+    };
+    const request = {
+        provider: "chesscom",
+        account: "download-player",
+        accountHandle: null,
+        destination: { id: "private-account-staging" },
+        pendingBatch: null,
+        sinceMs: null,
+        target: { kind: "linked", collection: collection.id },
+    };
+    await page.addInitScript(() => {
+        localStorage.setItem(
+            "file-workspace",
+            JSON.stringify({ id: { id: "account-library" }, kind: "fileWorkspace" }),
+        );
+        // 3,000 + 2,000 + 678 rated games: the statistics total the card shows the count against.
+        localStorage.setItem(
+            "sessions",
+            JSON.stringify([
+                {
+                    player: "download-player",
+                    updatedAt: Date.UTC(2026, 9, 4),
+                    chessCom: {
+                        username: "download-player",
+                        stats: {
+                            chess_rapid: {
+                                last: { rating: 1500, date: 1791072000, rd: 50 },
+                                record: { win: 3000, loss: 2000, draw: 678 },
+                            },
+                        },
+                    },
+                },
+            ]),
+        );
+    });
+    await mockScenario({
+        commands: {
+            linked_collections_supported: { result: true },
+            list_linked_collections: { result: [] },
+            list_workspace_databases: { result: { entries: [], unread: [] } },
+            prepare_account_collection: {
+                result: {
+                    collection,
+                    migrationRequired: false,
+                    destination: { id: "private-account-staging" },
+                    pendingBatch: null,
+                },
+            },
+            // The import stays running for the whole test; the card follows its native completion.
+            import_account_games: { delay: 60000, result: null },
+            get_progress: { result: null },
+        },
+    });
+    await page.goto("/accounts");
+    await page.getByRole("button", { name: "Download games", exact: true }).click();
+    const status = page.getByRole("status").filter({ hasText: "games" });
+    await expect(status).toHaveText("Loading games…");
+
+    await page.evaluate((retainedRequest) => {
+        window.__E2E_TAURI__.retainAccountCompletion({
+            id: "live-account-import",
+            request: retainedRequest,
+            progressId: "live-account-ticket",
+            attempt: 1,
+            importing: false,
+            outcome: { state: "running" },
+            publication: null,
+            committedDatabase: null,
+            deletionPending: false,
+        });
+        window.__E2E_TAURI__.emit("completion-changed", { id: "live-account-import" });
+    }, request);
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .some(
+                        ({ command, args }) =>
+                            command === "get_progress" &&
+                            (args as { id: string }).id === "live-account-ticket",
+                    ),
+            ),
+        )
+        .toBe(true);
+    await page.evaluate(() =>
+        window.__E2E_TAURI__.emit("progress-event", {
+            id: "live-account-ticket",
+            generation: "1",
+            state: "running",
+            progress: 0,
+            finished: false,
+            cleared: false,
+            count: 1234,
+        }),
+    );
+    await expect(status).toHaveText("1,234 of 5,678 games loaded");
+    const card = page.locator(".mantine-Card-root").filter({ has: status });
+    await expect(card.getByRole("progressbar")).toHaveAttribute(
+        "aria-valuenow",
+        String((1234 / 5678) * 100),
+    );
+    // No percentage text beside the line any more.
+    await expect(card).not.toContainText("%");
+    await assertNoHorizontalOverflow();
+    await assertAccessible();
+    // The Download button's hover tooltip must not overlap the captured card.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await waitForTransitionsSettled(page);
+    await expect(card).toHaveScreenshot("account-card-games-loaded.png", {
+        animations: "disabled",
+    });
 });
 
 test("accounts-puzzles-engines: a linked account downloads privately and appends once with refreshed accumulated counts", async ({

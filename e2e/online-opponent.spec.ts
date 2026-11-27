@@ -143,7 +143,8 @@ test("online-opponent: imports an online-only opponent from the Library and open
                 result: opponentDbCommands.list_workspace_databases.result,
             },
             import_opponent_games: {
-                delay: 4000,
+                // Long enough for both dialog screenshots (before and after the first count).
+                delay: 8000,
                 result: {
                     kind: "imported",
                     database: { id: { id: OPPONENT_DB_ID }, kind: "database" },
@@ -206,12 +207,34 @@ test("online-opponent: imports an online-only opponent from the Library and open
     );
     await expect(downloadModal.locator(".mantine-Progress-root")).toBeVisible();
     await expect(downloadModal.getByRole("progressbar")).toBeAttached();
+    await expect(downloadModal.getByRole("status")).toHaveText("Loading games…");
     await expect(downloadModal.getByRole("button", { name: "Cancel", exact: true })).toBeEnabled();
     await assertNoHorizontalOverflow();
     await assertAccessible();
     await waitForFontsSettled(page);
     await waitForTransitionsSettled(page);
     await expect(downloadModal).toHaveScreenshot("online-opponent-download.png", {
+        animations: "disabled",
+        stylePath: scrollbarFreeScreenshot,
+    });
+
+    // The native import reports the games written so far on its ticket; the dialog shows them.
+    await page.evaluate(() =>
+        window.__E2E_TAURI__.emit("progress-event", {
+            id: "online-opponent-ticket",
+            generation: "1",
+            state: "running",
+            progress: 0,
+            finished: false,
+            cleared: false,
+            count: 1234,
+        }),
+    );
+    await expect(downloadModal.getByRole("status")).toHaveText("1,234 games loaded");
+    await assertNoHorizontalOverflow();
+    await assertAccessible();
+    await waitForTransitionsSettled(page);
+    await expect(downloadModal).toHaveScreenshot("online-opponent-download-count.png", {
         animations: "disabled",
         stylePath: scrollbarFreeScreenshot,
     });

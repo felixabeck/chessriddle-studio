@@ -4552,6 +4552,81 @@ test("database-files: an opponent's downloaded online games show their count bes
     await expect(page).toHaveScreenshot("opponent-accounts-downloaded.png");
 });
 
+test("database-files: updating an opponent's online games shows the live game count on the card", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+    assertAccessible,
+}) => {
+    await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [
+        "opponent-links",
+        JSON.stringify([opponentLink]),
+    ] as const);
+    await page.addInitScript(() => localStorage.setItem("font-size", "100"));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            ...opponentDatabaseCommands,
+            prepare_download: { result: "player-card-ticket" },
+            release_download: { result: null },
+            get_progress: { result: null },
+            // The update stays running for the whole test.
+            import_opponent_games: { delay: 60000, result: { kind: "noGames" } },
+        },
+    });
+    const preview = await openFirstWhiteCard(page);
+    const strip = preview.locator("[data-opponent-accounts]");
+    await strip.getByRole("button", { name: "Update games", exact: true }).click();
+    // The card's own status line says "Downloading online games"; the count line is the other one.
+    await expect(strip.locator("[data-opponent-status]")).toHaveText("Downloading online games");
+    const status = strip.locator('[role="status"]:not([data-opponent-status])');
+    await expect(status).toHaveText("Loading games…");
+    // useProgress hydrates only after its listener is registered, so the event cannot be missed.
+    await expect
+        .poll(() =>
+            page.evaluate(() =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .some(
+                        ({ command, args }) =>
+                            command === "get_progress" &&
+                            (args as { id: string }).id === "player-card-ticket",
+                    ),
+            ),
+        )
+        .toBe(true);
+    await page.evaluate(() =>
+        window.__E2E_TAURI__.emit("progress-event", {
+            id: "player-card-ticket",
+            generation: "1",
+            state: "running",
+            progress: 0,
+            finished: false,
+            cleared: false,
+            count: 1234,
+        }),
+    );
+    await expect(status).toHaveText("1,234 games loaded");
+    await expect(strip).not.toContainText("%");
+    await assertNothingClipped(strip, { mode: "reachable" });
+    await assertNoHorizontalOverflow();
+    // f-20261127-20 owns the unnamed Overview result bars of the same card.
+    await assertAccessible({
+        exclude: [
+            '[data-testid="overview-headline"]',
+            '[data-testid="overview-white"]',
+            '[data-testid="overview-black"]',
+        ],
+    });
+    await waitForFontsSettled(page);
+    await page.mouse.move(0, 0);
+    await expect(strip).toHaveScreenshot("opponent-accounts-games-loaded.png", {
+        animations: "disabled",
+    });
+});
+
 test("database-files: the card's Overview and Ratings switch to a linked opponent's online games", async ({
     page,
     mockScenario,
