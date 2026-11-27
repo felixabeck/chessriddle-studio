@@ -4161,7 +4161,7 @@ test("database-files: the board explorer compares two databases side by side", a
     await page.getByRole("tab", { name: "Database", exact: true }).click();
 
     // Collapsed by default: one caption per database, naming its active filters, each above
-    // its column group; no control but the settings button.
+    // its column group; settings and Hide games sit on the chrome row.
     const sources = page.locator("[data-explorer-source]");
     const databasePanel = page.getByRole("tabpanel", { name: "Database", exact: true });
     await expect(sources).toHaveCount(2);
