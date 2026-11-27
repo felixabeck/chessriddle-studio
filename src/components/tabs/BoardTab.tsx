@@ -14,7 +14,12 @@ import { getTabFile, tabLabelWithFile, type Tab } from "@/utils/tabs";
 import classes from "./BoardTab.module.css";
 import { FileIcon } from "../files/FileIcon";
 import { useTranslation } from "react-i18next";
-import { boardTabId, boardTabPanelId } from "./boardTabDom";
+import {
+  boardTabId,
+  boardTabPanelId,
+  closeOnMiddleClick,
+  preventMiddleMouseAutoscroll,
+} from "./boardTabDom";
 
 export function BoardTab({
   tab,
@@ -65,6 +70,10 @@ export function BoardTab({
         [classes.overflowing]: overflowing,
       })}
       role="presentation"
+      onMouseDown={preventMiddleMouseAutoscroll}
+      onAuxClick={(event) => {
+        closeOnMiddleClick(event, () => onClose(tab.value));
+      }}
     >
       <Tooltip
         label={tooltip}

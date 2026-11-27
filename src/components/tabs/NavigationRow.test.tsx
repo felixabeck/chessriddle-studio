@@ -490,6 +490,71 @@ test("each tab has its own close control that closes that tab", async () => {
   await vi.waitFor(() => expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("next"));
 });
 
+test("middle click closes a board tab without selecting it", async () => {
+  const router = await renderRow({ path: "/library" });
+  expect(store.get(activeTabAtom)).toBe("current");
+  expect(router.state.location.pathname).toBe("/library");
+  await act(async () => {
+    tabs()[1]!.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
+    );
+  });
+  await vi.waitFor(() => expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("next"));
+  expect(store.get(activeTabAtom)).toBe("current");
+  expect(router.state.location.pathname).toBe("/library");
+});
+
+test("middle click closes a page tab; Library and a right click do not", async () => {
+  const router = await renderRow({ path: "/settings" });
+  expect(pageTabOrder()).toEqual(["settings"]);
+
+  const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 1 });
+  await act(async () => {
+    pageTab("SideBar.Settings")!.dispatchEvent(press);
+  });
+  expect(press.defaultPrevented).toBe(true);
+
+  await act(async () => {
+    libraryLink().dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
+    );
+  });
+  expect(pageTabOrder()).toEqual(["settings"]);
+  expect(router.state.location.pathname).toBe("/settings");
+
+  await act(async () => {
+    pageTab("SideBar.Settings")!.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }),
+    );
+  });
+  expect(pageTabOrder()).toEqual(["settings"]);
+  expect(router.state.location.pathname).toBe("/settings");
+
+  await act(async () => {
+    pageTab("SideBar.Settings")!.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
+    );
+  });
+  expect(pageTabOrder()).toEqual([]);
+  expect(router.state.location.pathname).toBe("/");
+});
+
+test("middle click closes an inactive page tab without showing it", async () => {
+  const router = await renderRow({ path: "/settings" });
+  await act(async () => {
+    await router.navigate({ to: "/" });
+  });
+  expect(pageTabOrder()).toEqual(["settings"]);
+  expect(router.state.location.pathname).toBe("/");
+  await act(async () => {
+    pageTab("SideBar.Settings")!.dispatchEvent(
+      new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
+    );
+  });
+  expect(pageTabOrder()).toEqual([]);
+  expect(router.state.location.pathname).toBe("/");
+});
+
 test("the flat menu lists the in-app entries in order with shortcuts", async () => {
   await renderRow();
   await act(async () => {

@@ -124,3 +124,72 @@ test("a fileDraft analysis tab uses the file icon", async () => {
   expect(container.querySelector(".lucide-database")).toBeNull();
   expect(container.querySelector(".lucide-scan-search")).toBeNull();
 });
+
+function renderBoardTab() {
+  const onSelect = vi.fn();
+  const onClose = vi.fn();
+  const tab: Tab = {
+    value: "tab",
+    name: "Morra",
+    type: "analysis",
+    gameOrigin: { kind: "none" },
+  };
+  return {
+    onSelect,
+    onClose,
+    render: () =>
+      root.render(
+        <MantineProvider>
+          <BoardTab
+            tab={tab}
+            selected
+            tabStop
+            panelMounted
+            overflowing={false}
+            onSelect={onSelect}
+            dragHandleProps={null}
+            onContextMenu={() => {}}
+            onClose={onClose}
+          />
+        </MantineProvider>,
+      ),
+  };
+}
+
+test("middle click closes the tab without selecting it", async () => {
+  const { onSelect, onClose, render } = renderBoardTab();
+  await act(async () => {
+    render();
+  });
+  const tab = container.querySelector('[role="tab"]')!;
+  await act(async () => {
+    tab.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+  });
+  expect(onClose).toHaveBeenCalledExactlyOnceWith("tab");
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+test("right click does not close the tab", async () => {
+  const { onClose, render } = renderBoardTab();
+  await act(async () => {
+    render();
+  });
+  const tab = container.querySelector('[role="tab"]')!;
+  await act(async () => {
+    tab.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
+  });
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("a middle-mouse press on the tab cancels the default autoscroll", async () => {
+  const { render } = renderBoardTab();
+  await act(async () => {
+    render();
+  });
+  const tab = container.querySelector('[role="tab"]')!;
+  const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 1 });
+  await act(async () => {
+    tab.dispatchEvent(press);
+  });
+  expect(press.defaultPrevented).toBe(true);
+});

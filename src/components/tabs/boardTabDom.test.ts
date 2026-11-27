@@ -1,9 +1,11 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
     boardTabId,
     boardTabPanelId,
+    closeOnMiddleClick,
     isBoardsPath,
     isLibraryFamilyPath,
+    preventMiddleMouseAutoscroll,
     returnTargetFromPath,
     pageTabOf,
 } from "./boardTabDom";
@@ -45,4 +47,40 @@ test("the return target is the last boards or library-family location", () => {
         to: "/databases/$databaseId",
         params: { databaseId: "database-A" },
     });
+});
+
+test("middle click closes and cancels the default; other buttons do not", () => {
+    const close = vi.fn();
+    const ignored = {
+        button: 0,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+    };
+    closeOnMiddleClick(ignored, close);
+    preventMiddleMouseAutoscroll(ignored);
+    expect(close).not.toHaveBeenCalled();
+    expect(ignored.preventDefault).not.toHaveBeenCalled();
+    expect(ignored.stopPropagation).not.toHaveBeenCalled();
+
+    const right = {
+        button: 2,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+    };
+    closeOnMiddleClick(right, close);
+    preventMiddleMouseAutoscroll(right);
+    expect(close).not.toHaveBeenCalled();
+    expect(right.preventDefault).not.toHaveBeenCalled();
+
+    const middle = {
+        button: 1,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+    };
+    preventMiddleMouseAutoscroll(middle);
+    expect(middle.preventDefault).toHaveBeenCalledTimes(1);
+    closeOnMiddleClick(middle, close);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(middle.preventDefault).toHaveBeenCalledTimes(2);
+    expect(middle.stopPropagation).toHaveBeenCalledTimes(1);
 });

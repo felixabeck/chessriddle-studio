@@ -1708,6 +1708,29 @@ test("workspace-tabs: right-click closes the inactive target through the shared 
     await expect(tabs).toHaveAttribute("aria-selected", "true");
 });
 
+test("workspace-tabs: middle-click closes the inactive tab without selecting it", async ({
+    page,
+}) => {
+    await page.goto("/");
+    const tabs = page.getByRole("tablist").first().getByRole("tab");
+    await expect(tabs).toHaveCount(1);
+    await newWorkspaceTabButton(page).click();
+    await newWorkspaceTabButton(page).click();
+    await expect(tabs).toHaveCount(3);
+    const targetId = await tabs.first().getAttribute("id");
+    const keptId = await tabs.nth(1).getAttribute("id");
+    const activeId = await tabs.nth(2).getAttribute("id");
+    expect(targetId).toBeTruthy();
+    expect(keptId).toBeTruthy();
+    expect(activeId).toBeTruthy();
+    await tabs.first().click({ button: "middle" });
+    await expect(page.locator(`[id="${targetId}"]`)).toHaveCount(0);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.first()).toHaveAttribute("id", keptId!);
+    await expect(tabs.nth(1)).toHaveAttribute("id", activeId!);
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+});
+
 test("workspace-tabs: native menu is suppressed on a plain surface and preserved in a text input", async ({
     page,
 }) => {

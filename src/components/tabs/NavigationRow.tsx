@@ -51,7 +51,14 @@ import { bindWindowControls, watchMaximized, type MenuAction } from "@/routes/-a
 import type { PageTab } from "@/state/pageTabs";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
 import { BoardTab, BoardTabIcon } from "./BoardTab";
-import { boardTabId, isBoardsPath, isLibraryFamilyPath, pageTabOf } from "./boardTabDom";
+import {
+  boardTabId,
+  closeOnMiddleClick,
+  isBoardsPath,
+  isLibraryFamilyPath,
+  pageTabOf,
+  preventMiddleMouseAutoscroll,
+} from "./boardTabDom";
 import { TabActionsMenu } from "./TabActionsMenu";
 import { useTabCommands } from "./TabCommands";
 import classes from "./NavigationRow.module.css";
@@ -430,6 +437,10 @@ export default function NavigationRow({
               key={page}
               className={cx(classes.pinned, classes.pageTab, current && classes.current)}
               data-page-tab={page}
+              onMouseDown={preventMiddleMouseAutoscroll}
+              onAuxClick={(event) => {
+                closeOnMiddleClick(event, () => closePageTab(page));
+              }}
             >
               <Tooltip label={label} disabled={!compact} position="bottom" openDelay={400}>
                 <button

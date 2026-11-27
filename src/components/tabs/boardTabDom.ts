@@ -44,3 +44,26 @@ export function boardTabId(tabId: string): string {
 export function boardTabPanelId(tabId: string): string {
     return `board-tab-panel-${tabId}`;
 }
+
+const MIDDLE_MOUSE_BUTTON = 1;
+
+type MiddleMouseEvent = {
+    button: number;
+    preventDefault: () => void;
+};
+
+/** Cancel the autoscroll or paste a middle-mouse press would start. */
+export function preventMiddleMouseAutoscroll(event: MiddleMouseEvent): void {
+    if (event.button === MIDDLE_MOUSE_BUTTON) event.preventDefault();
+}
+
+/** Close on middle click. Same path as the tab's X. */
+export function closeOnMiddleClick(
+    event: MiddleMouseEvent & { stopPropagation: () => void },
+    close: () => void,
+): void {
+    if (event.button !== MIDDLE_MOUSE_BUTTON) return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+}
