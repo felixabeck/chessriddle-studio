@@ -697,18 +697,21 @@ test("board-arrange: Photo panel pulls out, hides on non-review tabs while keepi
     await expect(photoArea).toBeVisible();
     await expect(photoArea.locator('[data-panel-header="photo"]')).toContainText("Photo");
     await expect(photoTab).toHaveCount(0);
-    const storedAfterPullOut = await page.evaluate(() =>
-        localStorage.getItem("analysis-board-layout"),
+    const storedAfterPullOut = await page.evaluate(
+        () => JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement,
     );
-    expect(storedAfterPullOut).toContain('"photo"');
+    expect(JSON.stringify(storedAfterPullOut)).toContain('"photo"');
 
     // Open a non-review analysis tab: Photo tile hides while the stored arrangement keeps `"photo"`.
     await page.getByRole("button", { name: "New Tab", exact: true }).click();
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await expect(photoArea).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem("analysis-board-layout"))).toBe(
-        storedAfterPullOut,
-    );
+    expect(
+        await page.evaluate(
+            () =>
+                JSON.parse(localStorage.getItem("analysis-board-layouts")!).kinds.game.arrangement,
+        ),
+    ).toEqual(storedAfterPullOut);
 
     // Switching back to the review tab shows Photo in the exact same place (below the board `#left`).
     await page.getByRole("tab", { name: /Alice/ }).click();

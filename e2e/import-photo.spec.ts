@@ -2,7 +2,10 @@ import { expect, preserveStorageForReload, test, waitForTransitionsSettled } fro
 import {
     importFromPhoto,
     PHOTO_DATA_URL,
+    scoresheetConnection,
+    scoresheetModels,
     scoresheetPhotoCommands,
+    stubScoresheetGame,
     stubScoresheetPgnTokens,
 } from "./scoresheetPhotoImport";
 
@@ -179,13 +182,13 @@ test("import from photo keeps the mode cards even below the header and shows rea
         commands: {
             coach_available: { result: true },
             coach_has_connection: { result: true },
-            coach_connections: { result: [connection] },
-            coach_models: { result: models },
+            coach_connections: { result: [scoresheetConnection] },
+            coach_models: { result: scoresheetModels },
             scoresheet_pick_photos: {
                 result: { photos: [{ dataUrl: PHOTO_DATA_URL }], skipped: 0, failed: 0 },
             },
             // Held long enough that the whole progress state can be inspected.
-            scoresheet_read: { result: stubGame, delay: 600_000 },
+            scoresheet_read: { result: stubScoresheetGame, delay: 600_000 },
         },
     });
     await page.goto("/");

@@ -393,7 +393,6 @@ describe("placeArea, returnPanelArea and canTakeOutPanel", () => {
         const withPhoto = placeArea(withCoach, "photo", "left", "right");
         expect(withPhoto).not.toBe(withCoach);
         expect(isValidBoardArrangement(withPhoto)).toBe(true);
-        expect(boardArrangementSchema.safeParse(withPhoto).success).toBe(true);
 
         const movedExisting = placeArea(fourOut, "database", "left", "right");
         expect(movedExisting).not.toBe(fourOut);
@@ -668,7 +667,6 @@ describe("shownArrangement and applyShownSplits", () => {
             },
         };
         expect(isValidBoardArrangement(storedWithPhoto)).toBe(true);
-        expect(boardArrangementSchema.safeParse(storedWithPhoto).success).toBe(true);
 
         const hidden = new Set<PanelAreaId>(["photo"]);
         const shown = shownArrangement(storedWithPhoto, hidden);

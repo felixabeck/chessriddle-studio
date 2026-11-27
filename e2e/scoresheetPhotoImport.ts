@@ -96,8 +96,8 @@ export async function importFromPhoto(
     await page.getByRole("button", { name: "Import", exact: true }).click();
 
     const dialog = page.getByRole("dialog", { name: "Import Game" });
-    await dialog.getByText("From photo", { exact: true }).click();
-    await dialog.getByRole("button", { name: "Choose photos" }).click();
+    await dialog.getByRole("button", { name: "Photo", exact: true }).click();
+    await dialog.getByRole("button", { name: "Choose photos or PDF", exact: true }).click();
     await expect(dialog.locator("[data-scoresheet-thumbnails] img")).toHaveCount(
         options.expectedPhotoCount ?? 1,
     );

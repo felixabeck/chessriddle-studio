@@ -2008,6 +2008,8 @@ test("engine rules 1-4: drives engines from undefined to [] to disabled+enabled 
   );
   expect(arrangementEngineAreas(getGameArrangement())).toEqual([disabledArea]);
   expect(latestContext!.shownEngineAreas.size).toBe(0);
+});
+
 test("hidden photo panel area is omitted without a review, kept across divider drags, and returns in the same spot for a review tab", async () => {
   const withPhoto: BoardArrangement = {
     direction: "row",
@@ -2025,7 +2027,7 @@ test("hidden photo panel area is omitted without a review, kept across divider d
       },
     },
   };
-  localStorage.setItem(ANALYSIS_BOARD_LAYOUT_KEY, JSON.stringify(withPhoto));
+  seedGameLayout(withPhoto);
   const treeStore = createZustandStore<Pick<TreeStoreState, "scoresheetReview">>(() => ({
     scoresheetReview: undefined,
   })) as unknown as TreeStore;
@@ -2036,7 +2038,7 @@ test("hidden photo panel area is omitted without a review, kept across divider d
       <Provider store={store}>
         <MantineProvider>
           <TreeStateContext.Provider value={treeStore}>
-            <BoardTabLayout arrangeable>
+            <BoardTabLayout arrangeable kind="game">
               <ArrangementProbe />
             </BoardTabLayout>
           </TreeStateContext.Provider>
@@ -2083,7 +2085,7 @@ test("hidden photo panel area is omitted without a review, kept across divider d
       },
     },
   };
-  expect(JSON.parse(localStorage.getItem(ANALYSIS_BOARD_LAYOUT_KEY)!)).toEqual(expectedStored);
+  expect(readStoredGameLayout().arrangement).toEqual(expectedStored);
 
   // Activating a scoresheet review reveals photo in its remembered spot.
   await act(async () => treeStore.setState({ scoresheetReview: {} }));
@@ -2093,7 +2095,7 @@ test("hidden photo panel area is omitted without a review, kept across divider d
   // Returning photo removes it from the stored arrangement.
   await act(async () => latestContext!.returnPanel("photo"));
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual([]);
-  expect(store.get(boardArrangementAtom)).toEqual({
+  expect(getGameArrangement()).toEqual({
     direction: "row",
     first: "left",
     splitPercentage: 55,
@@ -2108,8 +2110,7 @@ test("hidden photo panel area is omitted without a review, kept across divider d
 
 test("BoardTabLayout reveals a pulled-out photo tile for a well-formed ScoresheetPhotos tag and keeps it hidden for a malformed tag", async () => {
   const arrangement = placeArea(defaultBoardArrangement(), "photo", "topRight", "top");
-  const store = createStore();
-  store.set(boardArrangementAtom, arrangement);
+  setGameArrangement(arrangement);
   const treeStore = createZustandStore<TreeStoreState>(
     () =>
       ({
@@ -2123,7 +2124,7 @@ test("BoardTabLayout reveals a pulled-out photo tile for a well-formed Scoreshee
       <Provider store={store}>
         <MantineProvider env="test">
           <TreeStateContext.Provider value={treeStore}>
-            <BoardTabLayout arrangeable>
+            <BoardTabLayout arrangeable kind="game">
               <ArrangementProbe />
             </BoardTabLayout>
           </TreeStateContext.Provider>
@@ -2143,4 +2144,50 @@ test("BoardTabLayout reveals a pulled-out photo tile for a well-formed Scoreshee
     } as unknown as Partial<TreeStoreState>),
   );
   expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["photo"]);
+});
+
+test("pulled-out photo panel keeps its place per layout kind", async () => {
+  const withPhoto: BoardArrangement = placeArea(
+    defaultBoardArrangement(),
+    "photo",
+    "left",
+    "bottom",
+  );
+  seedGameLayout(withPhoto);
+  const treeStore = createZustandStore<TreeStoreState>(
+    () =>
+      ({
+        scoresheetReview: {},
+        headers: { other: {} },
+      }) as unknown as TreeStoreState,
+  ) as unknown as TreeStore;
+
+  measured.width = 1400;
+  const renderKind = (kind: BoardLayoutKind) =>
+    act(async () =>
+      root.render(
+        <Provider store={store}>
+          <MantineProvider env="test">
+            <TreeStateContext.Provider value={treeStore}>
+              <BoardTabLayout arrangeable kind={kind}>
+                <ArrangementProbe />
+              </BoardTabLayout>
+            </TreeStateContext.Provider>
+          </MantineProvider>
+        </Provider>,
+      ),
+    );
+
+  await renderKind("game");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["photo"]);
+  expect(mosaicTree()).toEqual(withPhoto);
+
+  // Switching to repertoire uses repertoire's own arrangement without pulling photo over.
+  await renderKind("repertoire");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).not.toContain("photo");
+
+  // Returning to game restores photo in its remembered place.
+  await renderKind("game");
+  expect([...(latestContext?.shownPanelAreas ?? [])]).toEqual(["photo"]);
+  expect(mosaicTree()).toEqual(withPhoto);
 });
