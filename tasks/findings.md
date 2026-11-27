@@ -29977,3 +29977,18 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Fix:** re-record `saved-layouts-more-menu.png` in the Playwright container after reading the diff (only the added item and divider may move).
 * **Closed:** 2026-11-27, fixed by `14a9dbbbb` (snapshot re-recorded in the Playwright container; only the New analysis item and divider were added).
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"75ddd252ff3163f212b56eccac87bfbd5eb163a0c38ab10e5c609544f5c0930d","header_sha256":"2932b1b127e156db3d4e3f5edf93c81e41b395809aeebe5bfa010124414127f5","header_status":"handled","input_sha256":"aa14c21e3d76185093c9c846a6bd6483f528efe2ca6b28c63af88657babfad8b","kind":"mutation-receipt","operation":"39a5ca01628f9214d7e1fbb67c8ea476a27f2704ded9aac87b6ec4d5b3e5b60b","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-12"],"target":"f-20261127-12","v":1} -->
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### The windowed "All" database list e2e test expects a fresh 100-row chunk after returning to the Library and fails when the list kept its 250 loaded rows
+
+* **ID:** f-20261127-13 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 3ba7ff5f-9a7e-4158-823c-3b12ca3ff36c
+
+* **Impact class:** tooling
+* **CI run:** 45975375568
+* **Where:** `e2e/database-files.spec.ts:3906`, test "database-files: windowed All mode bounds DOM across chunks, keeps ArrowDown selection visible, opens scrolled rows via Enter and double-click, and resets scroll on sort".
+* **Failure scenario:** job `e2e` of Test run 45975375568 on master `3965fff33` failed at `expect(footer).toContainText("Showing 100 of 250")` after opening row 160 with Enter and clicking Library again: the footer read "Showing 250 of 250" for the full 8 s. The same test passed on `2e9857da7` (run 45969736439) and on `0bd870bed` (run 45961638215); `3965fff33` changed only an e2e PNG and the findings ledger, so the outcome depends on timing — whether the Games list remounts or keeps its loaded chunks when the user returns from the board.
+* **Fix:** decide which behaviour is intended for a return to the Library in All mode (keep the loaded rows or start again at one chunk), make the product deterministic, and assert that behaviour instead of a timing-dependent one.
