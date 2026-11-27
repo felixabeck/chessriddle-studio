@@ -30012,7 +30012,7 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 
 ### Converting a file type in Library leaves open tabs on the old type
 
-* **ID:** f-20261127-10 · **Status:** open · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-10 · **Status:** handled · **Area:** frontend-state · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 15b83869-bb15-4dae-938a-52c4e97b88c1
 * **Impact class:** behaviour
 * **Spotted outside diff:** yes, during pre-commit review of f-20261126-10
@@ -30021,6 +30021,9 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 * **Fix:** after a successful type or name write, update matching `tab.gameOrigin.file` records (name and metadata) in the tab list, or have FileFreshnessGate reconcile sidecar type from the listing.
 * **Related:** f-20261126-10 asks colour and writes Orientation on convert; it deliberately does not sync open-tab sidecar type.
 * **Found by:** Grok drain session 15b83869-bb15-4dae-938a-52c4e97b88c1, 2026-11-27
+
+Handled. After a Library sidecar type or name write, `patchFileTabsSidecar` updates matching `file` / `fileDraft` / `temp_file` `gameOrigin.file` records immediately when the IPC resolves or rejects with `backendCategory === "durability"`, so `isRepertoireTab` sees the new type without closing the tab. Rejected: FileFreshnessGate-only reconcile (would leave persisted workspace stale); patching from `runMutation` `onSuccess` (skipped on unmount/`owns(owner)` false and listing-refresh failure). Recent-files sidecar type is a follow-up (inbox during this run). Proof: `pnpm exec vitest run src/utils/tabs.fileSidecar.test.ts src/components/files/FilesPage.test.tsx` → 215 passed; related `agent-gate pnpm exec vitest related --run --passWithNoTests` on the four paths → 4369 passed, 1 skipped. Commit 66c4d688b.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"acedb8f390e6e946abed41b6c1bbc24566676552cb2c03bdb7a8226829a169ad","header_sha256":"c3b7b2f8d3e7581a8aec995e62f0747cd3626fc4235b681ef75c37293ec978ab","header_status":"handled","input_sha256":"f83e7567799dcb365658cc0ae8b2833bff5748f384906cb75acca62f8b4e8bd4","kind":"mutation-receipt","operation":"ae85cb55dde283942450ffebf6fed22040ecfcf5ad7d2f6a6b7cca9ccdd3abc5","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-10"],"target":"f-20261127-10","v":1} -->
 
 ---
 
