@@ -1,0 +1,4 @@
+/* One line of `fz="sm"` text at Mantine Text's default line height, also while the name is empty. */
+.reservedLine {
+  min-height: calc(var(--mantine-font-size-sm) * var(--mantine-line-height-md));
+}

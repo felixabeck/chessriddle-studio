@@ -12,7 +12,21 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@mantine/core", () => ({
-  Text: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+  Text: ({
+    children,
+    className,
+    title,
+    truncate,
+  }: {
+    children?: React.ReactNode;
+    className?: string;
+    title?: string;
+    truncate?: string;
+  }) => (
+    <span className={className} title={title} data-truncate={truncate}>
+      {children}
+    </span>
+  ),
 }));
 vi.mock("@/utils/chess", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/chess")>()),
@@ -71,16 +85,16 @@ afterEach(async () => {
   host.remove();
 });
 
-function openingNameTree(visible = true) {
+function openingNameTree(visible = true, reserveLine = false) {
   return (
     <TreeStateContext.Provider value={store}>
-      {visible && <OpeningName />}
+      {visible && <OpeningName reserveLine={reserveLine} />}
     </TreeStateContext.Provider>
   );
 }
 
-async function renderOpeningName(visible = true) {
-  await act(async () => root.render(openingNameTree(visible)));
+async function renderOpeningName(visible = true, reserveLine = false) {
+  await act(async () => root.render(openingNameTree(visible, reserveLine)));
 }
 
 function currentLineKey() {
@@ -298,4 +312,145 @@ test("a line shown again before the cache overflows survives, and the next oldes
   expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 1);
   await showLine(lineFen(0));
   expect(mocks.getOpening).toHaveBeenCalledTimes(OPENING_NAME_CACHE_CAPACITY + 2);
+});
+
+test("a step forward keeps the line so far's name while the next lookup is pending", async () => {
+  const next = deferred<string>();
+  mocks.getOpening.mockResolvedValueOnce("King's Pawn").mockReturnValueOnce(next.promise);
+
+  await renderOpeningName();
+  expect(host.textContent).toBe("King's Pawn");
+
+  // Synchronous: the first committed frame of the new position must already carry a name.
+  act(() => store.getState().makeMove({ payload: "e4" }));
+  expect(store.getState().position).toEqual([0]);
+  expect(host.textContent).toBe("King's Pawn");
+
+  await act(async () => {
+    next.resolve("King's Pawn Game");
+    await next.promise;
+  });
+  expect(host.textContent).toBe("King's Pawn Game");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(2);
+});
+
+test("a step forward uses the longest cached leading line, not an older one", async () => {
+  const pending = deferred<string>();
+  mocks.getOpening
+    .mockResolvedValueOnce("Start")
+    .mockResolvedValueOnce("King's Pawn Game")
+    .mockReturnValueOnce(pending.promise);
+
+  await renderOpeningName();
+  await act(async () => store.getState().makeMove({ payload: "e4" }));
+  await flushPromises();
+  expect(host.textContent).toBe("King's Pawn Game");
+
+  act(() => store.getState().makeMove({ payload: "e5" }));
+  expect(host.textContent).toBe("King's Pawn Game");
+});
+
+test("an unexpected failure after a step forward clears the line so far's name", async () => {
+  mocks.getOpening.mockResolvedValueOnce("King's Pawn").mockRejectedValueOnce(new Error("boom"));
+
+  await renderOpeningName();
+  await act(async () => store.getState().makeMove({ payload: "e4" }));
+  await flushPromises();
+
+  expect(host.textContent).toBe("");
+  expect(mocks.warnSafely).toHaveBeenCalledExactlyOnceWith("boom");
+  expect(unhandledReasons).toEqual([]);
+});
+
+test("a reserved line truncates to one line and carries the full name as its title", async () => {
+  mocks.getOpening.mockResolvedValueOnce("Ruy Lopez").mockRejectedValueOnce(NO_OPENING_PAYLOAD);
+
+  await renderOpeningName(true, true);
+  const line = host.querySelector("span")!;
+  expect(line.className).toMatch(/reservedLine/);
+  expect(line.dataset.truncate).toBe("end");
+  expect(line.title).toBe("Ruy Lopez");
+
+  // With no name the line stays mounted and reserved, without an empty tooltip.
+  await showLine(ENDGAME_FEN);
+  expect(host.textContent).toBe("");
+  expect(line.isConnected).toBe(true);
+  expect(line.className).toMatch(/reservedLine/);
+  expect(line.hasAttribute("title")).toBe(false);
+});
+
+test("without a reserved line the name is neither truncated nor titled", async () => {
+  mocks.getOpening.mockResolvedValueOnce("Ruy Lopez");
+
+  await renderOpeningName();
+  const line = host.querySelector("span")!;
+  expect(line.className).toBe("");
+  expect(line.hasAttribute("data-truncate")).toBe(false);
+  expect(line.hasAttribute("title")).toBe(false);
+});
+
+test("a jump several moves ahead walks back to the longest cached line, also one cached as no opening", async () => {
+  const twoAhead = deferred<string>();
+  const fourAhead = deferred<string>();
+  mocks.getOpening
+    .mockResolvedValueOnce("Start")
+    .mockReturnValueOnce(twoAhead.promise)
+    .mockReturnValueOnce(fourAhead.promise);
+
+  await renderOpeningName();
+  expect(host.textContent).toBe("Start");
+
+  // Builds moves after `path` without showing them, so their lines stay uncached.
+  const buildHidden = (path: number[], sans: string[]) =>
+    act(() => {
+      for (const [index, san] of sans.entries()) {
+        store.getState().goToMove([...path, ...Array<number>(index).fill(0)]);
+        store.getState().makeMove({ payload: san, changePosition: false });
+      }
+      store.getState().goToMove([]);
+    });
+
+  // Two moves ahead: the line after e4 is uncached, so the name comes from the start, two back.
+  buildHidden([], ["e4", "e5"]);
+  act(() => store.getState().goToMove([0, 0]));
+  expect(host.textContent).toBe("Start");
+  await act(async () => {
+    twoAhead.reject(NO_OPENING_PAYLOAD);
+    await twoAhead.promise.catch(() => undefined);
+  });
+  expect(host.textContent).toBe("");
+
+  // Four moves ahead from the start: the nearest cached line (after e5) has no opening, and that
+  // empty name wins over the start's, which is further back.
+  buildHidden([0, 0], ["Nf3", "Nc6"]);
+  act(() => store.getState().goToMove([]));
+  expect(host.textContent).toBe("Start");
+  act(() => store.getState().goToMove([0, 0, 0, 0]));
+  expect(host.textContent).toBe("");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(3);
+});
+
+test("a line with no opening after a named shorter line clears the shorter line's name", async () => {
+  mocks.getOpening.mockResolvedValueOnce("King's Pawn").mockRejectedValueOnce(NO_OPENING_PAYLOAD);
+
+  await renderOpeningName();
+  await act(async () => store.getState().makeMove({ payload: "e4" }));
+  await flushPromises();
+
+  expect(host.textContent).toBe("");
+  expect(mocks.warnSafely).not.toHaveBeenCalled();
+});
+
+test("a line cached as no opening shows no name on a later visit, not its shorter line's", async () => {
+  mocks.getOpening.mockResolvedValueOnce("King's Pawn").mockRejectedValueOnce(NO_OPENING_PAYLOAD);
+
+  await renderOpeningName();
+  await act(async () => store.getState().makeMove({ payload: "e4" }));
+  await flushPromises();
+
+  // A fresh mount has no lookup of its own, so only the cache answers for the line after e4.
+  await renderOpeningName(false);
+  act(() => root.render(openingNameTree()));
+  expect(host.textContent).toBe("");
+  expect(mocks.getOpening).toHaveBeenCalledTimes(2);
 });

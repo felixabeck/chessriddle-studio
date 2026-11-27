@@ -14,8 +14,25 @@ export const OPENING_NAME_CACHE_CAPACITY = 256;
 export const openingNameCache = new LruCache<string, string>(OPENING_NAME_CACHE_CAPACITY);
 
 /**
+ * The cached name of the longest leading part of `fens`, the line itself excluded, or `undefined`.
+ *
+ * `get_opening_from_fens` names a line after its deepest named position, so a leading part's name is
+ * what the line's own lookup returns unless a later position is named too. Shown while that lookup
+ * is pending, it keeps the name in place on each step through a game instead of blanking it for one
+ * round trip, and it never shows a name from a line that does not lead to this one.
+ */
+function knownPrefixName(fens: string[]): string | undefined {
+    for (let length = fens.length - 1; length > 0; length--) {
+        const prefix = fens.slice(0, length).join("\n");
+        if (openingNameCache.has(prefix)) return openingNameCache.get(prefix);
+    }
+    return undefined;
+}
+
+/**
  * Looks up the opening name for `(root, position)` with an app-wide LRU cache, caching negative
- * "No opening found" results as `""` and discarding stale or failed results.
+ * "No opening found" results as `""` and discarding stale or failed results. While a line's lookup
+ * is pending it shows the name of the line's longest cached leading part (`knownPrefixName`).
  */
 export function useOpeningName(root: TreeNode, position: number[]): string {
     // The line key and name of the most recent lookup this mount completed, shown only while that
@@ -25,9 +42,12 @@ export function useOpeningName(root: TreeNode, position: number[]): string {
 
     // The FENs `getOpening` sends determine its result, so they identify the cached name. FENs hold
     // no newline.
-    const key = openingLineFens(root, position).join("\n");
-    const cached = openingNameCache.get(key);
-    const rawName = lastLookup?.key === key ? lastLookup.name : cached;
+    const fens = openingLineFens(root, position);
+    const key = fens.join("\n");
+    const rawName =
+        lastLookup?.key === key
+            ? lastLookup.name
+            : (openingNameCache.get(key) ?? knownPrefixName(fens));
     const openingName = typeof rawName === "string" ? rawName : "";
 
     useEffect(() => {
@@ -44,9 +64,13 @@ export function useOpeningName(root: TreeNode, position: number[]): string {
                 if (message === NO_OPENING_FOUND) {
                     // A line without an opening is a result, remembered like a name.
                     openingNameCache.set(key, "");
+                    if (!cancelled) setLastLookup({ key, name: "" });
                     return;
                 }
-                if (!cancelled) warnSafely(message);
+                if (cancelled) return;
+                // Not cached, so the next mount retries; this mount stops showing a prefix's name.
+                setLastLookup({ key, name: "" });
+                warnSafely(message);
             },
         );
         return () => {

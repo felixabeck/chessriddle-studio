@@ -188,7 +188,7 @@ function GamePreview({
             adaptive && compact ? { flex: "none" } : adaptive ? undefined : { display: "contents" }
           }
         >
-          {showOpening && <OpeningName />}
+          {showOpening && <OpeningName reserveLine />}
           <Group
             ref={frameRef}
             // Top-aligned when fitting: a board limited by a narrow width then sits under the list

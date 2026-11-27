@@ -5262,3 +5262,78 @@ test("database-files: board explorer split view shows notation, divider resize, 
         storedAfterKey,
     );
 });
+
+test("database-files: the preview board keeps its place while stepping through a game", async ({
+    page,
+    mockScenario,
+}) => {
+    // Slow lookups answer no opening, then a name too long for one line, then no opening again, so
+    // stepping crosses a pending lookup, empty to named, and named to empty.
+    const noOpening = {
+        error: {
+            tag: "backend-error" as const,
+            category: "missing-resource" as const,
+            message: "No opening found",
+        },
+    };
+    const longName = `King's Pawn Game: ${"Exceptionally Long Variation Name, ".repeat(8)}Main Line`;
+    await mockScenario({
+        commands: {
+            ...databaseLayoutCommands,
+            get_progress: { result: null },
+            get_opening_from_fens: {
+                delay: 300,
+                outcomes: [noOpening, { result: longName }, noOpening],
+            },
+        },
+    });
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
+    await page.getByRole("row").filter({ hasText: "First White" }).first().click();
+    const board = page.locator("[data-preview-arrangement] cg-board").first();
+    await expect(board).toBeVisible();
+    const lookups = () =>
+        page.evaluate(
+            () =>
+                window.__E2E_TAURI__
+                    .invocations()
+                    .filter(({ command }) => command === "get_opening_from_fens").length,
+        );
+    await expect.poll(lookups).toBe(1);
+    // The start position's lookup is still delayed; the samples below must begin after it settled.
+    await page.waitForTimeout(400);
+
+    for (let step = 0; step < 2; step++) {
+        // The board's offset from the preview's top (the opening line's container) on every frame,
+        // from before the click until the lookup has answered. Measured inside the preview, a scroll
+        // caused by the click can neither pass for a jump nor hide one.
+        const offsets = board.evaluate(
+            (element) =>
+                new Promise<number[]>((resolve) => {
+                    const preview = element.closest("[data-preview-arrangement]")!.parentElement!;
+                    const samples: number[] = [];
+                    const started = performance.now();
+                    const sample = () => {
+                        samples.push(
+                            element.getBoundingClientRect().top -
+                                preview.getBoundingClientRect().top,
+                        );
+                        if (performance.now() - started < 700) requestAnimationFrame(sample);
+                        else resolve(samples);
+                    };
+                    requestAnimationFrame(sample);
+                }),
+        );
+        await page.getByRole("button", { name: "Next move", exact: true }).click();
+        const distinct = new Set(await offsets);
+        expect(distinct.size, `board offsets ${[...distinct].join(", ")}`).toBe(1);
+        if (step === 0) {
+            // The long name is cut to one line and offered in full as the line's title.
+            const name = page.getByText(longName, { exact: true });
+            await expect(name).toHaveAttribute("title", longName);
+            expect(await name.evaluate((line) => line.scrollWidth > line.clientWidth)).toBe(true);
+        }
+    }
+    await expect(page.getByText(longName, { exact: true })).toHaveCount(0);
+    expect(await lookups()).toBe(3);
+});
