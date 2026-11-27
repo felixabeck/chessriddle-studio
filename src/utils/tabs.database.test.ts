@@ -14,6 +14,7 @@ import type { FileMetadata } from "@/components/files/file";
 import {
     createTab,
     commitNewTab,
+    isCurrentOriginDestination,
     saveToDatabase,
     saveToFile,
     saveToLibraryFile,
@@ -801,6 +802,64 @@ test("sameOrigin matches fileDrafts of one file and distinguishes different file
     expect(sameOrigin(left, sameFile)).toBe(true);
     expect(sameOrigin(left, other)).toBe(false);
     expect(sameOrigin(left, { kind: "databaseDraft", database })).toBe(false);
+});
+
+test("isCurrentOriginDestination matches only the tab's persisted database or file origin", () => {
+    const tabWith = (gameOrigin: GameOrigin): Tab => ({
+        value: "tab-id",
+        type: "analysis",
+        name: "Game",
+        gameOrigin,
+    });
+    const dbTab = tabWith({ kind: "database", database, gameId: 7 });
+    const fileTab = tabWith({ kind: "file", file: repertoireFile, gameNumber: 1 });
+    const linkedFileTab = tabWith({ kind: "file", file: linkedCollectionFile, gameNumber: 2 });
+    const tempFileTab = tabWith({ kind: "temp_file", file: repertoireFile, gameNumber: 0 });
+    const dbDraftTab = tabWith({ kind: "databaseDraft", database });
+    const fileDraftTab = tabWith({ kind: "fileDraft", file: repertoireFile });
+    const noneTab = tabWith({ kind: "none" });
+
+    expect(isCurrentOriginDestination(dbTab, { kind: "database", database })).toBe(true);
+    const reloadedDatabase = { id: { id: "draft-database" }, kind: "database" } as const;
+    expect(reloadedDatabase).not.toBe(database);
+    expect(
+        isCurrentOriginDestination(dbTab, { kind: "database", database: reloadedDatabase }),
+    ).toBe(true);
+    expect(isCurrentOriginDestination(dbTab, { kind: "database", database: otherDatabase })).toBe(
+        false,
+    );
+    expect(isCurrentOriginDestination(dbTab, { kind: "file", file })).toBe(false);
+
+    expect(isCurrentOriginDestination(fileTab, { kind: "file", file: repertoireFile.handle })).toBe(
+        true,
+    );
+    const reloadedFileHandle = { id: { id: "repertoire-file" }, kind: "fileWorkspace" } as const;
+    expect(reloadedFileHandle).not.toBe(repertoireFile.handle);
+    expect(isCurrentOriginDestination(fileTab, { kind: "file", file: reloadedFileHandle })).toBe(
+        true,
+    );
+    expect(isCurrentOriginDestination(fileTab, { kind: "file", file })).toBe(false);
+    expect(isCurrentOriginDestination(fileTab, { kind: "database", database })).toBe(false);
+
+    expect(
+        isCurrentOriginDestination(linkedFileTab, { kind: "file", file: readyCollection().file }),
+    ).toBe(true);
+
+    expect(
+        isCurrentOriginDestination(tempFileTab, { kind: "file", file: repertoireFile.handle }),
+    ).toBe(false);
+    expect(isCurrentOriginDestination(dbDraftTab, { kind: "database", database })).toBe(false);
+    expect(
+        isCurrentOriginDestination(fileDraftTab, { kind: "file", file: repertoireFile.handle }),
+    ).toBe(false);
+    expect(isCurrentOriginDestination(noneTab, { kind: "database", database })).toBe(false);
+    expect(isCurrentOriginDestination(noneTab, { kind: "file", file: repertoireFile.handle })).toBe(
+        false,
+    );
+    expect(isCurrentOriginDestination(undefined, { kind: "database", database })).toBe(false);
+    expect(isCurrentOriginDestination(null, { kind: "file", file: repertoireFile.handle })).toBe(
+        false,
+    );
 });
 
 test("fileDraft user save appends at the re-counted index and rebinds with real metadata", async () => {

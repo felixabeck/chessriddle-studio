@@ -20,7 +20,15 @@ import type { TreeStoreState } from "@/state/store/tree";
 import { databaseHandleKey, type SuccessDatabaseInfo } from "@/utils/db";
 import { capitalize } from "@/utils/format";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
-import { saveToDatabase, saveToLibraryFile, useTabActions, type Tab } from "@/utils/tabs";
+import {
+  isCurrentOriginDestination,
+  saveToDatabase,
+  saveToFile,
+  saveToLibraryFile,
+  useTabActions,
+  type SaveDestination,
+  type Tab,
+} from "@/utils/tabs";
 
 const FILE_PREFIX = "file:";
 const DATABASE_PREFIX = "database:";
@@ -122,11 +130,18 @@ export default function SaveToTargetModal({
     const file = selectedFile;
     const database = selectedDatabase;
     if (file ? filesListingFailed : database ? databasesListingFailed : true) return;
+    const destination: SaveDestination = file
+      ? { kind: "file", file: file.handle }
+      : database!.collection?.status === "ready"
+        ? { kind: "file", file: database!.collection.file }
+        : { kind: "database", database: database!.file };
     await run(async () => {
       try {
-        const result = file
-          ? await saveToLibraryFile({ tab, store, file, getTab, updateTab })
-          : await saveToDatabase({ tab, store, database: database!.file, getTab, updateTab });
+        const result = isCurrentOriginDestination(tab, destination)
+          ? await saveToFile({ tab, store, getTab, updateTab, isUserSave: true })
+          : file
+            ? await saveToLibraryFile({ tab, store, file, getTab, updateTab })
+            : await saveToDatabase({ tab, store, database: database!.file, getTab, updateTab });
         if (typeof result === "object") {
           if (isMounted()) notifyUnlessCancelled(t("Common.Error"), result.error);
         } else if (result === "saved") {
@@ -139,6 +154,8 @@ export default function SaveToTargetModal({
           void refresh().catch((error) => {
             if (isMounted()) notifyUnlessCancelled(t("Common.Error"), error);
           });
+        } else if (result === "conflict") {
+          if (isMounted()) onClose();
         } else if (result === "superseded" && isMounted())
           notifyUnlessCancelled(t("Common.Error"), {
             category: "validation",

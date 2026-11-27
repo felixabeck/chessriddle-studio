@@ -13,18 +13,23 @@ import type { TreeStoreState } from "@/state/store/tree";
 import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import type { SuccessDatabaseInfo } from "@/utils/db";
-import { saveToDatabase, saveToLibraryFile } from "@/utils/tabs";
+import { saveToDatabase, saveToFile, saveToLibraryFile, type Tab } from "@/utils/tabs";
 import SaveToTargetModal from "./SaveToTargetModal";
 
 vi.mock("@/hooks/useDatabaseList", () => ({ useDatabaseList: vi.fn() }));
 vi.mock("@/components/library/useWorkspaceListing", () => ({
   useWorkspaceListing: vi.fn(),
 }));
-vi.mock("@/utils/tabs", () => ({
-  useTabActions: () => ({ getTab: vi.fn(), updateTab: vi.fn() }),
-  saveToDatabase: vi.fn(),
-  saveToLibraryFile: vi.fn(),
-}));
+vi.mock("@/utils/tabs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/utils/tabs")>();
+  return {
+    ...actual,
+    useTabActions: () => ({ getTab: vi.fn(), updateTab: vi.fn() }),
+    saveToFile: vi.fn(),
+    saveToDatabase: vi.fn(),
+    saveToLibraryFile: vi.fn(),
+  };
+});
 vi.mock("@/components/common/AppModal", async () => ({
   default: (await import("@/tests/appModal")).PendingAppModal,
 }));
@@ -86,6 +91,7 @@ const otherFile: FileMetadata = {
 async function renderModal(
   onClose: () => void = vi.fn(),
   libraryWorkspace: typeof workspace | null = null,
+  tab: Tab | undefined = undefined,
 ) {
   const jotai = createStore();
   jotai.set(fileWorkspaceAtom, libraryWorkspace);
@@ -96,7 +102,7 @@ async function renderModal(
           <SaveToTargetModal
             opened
             onClose={onClose}
-            tab={undefined}
+            tab={tab}
             store={{} as StoreApi<TreeStoreState>}
           />
         </MantineProvider>
@@ -438,4 +444,197 @@ test("a thrown file save is caught, keeps the dialog open, and notifies", async 
   expect(onClose).not.toHaveBeenCalled();
   expect(host.querySelector('[role="dialog"]')).not.toBeNull();
   expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "danger" }));
+});
+
+test("selecting the origin database updates in place via saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-db",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "database", database: standaloneDatabase.file, gameId: 7 },
+  };
+  mockFiles([]);
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToFile).mockResolvedValue("saved");
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace, tab);
+  await chooseOption("Standalone");
+  await act(async () => saveButton().click());
+  expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, isUserSave: true }),
+  );
+  expect(saveToDatabase).not.toHaveBeenCalled();
+  expect(saveToLibraryFile).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.SavedTo" });
+});
+
+test("selecting a different database keeps calling saveToDatabase", async () => {
+  const tab: Tab = {
+    value: "tab-db",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: {
+      kind: "database",
+      database: { id: { id: "origin-db" }, kind: "database" },
+      gameId: 7,
+    },
+  };
+  mockFiles([]);
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToDatabase).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace, tab);
+  await chooseOption("Standalone");
+  await act(async () => saveButton().click());
+  expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, database: standaloneDatabase.file }),
+  );
+  expect(saveToFile).not.toHaveBeenCalled();
+});
+
+test("selecting the origin file updates in place via saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-file",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "file", file: repertoireFile, gameNumber: 1 },
+  };
+  mockFiles([repertoireFile, otherFile]);
+  mockDatabases([]);
+  vi.mocked(saveToFile).mockResolvedValue("saved");
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace, tab);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, isUserSave: true }),
+  );
+  expect(saveToLibraryFile).not.toHaveBeenCalled();
+  expect(saveToDatabase).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(notifications.show).toHaveBeenCalledExactlyOnceWith({ message: "Board.SavedTo" });
+});
+
+test("selecting a different file keeps calling saveToLibraryFile", async () => {
+  const tab: Tab = {
+    value: "tab-file",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "file", file: repertoireFile, gameNumber: 1 },
+  };
+  mockFiles([repertoireFile, otherFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace, tab);
+  await chooseOption("Games");
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, file: otherFile }),
+  );
+  expect(saveToFile).not.toHaveBeenCalled();
+});
+
+test("selecting a collection-backed database when files listing failed updates the file origin via saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-linked",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "file", file: repertoireFile, gameNumber: 0 },
+  };
+  mockFiles([], {
+    tag: "backend-error",
+    category: "io",
+    message: "private diagnostic",
+    rootFailure: "missing",
+  });
+  mockDatabases([readyTarget], [readyTarget.collection!]);
+  vi.mocked(saveToFile).mockResolvedValue("saved");
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace, tab);
+  await chooseOption(readyTarget.title);
+  await act(async () => saveButton().click());
+  expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, isUserSave: true }),
+  );
+  expect(saveToDatabase).not.toHaveBeenCalled();
+  expect(saveToLibraryFile).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("a conflict result closes the dialog without a success toast", async () => {
+  const tab: Tab = {
+    value: "tab-db",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "database", database: standaloneDatabase.file, gameId: 7 },
+  };
+  mockFiles([]);
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToFile).mockResolvedValue("conflict");
+  const onClose = vi.fn();
+  await renderModal(onClose, workspace, tab);
+  await chooseOption("Standalone");
+  await act(async () => saveButton().click());
+  expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, isUserSave: true }),
+  );
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(notifications.show).not.toHaveBeenCalled();
+});
+
+test("a databaseDraft tab selecting its draft database calls saveToDatabase, not saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-db-draft",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "databaseDraft", database: standaloneDatabase.file },
+  };
+  mockFiles([]);
+  mockDatabases([standaloneDatabase]);
+  vi.mocked(saveToDatabase).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace, tab);
+  await chooseOption("Standalone");
+  await act(async () => saveButton().click());
+  expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, database: standaloneDatabase.file }),
+  );
+  expect(saveToFile).not.toHaveBeenCalled();
+});
+
+test("a fileDraft tab selecting its draft file calls saveToLibraryFile, not saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-file-draft",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "fileDraft", file: repertoireFile },
+  };
+  mockFiles([repertoireFile, otherFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace, tab);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, file: repertoireFile }),
+  );
+  expect(saveToFile).not.toHaveBeenCalled();
+});
+
+test("a temp_file tab selecting its source file calls saveToLibraryFile, not saveToFile", async () => {
+  const tab: Tab = {
+    value: "tab-temp-file",
+    type: "analysis",
+    name: "Game",
+    gameOrigin: { kind: "temp_file", file: repertoireFile, gameNumber: 0 },
+  };
+  mockFiles([repertoireFile, otherFile]);
+  mockDatabases([]);
+  vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
+  await renderModal(vi.fn(), workspace, tab);
+  await chooseOption("Caro Kann");
+  await act(async () => saveButton().click());
+  expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ tab, file: repertoireFile }),
+  );
+  expect(saveToFile).not.toHaveBeenCalled();
 });

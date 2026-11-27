@@ -916,6 +916,27 @@ export function sameOrigin(left: GameOrigin, right: GameOrigin): boolean {
     return true;
 }
 
+export type SaveDestination =
+    | { kind: "database"; database: DatabaseHandle }
+    | { kind: "file"; file: FileWorkspaceHandle };
+
+export function isCurrentOriginDestination(
+    tab: Tab | null | undefined,
+    destination: SaveDestination,
+): boolean {
+    if (!tab) return false;
+    if (destination.kind === "database") {
+        return (
+            tab.gameOrigin.kind === "database" &&
+            databaseHandleKey(tab.gameOrigin.database) === databaseHandleKey(destination.database)
+        );
+    }
+    return (
+        tab.gameOrigin.kind === "file" &&
+        fileWorkspaceKey(tab.gameOrigin.file.handle) === fileWorkspaceKey(destination.file)
+    );
+}
+
 function sourceChanged(tabId: string): SaveResult {
     setFileFreshness(tabId, "conflict", { conflictReason: "save-refused" });
     return "conflict";
