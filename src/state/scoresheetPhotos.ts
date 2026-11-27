@@ -257,6 +257,11 @@ export function useResolvedScoresheetPhotos(
     }, []);
 
     const isCurrentLocal = localRead.key === requestKey;
+    const allCached =
+        !hasUnsaved &&
+        photoIds !== null &&
+        photoIds.length > 0 &&
+        photoIds.every((id) => photoStore.getCached(id) !== undefined);
     const uncachedNeededKey =
         !hasUnsaved && photoIds && photoIds.length > 0
             ? photoIds
@@ -274,6 +279,14 @@ export function useResolvedScoresheetPhotos(
     useEffect(() => {
         if (hasUnsaved || !idsKey) {
             setLocalRead(INITIAL_LOCAL_READ_STATE);
+            return;
+        }
+        if (allCached) {
+            setLocalRead((prev) =>
+                prev.readError !== null || prev.unreadable.size > 0
+                    ? INITIAL_LOCAL_READ_STATE
+                    : prev,
+            );
             return;
         }
         if (!uncachedNeededKey) {
@@ -331,7 +344,7 @@ export function useResolvedScoresheetPhotos(
             controller.abort();
             unregisterTabReadController(tabId, controller);
         };
-    }, [tabId, idsKey, requestKey, uncachedNeededKey, hasUnsaved]);
+    }, [tabId, idsKey, requestKey, uncachedNeededKey, hasUnsaved, allCached]);
 
     if (hasUnsaved) {
         return {
@@ -351,7 +364,7 @@ export function useResolvedScoresheetPhotos(
         };
     }
 
-    const readError = isCurrentLocal ? localRead.readError : null;
+    const readError = isCurrentLocal && !allCached ? localRead.readError : null;
     const slots: ResolvedScoresheetPhotoSlot[] = photoIds.map((id) => {
         const cached = photoStore.getCached(id);
         if (cached) return cached;

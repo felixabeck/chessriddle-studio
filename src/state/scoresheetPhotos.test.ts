@@ -264,7 +264,8 @@ test("useResolvedScoresheetPhotos caches ok/missing, upgrades missing on store, 
     expect(latest.readError).toBeNull();
     expect(latest.slots).toEqual([{ status: "ok", dataUrl: PHOTO_A }]);
 
-    // 6. Command error is not cached and reports readError.
+    // 6. Command error is not cached and reports readError; storing the same id clears readError
+    //    so a later eviction re-reads instead of reverting to unreadable.
     const ID_ERR = "e".repeat(64);
     mocks.scoresheetReadPhotos.mockRejectedValueOnce(new CoachCommandError("photoStorage"));
     await act(async () => {
@@ -272,6 +273,50 @@ test("useResolvedScoresheetPhotos caches ok/missing, upgrades missing on store, 
     });
     expect(latest.readError).toBe("photoStorage");
     expect(getCachedScoresheetPhoto(ID_ERR)).toBeUndefined();
+
+    await act(async () => {
+        cacheStoredScoresheetPhotos([ID_ERR], [PHOTO_A]);
+    });
+    expect(latest.readError).toBeNull();
+    expect(latest.slots).toEqual([{ status: "ok", dataUrl: PHOTO_A }]);
+
+    mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "ok", dataUrl: PHOTO_A }]);
+    await act(async () => {
+        for (let i = 0; i < MAX_CACHED_SCORESHEET_PHOTOS + 1; i += 1) {
+            cacheStoredScoresheetPhotos([`f${i.toString(16).padStart(63, "0")}`], [PHOTO_B]);
+        }
+    });
+    expect(mocks.scoresheetReadPhotos).toHaveBeenLastCalledWith([ID_ERR], {
+        signal: expect.any(AbortSignal),
+    });
+    expect(latest.readError).toBeNull();
+    expect(latest.slots).toEqual([{ status: "ok", dataUrl: PHOTO_A }]);
+
+    // 6b. Per-item unreadable (readError === null) followed by storing the same id clears
+    //     localRead.unreadable so a later eviction re-reads instead of reverting to unreadable.
+    const ID_UNREAD = "b".repeat(64);
+    mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "unreadable" }]);
+    await act(async () => {
+        root!.render(createElement(Probe, { tabId: "tab-unread-restore", ids: [ID_UNREAD] }));
+    });
+    expect(latest.readError).toBeNull();
+    expect(latest.slots).toEqual([{ status: "unreadable" }]);
+
+    await act(async () => {
+        cacheStoredScoresheetPhotos([ID_UNREAD], [PHOTO_A]);
+    });
+    expect(latest.slots).toEqual([{ status: "ok", dataUrl: PHOTO_A }]);
+
+    mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "ok", dataUrl: PHOTO_A }]);
+    await act(async () => {
+        for (let i = 0; i < MAX_CACHED_SCORESHEET_PHOTOS + 1; i += 1) {
+            cacheStoredScoresheetPhotos([`a${i.toString(16).padStart(63, "0")}`], [PHOTO_B]);
+        }
+    });
+    expect(mocks.scoresheetReadPhotos).toHaveBeenLastCalledWith([ID_UNREAD], {
+        signal: expect.any(AbortSignal),
+    });
+    expect(latest.slots).toEqual([{ status: "ok", dataUrl: PHOTO_A }]);
 
     // 7. Tab disposal via registerTabDisposer immediately aborts in-flight reads and discards late replies.
     const ID_DISPOSE = "d".repeat(64);

@@ -152,6 +152,7 @@ function ScoresheetPhotoPanel() {
           if (!mountedRef.current || pickRequestRef.current !== requestId) return;
           cacheStoredScoresheetPhotos(ids, pickedUrls);
           clearUnsavedScoresheetPhotos(ownerTab);
+          retry();
           setHeaders(withScoresheetPhotoIds(store.getState().headers, ids));
         } catch (storeCause) {
           if (!mountedRef.current || pickRequestRef.current !== requestId) return;
@@ -168,7 +169,7 @@ function ScoresheetPhotoPanel() {
         setLoadingPhotos(false);
       }
     }
-  }, [errorMessages, loadingPhotos, setHeaders, store, t]);
+  }, [errorMessages, loadingPhotos, retry, setHeaders, store, t]);
 
   const totalPages = slots.length;
   const safePage = totalPages > 0 ? Math.min(page, totalPages - 1) : 0;

@@ -6,9 +6,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
+  cacheStoredScoresheetPhotos,
   clearAllScoresheetPhotosForTests,
   getCachedScoresheetPhoto,
   getUnsavedScoresheetPhotos,
+  MAX_CACHED_SCORESHEET_PHOTOS,
   setUnsavedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { CoachCommandError } from "@/platform/coach";
@@ -545,6 +547,49 @@ test("reopened game with ScoresheetPhotos tag loads by id, handles missing/unrea
   await act(async () => {
     retryButton.click();
   });
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+});
+
+test("Load photo again storing the same photo id after a failed read clears readError so later eviction re-reads", async () => {
+  const SAME_ID = "d".repeat(64);
+  createdTabs.push("tab-same-id-evict");
+  const tree = defaultTree();
+  tree.headers = withScoresheetPhotoIds(tree.headers, [SAME_ID]);
+  const store = createTreeStore("tab-same-id-evict", tree);
+
+  mocks.scoresheetReadPhotos.mockRejectedValueOnce(new CoachCommandError("photoStorage"));
+  await renderPanel(store, "tab-same-id-evict");
+  expect(host.querySelector("[data-scoresheet-photo-unreadable]")).not.toBeNull();
+
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_1 }],
+    skipped: 0,
+    failed: 0,
+  });
+  mocks.scoresheetStorePhotos.mockResolvedValueOnce([SAME_ID]);
+  await act(async () => {
+    loadButton().click();
+  });
+  expect(host.querySelector("[data-scoresheet-photo-unreadable]")).toBeNull();
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+
+  // Evict SAME_ID from the global 32-entry cache while the tab stays open: it must re-read
+  // instead of being suppressed by the stale readError and reverting to unreadable.
+  mocks.scoresheetReadPhotos.mockResolvedValueOnce([{ status: "ok", dataUrl: PHOTO_1 }]);
+  await act(async () => {
+    for (let i = 0; i < MAX_CACHED_SCORESHEET_PHOTOS + 1; i += 1) {
+      cacheStoredScoresheetPhotos([`e${i.toString(16).padStart(63, "0")}`], [PHOTO_2]);
+    }
+  });
+  expect(mocks.scoresheetReadPhotos).toHaveBeenLastCalledWith([SAME_ID], {
+    signal: expect.any(AbortSignal),
+  });
+  expect(host.querySelector("[data-scoresheet-photo-unreadable]")).toBeNull();
   expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
 });
 

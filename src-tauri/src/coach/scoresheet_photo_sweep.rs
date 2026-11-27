@@ -145,21 +145,57 @@ impl fmt::Display for SweepLocation {
 }
 
 /// Fail-closed abort reason carrying only a closed location class and error category (no paths).
+/// When cancellation occurs mid-deletion inside the photo store after one or more removals,
+/// `partial` records the real counts deleted before stopping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SweepAbort {
     location: SweepLocation,
     category: ErrorCategory,
+    partial: Option<SweepSummary>,
 }
 
 impl SweepAbort {
     fn new(location: SweepLocation, category: ErrorCategory) -> Self {
-        Self { location, category }
+        Self {
+            location,
+            category,
+            partial: None,
+        }
     }
 
     fn from_error(location: SweepLocation, error: &Error) -> Self {
         Self {
             location,
             category: error.category(),
+            partial: None,
+        }
+    }
+
+    fn cancelled_in_photo_store(summary: SweepSummary) -> Self {
+        let partial = (summary.deleted > 0 || summary.temps_removed > 0).then_some(summary);
+        Self {
+            location: SweepLocation::PhotoStore,
+            category: ErrorCategory::Cancellation,
+            partial,
+        }
+    }
+
+    fn log_message(&self) -> String {
+        match self.partial {
+            Some(summary) => format!(
+                "scoresheet photo sweep aborted at {}: {} (partial: marked={}, deleted={}, kept={}, temps_removed={}, errors={})",
+                self.location,
+                self.category,
+                summary.marked,
+                summary.deleted,
+                summary.kept,
+                summary.temps_removed,
+                summary.errors,
+            ),
+            None => format!(
+                "scoresheet photo sweep aborted at {}: {} (zero deletions)",
+                self.location, self.category,
+            ),
         }
     }
 }
@@ -253,11 +289,7 @@ impl ScoresheetPhotoSweep {
                     );
                 }
                 Ok(Err(abort)) => {
-                    log::warn!(
-                        "scoresheet photo sweep aborted at {}: {} (zero deletions)",
-                        abort.location,
-                        abort.category
-                    );
+                    log::warn!("{}", abort.log_message());
                 }
                 Err(error) => {
                     log::warn!(
@@ -1092,6 +1124,17 @@ fn sweep_photo_root(
     limits: &SweepLimits,
     cancellation: &CancellationToken,
 ) -> Result<SweepSummary, SweepAbort> {
+    sweep_photo_root_with_hook(app_data, marked, now, limits, cancellation, |_| {})
+}
+
+fn sweep_photo_root_with_hook(
+    app_data: &AppDataDir,
+    marked: &HashSet<String>,
+    now: SystemTime,
+    limits: &SweepLimits,
+    cancellation: &CancellationToken,
+    mut before_entry: impl FnMut(&SweepSummary),
+) -> Result<SweepSummary, SweepAbort> {
     check_cancelled(SweepLocation::PhotoStore, cancellation)?;
     // Open writable so Windows parent directory flushes (`FlushFileBuffers`) succeed on removal.
     let Some(photo_dir) =
@@ -1124,11 +1167,19 @@ fn sweep_photo_root(
     let mut leaf_error_category: Option<ErrorCategory> = None;
 
     for entry in entries {
+        before_entry(&summary);
         if cancellation.is_cancelled() {
-            return Err(SweepAbort::new(
-                SweepLocation::PhotoStore,
-                ErrorCategory::Cancellation,
-            ));
+            if let Some(category) = temp_error_category {
+                log::warn!(
+                    "scoresheet photo sweep encountered temporary-file removal error(s) in photo_store: {category}"
+                );
+            }
+            if let Some(category) = leaf_error_category {
+                log::warn!(
+                    "scoresheet photo sweep encountered photo-leaf removal error(s) in photo_store: {category}"
+                );
+            }
+            return Err(SweepAbort::cancelled_in_photo_store(summary));
         }
         if entry.kind != DirectoryEntryKind::RegularFile {
             continue;
@@ -2309,5 +2360,140 @@ mod tests {
             .expect_err("unresolved database journal must abort sweep");
         assert_eq!(abort.location, SweepLocation::Authority);
         assert!(orphan.exists(), "zero deletions on unresolved journal");
+    }
+
+    #[test]
+    fn cancellation_mid_deletion_loop_reports_partial_deletions_and_stops_remaining() {
+        let now = SystemTime::now();
+        let old = now - Duration::from_secs(25 * 60 * 60);
+        let stale_temp_time = now - Duration::from_secs(120);
+
+        // 1a. Photo-only fixture: cancellation after deleting 1 photo reports `deleted=1`
+        //     instead of zero deletions and leaves the remaining photo untouched.
+        {
+            let harness = SweepHarness::new();
+            let p1 = harness.write_photo(&make_id('1'), old);
+            let p2 = harness.write_photo(&make_id('2'), old);
+
+            let token = CancellationToken::new();
+            let cancel_token = token.clone();
+            let abort = sweep_photo_root_with_hook(
+                &harness.app_data,
+                &HashSet::new(),
+                now,
+                &SweepLimits::default(),
+                &token,
+                move |summary| {
+                    if summary.deleted >= 1 {
+                        cancel_token.cancel();
+                    }
+                },
+            )
+            .expect_err("mid-loop cancellation after photo deletion must abort");
+
+            assert_eq!(abort.location, SweepLocation::PhotoStore);
+            assert_eq!(abort.category, ErrorCategory::Cancellation);
+            let partial = abort
+                .partial
+                .expect("mid-loop cancellation after a photo deletion must carry partial counts");
+            assert_eq!(partial.deleted, 1);
+            assert_eq!(partial.temps_removed, 0);
+
+            let remaining = [&p1, &p2].iter().filter(|path| path.exists()).count();
+            assert_eq!(
+                remaining, 1,
+                "cancellation must stop before deleting the second photo"
+            );
+
+            let log_line = abort.log_message();
+            assert!(
+                !log_line.contains("zero deletions"),
+                "partial cancellation log must not claim zero deletions: {log_line}"
+            );
+            assert!(
+                log_line
+                    .contains("partial: marked=0, deleted=1, kept=0, temps_removed=0, errors=0"),
+                "partial cancellation log must state real photo count: {log_line}"
+            );
+        }
+
+        // 1b. Stale-temp-only fixture: cancellation after removing 1 stale temp reports
+        //     `temps_removed=1` instead of zero deletions and leaves the second temp untouched.
+        {
+            let harness = SweepHarness::new();
+            let root = harness.photo_root();
+            let t1 = root.join(format!(".atomic-{}", uuid::Uuid::new_v4().hyphenated()));
+            let t2 = root.join(format!(".atomic-{}", uuid::Uuid::new_v4().hyphenated()));
+            fs::write(&t1, b"stale-1").expect("write stale temp 1");
+            fs::write(&t2, b"stale-2").expect("write stale temp 2");
+            set_mtime(&t1, stale_temp_time);
+            set_mtime(&t2, stale_temp_time);
+
+            let token = CancellationToken::new();
+            let cancel_token = token.clone();
+            let abort = sweep_photo_root_with_hook(
+                &harness.app_data,
+                &HashSet::new(),
+                now,
+                &SweepLimits::default(),
+                &token,
+                move |summary| {
+                    if summary.temps_removed >= 1 {
+                        cancel_token.cancel();
+                    }
+                },
+            )
+            .expect_err("mid-loop cancellation after stale temp removal must abort");
+
+            assert_eq!(abort.location, SweepLocation::PhotoStore);
+            assert_eq!(abort.category, ErrorCategory::Cancellation);
+            let partial = abort
+                .partial
+                .expect("mid-loop cancellation after a temp removal must carry partial counts");
+            assert_eq!(partial.deleted, 0);
+            assert_eq!(partial.temps_removed, 1);
+
+            let remaining = [&t1, &t2].iter().filter(|path| path.exists()).count();
+            assert_eq!(
+                remaining, 1,
+                "cancellation must stop before removing the second stale temp"
+            );
+
+            let log_line = abort.log_message();
+            assert!(
+                !log_line.contains("zero deletions"),
+                "partial cancellation log must not claim zero deletions: {log_line}"
+            );
+            assert!(
+                log_line
+                    .contains("partial: marked=0, deleted=0, kept=0, temps_removed=1, errors=0"),
+                "partial cancellation log must state real temp count: {log_line}"
+            );
+        }
+
+        // 2. Cancellation on the first iteration before any deletion still reports zero deletions.
+        {
+            let harness = SweepHarness::new();
+            let p1 = harness.write_photo(&make_id('3'), old);
+            let token = CancellationToken::new();
+            let cancel_token = token.clone();
+            let abort = sweep_photo_root_with_hook(
+                &harness.app_data,
+                &HashSet::new(),
+                now,
+                &SweepLimits::default(),
+                &token,
+                move |_| {
+                    cancel_token.cancel();
+                },
+            )
+            .expect_err("cancellation before first deletion must abort");
+
+            assert_eq!(abort.location, SweepLocation::PhotoStore);
+            assert_eq!(abort.category, ErrorCategory::Cancellation);
+            assert!(abort.partial.is_none());
+            assert!(p1.exists());
+            assert!(abort.log_message().contains("(zero deletions)"));
+        }
     }
 }
