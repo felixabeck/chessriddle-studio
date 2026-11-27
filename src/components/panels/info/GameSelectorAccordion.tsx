@@ -417,34 +417,43 @@ export default function GameSelectorAccordion({
     <Accordion
       styles={{
         control: {
-          borderBottom: "1px solid var(--mantine-color-default-border)",
+          flex: 1,
+          width: "auto",
+          minWidth: 0,
         },
         content: { padding: 0 },
       }}
     >
       <Accordion.Item value="game">
-        <Accordion.Control>
-          <Group justify="space-between" wrap="nowrap" w="100%">
-            <Text truncate flex={1}>
+        {/* Add game is a sibling of the trigger: a button inside Accordion.Control is nested-interactive. */}
+        <Group
+          wrap="nowrap"
+          gap={0}
+          align="center"
+          w="100%"
+          style={{
+            borderBottom: "1px solid var(--mantine-color-default-border)",
+          }}
+        >
+          <Accordion.Control>
+            <Text truncate>
               {formatNumber(gameNumber + 1)}.{" "}
               <GameTitle title={currentTitle} repertoire={repertoire} />
             </Text>
-            {addGame && (
-              <IconAction
-                label={t("Board.Action.AddGame")}
-                size="sm"
-                variant="subtle"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  addGame();
-                }}
-              >
-                <Plus size="0.9rem" />
-              </IconAction>
-            )}
-          </Group>
-        </Accordion.Control>
+          </Accordion.Control>
+          {addGame && (
+            <IconAction
+              label={t("Board.Action.AddGame")}
+              size="sm"
+              variant="subtle"
+              mr="xs"
+              flex="none"
+              onClick={addGame}
+            >
+              <Plus size="0.9rem" />
+            </IconAction>
+          )}
+        </Group>
         <Accordion.Panel>
           <Box h="10rem">
             <GameSelector

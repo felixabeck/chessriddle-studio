@@ -463,7 +463,7 @@ describe("InfoPanel game loading and cancellation", () => {
     },
   );
 
-  function renderPanel(store: TreeStore = treeStore) {
+  function renderPanel(store: TreeStore = treeStore, addGame?: () => void) {
     const tabId = jotaiStore.get(activeTabAtom);
     if (tabId === null) throw new Error("Test workspace has no active tab");
     return (
@@ -473,7 +473,7 @@ describe("InfoPanel game loading and cancellation", () => {
             <TreeStateContext.Provider value={store}>
               <WorkspaceTabScope tabId={tabId}>
                 <FileChapterSwitchProvider>
-                  <InfoPanel />
+                  <InfoPanel addGame={addGame} />
                 </FileChapterSwitchProvider>
               </WorkspaceTabScope>
             </TreeStateContext.Provider>
@@ -2482,5 +2482,25 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(capturedSignal.aborted).toBe(true);
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  test("Add game sits outside the chapter accordion trigger (no nested interactive control)", async () => {
+    const addGame = vi.fn();
+    await act(async () => root.render(renderPanel(treeStore, addGame)));
+    const add = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Board.Action.AddGame"]',
+    )!;
+    const trigger = container.querySelector<HTMLButtonElement>(".mantine-Accordion-control")!;
+    expect(add).not.toBeNull();
+    expect(trigger).not.toBeNull();
+    expect(trigger.contains(add)).toBe(false);
+    expect(container.querySelectorAll(".mantine-Accordion-control button")).toHaveLength(0);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => add.click());
+    expect(addGame).toHaveBeenCalledTimes(1);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => trigger.click());
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(addGame).toHaveBeenCalledTimes(1);
   });
 });

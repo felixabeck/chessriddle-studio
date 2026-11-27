@@ -343,6 +343,7 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     page,
     mockScenario,
     assertNoHorizontalOverflow,
+    assertAccessible,
 }) => {
     await mockScenario({ commands: preparationCommands() });
     await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
@@ -395,6 +396,7 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     expect(dbBox.height).toBeGreaterThan(tabsBox.height);
 
     await assertNoHorizontalOverflow();
+    await assertAccessible();
 
     const afterPrepLayouts = await page.evaluate(() =>
         JSON.parse(localStorage.getItem("analysis-board-layouts")!),
