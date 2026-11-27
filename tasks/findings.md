@@ -29966,7 +29966,7 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 
 ### The saved-layouts More-menu snapshot predates the New analysis item and turned master e2e red
 
-* **ID:** f-20261127-12 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-12 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 3ba7ff5f-9a7e-4158-823c-3b12ca3ff36c
 
 * **Impact class:** tooling
@@ -29975,3 +29975,5 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Where:** `e2e/saved-layouts.spec.ts` snapshot `saved-layouts-more-menu.png`.
 * **Failure scenario:** job `e2e` of Test run 45969736439 on master `2e9857da7` (New analysis, rebased onto the saved-layouts work) failed: the board's More menu screenshot was 306x436 instead of 306x388, because the menu now starts with "New analysis" and a divider. The rebase proof ran only the new-analysis and async-errors e2e projects; 579 other tests passed.
 * **Fix:** re-record `saved-layouts-more-menu.png` in the Playwright container after reading the diff (only the added item and divider may move).
+* **Closed:** 2026-11-27, fixed by `14a9dbbbb` (snapshot re-recorded in the Playwright container; only the New analysis item and divider were added).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"75ddd252ff3163f212b56eccac87bfbd5eb163a0c38ab10e5c609544f5c0930d","header_sha256":"2932b1b127e156db3d4e3f5edf93c81e41b395809aeebe5bfa010124414127f5","header_status":"handled","input_sha256":"aa14c21e3d76185093c9c846a6bd6483f528efe2ca6b28c63af88657babfad8b","kind":"mutation-receipt","operation":"39a5ca01628f9214d7e1fbb67c8ea476a27f2704ded9aac87b6ec4d5b3e5b60b","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-12"],"target":"f-20261127-12","v":1} -->
