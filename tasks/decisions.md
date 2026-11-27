@@ -15624,3 +15624,49 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Completeness scanning is the tournament list, which is fully loaded and can remap blank cells. GameTable follows Result/Date original-text SQL. Date/PlyCount already disagree on NULL order between the two lists. Reversal path: change `compareTournamentGames` or the SQL arm independently.
 * **Decided by:** Grok orchestrator, worktree games-round-column, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"ab0fef3c2ced8c75917c6c43d7fd9fe461cb97ab20cf0624b0348d235ab96899","input_sha256":"d814dc9a52317e951f060ca95a75c3cf5a24d00cbb9628aa331f2eb6be353e42","kind":"mutation-receipt","operation":"e474d0fc7c5ffd4c5f0c9304f9542be8d3bc4339c4baa3bdb5d3bac43a0556f4","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-23","d-20261127-24","d-20261127-25"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-33 — Where is same-origin Save-to decided?
+
+* **Question:** Where is same-origin Save-to decided so a current-origin destination updates in place without turning FileFreshnessGate.saveAsNew into an update?
+* **Governs:** -
+* **Chosen:** In SaveToTargetModal, via `isCurrentOriginDestination`, routing to existing `saveToFile({ isUserSave: true })`.
+* **Rejected:** Changing `saveToDatabase` / `saveToLibraryFile` to update when the handle matches the tab origin.
+* **Reason:** FileFreshnessGate.saveAsNew calls `saveToDatabase` on the origin database and must keep inserting. Reversal path: restore insert/append for origin destinations in SaveToTargetModal.
+* **Decided by:** Grok orchestrator, worktree save-copy-confirmation, under full auto · **Superseded-by:** -
+
+### d-20261127-34 — Should SaveToTargetModal offer a second “add as a new game” action?
+
+* **Question:** Should SaveToTargetModal offer a second “add as a new game” action next to updating the current origin?
+* **Governs:** -
+* **Chosen:** No. Origin destination updates in place; FileFreshnessGate already owns explicit duplicate.
+* **Rejected:** Two primary actions in SaveToTargetModal (update vs add as new).
+* **Reason:** A second insert button in the copy modal would recreate the duplicate-game trap. Reversal path: add a distinct “add as a new game” control in that modal.
+* **Decided by:** Grok orchestrator, worktree save-copy-confirmation, under full auto · **Superseded-by:** -
+
+### d-20261127-35 — Where does the quiet saved indicator live?
+
+* **Question:** Where does the quiet Gespeichert/Saving indicator live, and is it a toast or popup?
+* **Governs:** -
+* **Chosen:** In BoardControls, in the Save button’s slot, derived from `dirty` / `autoSaveActive` / `autoSaveFailed`. Muted non-button Saved when clean under autosave; Saving while dirty; existing Save button on failure or autosave off. Not persisted, not a toast, not in GameInfo.
+* **Rejected:** Per-keystroke “Infos gespeichert” popup or success toast on every autosave.
+* **Reason:** Autosave already writes on every GameInfo keystroke; a toast or popup on that path is noise. The missing signal is that the toolbar Save is hidden while autosave succeeds. Reversal path: remove the BoardControls status text.
+* **Decided by:** Grok orchestrator, worktree save-copy-confirmation, under full auto · **Superseded-by:** -
+
+### d-20261127-36 — What copy do the copy-action and origin-update strings use?
+
+* **Question:** What copy do the copy-action, origin-update, and save-status strings use, and are the i18n key ids changed?
+* **Governs:** -
+* **Chosen:** Keep key ids `Board.Database.Save` and `Settings.Keybinds.Actions.SAVE_TO_DATABASE`. Values: “Save a copy…” / “Als Kopie speichern…”; keybind “Save a copy” / “Als Kopie speichern”; new keys `Board.Database.UpdateThisGame` (“Update this game” / “Diese Partie aktualisieren”), `Board.Database.UpdateThisGameHint`, `Board.SaveStatus.Saved` (“Saved” / “Gespeichert”), `Board.SaveStatus.Saving`. de-DE uses Partie. Author all 16 locales.
+* **Rejected:** New key ids for the renamed copy action; English-only catalogues with extract filling the rest.
+* **Reason:** Completeness rejects empty values and English copies in non-en locales (`i18next.config.ts` `defaultValue: null`). Key ids stay so existing keybind storage hydrates. Reversal path: restore the previous catalogue values and drop the four new keys.
+* **Decided by:** Grok orchestrator, worktree save-copy-confirmation, under full auto · **Superseded-by:** -
+
+### d-20261127-37 — Does same-origin update need a new native command?
+
+* **Question:** Does same-origin update need a new Specta command or capability?
+* **Governs:** -
+* **Chosen:** No. Reuse `writeDbGame` and in-place file write already used by `saveToFile`.
+* **Rejected:** A new update-or-insert command, or changing `insertDbGame` to upsert.
+* **Reason:** `saveToFileNow` already updates the persistent origin. New IPC is out of mandate. Reversal path: add a dedicated command only with a new Specta registry entry.
+* **Decided by:** Grok orchestrator, worktree save-copy-confirmation, under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":44,"effect_sha256":"a82546312f0a347c3d586918efa5135cb7c1e4a3153a76c0ae08bc991d96747d","input_sha256":"096accde62f9c19755d79d93323c75d8759ff507c5995fd476e7f49260c42a6d","kind":"mutation-receipt","operation":"674b8223ec819c434e65ffb4d48659c8aa46d356d3a9ce493872aa14797f657c","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-33","d-20261127-34","d-20261127-35","d-20261127-36","d-20261127-37"],"target":"decisions-ledger","v":1} -->
