@@ -1187,6 +1187,7 @@ test("keeps a gated game tab open and allows close after its tree recovers", asy
 
 const suspendedNavigationCases = [
   { name: "selectTab", navigate: () => latest!.selectTab("next") },
+  { name: "showTab", navigate: () => latest!.showTab("next") },
   { name: "the forward cycle hotkey", navigate: () => invokeHotkey("mod+tab") },
   { name: "the reverse cycle hotkey", navigate: () => invokeHotkey("mod+shift+tab") },
   { name: "the numbered selection hotkey", navigate: () => invokeHotkey("alt+2") },

@@ -114,15 +114,21 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
+  // Urgent off "/" so the navigation's first board render already shows the chosen tab;
+  // kept in startTransition on "/" so a mounted board view is not swapped synchronously
+  // (decision recorded for f-20261126-18; cf. d-20261126-26).
   const handleSetActiveTab = useCallback(
     (value: string | null | ((previous: string | null) => string | null)) => {
+      if (!isBoardsPath(pathname)) {
+        return setActiveTab(value);
+      }
       let saved = false;
       startTransition(() => {
         saved = setActiveTab(value);
       });
       return saved;
     },
-    [setActiveTab],
+    [pathname, setActiveTab],
   );
 
   const showTab = useCallback(

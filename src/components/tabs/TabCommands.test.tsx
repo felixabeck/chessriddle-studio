@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, useLayoutEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { getDefaultStore } from "jotai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -34,6 +34,15 @@ const fixtures = vi.hoisted(() => ({
   notifyUnlessCancelled: vi.fn(),
   navigate: vi.fn(),
   pathname: "/",
+  reactiveRouter: false,
+  routeListeners: new Set<() => void>(),
+  navigateImpl: (options: { to?: string; href?: string; replace?: boolean }) => {
+    fixtures.navigate(options);
+    if (fixtures.reactiveRouter && typeof options?.to === "string") {
+      fixtures.pathname = options.to;
+      for (const listener of fixtures.routeListeners) listener();
+    }
+  },
   tabs: [
     { value: "current", name: "Current", type: "new", gameOrigin: { kind: "none" } },
     { value: "next", name: "Next", type: "new", gameOrigin: { kind: "none" } },
@@ -126,14 +135,26 @@ vi.mock("@/utils/tabs", async (importOriginal) => ({
   createTab: fixtures.createTab,
 }));
 vi.mock("../files/notifyError", () => ({ notifyUnlessCancelled: fixtures.notifyUnlessCancelled }));
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => fixtures.navigate,
-  useRouterState: ({
-    select,
-  }: {
-    select: (state: { location: { pathname: string } }) => unknown;
-  }) => select({ location: { pathname: fixtures.pathname } }),
-}));
+vi.mock("@tanstack/react-router", async () => {
+  const { useSyncExternalStore } = await vi.importActual<typeof import("react")>("react");
+  const subscribeRoute = (listener: () => void) => {
+    fixtures.routeListeners.add(listener);
+    return () => {
+      fixtures.routeListeners.delete(listener);
+    };
+  };
+  return {
+    useNavigate: () => fixtures.navigateImpl,
+    useRouterState: ({
+      select,
+    }: {
+      select: (state: { location: { pathname: string } }) => unknown;
+    }) => {
+      const pathname = useSyncExternalStore(subscribeRoute, () => fixtures.pathname);
+      return select({ location: { pathname } });
+    },
+  };
+});
 vi.mock("@mantine/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mantine/hooks")>();
   return {
@@ -162,6 +183,7 @@ vi.mock("./ConfirmChangesModal", () => ({
   default: () => null,
 }));
 
+import { useRouterState } from "@tanstack/react-router";
 import {
   activeTabAtom,
   closingTabsAtom,
@@ -225,6 +247,8 @@ beforeEach(() => {
   fixtures.createTab.mockResolvedValue("created");
   fixtures.hotkeyBindings = null;
   fixtures.pathname = "/";
+  fixtures.reactiveRouter = false;
+  fixtures.routeListeners.clear();
   fixtures.navigate.mockReset();
   fixtures.killEngines.mockResolvedValue(undefined);
   fixtures.invalidateReportOwner.mockReturnValue({ previous: {}, invalidated: {} });
@@ -242,6 +266,8 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   await act(async () => root.unmount());
+  fixtures.reactiveRouter = false;
+  fixtures.routeListeners.clear();
   container.remove();
 });
 
@@ -265,7 +291,8 @@ test("useTabCommands throws outside the owner", async () => {
 
 test.each(["/", "/library"] as const)(
   "closing a gated tab from %s shows the tab and stops the close",
-  async () => {
+  async (pathname) => {
+    fixtures.pathname = pathname;
     fixtures.tabs = [
       { value: "current", name: "Current", type: "new", gameOrigin: { kind: "none" } },
       { value: "gated", name: "Gated", type: "analysis", gameOrigin: { kind: "none" } },
@@ -463,3 +490,57 @@ test("close of a healthy tab still tears the tab down", async () => {
   expect(fixtures.closeWorkspaceTab).toHaveBeenCalledWith("current");
   expect(fixtures.navigate).not.toHaveBeenCalled();
 });
+
+function BoardProbe({ renders }: { renders: Array<string | null> }) {
+  const { activeTab } = useTabCommands();
+  useLayoutEffect(() => {
+    renders.push(activeTab);
+  });
+  return <div data-testid="board-probe" data-active-tab={activeTab ?? ""} />;
+}
+
+function ReactiveBoardRoute({ renders }: { renders: Array<string | null> }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  return pathname === "/" ? <BoardProbe renders={renders} /> : null;
+}
+
+const offBoardActivationCases = [
+  { name: 'selectTab("B")', activate: () => latest!.selectTab("B") },
+  { name: "numbered hotkey alt+2", activate: () => invokeHotkey("alt+2") },
+  { name: "forward cycle hotkey", activate: () => invokeHotkey("mod+tab") },
+  { name: "reverse cycle hotkey", activate: () => invokeHotkey("mod+shift+tab") },
+  { name: 'showTab("B")', activate: () => latest!.showTab("B") },
+] as const;
+
+test.each(offBoardActivationCases)(
+  "activating tab B from /library via $name renders B on the first board render",
+  async ({ activate }) => {
+    fixtures.reactiveRouter = true;
+    fixtures.pathname = "/library";
+    fixtures.tabs = [
+      { value: "A", name: "Tab A", type: "new", gameOrigin: { kind: "none" } },
+      { value: "B", name: "Tab B", type: "new", gameOrigin: { kind: "none" } },
+    ];
+    store.set(tabsAtom, fixtures.tabs);
+    store.set(activeTabAtom, "A");
+
+    const boardRenders: Array<string | null> = [];
+    await act(async () => {
+      root.render(
+        <TabCommandsProvider>
+          <Probe />
+          <ReactiveBoardRoute renders={boardRenders} />
+        </TabCommandsProvider>,
+      );
+    });
+    expect(boardRenders).toEqual([]);
+
+    await act(async () => {
+      activate();
+    });
+
+    expect(boardRenders).toEqual(["B"]);
+    expect(store.get(activeTabAtom)).toBe("B");
+    expect(latest!.activeTab).toBe("B");
+  },
+);
