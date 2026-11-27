@@ -164,3 +164,28 @@ test("forwards root and segment props to the rendered DOM", async () => {
   expect(firstLabel.style.color).toBe("var(--cf-eval-bar-dark)");
   expect(firstLabel.style.textOverflow).toBe("clip");
 });
+
+test("names each progressbar from ariaLabel, falling back to tooltip", async () => {
+  await act(async () =>
+    root.render(
+      <MantineProvider>
+        <ResultBar
+          size="xl"
+          w={100}
+          segments={[
+            { value: 50, color: "success", tooltip: "5 Wins" },
+            { value: 30, color: "gray", ariaLabel: "Draws", tooltip: "3 Draws" },
+            { value: 20, color: "danger" },
+          ]}
+        />
+      </MantineProvider>,
+    ),
+  );
+
+  const sections = container.querySelectorAll(".mantine-Progress-section");
+  expect(Array.from(sections, (section) => section.getAttribute("aria-label"))).toEqual([
+    "5 Wins",
+    "Draws",
+    null,
+  ]);
+});

@@ -236,16 +236,20 @@ function OpeningsTable({
                 className: classes.whiteResultsSection,
                 label: label(whitePercent),
                 labelColor: "var(--cf-eval-bar-dark)",
+                ariaLabel: t("Board.Analysis.Tablebase.WhiteWins"),
               },
               {
                 value: drawPercent,
                 color: "var(--cf-chart-4)",
                 label: label(drawPercent),
+                labelColor: "var(--mantine-color-black)",
+                ariaLabel: t("Board.Analysis.Tablebase.Draw"),
               },
               {
                 value: blackPercent,
                 color: "var(--cf-eval-bar-dark)",
                 label: label(blackPercent),
+                ariaLabel: t("Board.Analysis.Tablebase.BlackWins"),
               },
             ]}
           />

@@ -1535,7 +1535,7 @@ test("move row result bar renders W/D/L sections, >20 bare integer labels, and R
   const initial = builder.getState();
   const rootFen = getBoardState(initial.root.fen);
   const dbMoves = {
-    moves: [{ move: "e4", white: 55, draw: 20, black: 25 }],
+    moves: [{ move: "e4", white: 45, draw: 35, black: 20 }],
     total: 100,
   };
   mocks.fetchPositionMoves.mockResolvedValue(dbMoves);
@@ -1551,13 +1551,23 @@ test("move row result bar renders W/D/L sections, >20 bare integer labels, and R
   const sections = resultBar.querySelectorAll<HTMLElement>(".mantine-Progress-section");
   expect(sections).toHaveLength(3);
   expect(Array.from(sections, (section) => section.getAttribute("aria-valuenow"))).toEqual([
-    "55",
+    "45",
+    "35",
     "20",
-    "25",
   ]);
-  expect(sections[0].querySelector(".mantine-Progress-label")?.textContent).toBe("55");
-  expect(sections[1].querySelector(".mantine-Progress-label")).toBeNull();
-  expect(sections[2].querySelector(".mantine-Progress-label")?.textContent).toBe("25");
+  expect(Array.from(sections, (section) => section.getAttribute("aria-label"))).toEqual([
+    "Board.Analysis.Tablebase.WhiteWins",
+    "Board.Analysis.Tablebase.Draw",
+    "Board.Analysis.Tablebase.BlackWins",
+  ]);
+  expect(sections[0].querySelector(".mantine-Progress-label")?.textContent).toBe("45");
+  expect(sections[1].querySelector(".mantine-Progress-label")?.textContent).toBe("35");
+  expect(sections[2].querySelector(".mantine-Progress-label")).toBeNull();
+  expect(
+    [...resultBar.querySelectorAll<HTMLElement>(".mantine-Progress-label")].map(
+      (label) => label.style.color,
+    ),
+  ).toEqual(["var(--cf-eval-bar-dark)", "var(--mantine-color-black)"]);
 
   await act(async () => {
     resultBar.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));

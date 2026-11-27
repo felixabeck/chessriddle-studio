@@ -10,6 +10,8 @@ export type ResultBarSegment = {
   labelColor?: string;
   labelStyle?: CSSProperties;
   tooltip?: string;
+  /** Accessible name for the progressbar. Defaults to `tooltip` when omitted. */
+  ariaLabel?: string;
 };
 
 // The remaining root props and the ref reach Progress.Root, so a wrapping Mantine Tooltip can
@@ -20,8 +22,14 @@ export type ResultBarProps = Omit<ProgressRootProps, "children"> & {
 };
 
 function Section({ segment }: { segment: ResultBarSegment }) {
+  const ariaLabel = segment.ariaLabel ?? segment.tooltip;
   const section = (
-    <Progress.Section value={segment.value} color={segment.color} className={segment.className}>
+    <Progress.Section
+      value={segment.value}
+      color={segment.color}
+      className={segment.className}
+      aria-label={ariaLabel}
+    >
       {segment.label !== undefined && (
         <Progress.Label c={segment.labelColor} style={segment.labelStyle}>
           {segment.label}

@@ -58,6 +58,11 @@ test("renders player-perspective Wins and Losses tooltips", async () => {
   await render(4, 2, 1);
   const sections = container.querySelectorAll(".mantine-Progress-section");
   expect(sections).toHaveLength(3);
+  expect(Array.from(sections, (section) => section.getAttribute("aria-label"))).toEqual([
+    "4 Databases.OpeningTree.Wins",
+    "2 Board.Analysis.Tablebase.Draw",
+    "1 Databases.OpeningTree.Losses",
+  ]);
 
   for (const [index, expected] of [
     [0, "4 Databases.OpeningTree.Wins"],
@@ -80,6 +85,27 @@ test("renders player-perspective Wins and Losses tooltips", async () => {
       sections[index].dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
     });
   }
+});
+
+test("paints win labels black and draw labels for the active scheme's gray fill", async () => {
+  const colorAt = (index: number) =>
+    container
+      .querySelectorAll<HTMLElement>(".mantine-Progress-section")
+      [index].querySelector<HTMLElement>(".mantine-Progress-label")!.style.color;
+
+  await render(4, 2, 1);
+  expect(colorAt(0)).toBe("var(--mantine-color-black)");
+  expect(colorAt(1)).toBe("var(--mantine-color-white)");
+
+  await act(async () =>
+    root.render(
+      <MantineProvider forceColorScheme="dark">
+        <ResultsChart won={4} draw={2} lost={1} size="1.125rem" />
+      </MantineProvider>,
+    ),
+  );
+  expect(colorAt(0)).toBe("var(--mantine-color-black)");
+  expect(colorAt(1)).toBe("var(--mantine-color-black)");
 });
 
 test("renders an empty progress root when total is zero", async () => {

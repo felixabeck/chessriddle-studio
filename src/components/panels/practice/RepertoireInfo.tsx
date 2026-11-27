@@ -886,16 +886,20 @@ function MoveRow({
                   color: "var(--cf-eval-bar-light)",
                   label: segmentLabel(wPct),
                   labelColor: "var(--cf-eval-bar-dark)",
+                  ariaLabel: t("Board.Analysis.Tablebase.WhiteWins"),
                 },
                 {
                   value: dPct,
                   color: "var(--cf-chart-4)",
                   label: segmentLabel(dPct),
+                  labelColor: "var(--mantine-color-black)",
+                  ariaLabel: t("Board.Analysis.Tablebase.Draw"),
                 },
                 {
                   value: bPct,
                   color: "var(--cf-eval-bar-dark)",
                   label: segmentLabel(bPct),
+                  ariaLabel: t("Board.Analysis.Tablebase.BlackWins"),
                 },
               ]}
             />

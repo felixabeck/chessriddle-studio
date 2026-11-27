@@ -4612,14 +4612,7 @@ test("database-files: updating an opponent's online games shows the live game co
     await expect(strip).not.toContainText("%");
     await assertNothingClipped(strip, { mode: "reachable" });
     await assertNoHorizontalOverflow();
-    // f-20261127-20 owns the unnamed Overview result bars of the same card.
-    await assertAccessible({
-        exclude: [
-            '[data-testid="overview-headline"]',
-            '[data-testid="overview-white"]',
-            '[data-testid="overview-black"]',
-        ],
-    });
+    await assertAccessible();
     await waitForFontsSettled(page);
     await page.mouse.move(0, 0);
     await expect(strip).toHaveScreenshot("opponent-accounts-games-loaded.png", {

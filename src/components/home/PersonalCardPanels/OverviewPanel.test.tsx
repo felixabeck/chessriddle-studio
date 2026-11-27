@@ -79,6 +79,11 @@ test("Overview headline real ResultsChart hover labels are Wins and Losses in en
     "[data-testid='overview-headline'] .mantine-Progress-section",
   );
   expect(sections).toHaveLength(3);
+  expect(Array.from(sections, (section) => section.getAttribute("aria-label"))).toEqual([
+    "2 Wins",
+    "1 Draw",
+    "3 Losses",
+  ]);
   for (const [index, label] of [
     [0, "2 Wins"],
     [2, "3 Losses"],

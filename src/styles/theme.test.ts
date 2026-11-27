@@ -322,6 +322,28 @@ describe("notation mark colours", () => {
         },
     );
 
+    test.each(["light", "dark"] as const)(
+        "Overview result-bar labels reach 4.5:1 on success and gray fills in %s",
+        (scheme) => {
+            const success = hsl(theme.colors.success[getPrimaryShade(theme, scheme)]);
+            const gray = hex(DEFAULT_THEME.colors.gray[scheme === "light" ? 8 : 4]);
+            const black = hex(theme.black);
+            const white = hex(theme.white);
+            expect(contrast(black, success)).toBeGreaterThanOrEqual(4.5);
+            const draw = scheme === "light" ? white : black;
+            expect(contrast(draw, gray)).toBeGreaterThanOrEqual(4.5);
+        },
+    );
+
+    test.each(["light", "dark", "dim"] as const)(
+        "opening-tree draw labels reach 4.5:1 on chart-4 in %s",
+        (scheme) => {
+            expect(
+                contrast(hex(theme.black), hsl(chessRiddleTokens[scheme]["chart-4"])),
+            ).toBeGreaterThanOrEqual(4.5);
+        },
+    );
+
     test("dimmed secondary text reaches 4.5:1 on the dim card, page, inset and current-move fill", () => {
         const tokens = chessRiddleTokens.dim;
         const value = resolvedScheme(theme, "dim")["--mantine-color-dimmed"];

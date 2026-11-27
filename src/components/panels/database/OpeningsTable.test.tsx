@@ -341,7 +341,18 @@ test("multi-source result bars carry no labels, and one source labels its wider 
   expect(labels(e4.querySelectorAll("td")[3])).toEqual(["", "", ""]);
   expect(labels(d4.querySelectorAll("td")[6])).toEqual(["", "", ""]);
   await renderTable();
-  expect(labels(bodyRows()[0].querySelectorAll("td")[3])).toEqual(["50.0%", "25.0%", "25.0%"]);
+  const resultCell = bodyRows()[0].querySelectorAll("td")[3];
+  expect(labels(resultCell)).toEqual(["50.0%", "25.0%", "25.0%"]);
+  expect(
+    [...resultCell.querySelectorAll(".mantine-Progress-section")].map((section) =>
+      section.getAttribute("aria-label"),
+    ),
+  ).toEqual(["White wins", "Draw", "Black wins"]);
+  expect(
+    [...resultCell.querySelectorAll<HTMLElement>(".mantine-Progress-label")].map(
+      (label) => label.style.color,
+    ),
+  ).toEqual(["var(--cf-eval-bar-dark)", "var(--mantine-color-black)", ""]);
 });
 
 test("a source without a single counted game shows a zero total and no bar or NaN", async () => {
