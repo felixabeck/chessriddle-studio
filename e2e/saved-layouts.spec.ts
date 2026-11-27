@@ -371,7 +371,8 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     await preview.locator("[data-preparation-line-row]").first().click();
     await expect(page).toHaveURL("/");
 
-    // Preparation preset shows Database on top right, Notation + tabs side-by-side below, no engine window.
+    // Preparation preset: Database on top, the tabs below it, Notation beside Annotate at the bottom;
+    // no engine is loaded, so both engine slots stay hidden.
     const dbArea = page.locator('[data-panel-area="database"]');
     const notationArea = page.locator("#bottomRight");
     const tabsArea = page.locator("#topRight");
@@ -383,8 +384,15 @@ test("saved-layouts: fresh opponent-preparation tab opens with the Preparation p
     const dbBox = (await dbArea.boundingBox())!;
     const notationBox = (await notationArea.boundingBox())!;
     const tabsBox = (await tabsArea.boundingBox())!;
-    expect(dbBox.y + dbBox.height).toBeLessThanOrEqual(notationBox.y + 8);
-    expect(notationBox.x + notationBox.width).toBeLessThanOrEqual(tabsBox.x + 8);
+    const annotateArea = page.locator('[data-panel-area="annotate"]');
+    await expect(annotateArea).toBeVisible();
+    const annotateBox = (await annotateArea.boundingBox())!;
+    const boardBox = (await page.locator("#left").boundingBox())!;
+    expect(boardBox.x + boardBox.width).toBeLessThanOrEqual(dbBox.x + 8);
+    expect(dbBox.y + dbBox.height).toBeLessThanOrEqual(tabsBox.y + 8);
+    expect(tabsBox.y + tabsBox.height).toBeLessThanOrEqual(notationBox.y + 8);
+    expect(notationBox.x + notationBox.width).toBeLessThanOrEqual(annotateBox.x + 8);
+    expect(dbBox.height).toBeGreaterThan(tabsBox.height);
 
     await assertNoHorizontalOverflow();
 

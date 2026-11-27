@@ -132,20 +132,39 @@ export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
         id: "preset:preparation",
         nameKey: i18nKey("Board.Layout.Preset.Preparation"),
         layout: {
+            // Felix's own Preparation layout (2026-11-27): two engine windows side by side under the
+            // board, a tall Database on top for the opponent comparison columns, the tab strip below
+            // it, and Notation beside Annotate.
             arrangement: {
                 direction: "row",
-                first: "left",
+                first: {
+                    direction: "column",
+                    first: "left",
+                    second: {
+                        direction: "row",
+                        first: enginePlaceholderAreaId(1),
+                        second: enginePlaceholderAreaId(2),
+                        splitPercentage: 50,
+                    },
+                    splitPercentage: 79,
+                },
                 second: {
                     direction: "column",
-                    first: "database",
-                    splitPercentage: 40,
+                    first: {
+                        direction: "column",
+                        first: "database",
+                        second: "topRight",
+                        splitPercentage: 71,
+                    },
                     second: {
                         direction: "row",
                         first: "bottomRight",
-                        second: "topRight",
-                        splitPercentage: 55,
+                        second: "annotate",
+                        splitPercentage: 64,
                     },
+                    splitPercentage: 69,
                 },
+                splitPercentage: 42,
             },
             tabsHidden: false,
         },

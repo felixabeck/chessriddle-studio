@@ -773,17 +773,31 @@ describe("per-kind live state, apply, CRUD, fail-closed writes, and Reset", () =
         const shownNone = shownArrangement(noEngines, new Set(hiddenEngineAreas(noEngines, [])));
         expect(shownNone).toMatchObject({ first: "left" });
 
-        // With two loaded engines, the Repertoire preset fills both side-by-side engine slots.
-        expect(
-            applyBoardLayoutToKind(store, "game", "preset:repertoire", [
-                { id: "sf-a", loaded: true },
-                { id: "sf-b", loaded: true },
-            ]),
-        ).toBe(true);
-        expect(arrangementEngineAreas(store.get(boardLayoutFamily("game")).arrangement)).toEqual([
-            engineAreaId("sf-a"),
-            engineAreaId("sf-b"),
-        ]);
+        // With two loaded engines, the Repertoire and Preparation presets fill both side-by-side
+        // engine slots under the board.
+        for (const presetId of ["preset:repertoire", "preset:preparation"]) {
+            expect(
+                applyBoardLayoutToKind(store, "game", presetId, [
+                    { id: "sf-a", loaded: true },
+                    { id: "sf-b", loaded: true },
+                ]),
+            ).toBe(true);
+            const twoEngines = store.get(boardLayoutFamily("game")).arrangement;
+            expect(arrangementEngineAreas(twoEngines)).toEqual([
+                engineAreaId("sf-a"),
+                engineAreaId("sf-b"),
+            ]);
+            expect(twoEngines).toMatchObject({
+                first: {
+                    first: "left",
+                    second: {
+                        direction: "row",
+                        first: engineAreaId("sf-a"),
+                        second: engineAreaId("sf-b"),
+                    },
+                },
+            });
+        }
     });
 
     test("save, replace (including at cap 20), rename (including casing-only), and delete enforce rules", () => {
