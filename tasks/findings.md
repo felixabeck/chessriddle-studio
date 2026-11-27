@@ -30190,6 +30190,9 @@ Re-recorded the remaining 16 container baselines that Test e2e failed on the fir
   * `e2e/board-keyboard.spec.ts:943` board-keyboard (487 px)
   * `e2e/board-keyboard.spec.ts:1150` variation-chooser (487 px)
 * **Fix:** re-record those snapshots in `pnpm test:e2e:container` after reading each diff; do not re-record natively. Product clock-times behaviour stays.
+* **Still red (2026-11-27, Claude Code, notation-follow-scroll push):** the same two screenshot tests (`e2e/clock-times.spec.ts:29`, `e2e/game-references.spec.ts:96`) fail again in a new e2e streak: first red Test run 46045214092 on `f15964a6b` (docs(findings): close f-20261126-16), then 46046820962, 46047948562, 46049700280. The follow-scroll WebKit timeouts in 46046820962/46047948562 belong to f-20261127-23 (handled), not to this finding.
+* **CI run:** 46045214092
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"5f372da71089b6e8c3133ecf3dd05e741202f95d09b8ab7e6345807b79120402","input_sha256":"118c3b24dd618a31bdc3512e24f5155b59cfb7c5175a7bd65fe792e97e214ff3","kind":"mutation-receipt","operation":"d6b6143bdf4b5551ca44f0f4bd1c7cf038498e724c4c1edd54ce782a83ba9b5a","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-18"],"target":"f-20261127-18","v":1} -->
 
 ---
 
