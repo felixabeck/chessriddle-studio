@@ -20,6 +20,7 @@ import {
 import { boundCoachSession, coachSessionSchema, type CoachSession } from "@/state/coachSession";
 import { boundPuzzleSession } from "@/state/puzzleSession";
 import { reportPersistError } from "@/state/persistError";
+import { MAX_CLOCK_SECONDS } from "@/utils/clock";
 import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyph } from "@/utils/annotation";
 import { getMainLine, getPGN, parseStartHeader, reportRootFingerprint } from "@/utils/chess";
 import type { RepertoireMergeResult } from "@/utils/repertoireImport";
@@ -168,6 +169,8 @@ export interface TreeStoreState extends TreeState {
     setStart: (start: number[]) => void;
 
     setAnnotation: (payload: Annotation) => void;
+    /** Sets or clears the current move's remaining clock time in seconds; refused at root or out of bounds. */
+    setClock: (seconds: number | undefined) => void;
     setComment: (payload: string) => void;
     /**
      * Replaces the prose of the comment in front of the current move, keeping the commands it
@@ -512,6 +515,7 @@ type TreeMarkupActions = Pick<
     | "copyVariationPgn"
     | "setStart"
     | "setAnnotation"
+    | "setClock"
     | "setComment"
     | "setStartingComment"
     | "toggleDiagram"
@@ -1001,6 +1005,24 @@ function treeMarkupActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMark
                     }
                 }),
             ),
+        setClock: (seconds) =>
+            set(
+                produce((state) => {
+                    if (state.position.length === 0) return;
+                    if (
+                        seconds !== undefined &&
+                        (!Number.isFinite(seconds) || seconds < 0 || seconds > MAX_CLOCK_SECONDS)
+                    ) {
+                        return;
+                    }
+                    const normalized = seconds === 0 ? 0 : seconds;
+                    const node = getNodeAtPath(state.root, state.position);
+                    if (node.clock === normalized) return;
+                    state.dirty = true;
+                    if (normalized === undefined) delete node.clock;
+                    else node.clock = normalized;
+                }),
+            ),
         setComment: (payload) =>
             set(
                 produce((state) => {
@@ -1204,6 +1226,7 @@ const UNDOABLE_EDITS = [
     "applyRepertoireImport",
     "setStart",
     "setAnnotation",
+    "setClock",
     "setComment",
     "setStartingComment",
     "toggleDiagram",

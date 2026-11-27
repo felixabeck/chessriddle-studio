@@ -3147,3 +3147,48 @@ test("applyRepertoireImport no-op and stale snapshot change nothing (no history,
     expect(store.getState().headers.white).toBe("Carlsen");
     expect(store.getState().history.past).toHaveLength(historyAfterHeaders);
 });
+
+test("setClock refuses the root and invalid values, sets/clears valid clocks, and undoes per step", () => {
+    const store = createTreeStore();
+    store.getState().setClock(5160);
+    expect(store.getState().root.clock).toBeUndefined();
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    store.getState().makeMove({ payload: "e4" });
+    store.setState({ dirty: false });
+    const historyAfterMove = store.getState().history.past.length;
+
+    for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, -1, 36_001]) {
+        store.getState().setClock(invalid);
+        expect(store.getState().currentNode().clock).toBeUndefined();
+        expect(store.getState().dirty).toBe(false);
+        expect(store.getState().history.past).toHaveLength(historyAfterMove);
+    }
+
+    // Clearing an already-absent clock is a no-op.
+    store.getState().setClock(undefined);
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(historyAfterMove);
+
+    store.getState().setClock(5160);
+    expect(store.getState().currentNode().clock).toBe(5160);
+    expect(store.getState().dirty).toBe(true);
+    expect(store.getState().history.past).toHaveLength(historyAfterMove + 1);
+
+    // Consecutive setClock calls do not merge into one undo step.
+    store.getState().setClock(5100);
+    expect(store.getState().currentNode().clock).toBe(5100);
+    expect(store.getState().history.past).toHaveLength(historyAfterMove + 2);
+
+    store.getState().setClock(undefined);
+    expect(store.getState().currentNode().clock).toBeUndefined();
+    expect(store.getState().history.past).toHaveLength(historyAfterMove + 3);
+
+    store.getState().undo();
+    expect(store.getState().currentNode().clock).toBe(5100);
+    store.getState().undo();
+    expect(store.getState().currentNode().clock).toBe(5160);
+    store.getState().undo();
+    expect(store.getState().currentNode().clock).toBeUndefined();
+});

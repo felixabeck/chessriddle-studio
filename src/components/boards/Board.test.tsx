@@ -818,3 +818,18 @@ test.each([false, true])(
     expect(tree.getState().currentNode().shapes).toEqual([]);
   },
 );
+
+test("renders board clocks when any node (including a variation-only move) carries a clock without a TimeControl tag", async () => {
+  await render();
+  expect(host.querySelectorAll("[data-clock]")).toHaveLength(0);
+
+  await act(async () => {
+    tree.getState().makeMove({ payload: "e4" });
+    tree.getState().goToStart();
+    tree.getState().makeMove({ payload: "d4" });
+    tree.getState().setClock(5160);
+    tree.getState().goToStart();
+  });
+
+  expect(host.querySelectorAll("[data-clock]")).toHaveLength(2);
+});

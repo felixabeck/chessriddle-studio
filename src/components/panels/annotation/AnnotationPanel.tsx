@@ -1,12 +1,24 @@
-import { Collapse, Divider, Group, ScrollArea, Stack, Text, useMantineTheme } from "@mantine/core";
+import {
+  Box,
+  Collapse,
+  Divider,
+  Group,
+  ScrollArea,
+  Stack,
+  Text,
+  TextInput,
+  useMantineTheme,
+} from "@mantine/core";
 import { ChevronDown } from "lucide-react";
 import { atom, useAtom } from "jotai";
-import { memo, useContext } from "react";
+import { memo, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
 import { ANNOTATION_INFO, type Annotation, isBasicAnnotation, nagGlyphs } from "@/utils/annotation";
+import { formatClockInput, parseClockInput } from "@/utils/clock";
+import { isPlainEscape } from "@/utils/keyboardOwnership";
 import { getNodeAtPath } from "@/utils/treeReducer";
 import AnnotationEditor from "./AnnotationEditor";
 
@@ -44,6 +56,130 @@ const showMoreSymbolsAtom = atom(false);
 const BASIC = ["!!", "!", "!?", "?!", "?", "??"] as const;
 const ADVANTAGE = ["+-", "±", "⩲", "=", "∞", "⩱", "∓", "-+"] as const;
 const EXTRA = ["N", "↑↑", "↑", "→", "⇆", "=∞", "⊕", "∆", "□", "⨀", "⊗"] as const;
+
+function ClockInput() {
+  const { t } = useTranslation();
+  const store = useContext(TreeStateContext)!;
+  const root = useStore(store, (s) => s.root);
+  const position = useStore(store, (s) => s.position);
+  const documentId = useStore(store, (s) => s.documentId);
+  const setClock = useStore(store, (s) => s.setClock);
+
+  const atRoot = position.length === 0;
+  const currentNode = getNodeAtPath(root, position);
+  const storedValue =
+    atRoot || currentNode.clock === undefined ? "" : formatClockInput(currentNode.clock);
+  const positionKey = position.join();
+  const syncKey = `${documentId}:${positionKey}:${currentNode.fen}:${storedValue}`;
+
+  const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
+  const [draft, setDraft] = useState(storedValue);
+  const [error, setError] = useState(false);
+
+  if (prevSyncKey !== syncKey) {
+    setPrevSyncKey(syncKey);
+    setDraft(storedValue);
+    setError(false);
+  }
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focusDestinationRef = useRef<string | null>(null);
+  const revertedByEscapeRef = useRef(false);
+
+  useEffect(() => {
+    if (focusDestinationRef.current !== positionKey) return;
+    focusDestinationRef.current = null;
+    const input = inputRef.current;
+    if (!input || input.disabled) return;
+    input.focus();
+    input.select();
+  }, [positionKey]);
+
+  const commitDraft = (): boolean => {
+    if (atRoot) return true;
+    if (draft === storedValue) {
+      setError(false);
+      return true;
+    }
+    const parsed = parseClockInput(draft);
+    if (parsed.kind === "invalid") {
+      setError(true);
+      return false;
+    }
+    if (parsed.kind === "empty") {
+      if (currentNode.clock !== undefined) setClock(undefined);
+      setDraft("");
+      setError(false);
+      return true;
+    }
+    setClock(parsed.seconds);
+    setDraft(formatClockInput(parsed.seconds));
+    setError(false);
+    return true;
+  };
+
+  const commitAndNavigate = (direction: "forward" | "backward") => {
+    if (!commitDraft()) return;
+    const state = store.getState();
+    // Guard against transposition fallback on a final repeated position and against stepping to root.
+    if (direction === "forward" && state.currentNode().children.length === 0) return;
+    if (direction === "backward" && state.position.length <= 1) return;
+    const previous = state.position.join();
+    if (direction === "forward") state.goToNext();
+    else state.goToPrevious();
+    const destination = store.getState().position.join();
+    if (destination !== previous) {
+      focusDestinationRef.current = destination;
+    }
+  };
+
+  return (
+    <Box px="sm" pb="xs">
+      <TextInput
+        ref={inputRef}
+        size="xs"
+        label={t("Board.Annotate.Clock")}
+        disabled={atRoot}
+        value={draft}
+        error={error ? t("Board.Annotate.InvalidClock") : undefined}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value);
+          if (error) setError(false);
+        }}
+        onBlur={() => {
+          if (revertedByEscapeRef.current) {
+            revertedByEscapeRef.current = false;
+            return;
+          }
+          if (!commitDraft()) {
+            setDraft(storedValue);
+            setError(false);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (isPlainEscape(event.nativeEvent)) {
+            event.preventDefault();
+            revertedByEscapeRef.current = true;
+            setDraft(storedValue);
+            setError(false);
+            event.currentTarget.blur();
+            return;
+          }
+          if (event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing) {
+            return;
+          }
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            commitAndNavigate("forward");
+          } else if (event.key === "Tab") {
+            event.preventDefault();
+            commitAndNavigate(event.shiftKey ? "backward" : "forward");
+          }
+        }}
+      />
+    </Box>
+  );
+}
 
 function AnnotationPanel() {
   const { t } = useTranslation();
@@ -97,6 +233,8 @@ function AnnotationPanel() {
           </Group>
         </Stack>
       </Collapse>
+
+      <ClockInput />
 
       <ScrollArea offsetScrollbars pl="sm">
         <AnnotationEditor />

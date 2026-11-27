@@ -57,6 +57,7 @@ import { keyMapAtom } from "@/state/keybinds";
 import classes from "@/styles/Chessboard.module.css";
 import { nagGlyphs } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
+import { hasTreeClock } from "@/utils/clock";
 import { displayedScore } from "@/utils/treeReducer";
 import {
   lastMoveSquares,
@@ -390,12 +391,14 @@ function Board({
     notationHidden,
   ]);
 
+  const treeHasClock = useMemo(() => hasTreeClock(root), [root]);
   const hasClock =
     !!whiteTime ||
     !!blackTime ||
     !!headers.time_control ||
     !!headers.white_time_control ||
-    !!headers.black_time_control;
+    !!headers.black_time_control ||
+    treeHasClock;
 
   const practiceLock = practiceMove !== undefined && !practiceMove.canMove;
 
