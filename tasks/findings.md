@@ -30226,7 +30226,7 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 
 ### Player card Overview result bars are unnamed progress bars (axe aria-progressbar-name)
 
-* **ID:** f-20261127-20 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261127-20 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Impact class:** ux
 * **Spotted outside diff:** yes
 * **Where:** `src/components/home/PersonalCardPanels/ResultsChart.tsx` (the three `ResultBar` segments), rendered in `OverviewPanel.tsx` under `data-testid="overview-headline"`, `overview-white` and `overview-black`.
@@ -30235,6 +30235,8 @@ Handled. After a Library sidecar type or name write, `patchRecentFilesSidecar` u
 * **Fix direction:** give each segment an accessible name from its existing tooltip text (for example "2 Wins") through the shared `ResultBar` segment API, the way f-20261029-08 named the WDL bar sections. Then drop the exclusion this finding owns in the new `database-files` live-count test.
 * **Related:** f-20261029-08 (WDL evaluation bar sections unnamed, handled) — same class, different component.
 * **Found by:** Claude Code build session for the live game count (d-20261127-22), browser verification stage.
+* **Closed:** 2026-11-27, commit `749c68c7e`. ResultBar segments take `ariaLabel` (fallback `tooltip`) so Overview WDL progressbars have accessible names. Same-area contrast: win labels `var(--mantine-color-black)` on success; ResultsChart draw labels white in light / black in dark on Mantine gray-filled; OpeningsTable and RepertoireInfo chart-4 draw labels black. Dropped the live-count `assertAccessible` overview exclusions. Snapshots: opponent-card-online-overview, opponent-accounts-downloaded, player-openings-recency (label colour only). Rejected: retuning the global success/danger palette; painting every label `#000` (light gray-filled is gray[8], black 1.83:1). Remaining known gap, not this slice: light danger+black 4.05 / dark danger+white 4.17. Sibling unnamed Progress outside ResultBar filed separately (inbox).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fec575ea5acf1ea4a0f634fae9eb35a4a4e6a44aa6120e3605526f9f3438bdf6","header_sha256":"8573d4999ca9adaa4d896bdfa91ecccfa95253cf61123aa15590ed35d1905452","header_status":"handled","input_sha256":"efa6414de04591489666d5e9c2dc498cb9db2f57a176ab829d5e14e06819ff84","kind":"mutation-receipt","operation":"73db114884f9009cb0d139697c95b3e18da2a3c0999a185fdf2b7267ec385538","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-20"],"target":"f-20261127-20","v":1} -->
 
 ---
 
