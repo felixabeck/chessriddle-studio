@@ -19,6 +19,7 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 ### Improved
 
+- Game review: redesigned the Report panel into a guided review with one scoreboard and explained numbers, a one-sentence summary, key moments you can step through with board arrows, kinds of mistake, time usage and time-trouble tags, opening, novelty and repertoire notes, and an optional Coach Explain button hidden without an AI connection.
 - Board bar: the button column beside the notation is gone. The bar above the board shows Play from here (Analyze game on a game tab, Take back in a live game), Flip Board, Save when there is something to save, and a More menu with "Save to file or database…", "Take Snapshot" and "Edit position". Edit position (E), Take Snapshot (Ctrl/Cmd+Shift+S) and Save to database (Ctrl/Cmd+Shift+D) have their own shortcuts, and Clear drawings now also works on the game screen. The notation has the same header as the other panels, with the eye button to hide moves and "View options" for table view, comments, diagrams and variations.
 - Clocks: the board clocks are smaller and no longer show a progress bar. Beside the clock of the side that just moved, a muted figure shows how long that move took.
 - Chess.com: a live game opened from a Chess.com link (browser extension or pasted URL) now carries each move's clock time.

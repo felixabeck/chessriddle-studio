@@ -665,3 +665,53 @@ finding ids and date.
 - **Technical record:** plan `tasks/plans/2026-11-27-settings-view-restore.md` and `d-20261127-06`
   in `tasks/decisions.md` (alongside `d-20261121-02`).
 - **Date:** 2026-11-27.
+
+## 2026-11-27 — Game review works without AI; Coach Explain is hidden without a connection
+
+- **Question:** How should AI explanations relate to the redesigned Game Review page, and should the "Explain" action on mistake moments appear when no AI connection is configured?
+- **Choice:** The Game Review works completely without AI as an engine-based review. An "Explain" action on `?!`, `?`, and `??` key moments opens Coach with a question about that moment and is hidden when no AI connection is configured.
+- **Ruled out:** Making AI part of generating the report itself, or showing a disabled or upsell "Explain" button without an AI connection.
+- **Felix's reason:** The agent recommended "the report works completely without AI, and AI is an optional layer on top that only explains"; Felix chose "Yes, hidden without a connection" for Explain.
+- **Technical record:** agent decisions D1–D8 in
+  `tasks/decisions.md`; plan `tasks/plans/2026-11-27-game-review.md`.
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — Game review scope: step one plus an informational repertoire note only
+
+- **Question:** Should the Game Review include follow-up repertoire workflows, personal puzzle decks, or cross-game insights right away, or stay focused on single-game review with an informational repertoire comparison?
+- **Choice:** Step one (single-game guided review) plus an informational note showing where the game left the user's repertoire or how far it followed it, with no follow-up workflows or personal puzzles.
+- **Ruled out:** Follow-up repertoire editing or training flows, personal mistake puzzle decks ("step 2"), and cross-game insights ("step 3").
+- **Felix's reason:** "I only want step one for now. Maybe the only thing you could mark is where the repertoire was left, because this is an important information. … this should just be an information here without any follow-up any without any personal puzzles and stuff like this"
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — Repertoire note covers the user's side only
+
+- **Question:** When comparing the game to the user's repertoire files, should the review show repertoire notes for both players or only for the user's side?
+- **Choice:** Only the user's side (matched by player name against connected Lichess, Chess.com, or alias accounts; falling back to the side at the bottom of the board when neither or both match).
+- **Ruled out:** Checking repertoire notes for both White and Black.
+- **Felix's reason:** "Only my side"
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — Time-per-move strip and time-trouble tag included
+
+- **Question:** Should Game Review show a time-per-move strip under the chart, a "time trouble" tag on key moments, neither, or both?
+- **Choice:** Both: a time-per-move strip under the chart (when at least half the moves have clock times) and a "Time trouble" tag on key moments played in time trouble.
+- **Ruled out:** Leaving out either the time strip or the time-trouble tag.
+- **Felix's reason:** "Yes, both"
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — No live fill-in while the report analysis runs
+
+- **Question:** Should the chart and key moments fill in live while the engine analysis is still running, or appear only once the finished report is applied?
+- **Choice:** Leave live fill-in out; show progress while the report runs and render the finished review once complete.
+- **Ruled out:** Streaming partial chart points and key moments into the review page during analysis.
+- **Felix's reason:** "Leave it out"
+- **Date:** 2026-11-27.
+
+## 2026-11-27 — Skip a separate mockup and judge the built page directly
+
+- **Question:** Should a mockup be built and reviewed before implementing the Game Review redesign, or should the redesign be built directly from the reviewed plan?
+- **Choice:** Build the page directly without a separate mockup first, and evaluate the finished page in practice afterwards.
+- **Ruled out:** Creating a standalone UI mockup before implementation.
+- **Felix's reason:** "I'm not sure if it's worth it because maybe it's better to just build it and then in the end I can still correct it when I see how it works in practice."
+- **Date:** 2026-11-27.
