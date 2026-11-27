@@ -15383,3 +15383,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** User feedback forwarded by Felix, recommendation approved 2026-11-26. Reversal path: change `NEW_ANALYSIS.keys` in `src/state/keybinds.ts` (stored keymaps keep a user's own binding); drop the fallback branch of `newAnalysis` in `src/components/tabs/TabCommands.tsx`.
 * **Decided by:** Claude Code (Opus 5.5) session new-analysis, 2026-11-26, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"055cab035ecc50a654c506c28ffd9f373018d98ac233ba30c3a78c0bbe74b171","input_sha256":"6780c513016de9f3a8997cf3b3ea06f48f6264d302fe5a4b6a8b58b3df42243a","kind":"mutation-receipt","operation":"06d0b3aebdc7727c315e953aa24b2028c7625afb968dba88a177f4beb549d884","options":{"section":null},"request_id_sha256":null,"results":["d-20261126-29"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-07 — How is an unused launch New Tab consumed when the first segment reuses an already-open chapter?
+
+* **Question:** How is an unused launch New Tab consumed when the first segment reuses an already-open chapter?
+* **Governs:** f-20261125-02
+* **Chosen:** After the first successful segment, close `newTabId` through existing `closeTab` if it is still `type === "new"` and not the segment tab.
+* **Rejected:** Skip creating the New Tab / launch from the existing chapter (second leave rule, rejected by d-20261124-34). A `createdByRun` flag on `TimedRunLaunch` so only preparation-created tabs close (a second contract for one empty tab; "Train openings" should consume its New Tab the same way `replaceNewTab` already does). Close inside `openSegment` during the `watchOpenLeave` race (that is the already-tested "closing the origin tab during open" leave). `replaceNewTab` the unused New Tab into a duplicate of the existing chapter (two tabs on the same chapter).
+* **Reason:** Keeps d-20261124-34's one start contract and uses the close path that already reclaims storage. Reversal path: drop the consume call; the New Tab remains after a reuse start.
+* **Decided by:** Grok drain adopt of plan c8da0721, full auto, 2026-11-27 · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"5154d2e90310c90555b199f019957e5d9995b34f9f7ad7ccd9bf12774f6e8c58","input_sha256":"180b5640a2680dd48d18fe1861ac5154fa7cc73bb4c84047c4e1bce07459418d","kind":"mutation-receipt","operation":"aa1910cbba6744b00c106f1951a68f55dcc7510f51c5bbf74f97b79e2c282919","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-07"],"target":"decisions-ledger","v":1} -->
