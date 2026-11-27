@@ -163,6 +163,12 @@ function saveButton() {
   )!;
 }
 
+function updateButton() {
+  return Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Board.Database.UpdateThisGame",
+  )!;
+}
+
 function noTargetsAlert() {
   return [...host.querySelectorAll('[role="alert"]')].find(
     (alert) => alert.textContent === "Board.Database.NoTargets",
@@ -459,7 +465,10 @@ test("selecting the origin database updates in place via saveToFile", async () =
   const onClose = vi.fn();
   await renderModal(onClose, workspace, tab);
   await chooseOption("Standalone");
-  await act(async () => saveButton().click());
+  expect(updateButton()).toBeDefined();
+  expect(saveButton()).toBeUndefined();
+  expect(host.textContent).toContain("Board.Database.UpdateThisGameHint");
+  await act(async () => updateButton().click());
   expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, isUserSave: true }),
   );
@@ -485,6 +494,9 @@ test("selecting a different database keeps calling saveToDatabase", async () => 
   vi.mocked(saveToDatabase).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace, tab);
   await chooseOption("Standalone");
+  expect(saveButton()).toBeDefined();
+  expect(updateButton()).toBeUndefined();
+  expect(host.textContent).not.toContain("Board.Database.UpdateThisGameHint");
   await act(async () => saveButton().click());
   expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, database: standaloneDatabase.file }),
@@ -505,7 +517,10 @@ test("selecting the origin file updates in place via saveToFile", async () => {
   const onClose = vi.fn();
   await renderModal(onClose, workspace, tab);
   await chooseOption("Caro Kann");
-  await act(async () => saveButton().click());
+  expect(updateButton()).toBeDefined();
+  expect(saveButton()).toBeUndefined();
+  expect(host.textContent).toContain("Board.Database.UpdateThisGameHint");
+  await act(async () => updateButton().click());
   expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, isUserSave: true }),
   );
@@ -527,6 +542,9 @@ test("selecting a different file keeps calling saveToLibraryFile", async () => {
   vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace, tab);
   await chooseOption("Games");
+  expect(saveButton()).toBeDefined();
+  expect(updateButton()).toBeUndefined();
+  expect(host.textContent).not.toContain("Board.Database.UpdateThisGameHint");
   await act(async () => saveButton().click());
   expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, file: otherFile }),
@@ -552,7 +570,10 @@ test("selecting a collection-backed database when files listing failed updates t
   const onClose = vi.fn();
   await renderModal(onClose, workspace, tab);
   await chooseOption(readyTarget.title);
-  await act(async () => saveButton().click());
+  expect(updateButton()).toBeDefined();
+  expect(saveButton()).toBeUndefined();
+  expect(host.textContent).toContain("Board.Database.UpdateThisGameHint");
+  await act(async () => updateButton().click());
   expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, isUserSave: true }),
   );
@@ -574,7 +595,8 @@ test("a conflict result closes the dialog without a success toast", async () => 
   const onClose = vi.fn();
   await renderModal(onClose, workspace, tab);
   await chooseOption("Standalone");
-  await act(async () => saveButton().click());
+  expect(host.textContent).toContain("Board.Database.UpdateThisGameHint");
+  await act(async () => updateButton().click());
   expect(saveToFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, isUserSave: true }),
   );
@@ -594,6 +616,8 @@ test("a databaseDraft tab selecting its draft database calls saveToDatabase, not
   vi.mocked(saveToDatabase).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace, tab);
   await chooseOption("Standalone");
+  expect(saveButton()).toBeDefined();
+  expect(host.textContent).not.toContain("Board.Database.UpdateThisGameHint");
   await act(async () => saveButton().click());
   expect(saveToDatabase).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, database: standaloneDatabase.file }),
@@ -613,6 +637,8 @@ test("a fileDraft tab selecting its draft file calls saveToLibraryFile, not save
   vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace, tab);
   await chooseOption("Caro Kann");
+  expect(saveButton()).toBeDefined();
+  expect(host.textContent).not.toContain("Board.Database.UpdateThisGameHint");
   await act(async () => saveButton().click());
   expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, file: repertoireFile }),
@@ -632,6 +658,8 @@ test("a temp_file tab selecting its source file calls saveToLibraryFile, not sav
   vi.mocked(saveToLibraryFile).mockResolvedValue("saved");
   await renderModal(vi.fn(), workspace, tab);
   await chooseOption("Caro Kann");
+  expect(saveButton()).toBeDefined();
+  expect(host.textContent).not.toContain("Board.Database.UpdateThisGameHint");
   await act(async () => saveButton().click());
   expect(saveToLibraryFile).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ tab, file: repertoireFile }),

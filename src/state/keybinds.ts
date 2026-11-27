@@ -73,7 +73,7 @@ const definitions = {
     },
     SAVE_TO_DATABASE: {
         labelKey: i18nKey("Settings.Keybinds.Actions.SAVE_TO_DATABASE"),
-        name: "Save to database",
+        name: "Save a copy",
         keys: `${meta}+shift+d`,
     },
     EDIT_GAME_DATA: {

@@ -100,7 +100,7 @@ test("playBoardMove rejects a board that stays view-only without clicking it", a
     await expect(page.locator("#clicks li")).toHaveCount(0);
 });
 
-test("New game inserts on explicit save, updates that row, and Save to database rebinds", async ({
+test("New game inserts on explicit save, updates that row, and Save a copy to the same database updates in place", async ({
     page,
     mockScenario,
     assertAccessible,
@@ -163,25 +163,67 @@ test("New game inserts on explicit save, updates that row, and Save to database 
     await expect
         .poll(async () => (await saves()).map((item) => item.command))
         .toEqual(["insert_db_game", "write_db_game"]);
-    await chooseBoardMoreAction(page, /^Save to file or database…/);
-    const modal = page.getByRole("dialog", { name: "Save to file or database…", exact: true });
+    await chooseBoardMoreAction(page, /^Save a copy…/);
+    const modal = page.getByRole("dialog", { name: "Save a copy…", exact: true });
     await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
     await page.getByRole("option", { name: gameOpeningFixture.databaseTitle, exact: true }).click();
-    await expect(modal.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+    await expect(
+        modal.getByText("This is the current game. Saving will update it.", { exact: true }),
+    ).toBeVisible();
+    const updateButton = modal.getByRole("button", { name: "Update this game", exact: true });
+    await expect(updateButton).toBeEnabled();
     await assertNothingClipped(modal);
     await assertAccessible();
     await expect(page).toHaveScreenshot("save-to-database-modal.png");
-    await modal.getByRole("button", { name: "Save", exact: true }).click();
+    await updateButton.click();
     await expect(modal).toHaveCount(0);
     await expect(
         page.getByText(`Saved to ${gameOpeningFixture.databaseTitle}.`, { exact: true }),
     ).toBeVisible();
     await expect
         .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
-        .toMatchObject({ kind: "database", gameId: 502 });
+        .toMatchObject({ kind: "database", gameId: 501 });
     await expect(page.getByRole("button", { name: /^Save PGN/ })).toHaveCount(0);
-    expect(await saves()).toHaveLength(3);
+    expect((await saves()).map((item) => item.command)).toEqual([
+        "insert_db_game",
+        "write_db_game",
+        "write_db_game",
+    ]);
     await expect(page).toHaveScreenshot("saved-to-database.png");
+});
+
+test("Autosave on a database game shows Saving then Saved in the board bar without a toast", async ({
+    page,
+    mockScenario,
+}) => {
+    await mockScenario({
+        commands: filesWorkspaceCommands([[]], {
+            ...gameOpeningCommands,
+            write_db_game: { result: "d".repeat(64), delay: 400 },
+        }),
+    });
+    await page.goto("/library");
+    await selectFilesTreeRow(page, gameOpeningFixture.databaseTitle);
+    await page.getByRole("button", { name: "Open database", exact: true }).click();
+    await expect(page).toHaveURL(`/databases/${gameOpeningFixture.databaseId}`);
+    await page.getByRole("row").filter({ hasText: gameOpeningFixture.games[0].white }).dblclick();
+    await expect(page).toHaveURL("/");
+    await expect
+        .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
+        .toMatchObject({ kind: "database", gameId: gameOpeningFixture.games[0].id });
+
+    const topBar = page.locator('[data-board-bar="above"]');
+    await expect(topBar.getByText("Saved", { exact: true })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Info", exact: true }).click();
+    const eventField = page.getByLabel("Event", { exact: true });
+    await eventField.fill("Club Championship");
+    await expect(topBar.getByText("Saving…", { exact: true })).toBeVisible();
+    await expect(topBar.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(page.locator(".mantine-Notification-root")).toHaveCount(0);
+    await assertNothingClipped(topBar);
+    await waitForFontsSettled(page);
+    await expect(topBar).toHaveScreenshot("board-bar-autosave-saved.png");
 });
 
 async function openNewGameInfo(

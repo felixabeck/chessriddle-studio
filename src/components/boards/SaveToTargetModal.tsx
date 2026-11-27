@@ -92,6 +92,15 @@ export default function SaveToTargetModal({
   );
   const selectedFile = selected ? (filesByValue.get(selected) ?? null) : null;
   const selectedDatabase = selected ? (databasesByValue.get(selected) ?? null) : null;
+  const selectedDestination: SaveDestination | null = selectedFile
+    ? { kind: "file", file: selectedFile.handle }
+    : selectedDatabase
+      ? selectedDatabase.collection?.status === "ready"
+        ? { kind: "file", file: selectedDatabase.collection.file }
+        : { kind: "database", database: selectedDatabase.file }
+      : null;
+  const isCurrentOrigin =
+    selectedDestination !== null && isCurrentOriginDestination(tab, selectedDestination);
   const filesListingFailed = !!workspace && filesFailure !== "silent";
   const databasesListingFailed = databasesFailure !== "silent";
   const filesReady = !!workspace && filesFailure === "silent" && !filesListing.isLoading;
@@ -129,12 +138,9 @@ export default function SaveToTargetModal({
   async function submit() {
     const file = selectedFile;
     const database = selectedDatabase;
-    if (file ? filesListingFailed : database ? databasesListingFailed : true) return;
-    const destination: SaveDestination = file
-      ? { kind: "file", file: file.handle }
-      : database!.collection?.status === "ready"
-        ? { kind: "file", file: database!.collection.file }
-        : { kind: "database", database: database!.file };
+    const destination = selectedDestination;
+    if (!destination || (file ? filesListingFailed : database ? databasesListingFailed : true))
+      return;
     await run(async () => {
       try {
         const result = isCurrentOriginDestination(tab, destination)
@@ -204,6 +210,11 @@ export default function SaveToTargetModal({
             );
           }}
         />
+        {isCurrentOrigin && (
+          <Text size="sm" c="dimmed">
+            {t("Board.Database.UpdateThisGameHint")}
+          </Text>
+        )}
         {noTargets && <Alert>{t("Board.Database.NoTargets")}</Alert>}
         <Group justify="end">
           <Button styles={wrappingButton} variant="default" disabled={pending} onClick={onClose}>
@@ -215,7 +226,7 @@ export default function SaveToTargetModal({
             loading={pending}
             onClick={() => void submit()}
           >
-            {t("Common.Save")}
+            {t(isCurrentOrigin ? "Board.Database.UpdateThisGame" : "Common.Save")}
           </Button>
         </Group>
       </Stack>

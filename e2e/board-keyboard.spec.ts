@@ -1321,7 +1321,7 @@ test("board-keyboard: analysis board puts actions in top bar, removes left colum
         "Take back",
         "Edit Position",
         "Take Snapshot",
-        "Save to file or database…",
+        "Save a copy…",
     ]) {
         await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(0);
     }

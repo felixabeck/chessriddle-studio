@@ -1,7 +1,29 @@
 import { expect, test } from "vitest";
 import deDECatalogue from "@/translation/de-DE.json";
+import enUSCatalogue from "@/translation/en-US.json";
 
 const de = deDECatalogue.translation;
+const en = enUSCatalogue.translation;
+
+test("de-DE and en-US catalogues ship the save-copy, origin-update, and save-status strings", () => {
+    expect(en["Board.Database.Save"]).toBe("Save a copy…");
+    expect(en["Settings.Keybinds.Actions.SAVE_TO_DATABASE"]).toBe("Save a copy");
+    expect(en["Board.Database.UpdateThisGame"]).toBe("Update this game");
+    expect(en["Board.Database.UpdateThisGameHint"]).toBe(
+        "This is the current game. Saving will update it.",
+    );
+    expect(en["Board.SaveStatus.Saved"]).toBe("Saved");
+    expect(en["Board.SaveStatus.Saving"]).toBe("Saving…");
+
+    expect(de["Board.Database.Save"]).toBe("Als Kopie speichern…");
+    expect(de["Settings.Keybinds.Actions.SAVE_TO_DATABASE"]).toBe("Als Kopie speichern");
+    expect(de["Board.Database.UpdateThisGame"]).toBe("Diese Partie aktualisieren");
+    expect(de["Board.Database.UpdateThisGameHint"]).toBe(
+        "Das ist die aktuelle Partie. Speichern überschreibt sie.",
+    );
+    expect(de["Board.SaveStatus.Saved"]).toBe("Gespeichert");
+    expect(de["Board.SaveStatus.Saving"]).toBe("Speichern…");
+});
 
 test("de-DE catalogue no longer carries placeholder or wrong-meaning values", () => {
     expect(de["Home.Accounts.Empty.Description"]).not.toBe("Beschreibung");

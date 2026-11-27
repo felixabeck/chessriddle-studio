@@ -1,7 +1,7 @@
 import { WorkspaceTabScope } from "@/state/tabScope";
 import { MantineProvider } from "@mantine/core";
 import domtoimage from "dom-to-image";
-import { act } from "react";
+import { act, type SVGProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Provider as JotaiProvider, createStore as createJotaiStore } from "jotai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -51,7 +51,7 @@ vi.mock("lucide-react", async (importOriginal) => ({
   Undo2: () => null,
   BookmarkPlus: () => null,
   Camera: () => null,
-  Check: () => null,
+  Check: (props: SVGProps<SVGSVGElement>) => <svg data-icon="Check" {...props} />,
   Save: () => null,
   Database: () => null,
   Ellipsis: () => null,
@@ -311,6 +311,58 @@ describe("BoardControls", () => {
 
     // Missing saveFile handler: hidden even when dirty and failing.
     await renderControls({ dirty: true, saveFile: undefined, autoSaveFailed: true });
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+  });
+
+  test("quiet autosave indicator shows Saved or Saving in a polite live region, and hides on failure or autosave off", async () => {
+    const saveFile = vi.fn();
+    const liveStatus = () =>
+      container.querySelector<HTMLElement>('[role="status"][aria-live="polite"]');
+
+    // Clean + autoSaveActive: non-interactive Saved status, no Save button.
+    await renderControls({ dirty: false, saveFile, autoSaveActive: true, autoSaveFailed: false });
+    const saved = liveStatus();
+    expect(saved).not.toBeNull();
+    expect(saved!.textContent).toBe("Board.SaveStatus.Saved");
+    expect(saved!.tagName).not.toBe("BUTTON");
+    expect(saved!.closest("button")).toBeNull();
+    expect(saved!.querySelector("button")).toBeNull();
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+    expect(saved!.querySelector('[data-icon="Check"]')).not.toBeNull();
+    expect(saved!.querySelector('[data-icon="Check"]')!.getAttribute("aria-hidden")).toBe("true");
+
+    // Dirty + autoSaveActive: Saving status in the same polite live region, no Save button.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: true, autoSaveFailed: false });
+    const saving = liveStatus();
+    expect(saving).not.toBeNull();
+    expect(saving!.textContent).toBe("Board.SaveStatus.Saving");
+    expect(saving!.closest("button")).toBeNull();
+    expect(actionButton("Board.Action.SavePGN")).toBeNull();
+    expect(saving!.querySelector('[data-icon="Check"]')).toBeNull();
+
+    // autoSaveFailed: no status text; Save button shown when dirty.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: true, autoSaveFailed: true });
+    expect(liveStatus()).toBeNull();
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
+    expect(actionButton("Board.Action.SavePGN")).not.toBeNull();
+
+    await renderControls({ dirty: false, saveFile, autoSaveActive: true, autoSaveFailed: true });
+    expect(liveStatus()).toBeNull();
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
+
+    // Autosave off: no status text; Save button shown when dirty.
+    await renderControls({ dirty: true, saveFile, autoSaveActive: false, autoSaveFailed: false });
+    expect(liveStatus()).toBeNull();
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
+    expect(actionButton("Board.Action.SavePGN")).not.toBeNull();
+
+    await renderControls({ dirty: false, saveFile, autoSaveActive: false, autoSaveFailed: false });
+    expect(liveStatus()).toBeNull();
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
+    expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
     expect(actionButton("Board.Action.SavePGN")).toBeNull();
   });
 

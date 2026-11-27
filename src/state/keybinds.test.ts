@@ -173,7 +173,7 @@ test("older keymaps gain edit-position, snapshot, and save-to-database defaults 
     expect(current.EDIT_POSITION).toEqual({ name: "Edit position", keys: "e" });
     expect(current.TAKE_SNAPSHOT).toEqual({ name: "Take snapshot", keys: "ctrl+shift+s" });
     expect(current.SAVE_TO_DATABASE).toEqual({
-        name: "Save to database",
+        name: "Save a copy",
         keys: "ctrl+shift+d",
     });
 

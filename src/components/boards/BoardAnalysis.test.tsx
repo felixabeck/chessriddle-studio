@@ -2726,6 +2726,8 @@ describe("BoardAnalysis", () => {
       await renderRealBoard();
       expect(treeStore.getState().dirty).toBe(true);
       expect(saveButton()).not.toBeNull();
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
       await act(async () => root.render(null));
 
       // (b) Dirty tab with gameOrigin.kind === "none" and autoSaveAtom = true shows Save.
@@ -2736,9 +2738,12 @@ describe("BoardAnalysis", () => {
       await renderRealBoard();
       expect(treeStore.getState().dirty).toBe(true);
       expect(saveButton()).not.toBeNull();
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
       await act(async () => root.render(null));
 
-      // (c) Dirty persistent file tab with autoSaveAtom = true and no failure hides Save.
+      // (c) Dirty persistent file tab with autoSaveAtom = true and no failure hides Save and
+      //     shows Saving while dirty, then Saved once the autosave write settles.
       const pendingWrite = Promise.withResolvers<{ stamp: string; revision: string }>();
       mocks.writeGame.mockReturnValueOnce(pendingWrite.promise);
       await act(async () => {
@@ -2748,11 +2753,15 @@ describe("BoardAnalysis", () => {
       await renderRealBoard();
       expect(treeStore.getState().dirty).toBe(true);
       expect(saveButton()).toBeNull();
+      expect(container.textContent).toContain("Board.SaveStatus.Saving");
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saved");
       await act(async () => {
         pendingWrite.resolve({ stamp: "b".repeat(64), revision: "r1" });
       });
       await vi.waitFor(() => expect(treeStore.getState().dirty).toBe(false));
       expect(saveButton()).toBeNull();
+      expect(container.textContent).toContain("Board.SaveStatus.Saved");
+      expect(container.textContent).not.toContain("Board.SaveStatus.Saving");
     } finally {
       mocks.realBoardControls = false;
     }

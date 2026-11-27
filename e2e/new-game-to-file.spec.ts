@@ -155,7 +155,7 @@ test("Library New game opens a fileDraft, asks for the line name and appends on 
     await expect(page.getByRole("button", { name: "Two Knights", exact: true })).toBeVisible();
 });
 
-test("Save to file or database appends to a repertoire file and rebinds the tab", async ({
+test("Save a copy appends to a repertoire file and rebinds the tab", async ({
     page,
     mockScenario,
     assertAccessible,
@@ -169,8 +169,8 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
     await goToBoards(page);
     await page.getByRole("button", { name: /^Analysis Board$/ }).click();
     await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
-    await chooseBoardMoreAction(page, /^Save to file or database…/);
-    const modal = page.getByRole("dialog", { name: "Save to file or database…", exact: true });
+    await chooseBoardMoreAction(page, /^Save a copy…/);
+    const modal = page.getByRole("dialog", { name: "Save a copy…", exact: true });
     await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
     await expect(page.getByRole("option", { name: repertoireFile.name })).toBeVisible();
     await expect(
@@ -204,4 +204,52 @@ test("Save to file or database appends to a repertoire file and rebinds the tab"
         },
     });
     await expectBoundTabSurvivesRevisionPoll(page);
+});
+
+test("Save a copy targeting the tab's own file updates the existing game in place", async ({
+    page,
+    mockScenario,
+}) => {
+    await seedBoardLayouts(page);
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
+    await mockScenario({ commands: repertoireCommands() });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await selectFilesTreeRow(page, repertoireFile.name);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await expect
+        .poll(async () => (await activeWorkspaceTab(page))?.gameOrigin)
+        .toMatchObject({
+            kind: "file",
+            gameNumber: 0,
+            file: { handle: repertoireFile.handle },
+        });
+
+    await playBoardMove(page, page.locator("cg-board").first(), "e2", "e4");
+    await chooseBoardMoreAction(page, /^Save a copy…/);
+    const modal = page.getByRole("dialog", { name: "Save a copy…", exact: true });
+    await modal.getByRole("textbox", { name: "File or database", exact: true }).click();
+    await page.getByRole("option", { name: repertoireFile.name }).click();
+    await expect(
+        modal.getByText("This is the current game. Saving will update it.", { exact: true }),
+    ).toBeVisible();
+    const updateButton = modal.getByRole("button", { name: "Update this game", exact: true });
+    await expect(updateButton).toBeEnabled();
+    await updateButton.click();
+    await expect(modal).toHaveCount(0);
+    await expect(page.getByText(`Saved to ${repertoireFile.name}.`, { exact: true })).toBeVisible();
+
+    const writes = await page.evaluate(() =>
+        window.__E2E_TAURI__.invocations().filter((item) => item.command === "write_game"),
+    );
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+        command: "write_game",
+        args: {
+            file: repertoireFile.handle,
+            n: 0,
+            expected: { kind: "game", stamp: expect.any(String) },
+        },
+    });
 });

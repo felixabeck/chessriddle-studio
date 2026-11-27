@@ -129,6 +129,7 @@ function BoardControls({
 
   const canEdit = !disableVariations || Boolean(allowEditing);
   const showSave = Boolean(saveFile && dirty && (!autoSaveActive || autoSaveFailed));
+  const showAutoSaveStatus = autoSaveActive && !autoSaveFailed;
   const showLayouts =
     currentTab?.type === "analysis" && Boolean(onApplyLayout && onSaveLayoutAs && onManageLayouts);
 
@@ -184,7 +185,7 @@ function BoardControls({
       >
         <ArrowUpDown size="1rem" />
       </IconAction>
-      {showSave && saveFile && (
+      {showSave && saveFile ? (
         <IconAction
           label={t("Board.Action.SavePGN", { key: formatKeymap(keyMap.SAVE_FILE.keys) })}
           size="sm"
@@ -193,6 +194,15 @@ function BoardControls({
         >
           <Save size="1rem" />
         </IconAction>
+      ) : (
+        showAutoSaveStatus && (
+          <Group gap={4} wrap="nowrap" c="dimmed" role="status" aria-live="polite">
+            {!dirty && <Check size="0.875rem" aria-hidden="true" />}
+            <Text size="sm" c="dimmed">
+              {t(dirty ? "Board.SaveStatus.Saving" : "Board.SaveStatus.Saved")}
+            </Text>
+          </Group>
+        )
       )}
       <Menu position="bottom-end" shadow="md" withinPortal>
         <Menu.Target>
