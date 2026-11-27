@@ -5307,3 +5307,447 @@ fn home_default_spells_the_held_studio_folder_not_a_link_planted_at_its_name() {
         .unwrap()
         .is_dir());
 }
+
+#[test]
+fn open_existing_default_dirs_return_none_when_absent_and_refuse_non_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_path = dir.path().join("app-data");
+    let home_path = dir.path().join("home");
+    fs::create_dir(&app_path).unwrap();
+    fs::create_dir(&home_path).unwrap();
+    let app_data = AppDataDir::for_test(&app_path);
+    let home_ok = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_ok = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home_ok, &app_ok);
+
+    // Absent leaves return None without creating directories.
+    assert!(
+        open_existing_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::Databases, false)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!app_path.join("db").exists());
+    assert!(
+        open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Pgn)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!home_path.join("ChessRiddle Studio").exists());
+
+    // Studio folder alone still returns None when the kind leaf is absent.
+    let studio = home_path.join("ChessRiddle Studio");
+    fs::create_dir(&studio).unwrap();
+    assert!(
+        open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Pgn)
+            .unwrap()
+            .is_none()
+    );
+    assert!(!studio.join("PGN").exists());
+
+    // Existing directories open read-only / writable with matching identities.
+    let created_app =
+        ensure_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::ScoresheetPhotos).unwrap();
+    let opened_app =
+        open_existing_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::ScoresheetPhotos, true)
+            .unwrap()
+            .expect("existing scoresheet photo dir must open");
+    assert_eq!(opened_app.identity(), created_app.identity());
+    assert_eq!(opened_app.path(), created_app.path());
+
+    let created_home =
+        ensure_home_owned_default_dir(&home_ok().unwrap(), VisibleDefaultKind::Pgn).unwrap();
+    let opened_home = open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Pgn)
+        .unwrap()
+        .expect("existing visible PGN dir must open");
+    assert_eq!(opened_home.identity(), created_home.identity());
+    assert_eq!(opened_home.path(), created_home.path());
+
+    // Regular files at either app-owned leaf or visible leaf/studio fail closed.
+    let file_leaf = app_path.join("db");
+    fs::write(&file_leaf, b"not a dir").unwrap();
+    let err = open_existing_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::Databases, false)
+        .expect_err("regular file leaf must be refused");
+    assert_path_free_io(
+        &err,
+        &file_leaf,
+        "app-owned default root is not a directory",
+    );
+
+    let home_file_leaf = studio.join("Databases");
+    fs::write(&home_file_leaf, b"not a dir").unwrap();
+    let err = open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Databases)
+        .expect_err("regular file home leaf must be refused");
+    assert_path_free_io(
+        &err,
+        &home_file_leaf,
+        "app-owned default root is not a directory",
+    );
+
+    // Unresolvable home propagates without falling back.
+    let failing_home = || Err(Error::Conflict("home lookup failed".into()));
+    let failing_lookups = DefaultDirLookups::new(&failing_home, &app_ok);
+    assert!(matches!(
+        open_existing_visible_default_dir(&failing_lookups, VisibleDefaultKind::Databases),
+        Err(Error::Conflict(ref message)) if message == "home lookup failed"
+    ));
+}
+
+#[test]
+fn home_dir_try_for_test_maps_acquisition_failure_to_io() {
+    let dir = tempfile::tempdir().unwrap();
+    let regular_file = dir.path().join("blocker");
+    fs::write(&regular_file, b"file").unwrap();
+    let error = HomeDir::try_for_test(&regular_file.join("nested"), RELEASE_APP_IDENTIFIER)
+        .err()
+        .expect("regular file parent cannot host a HomeDir");
+    assert_path_free_io(
+        &error,
+        &regular_file,
+        "home directory could not be acquired",
+    );
+}
+
+#[test]
+fn open_pgn_workspace_for_sweep_rejects_file_capability_and_missing_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let pgn_root = dir.path().join("pgn");
+    fs::create_dir(&pgn_root).unwrap();
+    let pgn_path = pgn_root.join("sample.pgn");
+    fs::write(&pgn_path, b"[Event \"Test\"]\n\n*\n").unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let file_descriptor = authority
+        .create_pgn_export_destination(&pgn_path, String::from("sample.pgn"))
+        .unwrap();
+
+    let error = authority
+        .open_pgn_workspace_for_sweep(&file_descriptor.handle)
+        .err()
+        .expect("file capability must be refused when opened as a sweep directory");
+    assert!(
+        matches!(error, Error::InvalidInput(ref message) if message == "path capability is not a directory"),
+        "unexpected error: {error:?}"
+    );
+
+    let missing_workspace = FileWorkspaceHandle::new(PathRef::fresh());
+    assert!(matches!(
+        authority.open_pgn_workspace_for_sweep(&missing_workspace),
+        Err(Error::UnknownPathCapability)
+    ));
+    let missing_db_root = DatabaseRootHandle::new(PathRef::fresh());
+    assert!(matches!(
+        authority.open_database_root_for_sweep(&missing_db_root),
+        Err(Error::UnknownPathCapability)
+    ));
+}
+
+#[test]
+fn authorized_dir_open_leaf_identified_rejects_non_single_component_leaf() {
+    let dir = tempfile::tempdir().unwrap();
+    let image_dir = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(dir.path()),
+        AppOwnedDefaultRoot::EngineImages,
+    )
+    .unwrap();
+    for bad in ["nested/leaf", "..", ""] {
+        let error = image_dir
+            .open_leaf_identified(OsStr::new(bad))
+            .expect_err("non-single-component leaf must be refused");
+        assert!(
+            matches!(error, Error::InvalidInput(ref message) if message == "managed image leaf must be one component"),
+            "unexpected error for {bad:?}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn workspace_mutation_target_directory_rejects_file_capability() {
+    let dir = tempfile::tempdir().unwrap();
+    let root_path = dir.path().join("workspace");
+    fs::create_dir(&root_path).unwrap();
+    let file_path = root_path.join("game.pgn");
+    fs::write(&file_path, b"[Event \"Test\"]\n\n*\n").unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let root = authority
+        .get_or_create_file_workspace_root(&root_path, "workspace", None)
+        .unwrap();
+    let file_identity = identity(&file_path).unwrap();
+    let file_handle = authority
+        .register_workspace_child_observed(
+            &root,
+            &[OsString::from("game.pgn")],
+            "game.pgn",
+            (file_identity.a, file_identity.b),
+            false,
+            PathOperation::WritePgn,
+        )
+        .unwrap();
+
+    let target = authority.workspace_mutation_target(&file_handle).unwrap();
+    assert_eq!(target.path(), fs::canonicalize(&file_path).unwrap());
+    assert!(matches!(
+        target.directory(),
+        Err(Error::InvalidInput(ref message)) if message == "workspace entry must be a directory"
+    ));
+}
+
+#[test]
+fn selected_root_display_name_uses_fallback_when_path_has_no_leaf() {
+    assert_eq!(
+        selected_root_display_name(Path::new("/"), "Puzzles"),
+        "Puzzles"
+    );
+    assert_eq!(
+        selected_root_display_name(Path::new(""), "Databases"),
+        "Databases"
+    );
+    assert_eq!(
+        selected_root_display_name(Path::new("custom/MyEngines"), "Engines"),
+        "MyEngines"
+    );
+}
+
+#[test]
+fn path_commit_compares_equal_to_its_path_ref() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("game.pgn");
+    fs::write(&file_path, b"*").unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let grant = authority
+        .grant_dialog(
+            &file_path,
+            "game.pgn",
+            PathClass::SingleDialogGrant,
+            PathOperation::ReadPgn,
+            Duration::from_secs(30),
+            1,
+        )
+        .unwrap();
+    let commit = authority
+        .promote_dialog(
+            &grant,
+            PathClass::PersistentFile,
+            "game.pgn",
+            vec![PathOperation::ReadPgn],
+        )
+        .unwrap();
+    assert_eq!(commit, commit.id);
+    assert_ne!(commit, PathRef::fresh());
+}
+
+#[test]
+fn missing_and_non_persistent_capability_queries_return_typed_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let sample = dir.path().join("sample.pgn");
+    fs::write(&sample, b"*").unwrap();
+    let collection_dir = ensure_app_owned_default_dir(
+        &AppDataDir::for_test(dir.path()),
+        AppOwnedDefaultRoot::Databases,
+    )
+    .unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let unknown_id = PathRef::fresh();
+
+    // root_display_name missing branch via database_root_descriptor
+    let err = authority
+        .database_root_descriptor(DatabaseRootHandle::new(unknown_id.clone()))
+        .expect_err("missing database root descriptor must fail");
+    assert!(
+        matches!(err.unlabelled(), Error::Conflict(_)),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(err.root_failure(), Some(crate::error::RootFailure::Changed));
+
+    // download_operations dialog grant branch + unknown branch
+    let dialog_grant = authority
+        .grant_dialog(
+            &sample,
+            "sample.pgn",
+            PathClass::SingleDialogGrant,
+            PathOperation::DownloadFile,
+            Duration::from_secs(30),
+            1,
+        )
+        .unwrap();
+    assert_eq!(
+        authority.download_operations(&dialog_grant).unwrap(),
+        vec![PathOperation::DownloadFile]
+    );
+    assert!(matches!(
+        authority.download_operations(&unknown_id),
+        Err(Error::InvalidInput(ref message)) if message == "unknown, revoked, or expired path grant"
+    ));
+
+    // acquire_collection_cache missing remembered handle
+    let collection_id = uuid::Uuid::new_v4();
+    fs::write(
+        collection_dir.path().join(format!("{collection_id}.db3")),
+        b"cache",
+    )
+    .unwrap();
+    let err = authority
+        .acquire_collection_cache(
+            &collection_dir,
+            collection_id,
+            Some(&DatabaseHandle::new(unknown_id.clone())),
+            "cache".into(),
+        )
+        .expect_err("unknown remembered collection cache handle must fail");
+    assert!(
+        matches!(err, Error::Conflict(ref message) if message == "collection cache authority is unavailable"),
+        "unexpected error: {err:?}"
+    );
+
+    // reserve_download_artifact non-persistent root
+    assert!(matches!(
+        authority.reserve_download_artifact(
+            &unknown_id,
+            OsString::from("pkg.zip"),
+            (10, "a".repeat(64)),
+            "pkg",
+            vec![PathOperation::DownloadFile],
+        ),
+        Err(Error::InvalidInput(ref message)) if message == "download root must be persistent"
+    ));
+
+    // mark_download_artifact_committed unknown reservation
+    let missing_reservation = PendingArtifactReservation {
+        id: unknown_id.clone(),
+        payload_size: 0,
+        payload_sha256: String::new(),
+    };
+    assert!(matches!(
+        authority.mark_download_artifact_committed(&missing_reservation, (1, 1), 0),
+        Err(Error::InvalidInput(ref message)) if message == "unknown download artifact reservation"
+    ));
+
+    // workspace.rs non-persistent / disappeared checks
+    let missing_workspace = FileWorkspaceHandle::new(unknown_id);
+    assert!(matches!(
+        authority.workspace_root(&missing_workspace, PathOperation::ReadPgn),
+        Err(Error::InvalidInput(ref message)) if message == "workspace is not persistent"
+    ));
+    assert!(matches!(
+        authority.prepare_workspace_listing_child(
+            &missing_workspace,
+            &[OsString::from("child.pgn")],
+            "child.pgn",
+            IdentityBinding::from_pairs((1, 1), (2, 2)),
+            false,
+            PathOperation::ReadPgn,
+        ),
+        Err(Error::InvalidInput(ref message)) if message == "workspace is not persistent"
+    ));
+    assert!(matches!(
+        authority.rebind_workspace_entry(&missing_workspace, &sample, "renamed", (1, 1)),
+        Err(Error::Conflict(ref message)) if message == "workspace entry disappeared"
+    ));
+    let mut dropped = Vec::new();
+    assert!(matches!(
+        authority.remove_workspace_entry(
+            &missing_workspace,
+            WorkspaceRemovalStatus::Complete,
+            &mut dropped,
+        ),
+        Err(Error::InvalidInput(ref message)) if message == "workspace entry is not persistent"
+    ));
+    assert!(matches!(
+        authority.file_workspace_descriptor(missing_workspace),
+        Err(Error::Conflict(ref message)) if message == "file workspace disappeared"
+    ));
+}
+
+#[test]
+fn folder_status_falls_back_when_active_entry_or_path_leaf_is_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    let app_path = dir.path().join("app");
+    fs::create_dir(&home_path).unwrap();
+    fs::create_dir(&app_path).unwrap();
+    let home_fn = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_fn = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home_fn, &app_fn);
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    authority.active_database_root = Some(PathRef::fresh());
+    let missing_status = authority.database_folder_status(&lookups).unwrap();
+    assert_eq!(missing_status.display_name, "Databases");
+    assert!(!missing_status.is_default);
+    assert!(missing_status.root_failure.is_some());
+
+    // Stored entry whose display_name contains a separator and whose path has no file_name()
+    // exercises folder_leaf_display_name's final fallback.
+    let slash_id = PathRef::fresh();
+    authority.persistent.insert(
+        slash_id.id.clone(),
+        Entry {
+            stored: StoredEntry {
+                id: slash_id.clone(),
+                display_name: "slash/label".into(),
+                class: PathClass::PersistentCustomRoot,
+                purpose: Some(EntryPurpose::DatabaseRoot),
+                operations: canonical_operations(EntryPurpose::DatabaseRoot),
+                path: NativePath::from_path(Path::new("/")),
+                identity: Identity { a: 0, b: 0 },
+                parent_identity: None,
+                target_is_dir: true,
+                practice_key: None,
+            },
+            availability: PathAvailability::Available,
+        },
+    );
+    authority.active_database_root = Some(slash_id);
+    let slash_status = authority.database_folder_status(&lookups).unwrap();
+    assert_eq!(slash_status.display_name, "slash/label");
+}
+
+#[test]
+fn get_or_create_database_root_with_owned_display_name_covers_reuse_recovery_and_refusal() {
+    let dir = tempfile::tempdir().unwrap();
+    let home_path = dir.path().join("home");
+    fs::create_dir(&home_path).unwrap();
+    let home = HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER);
+    let initial = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    let mut authority = PathAuthority::open(dir.path().join("registry.json"), vec![]).unwrap();
+
+    let first = authority
+        .get_or_create_database_root(
+            initial.path(),
+            String::from("Databases"),
+            Some(initial.identity()),
+        )
+        .unwrap();
+    let reused = authority
+        .get_or_create_database_root(
+            initial.path(),
+            String::from("Databases"),
+            Some(initial.identity()),
+        )
+        .unwrap();
+    assert_eq!(first.path_ref(), reused.path_ref());
+
+    let missing = dir.path().join("missing-db");
+    let err = authority
+        .get_or_create_database_root(
+            &missing,
+            String::from("Databases"),
+            Some(initial.identity()),
+        )
+        .expect_err("absent root with expected identity must fail");
+    assert!(err.root_failure().is_some());
+
+    let old_path = initial.path().to_path_buf();
+    fs::remove_dir_all(&old_path).unwrap();
+    let replacement = ensure_home_owned_default_dir(&home, VisibleDefaultKind::Databases).unwrap();
+    let recovered = authority
+        .get_or_create_database_root(
+            replacement.path(),
+            String::from("Databases"),
+            Some(replacement.identity()),
+        )
+        .unwrap();
+    assert_ne!(recovered.path_ref(), first.path_ref());
+}

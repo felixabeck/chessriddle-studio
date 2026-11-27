@@ -12773,3 +12773,116 @@ fn managed_image_cleanup_deletes_only_matching_uuid_leaf_and_preserves_retained_
         Err(Error::Conflict(_))
     ));
 }
+
+#[cfg(unix)]
+#[test]
+fn open_existing_default_dirs_refuse_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_path = dir.path().join("app-data");
+    let home_path = dir.path().join("home");
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir(&app_path).unwrap();
+    fs::create_dir(&home_path).unwrap();
+    fs::create_dir(&elsewhere).unwrap();
+
+    let app_data = AppDataDir::for_test(&app_path);
+    std::os::unix::fs::symlink(&elsewhere, app_path.join("db")).unwrap();
+    let err = open_existing_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::Databases, false)
+        .expect_err("symlinked app-owned leaf must be refused");
+    assert!(
+        matches!(err, Error::Io(ref inner) if inner.to_string().contains("reparse point")),
+        "unexpected error: {err:?}"
+    );
+
+    let home_fn = || Ok(HomeDir::for_test(&home_path, RELEASE_APP_IDENTIFIER));
+    let app_fn = || Ok(AppDataDir::for_test(&app_path));
+    let lookups = DefaultDirLookups::new(&home_fn, &app_fn);
+    std::os::unix::fs::symlink(&elsewhere, home_path.join("ChessRiddle Studio")).unwrap();
+    let err = open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Pgn)
+        .expect_err("symlinked studio folder must be refused");
+    assert!(
+        matches!(err, Error::Io(ref inner) if inner.to_string().contains("reparse point")),
+        "unexpected error: {err:?}"
+    );
+
+    fs::remove_file(home_path.join("ChessRiddle Studio")).unwrap();
+    let studio = home_path.join("ChessRiddle Studio");
+    fs::create_dir(&studio).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, studio.join("PGN")).unwrap();
+    let err = open_existing_visible_default_dir(&lookups, VisibleDefaultKind::Pgn)
+        .expect_err("symlinked home leaf must be refused");
+    assert!(
+        matches!(err, Error::Io(ref inner) if inner.to_string().contains("reparse point")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn database_listing_preserves_unreadable_db3_child_in_unread_report() {
+    struct ListingHookGuard;
+    impl Drop for ListingHookGuard {
+        fn drop(&mut self) {
+            crate::infra::fs::set_listing_child_stat_hook(None);
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let root_path = dir.path().join("databases");
+    fs::create_dir(&root_path).unwrap();
+    fs::write(root_path.join("good.db3"), b"good").unwrap();
+    fs::write(root_path.join("unreadable.db3"), b"locked").unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let root = authority
+        .get_or_create_database_root(&root_path, "Databases", None)
+        .unwrap();
+
+    let _guard = ListingHookGuard;
+    crate::infra::fs::set_listing_child_stat_hook(Some(Box::new(|name, kind| {
+        if name == OsStr::new("unreadable.db3") {
+            Some((
+                kind,
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            ))
+        } else {
+            None
+        }
+    })));
+
+    let listing = authority
+        .list_database_children_cancellable(&root, &CancellationToken::new())
+        .unwrap();
+    assert_eq!(listing.entries.len(), 1);
+    assert_eq!(listing.entries[0].filename, "good.db3");
+    assert_eq!(listing.unread.len(), 1);
+    assert_eq!(listing.unread[0].filename, "unreadable.db3");
+    assert_eq!(listing.unread[0].category, ErrorCategory::Permission);
+}
+
+#[cfg(unix)]
+#[test]
+fn engine_install_directory_probes_read_search_when_root_lacks_permissions() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let root_path = dir.path().join("engines");
+    fs::create_dir_all(root_path.join("sf")).unwrap();
+    fs::write(root_path.join("sf/engine"), b"bin").unwrap();
+
+    let mut authority = authority(&dir, Arc::new(TestClock::new(1)));
+    let root = authority
+        .get_or_create_engine_root(&root_path, "Engines", None)
+        .unwrap();
+
+    let _permissions = TestRootPermissionGuard::restrict(&root_path, 0o000);
+    let error = authority
+        .register_installed_engine_for_test(&root, "sf/engine")
+        .expect_err("unreadable engine root must be refused");
+    assert_eq!(error.category(), ErrorCategory::Permission);
+    assert_eq!(
+        error.root_failure(),
+        Some(crate::error::RootFailure::Permission)
+    );
+}
