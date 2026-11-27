@@ -2527,8 +2527,8 @@ entry: string;
 entryId: string }
 export type PracticeStoreAnomaly = { kind: PracticeStoreAnomalyKind; leaf: string; fileId: string | null; game: number | null; epoch?: string | null }
 export type PracticeStoreAnomalyKind = "OrphanShard" | "DamagedDeck" | "IdentityMismatch" | "Unreadable" | "NotARegularFile" | "StrandedMigration"
-export type ProgressEvent = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; cleared: boolean; failure?: ErrorPayload | null }
-export type ProgressItem = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; failure?: ErrorPayload | null }
+export type ProgressEvent = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; cleared: boolean; count?: number | null; failure?: ErrorPayload | null }
+export type ProgressItem = { id: string; generation: string; progress: number; finished: boolean; state: ProgressState; count?: number | null; failure?: ErrorPayload | null }
 export type ProgressState = "running" | "succeeded" | "failed" | "cancelled"
 export type PublicChessComRequest = { kind: "account"; player: string } | { kind: "profile"; player: string } | { kind: "game"; game_type: string; game_id: string }
 export type PublicLichessRequest = { kind: "account"; username: string } | { kind: "cloud_eval"; fen: string; multi_pv: number } | { kind: "game"; game_id: string } | { kind: "tablebase"; fen: string } | { kind: "fide"; query: string }

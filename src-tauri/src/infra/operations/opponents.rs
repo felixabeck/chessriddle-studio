@@ -13,7 +13,10 @@ use crate::{
         operations::run_native_operation,
         path_authority::{DatabaseHandle, DatabaseRootHandle},
     },
-    progress::{begin_progress, update_progress_with_state, ProgressLease, ProgressState},
+    progress::{
+        begin_progress, report_running_progress, update_progress_with_state, GameCountSink,
+        ProgressLease, ProgressState, RunningProgressUpdate,
+    },
     AppState,
 };
 use serde::{Deserialize, Serialize};
@@ -270,10 +273,26 @@ async fn import_core<R: tauri::Runtime>(
     let since_ms = request.since_ms();
     let total = request.accounts.len();
     let mut staged = Vec::new();
+    let mut loaded_games: Option<u32> = None;
+    let progress_error_diagnosed = std::sync::atomic::AtomicBool::new(false);
     for (index, account) in request.accounts.iter().enumerate() {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
+        let mut on_count = |count| {
+            report_running_progress(
+                &state.progress_state,
+                app,
+                progress,
+                RunningProgressUpdate {
+                    progress: 0.0,
+                    count: Some(count),
+                },
+                "opponent import",
+                &progress_error_diagnosed,
+                cancellation,
+            )
+        };
         let exported = export_account(
             state,
             account,
@@ -281,10 +300,17 @@ async fn import_core<R: tauri::Runtime>(
             &request.time_controls,
             request.lichess_handle.as_ref(),
             cancellation,
+            GameCountSink {
+                initial_count: loaded_games,
+                on_count: &mut on_count,
+            },
         )
         .await;
         match exported {
-            Ok(Some(file)) => staged.push((index, file)),
+            Ok(Some((file, games))) => {
+                loaded_games = Some(loaded_games.unwrap_or(0).saturating_add(games));
+                staged.push((index, file));
+            }
             Ok(None) => {}
             Err(error) if is_account_failure(&error) => {
                 log::warn!(
@@ -299,12 +325,17 @@ async fn import_core<R: tauri::Runtime>(
             }
             Err(error) => return Err(error),
         }
-        update_progress_with_state(
+        report_running_progress(
             &state.progress_state,
             app,
             progress,
-            ((index + 1) as f32 / total as f32) * EXPORT_PROGRESS_SHARE,
-            ProgressState::Running,
+            RunningProgressUpdate {
+                progress: ((index + 1) as f32 / total as f32) * EXPORT_PROGRESS_SHARE,
+                count: None,
+            },
+            "opponent import",
+            &progress_error_diagnosed,
+            cancellation,
         )?;
     }
 
@@ -326,7 +357,8 @@ async fn export_account(
     time_controls: &[OpponentTimeControl],
     lichess_handle: Option<&LichessAccountHandle>,
     cancellation: &CancellationToken,
-) -> Result<Option<std::fs::File>, Error> {
+    count: GameCountSink<'_>,
+) -> Result<Option<(std::fs::File, u32)>, Error> {
     match account.provider {
         OpponentProvider::Lichess => {
             let perfs: Vec<&'static str> = crate::lichess::ACCOUNT_EXPORT_PERFS
@@ -352,6 +384,7 @@ async fn export_account(
                 &perfs,
                 token.as_deref(),
                 cancellation,
+                count,
             )
             .await
             .map(Some)
@@ -370,6 +403,7 @@ async fn export_account(
                 since_ms,
                 time_classes,
                 cancellation,
+                count,
             )
             .await
             .map(Some)
@@ -1248,5 +1282,262 @@ mod tests {
         let (database, games, _) = imported(outcome);
         assert!(database.is_some());
         assert_eq!(games, [1]);
+    }
+
+    #[tokio::test]
+    async fn opponent_import_reports_cumulative_counts_across_two_accounts_and_preserves_count_on_percentage(
+    ) {
+        use tauri::Listener;
+        use tauri_specta::Event;
+
+        let lichess_pgn = concat!(
+            "[Event \"L1\"]\n[White \"OppL\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0\n\n",
+            "[Event \"L2\"]\n[White \"OppL\"]\n[Black \"B\"]\n[Result \"0-1\"]\n\n1. d4 d5 0-1\n"
+        );
+        let chesscom_index = serde_json::json!({
+            "archives": [
+                "https://api.chess.com/pub/player/oppc/games/2026/08",
+                "https://api.chess.com/pub/player/oppc/games/2026/09"
+            ]
+        })
+        .to_string();
+        let chesscom_m1 = serde_json::json!({
+            "games": [
+                {"rated": true, "rules": "chess", "time_class": "blitz", "pgn": "[Event \"C1\"]\n[White \"OppC\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0"},
+                {"rated": true, "rules": "chess", "time_class": "blitz", "pgn": "[Event \"C2\"]\n[White \"OppC\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. d4 d5 1-0"}
+            ]
+        })
+        .to_string();
+        let chesscom_m2 = serde_json::json!({
+            "games": [
+                {"rated": true, "rules": "chess", "time_class": "blitz", "pgn": "[Event \"C3\"]\n[White \"OppC\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. c4 c5 1-0"}
+            ]
+        })
+        .to_string();
+
+        let fixture = Fixture::new(move |url| {
+            if url.starts_with("https://lichess.org/api/games/user/OppL") {
+                (200, lichess_pgn.as_bytes().to_vec())
+            } else if url == "https://api.chess.com/pub/player/oppc/games/archives" {
+                (200, chesscom_index.as_bytes().to_vec())
+            } else if url == "https://api.chess.com/pub/player/oppc/games/2026/08" {
+                (200, chesscom_m1.as_bytes().to_vec())
+            } else if url == "https://api.chess.com/pub/player/oppc/games/2026/09" {
+                (200, chesscom_m2.as_bytes().to_vec())
+            } else {
+                panic!("unexpected URL: {url}")
+            }
+        });
+
+        let events = Arc::new(Mutex::new(Vec::<crate::progress::ProgressEvent>::new()));
+        let recorded = events.clone();
+        let listener = fixture
+            .app
+            .listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+                let payload: crate::progress::ProgressEvent =
+                    serde_json::from_str(event.payload()).unwrap();
+                recorded.lock().unwrap().push(payload);
+            });
+
+        let ticket = fixture.state.operations.prepare_download("test").unwrap();
+        let request = fixture.request(
+            &[
+                (OpponentProvider::Lichess, "OppL"),
+                (OpponentProvider::Chesscom, "OppC"),
+            ],
+            &[OpponentTimeControl::Blitz],
+        );
+        let outcome = import_opponent_games_runtime(
+            request,
+            ticket.clone(),
+            "test",
+            fixture.app.handle().clone(),
+            fixture.state.clone(),
+        )
+        .await
+        .unwrap();
+        let (_, games, _) = imported(outcome);
+        assert_eq!(games, [2, 3]);
+
+        let ticket_events: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == ticket)
+            .cloned()
+            .collect();
+        let pct_40 = ticket_events
+            .iter()
+            .find(|e| (e.progress - 40.0).abs() < 0.01)
+            .expect("first per-account percentage update");
+        assert_eq!(pct_40.count, Some(2));
+        let pct_80 = ticket_events
+            .iter()
+            .find(|e| (e.progress - 80.0).abs() < 0.01)
+            .expect("second per-account percentage update");
+        assert_eq!(pct_80.count, Some(5));
+        let counts: Vec<u32> = ticket_events.iter().filter_map(|e| e.count).collect();
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]), "{counts:?}");
+        assert_eq!(
+            ticket_events.last().unwrap().state,
+            ProgressState::Succeeded
+        );
+        assert_eq!(ticket_events.last().unwrap().count, Some(5));
+        fixture.app.unlisten(listener);
+    }
+
+    #[tokio::test]
+    async fn opponent_lichess_and_chesscom_count_emission_non_stale_error_continues_and_stale_lease_cancels(
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lichess_pgn =
+            "[Event \"L1\"]\n[White \"OppL\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0\n";
+        let chesscom_index = serde_json::json!({
+            "archives": ["https://api.chess.com/pub/player/oppc/games/2026/08"]
+        })
+        .to_string();
+        let chesscom_m1 = serde_json::json!({
+            "games": [
+                {"rated": true, "rules": "chess", "time_class": "blitz", "pgn": "[Event \"C1\"]\n[White \"OppC\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0"}
+            ]
+        })
+        .to_string();
+
+        for (provider, username) in [
+            (OpponentProvider::Lichess, "OppL"),
+            (OpponentProvider::Chesscom, "OppC"),
+        ] {
+            let index = chesscom_index.clone();
+            let month = chesscom_m1.clone();
+            let fixture = Fixture::new(move |url| {
+                if url.starts_with("https://lichess.org/api/games/user/OppL") {
+                    (200, lichess_pgn.as_bytes().to_vec())
+                } else if url == "https://api.chess.com/pub/player/oppc/games/archives" {
+                    (200, index.as_bytes().to_vec())
+                } else if url == "https://api.chess.com/pub/player/oppc/games/2026/08" {
+                    (200, month.as_bytes().to_vec())
+                } else {
+                    panic!("unexpected URL: {url}")
+                }
+            });
+
+            // Non-stale emission error during counting is logged and the import completes.
+            let non_stale_hits = Arc::new(AtomicUsize::new(0));
+            let hits = non_stale_hits.clone();
+            crate::progress::set_running_progress_override(Some(
+                move |update: &RunningProgressUpdate| {
+                    if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Some(Err(Error::Conflict("synthetic emit failure".into())))
+                    } else {
+                        None
+                    }
+                },
+            ));
+            let mut ok_req =
+                fixture.request(&[(provider, username)], &[OpponentTimeControl::Blitz]);
+            ok_req.filename = format!("ok-{}.db3", provider.label());
+            let ok = fixture.run(ok_req).await;
+            crate::progress::clear_running_progress_override();
+            assert!(
+                matches!(ok, Ok(OpponentImportOutcome::Imported { .. })),
+                "{} non-stale emission error must not fail opponent import: {ok:?}",
+                provider.label()
+            );
+            assert!(non_stale_hits.load(Ordering::SeqCst) >= 1);
+
+            // Stale lease during counting cancels the operation.
+            let stale_hits = Arc::new(AtomicUsize::new(0));
+            let hits = stale_hits.clone();
+            crate::progress::set_running_progress_override(Some(
+                move |update: &RunningProgressUpdate| {
+                    if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Some(Err(Error::StaleProgressLease))
+                    } else {
+                        None
+                    }
+                },
+            ));
+            let mut stale_req =
+                fixture.request(&[(provider, username)], &[OpponentTimeControl::Blitz]);
+            stale_req.filename = format!("stale-{}.db3", provider.label());
+            let cancelled = fixture.run(stale_req).await;
+            crate::progress::clear_running_progress_override();
+            assert!(
+                matches!(cancelled, Err(Error::Cancellation)),
+                "{} stale lease during counting must cancel opponent import: {cancelled:?}",
+                provider.label()
+            );
+            assert!(stale_hits.load(Ordering::SeqCst) >= 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn opponent_per_account_percentage_update_non_stale_error_continues_and_stale_lease_cancels(
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let lichess_pgn =
+            "[Event \"L1\"]\n[White \"OppL\"]\n[Black \"B\"]\n[Result \"1-0\"]\n\n1. e4 e5 1-0\n";
+        let fixture = Fixture::new(move |url| {
+            if url.starts_with("https://lichess.org/api/games/user/OppL") {
+                (200, lichess_pgn.as_bytes().to_vec())
+            } else {
+                panic!("unexpected URL: {url}")
+            }
+        });
+
+        // Target only the per-account percentage update (count is None, progress > 0).
+        let non_stale_hits = Arc::new(AtomicUsize::new(0));
+        let hits = non_stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &RunningProgressUpdate| {
+                if update.count.is_none()
+                    && update.progress > 0.0
+                    && hits.fetch_add(1, Ordering::SeqCst) == 0
+                {
+                    Some(Err(Error::Conflict("percentage emit failure".into())))
+                } else {
+                    None
+                }
+            },
+        ));
+        let mut ok_req = fixture.request(
+            &[(OpponentProvider::Lichess, "OppL")],
+            &[OpponentTimeControl::Blitz],
+        );
+        ok_req.filename = "pct-ok.db3".into();
+        let ok = fixture.run(ok_req).await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            matches!(ok, Ok(OpponentImportOutcome::Imported { .. })),
+            "non-stale percentage emission error must not fail opponent import: {ok:?}"
+        );
+        assert_eq!(non_stale_hits.load(Ordering::SeqCst), 1);
+
+        let stale_hits = Arc::new(AtomicUsize::new(0));
+        let hits = stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &RunningProgressUpdate| {
+                if update.count.is_none()
+                    && update.progress > 0.0
+                    && hits.fetch_add(1, Ordering::SeqCst) == 0
+                {
+                    Some(Err(Error::StaleProgressLease))
+                } else {
+                    None
+                }
+            },
+        ));
+        let mut stale_req = fixture.request(
+            &[(OpponentProvider::Lichess, "OppL")],
+            &[OpponentTimeControl::Blitz],
+        );
+        stale_req.filename = "pct-stale.db3".into();
+        let cancelled = fixture.run(stale_req).await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            matches!(cancelled, Err(Error::Cancellation)),
+            "stale lease on per-account percentage update must cancel opponent import: {cancelled:?}"
+        );
+        assert_eq!(stale_hits.load(Ordering::SeqCst), 1);
     }
 }

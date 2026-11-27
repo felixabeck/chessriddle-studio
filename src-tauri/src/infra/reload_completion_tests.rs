@@ -179,6 +179,7 @@ async fn linked_chunk(
         receipt_error: None,
         coverage_holds: holds,
         coverage_floor_ms: floor,
+        games_written: 1,
     }
 }
 
@@ -229,7 +230,7 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             let index = count.fetch_add(1, Ordering::SeqCst);
             assert!(index < 2);
             assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
@@ -282,7 +283,7 @@ async fn chesscom_linked_second_chunk_pending_retry_preserves_prefix_and_continu
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert!(request.pending_batch.is_none());
             assert_eq!(request.since_ms, Some(2_000_100_000_000));
@@ -327,7 +328,7 @@ async fn chesscom_linked_recovered_unchanged_cursor_still_downloads_once() {
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert_eq!(request.since_ms, Some(2_000_000_000_000));
             let native = native.clone();
@@ -360,7 +361,7 @@ async fn chesscom_linked_unconfirmed_append_stops_with_notice_before_another_dow
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             let index = count.fetch_add(1, Ordering::SeqCst);
             assert!(index < 2);
             let native = native.clone();
@@ -418,7 +419,7 @@ async fn chesscom_unlinked_chunks_read_native_cursor_and_reset_publication_and_p
         app,
         "main".into(),
         state,
-        move |request, ticket, _, _, _| {
+        move |request, ticket, _, _, _, _| {
             recorded.lock().unwrap().push((request.since_ms, ticket));
             assert!(request.pending_batch.is_none());
             let publication = publications[index].clone();
@@ -430,6 +431,7 @@ async fn chesscom_unlinked_chunks_read_native_cursor_and_reset_publication_and_p
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms,
+                    games_written: 1,
                 })
             }
         },
@@ -476,7 +478,7 @@ async fn chesscom_linked_floor_without_native_cursor_progress_fails_once() {
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             let native = native.clone();
             async move { Ok(linked_chunk(native, request, 1, Some(2_000_000_000_000), None).await) }
@@ -517,7 +519,7 @@ async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_re
         app.clone(),
         "main".into(),
         state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
             if index == 1 {
                 accounts::DELETE_FAILURE.arm(
@@ -534,6 +536,7 @@ async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_re
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms,
+                    games_written: 1,
                 })
             }
         },
@@ -552,7 +555,7 @@ async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_re
         app,
         "main".into(),
         state,
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert_eq!(request.since_ms, Some(2_000_100_000_000));
             let publication = final_publication.clone();
@@ -562,6 +565,7 @@ async fn chesscom_unlinked_second_chunk_cleanup_retry_recovers_then_downloads_re
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms: None,
+                    games_written: 1,
                 })
             }
         },
@@ -588,7 +592,7 @@ async fn chesscom_unlinked_floor_without_cursor_progress_fails_once() {
         app,
         "main".into(),
         state,
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let index = count.fetch_add(1, Ordering::SeqCst);
             assert!(index < 2);
             let publication = publication.clone();
@@ -598,6 +602,7 @@ async fn chesscom_unlinked_floor_without_cursor_progress_fails_once() {
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms: Some(1000),
+                    games_written: 1,
                 })
             }
         },
@@ -635,7 +640,7 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
             app.clone(),
             "main".into(),
             state.clone(),
-            move |download_request, _, _, _, _| {
+            move |download_request, _, _, _, _, _| {
                 let first_publication = first_publication.clone();
                 async move {
                     assert_eq!(
@@ -654,6 +659,7 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
                                 created_at_ms: hold_start,
                                 ongoing,
                             }]),
+                            games_written: 1,
                         }),
                         "lichess",
                         "Player",
@@ -683,7 +689,7 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
                 app.clone(),
                 "main".into(),
                 state.clone(),
-                move |download_request, _, _, _, _| {
+                move |download_request, _, _, _, _, _| {
                     let publication = publication.clone();
                     async move {
                         assert_eq!(download_request.since_ms, expected);
@@ -697,6 +703,7 @@ async fn unlinked_lichess_adopted_holds_persist_cursor_and_next_download_imports
                                     created_at_ms: hold_start,
                                     ongoing: false,
                                 }]),
+                                games_written: 1,
                             }),
                             "lichess",
                             "Player",
@@ -738,7 +745,7 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
         app.clone(),
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let first_downloads = first_downloads.clone();
             let publication = publication.clone();
             async move {
@@ -753,6 +760,7 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
                             created_at_ms: first_hold_start,
                             ongoing: true,
                         }]),
+                        games_written: 1,
                     }),
                     "lichess",
                     "Player",
@@ -792,7 +800,7 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
         app,
         "main".into(),
         state.clone(),
-        move |download_request, _, _, _, _| {
+        move |download_request, _, _, _, _, _| {
             let next_downloads = next_downloads.clone();
             let fresh_publication = fresh_publication.clone();
             async move {
@@ -808,6 +816,7 @@ async fn unlinked_lichess_failed_conversion_downloads_again_with_fresh_publicati
                             created_at_ms: next_hold_start,
                             ongoing: true,
                         }]),
+                        games_written: 1,
                     }),
                     "lichess",
                     "Player",
@@ -845,7 +854,7 @@ async fn lichess_unlinked_chunks_keep_a_pin_and_advance_the_download_position() 
         app,
         "main".into(),
         state,
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             recorded.lock().unwrap().push(request.since_ms);
             let publication = publications[index].clone();
             let coverage_floor_ms = floors[index];
@@ -861,6 +870,7 @@ async fn lichess_unlinked_chunks_keep_a_pin_and_advance_the_download_position() 
                     receipt_error: None,
                     coverage_holds,
                     coverage_floor_ms,
+                    games_written: 1,
                 })
             }
         },
@@ -899,7 +909,7 @@ async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
         app.clone(),
         "main".into(),
         state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(request.since_ms, [None, Some(2_000_000_000_000)][index]);
             if index == 0 {
                 accounts::DELETE_FAILURE.arm(
@@ -916,6 +926,7 @@ async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms,
+                    games_written: 1,
                 })
             }
         },
@@ -931,7 +942,7 @@ async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
         app,
         "main".into(),
         state,
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             let publication = second.clone();
             async move {
@@ -940,6 +951,7 @@ async fn lichess_unlinked_recovered_chunk_downloads_once_more() {
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms: None,
+                    games_written: 1,
                 })
             }
         },
@@ -965,7 +977,7 @@ async fn lichess_unlinked_floor_without_cursor_progress_fails_once() {
         app,
         "main".into(),
         state,
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let index = count.fetch_add(1, Ordering::SeqCst);
             assert!(index < 2);
             let publication = publication.clone();
@@ -975,6 +987,7 @@ async fn lichess_unlinked_floor_without_cursor_progress_fails_once() {
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms: Some(1000),
+                    games_written: 1,
                 })
             }
         },
@@ -1007,7 +1020,7 @@ async fn lichess_linked_chunks_keep_a_pin_and_advance_the_download_position() {
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             let index = recorded.lock().unwrap().len();
             recorded.lock().unwrap().push(request.since_ms);
             let native = native.clone();
@@ -1056,7 +1069,7 @@ async fn lichess_linked_recovered_unchanged_cursor_still_downloads_once() {
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             assert_eq!(request.since_ms, Some(2_000_000_000_000));
             let native = native.clone();
@@ -1090,7 +1103,7 @@ async fn lichess_linked_floor_without_native_cursor_progress_fails_once() {
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |request, _, _, _, _| {
+        move |request, _, _, _, _, _| {
             assert_eq!(count.fetch_add(1, Ordering::SeqCst), 0);
             let native = native.clone();
             async move { Ok(linked_chunk(native, request, 1, Some(2_000_000_000_000), None).await) }
@@ -1148,7 +1161,7 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
             command_app,
             "main".into(),
             native,
-            move |_, _, _, _, _| {
+            move |_, _, _, _, _, _| {
                 let observed_downloads = observed_downloads.clone();
                 let publication = publication.clone();
                 async move {
@@ -1158,6 +1171,7 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
                         receipt_error: None,
                         coverage_floor_ms: None,
                         coverage_holds: None,
+                        games_written: 1,
                     })
                 }
             },
@@ -1204,7 +1218,7 @@ async fn reload_completion_account_unlinked_commits_before_reconnect_and_retains
         app,
         "main".into(),
         state.clone(),
-        |_, _, _, _, _| async { panic!("a second account start must not download") },
+        |_, _, _, _, _, _| async { panic!("a second account start must not download") },
     )
     .await
     .unwrap();
@@ -1262,7 +1276,7 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         app.clone(),
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let count = count.clone();
             let publication = publication.clone();
             async move {
@@ -1272,6 +1286,7 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
                     receipt_error: None,
                     coverage_floor_ms: None,
                     coverage_holds: None,
+                    games_written: 1,
                 })
             }
         },
@@ -1316,7 +1331,7 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
         app,
         "main".into(),
         state.clone(),
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let count = count.clone();
             let publication = publication.clone();
             async move {
@@ -1326,6 +1341,7 @@ async fn reload_completion_account_deletion_checkpoint_survives_ack_and_retries_
                     receipt_error: None,
                     coverage_floor_ms: None,
                     coverage_holds: None,
+                    games_written: 1,
                 })
             }
         },
@@ -1388,7 +1404,7 @@ async fn reload_completion_account_pending_batch_appends_without_transfer_before
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        move |_, _, _, _, _| {
+        move |_, _, _, _, _, _| {
             let handle = batch.clone();
             async move {
                 Ok(super::operations::RuntimeDownload {
@@ -1399,6 +1415,7 @@ async fn reload_completion_account_pending_batch_appends_without_transfer_before
                     receipt_error: None,
                     coverage_holds: None,
                     coverage_floor_ms: None,
+                    games_written: 1,
                 })
             }
         },
@@ -1435,7 +1452,7 @@ async fn reload_completion_account_pending_batch_appends_without_transfer_before
         app.handle().clone(),
         "main".into(),
         fixture.state.clone(),
-        |_, _, _, _, _| async { panic!("a joined pending batch must not transfer") },
+        |_, _, _, _, _, _| async { panic!("a joined pending batch must not transfer") },
     )
     .await
     .unwrap();
@@ -2000,4 +2017,76 @@ fn reload_completion_capacity_never_evicts_pending_application_and_tail_can_rele
             32
         )
         .is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn account_completion_carries_cumulative_count_across_chunks_and_unlinked_conversion() {
+    use tauri::{Listener as _, Manager as _};
+    use tauri_specta::Event as _;
+
+    let (directory, app, _path, request, _) = reload_completion_account_fixture();
+    let state = app.state::<crate::AppState>().inner().clone();
+    let publications = (1..=2)
+        .map(|id| chunk_publication(&state, directory.path(), id, "chesscom"))
+        .collect::<Vec<_>>();
+    let events = Arc::new(std::sync::Mutex::new(
+        Vec::<crate::progress::ProgressEvent>::new(),
+    ));
+    let recorded_events = events.clone();
+    let listener = app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+        let payload: crate::progress::ProgressEvent =
+            serde_json::from_str(event.payload()).unwrap();
+        recorded_events.lock().unwrap().push(payload);
+    });
+
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<(String, Option<u32>)>::new()));
+    let recorded_seen = seen.clone();
+    let mut index = 0;
+    let completed = accounts::import_account_games_with_download(
+        request,
+        app.clone(),
+        "main".into(),
+        state,
+        move |_request, ticket, _owner, initial_count, _app, _state| {
+            recorded_seen.lock().unwrap().push((ticket, initial_count));
+            let publication = publications[index].clone();
+            let (coverage_floor_ms, games_written) =
+                [(Some(2_000_000_000_000), 7), (None, 5)][index];
+            index += 1;
+            async move {
+                Ok(super::operations::RuntimeDownload {
+                    publication,
+                    receipt_error: None,
+                    coverage_holds: None,
+                    coverage_floor_ms,
+                    games_written,
+                })
+            }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(completed.outcome, CompletionOutcome::Succeeded(_)));
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].1, None, "first chunk must start without a base");
+    assert_eq!(
+        seen[1].1,
+        Some(7),
+        "second chunk must start at the first chunk's total"
+    );
+
+    let events = events.lock().unwrap();
+    let chunk1_start = events
+        .iter()
+        .find(|e| e.id == seen[0].0 && e.state == crate::progress::ProgressState::Running)
+        .expect("chunk 1 unlinked conversion start event");
+    assert_eq!(chunk1_start.count, Some(7));
+    let chunk2_start = events
+        .iter()
+        .find(|e| e.id == seen[1].0 && e.state == crate::progress::ProgressState::Running)
+        .expect("chunk 2 unlinked conversion start event");
+    assert_eq!(chunk2_start.count, Some(12));
+    app.unlisten(listener);
 }

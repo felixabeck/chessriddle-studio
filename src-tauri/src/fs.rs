@@ -548,7 +548,8 @@ async fn download_payload_network<F>(
     cancellation: CancellationToken,
     expected_sha256: Option<&str>,
     mut progress_updater: F,
-) -> Result<(), Error>
+    mut game_count: Option<crate::progress::GameCountSink<'_>>,
+) -> Result<u32, Error>
 where
     F: FnMut(f32) -> Result<(), Error>,
 {
@@ -585,6 +586,14 @@ where
     let mut downloaded: u64 = 0;
     let mut digest = expected_sha256.map(|_| Sha256::new());
     let mut last_reported_progress = 0.0_f64;
+    let mut counter = game_count.as_ref().map(|gc| {
+        (
+            crate::pgn::StreamingPgnGameCounter::new(),
+            crate::progress::CountProgressThrottle::new(gc.initial_count),
+            gc.initial_count.unwrap_or(0),
+            0u32,
+        )
+    });
 
     loop {
         let item = tokio::select! {
@@ -608,6 +617,18 @@ where
             }
         }
         file.write_all(&chunk)?;
+        if let (Some((pgn_counter, throttle, base, prev_local)), Some(gc)) =
+            (counter.as_mut(), game_count.as_mut())
+        {
+            let local = pgn_counter.push_bytes(&chunk);
+            if local > *prev_local {
+                *prev_local = local;
+                let cumulative = base.saturating_add(local);
+                if throttle.record_if_due(cumulative, std::time::Instant::now()) {
+                    (gc.on_count)(cumulative)?;
+                }
+            }
+        }
         // ProgressStore emits an IPC event on every changed f32; floor to 0.1% so a large body cannot flood.
         if let Some(expected) = expected_size.filter(|size| *size > 0) {
             let progress = ((downloaded as f64 / expected as f64) * 100.0).min(100.0);
@@ -640,9 +661,21 @@ where
     }
     file.flush()?;
 
+    let counted_games =
+        if let (Some((mut pgn_counter, mut throttle, base, _)), Some(gc)) = (counter, game_count) {
+            let final_local = pgn_counter.finish();
+            let final_cumulative = base.saturating_add(final_local);
+            if throttle.record_final(final_cumulative) {
+                (gc.on_count)(final_cumulative)?;
+            }
+            final_local
+        } else {
+            0
+        };
+
     info!("Downloaded file to temporary location");
 
-    Ok(())
+    Ok(counted_games)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -691,12 +724,13 @@ fn keep_listed_lichess_export_games(
     mut file: std::fs::File,
     listed_ids: &HashSet<String>,
     cancellation: &CancellationToken,
-) -> Result<std::fs::File, Error> {
+) -> Result<(std::fs::File, u32), Error> {
     file.rewind()?;
     let ranges = crate::pgn::scan_game_ranges(file.try_clone()?, cancellation)?;
     let account = crate::db::linked_collections::AccountIdentity::for_lichess_provider_game_id();
     let mut kept = tempfile::tempfile().map_err(|error| Error::Io(Box::new(error)))?;
     let mut unreadables = 0usize;
+    let mut kept_games = 0u32;
     for range in ranges {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
@@ -704,10 +738,14 @@ fn keep_listed_lichess_export_games(
         let bytes = crate::pgn::read_range_bytes(&mut file, range, cancellation)?;
         match crate::db::linked_collections::readable_provider_game_id(&bytes, &account)? {
             Some(id) if !listed_ids.contains(&id) => {}
-            Some(_) => kept.write_all(&bytes)?,
+            Some(_) => {
+                kept.write_all(&bytes)?;
+                kept_games = kept_games.saturating_add(1);
+            }
             None => {
                 unreadables += 1;
                 kept.write_all(&bytes)?;
+                kept_games = kept_games.saturating_add(1);
             }
         }
     }
@@ -718,7 +756,7 @@ fn keep_listed_lichess_export_games(
     }
     kept.flush()?;
     kept.rewind()?;
-    Ok(kept)
+    Ok((kept, kept_games))
 }
 
 /// Installs only zip, tar or tar-in-gzip into process-owned `staging`, which must match `path`.
@@ -835,6 +873,7 @@ where
         cancellation.clone(),
         expected_sha256,
         progress_updater,
+        None,
     )
     .await;
     #[cfg(test)]
@@ -1032,13 +1071,31 @@ fn sanitized_download_io_error(source: &std::io::Error) -> Error {
 type DownloadPublication = (
     Option<crate::infra::path_authority::ArtifactPublication>,
     Option<Vec<crate::lichess::CoverageHold>>,
+    u32,
 );
 
-/// Post-download Lichess coverage step: probe coverage after a Complete export, or keep only the
-/// games a Resumable chunk's bounded probe listed.
+/// Lichess game export options for `download_to_destination_inner`. Presence opts the download
+/// into streaming PGN game counting and carries the run's initial count alongside the
+/// post-download coverage step (probe after a Complete export, or keep only the games a
+/// Resumable chunk's bounded probe listed).
 pub(crate) enum LichessExportCheck {
-    ProbeAfterExport(reqwest::Url),
-    KeepListed(HashSet<String>),
+    ProbeAfterExport {
+        url: reqwest::Url,
+        initial_count: Option<u32>,
+    },
+    KeepListed {
+        listed_ids: HashSet<String>,
+        initial_count: Option<u32>,
+    },
+}
+
+impl LichessExportCheck {
+    fn initial_count(&self) -> Option<u32> {
+        match self {
+            Self::ProbeAfterExport { initial_count, .. }
+            | Self::KeepListed { initial_count, .. } => *initial_count,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1309,7 +1366,16 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let progress_lease = begin_progress(&state.progress_state, app, id.to_owned())?;
+    let initial_count = lichess_export
+        .as_ref()
+        .and_then(LichessExportCheck::initial_count);
+    let count_games = lichess_export.is_some();
+    let progress_lease = crate::progress::begin_progress_with_count(
+        &state.progress_state,
+        app,
+        id.to_owned(),
+        initial_count,
+    )?;
     if let Some(generation) = file_generation {
         let _ = generation.set(progress_lease.generation);
     }
@@ -1330,7 +1396,25 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
         "download deadline exceeded",
         async {
             let parsed_url = validate_download_request(op, url, bearer_token, &cancellation)?;
-            download_payload_network(
+            let mut report_count = |count| {
+                crate::progress::report_running_progress(
+                    &state.progress_state,
+                    app,
+                    &progress_lease,
+                    crate::progress::RunningProgressUpdate {
+                        progress: 0.0,
+                        count: Some(count),
+                    },
+                    "download",
+                    &progress_error_diagnosed,
+                    &cancellation,
+                )
+            };
+            let game_count = count_games.then_some(crate::progress::GameCountSink {
+                initial_count,
+                on_count: &mut report_count,
+            });
+            let streamed_games = download_payload_network(
                 op,
                 parsed_url,
                 &mut staged_file,
@@ -1349,11 +1433,12 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                         &cancellation,
                     )
                 },
+                game_count,
             )
             .await?;
             let (coverage_url, keep_listed_ids) = match lichess_export {
-                Some(LichessExportCheck::ProbeAfterExport(url)) => (Some(url), None),
-                Some(LichessExportCheck::KeepListed(ids)) => (None, Some(ids)),
+                Some(LichessExportCheck::ProbeAfterExport { url, .. }) => (Some(url), None),
+                Some(LichessExportCheck::KeepListed { listed_ids, .. }) => (None, Some(listed_ids)),
                 None => (None, None),
             };
             let coverage_holds = if let Some(url) = coverage_url {
@@ -1377,20 +1462,24 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
                         return Err(Error::Cancellation);
                     }
                     accept_plain_download_payload(&mut staged_file)?;
-                    if let Some(listed_ids) = keep_listed_ids.as_ref() {
-                        staged_file = keep_listed_lichess_export_games(
+                    let games_written = if let Some(listed_ids) = keep_listed_ids.as_ref() {
+                        let (kept, kept_games) = keep_listed_lichess_export_games(
                             staged_file,
                             listed_ids,
                             worker_cancellation,
                         )?;
-                    }
-                    Ok((staged_file, coverage_holds))
+                        staged_file = kept;
+                        kept_games
+                    } else {
+                        streamed_games
+                    };
+                    Ok((staged_file, coverage_holds, games_written))
                 })
                 .await
         },
     )
     .await;
-    let (mut staged_file, coverage_holds) = match result {
+    let (mut staged_file, coverage_holds, games_written) = match result {
         Ok(file) => file,
         Err(error) => {
             report_error(&error);
@@ -1523,7 +1612,7 @@ async fn download_to_destination_inner<R: tauri::Runtime>(
         None
     };
     report_download_success(state, app, &progress_lease, &job_id);
-    Ok((artifact, coverage_holds))
+    Ok((artifact, coverage_holds, games_written))
 }
 
 /// Installs a fully validated native-provider PGN staging file as one atomic artifact.
@@ -1644,8 +1733,9 @@ fn lichess_export_url(
 }
 
 /// Streams the rated games of `player` in `perfs` since `since_ms` into an anonymous temporary
-/// file and returns it. With a token the request is authenticated, without one it is anonymous;
-/// no other request is made and nothing is published to a destination.
+/// file and returns it alongside the number of games counted. With a token the request is
+/// authenticated, without one it is anonymous; no other request is made and nothing is published
+/// to a destination.
 pub(crate) async fn export_lichess_games_to_file(
     state: &AppState,
     player: &str,
@@ -1653,7 +1743,8 @@ pub(crate) async fn export_lichess_games_to_file(
     perfs: &[&str],
     token: Option<&str>,
     cancellation: &CancellationToken,
-) -> Result<std::fs::File, Error> {
+    count: crate::progress::GameCountSink<'_>,
+) -> Result<(std::fs::File, u32), Error> {
     if perfs.is_empty()
         || !perfs
             .iter()
@@ -1667,7 +1758,7 @@ pub(crate) async fn export_lichess_games_to_file(
     let mut file = crate::infra::blocking::BLOCKING_GATEWAY
         .spawn_cancellable(cancellation.clone(), |_| Ok(tempfile::tempfile()?))
         .await?;
-    download_payload_network(
+    let games_written = download_payload_network(
         OpClass::Lichess,
         url,
         &mut file,
@@ -1677,12 +1768,13 @@ pub(crate) async fn export_lichess_games_to_file(
         cancellation.clone(),
         None,
         |_| Ok(()),
+        Some(count),
     )
     .await?;
     crate::infra::blocking::BLOCKING_GATEWAY
         .spawn_cancellable(cancellation.clone(), move |_| {
             accept_plain_download_payload(&mut file)?;
-            Ok(file)
+            Ok((file, games_written))
         })
         .await
 }
@@ -1739,6 +1831,7 @@ pub async fn download_lichess_games(
             &app,
             state.inner(),
             crate::chesscom::ExportScope::Complete,
+            None,
         )
         .await,
     )
@@ -1787,6 +1880,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     state: &AppState,
     scope: crate::chesscom::ExportScope,
+    initial_count: Option<u32>,
 ) -> Result<crate::infra::operations::RuntimeDownload, Error> {
     let admission_key = format!(
         "lichess_{}",
@@ -1813,7 +1907,10 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
             let coverage_url = lichess_coverage_url(&url, since_ms, None);
             (
                 url,
-                Some(LichessExportCheck::ProbeAfterExport(coverage_url)),
+                Some(LichessExportCheck::ProbeAfterExport {
+                    url: coverage_url,
+                    initial_count,
+                }),
                 None,
                 None,
             )
@@ -1843,19 +1940,20 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
                 url,
                 // A bounded probe always records listed ids; an absent set must not become an
                 // empty allowlist that drops every exported game.
-                Some(LichessExportCheck::KeepListed(
-                    probe.listed_ids.ok_or_else(|| {
+                Some(LichessExportCheck::KeepListed {
+                    listed_ids: probe.listed_ids.ok_or_else(|| {
                         Error::InvalidInput(
                             "bounded Lichess coverage probe returned no listed-id set".into(),
                         )
                     })?,
-                )),
+                    initial_count,
+                }),
                 Some(probe.holds),
                 coverage_floor_ms,
             )
         }
     };
-    let (publication, coverage_holds) = download_to_destination(
+    let (publication, coverage_holds, games_written) = download_to_destination(
         &job_id,
         url.as_str(),
         destination,
@@ -1878,6 +1976,7 @@ pub(crate) async fn download_lichess_games_runtime<R: tauri::Runtime>(
         receipt_error: None,
         coverage_holds: probed_holds.or(coverage_holds),
         coverage_floor_ms,
+        games_written,
     };
     downloaded.receipt_error = crate::db::linked_collections::record_download_receipt(
         &state.pgn_path_authority,
@@ -4123,6 +4222,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Complete,
+            None,
         )
         .await
         .unwrap_err();
@@ -5519,6 +5619,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Complete,
+            None,
         )
         .await
         .unwrap();
@@ -5624,6 +5725,7 @@ pub(crate) mod tests {
                 app.handle(),
                 &state,
                 crate::chesscom::ExportScope::Complete,
+                None,
             )
             .await
             .unwrap_err();
@@ -5757,6 +5859,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Complete,
+            None,
         )
         .await;
         assert!(
@@ -5836,6 +5939,7 @@ pub(crate) mod tests {
                 app.handle(),
                 &state,
                 crate::chesscom::ExportScope::Complete,
+                None,
             )
             .await
             .unwrap();
@@ -5956,6 +6060,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Resumable,
+            None,
         )
         .await;
         (downloaded, fixture, transport)
@@ -6073,6 +6178,7 @@ pub(crate) mod tests {
                 app.handle(),
                 &state,
                 scope,
+                None,
             )
             .await
             .unwrap();
@@ -6114,6 +6220,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Resumable,
+            None,
         )
         .await
         .unwrap_err();
@@ -6553,6 +6660,7 @@ pub(crate) mod tests {
                     CancellationToken::new(),
                     None,
                     |_| panic!("rejection must precede payload progress"),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -6759,6 +6867,7 @@ pub(crate) mod tests {
             cancellation,
             None,
             |_| Ok(()),
+            None,
         )
         .await;
 
@@ -6802,6 +6911,7 @@ pub(crate) mod tests {
                 reported.push(progress);
                 Ok(())
             },
+            None,
         )
         .await
         .unwrap();
@@ -6848,6 +6958,7 @@ pub(crate) mod tests {
                 reported.push(progress);
                 Ok(())
             },
+            None,
         )
         .await
         .unwrap();
@@ -11312,6 +11423,7 @@ pub(crate) mod tests {
             app.handle(),
             &state,
             crate::chesscom::ExportScope::Complete,
+            None,
         )
         .await;
         let runtime_error = result.as_ref().unwrap_err();
@@ -13370,5 +13482,455 @@ pub(crate) mod tests {
                 // for the dummy destination PathRef.
             }
         }
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_bounds_game_count_emissions_within_250ms() {
+        let mut file = tempfile::tempfile().unwrap();
+        let chunks: Vec<_> = (0..50)
+            .map(|index| {
+                Ok(bytes::Bytes::from(format!(
+                    "[Event \"Game {index}\"]\n\n1. e4 e5 *\n\n"
+                )))
+            })
+            .collect();
+        let mock = MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: None,
+                stream: Box::pin(futures_util::stream::iter(chunks)),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        };
+        let mut reported = Vec::new();
+        let mut on_count = |count| {
+            reported.push(count);
+            Ok(())
+        };
+        let counted = download_payload_network(
+            OpClass::Lichess,
+            reqwest::Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+            &mut file,
+            &mock,
+            None,
+            None,
+            CancellationToken::new(),
+            None,
+            |_| Ok(()),
+            Some(crate::progress::GameCountSink {
+                initial_count: None,
+                on_count: &mut on_count,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(counted, 50);
+        assert_eq!(
+            reported,
+            vec![1, 50],
+            "50 chunks within 250 ms must emit one live running update plus final: {reported:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_payload_network_emits_live_intermediate_count_while_stream_in_flight() {
+        let mut file = tempfile::tempfile().unwrap();
+        let (release_tx, mut release_rx) = tokio::sync::oneshot::channel::<()>();
+        let mut release_tx = Some(release_tx);
+        let mut stage = 0u8;
+        let stream = futures_util::stream::poll_fn(move |cx| match stage {
+            0 => {
+                stage = 1;
+                Poll::Ready(Some(Ok(bytes::Bytes::from_static(
+                    b"[Event \"Game 1\"]\n\n1. e4 e5 *\n\n",
+                ))))
+            }
+            1 => match Pin::new(&mut release_rx).poll(cx) {
+                Poll::Ready(Ok(())) => {
+                    stage = 2;
+                    Poll::Ready(Some(Ok(bytes::Bytes::from_static(
+                        b"[Event \"Game 2\"]\n\n1. d4 d5 *\n\n",
+                    ))))
+                }
+                Poll::Ready(Err(_)) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            },
+            2 => {
+                stage = 3;
+                Poll::Ready(Some(Ok(bytes::Bytes::from_static(
+                    b"[Event \"Game 3\"]\n\n1. c4 c5 *\n\n",
+                ))))
+            }
+            _ => Poll::Ready(None),
+        });
+        let mock = MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: None,
+                stream: Box::pin(stream),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        };
+        let mut reported = Vec::new();
+        let mut on_count = |count| {
+            reported.push(count);
+            if count == 1 {
+                if let Some(tx) = release_tx.take() {
+                    let _ = tx.send(());
+                }
+            }
+            Ok(())
+        };
+        let counted = tokio::time::timeout(
+            Duration::from_secs(5),
+            download_payload_network(
+                OpClass::Lichess,
+                reqwest::Url::parse("https://lichess.org/api/games/user/player").unwrap(),
+                &mut file,
+                &mock,
+                None,
+                None,
+                CancellationToken::new(),
+                None,
+                |_| Ok(()),
+                Some(crate::progress::GameCountSink {
+                    initial_count: None,
+                    on_count: &mut on_count,
+                }),
+            ),
+        )
+        .await
+        .expect("stream must emit live count 1 before chunk 2 is released")
+        .unwrap();
+        assert_eq!(counted, 3);
+        assert_eq!(reported, vec![1, 3]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn download_lichess_games_runtime_reports_live_and_final_counts_and_keeps_filtered_count()
+    {
+        use crate::db::linked_collections::tests::{game, Fixture};
+        use tauri::Listener;
+        use tauri_specta::Event;
+
+        let fixture = Fixture::new();
+        let g1 = game(None, "e4 e5", "g1")
+            .replace("https://www.chess.com", "https://lichess.org/G0000001");
+        let g2 = game(None, "d4 d5", "g2")
+            .replace("https://www.chess.com", "https://lichess.org/G0000002");
+        let g3 = game(None, "c4 c5", "g3")
+            .replace("https://www.chess.com", "https://lichess.org/G0000003");
+        // Coverage probe lists only G0000001 and G0000002; G0000003 is dropped by KeepListed.
+        let coverage = format!(
+            "{}\n{}\n",
+            crate::lichess::coverage_object("G0000001", true, 100),
+            crate::lichess::coverage_object("G0000002", true, 200),
+        );
+        let export_stream = DownloadResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            content_length: None,
+            stream: Box::pin(futures_util::stream::iter(vec![
+                Ok(bytes::Bytes::from(format!("{g1}\n"))),
+                Ok(bytes::Bytes::from(format!("{g2}\n"))),
+                Ok(bytes::Bytes::from(format!("{g3}\n"))),
+            ])),
+        };
+        let (state, app, _, _) = lichess_runtime_state(
+            &fixture,
+            vec![
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: Some(coverage.len() as u64),
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        coverage.clone(),
+                    ))])),
+                }),
+                Ok(export_stream),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: Some(coverage.len() as u64),
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        coverage,
+                    ))])),
+                }),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: None,
+                    stream: Box::pin(futures_util::stream::iter(vec![
+                        Ok(bytes::Bytes::from(format!("{g1}\n"))),
+                        Ok(bytes::Bytes::from(format!("{g2}\n"))),
+                    ])),
+                }),
+            ],
+            None,
+        );
+
+        let events = Arc::new(Mutex::new(Vec::<crate::progress::ProgressEvent>::new()));
+        let recorded = events.clone();
+        let listener = app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+            let payload: crate::progress::ProgressEvent =
+                serde_json::from_str(event.payload()).unwrap();
+            recorded.lock().unwrap().push(payload);
+        });
+
+        let job1 = state.operations.prepare_download("fixture-window").unwrap();
+        let downloaded1 = download_lichess_games_runtime(
+            None,
+            fixture.download_destination(),
+            "chunk1.pgn".into(),
+            "player".into(),
+            None,
+            job1.clone(),
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(downloaded1.games_written, 2);
+
+        let job1_events: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == job1)
+            .cloned()
+            .collect();
+        assert_eq!(job1_events.first().unwrap().count, None);
+        let counts: Vec<u32> = job1_events.iter().filter_map(|e| e.count).collect();
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]), "{counts:?}");
+        assert_eq!(counts.last().copied(), Some(3));
+        assert_eq!(job1_events.last().unwrap().state, ProgressState::Succeeded);
+        assert_eq!(job1_events.last().unwrap().count, Some(3));
+
+        // Second chunk starting at initial_count = Some(10).
+        let job2 = state.operations.prepare_download("fixture-window").unwrap();
+        let downloaded2 = download_lichess_games_runtime(
+            None,
+            fixture.download_destination(),
+            "chunk2.pgn".into(),
+            "player".into(),
+            None,
+            job2.clone(),
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+            Some(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(downloaded2.games_written, 2);
+        let job2_events: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == job2)
+            .cloned()
+            .collect();
+        assert_eq!(job2_events.first().unwrap().count, Some(10));
+        assert_eq!(job2_events.last().unwrap().count, Some(12));
+        app.unlisten(listener);
+    }
+
+    #[tokio::test]
+    async fn non_game_download_reports_no_count() {
+        use tauri::Listener;
+        use tauri_specta::Event;
+
+        let dir = tempfile::tempdir().unwrap();
+        let app_root = crate::infra::path_authority::AppOwnedRoot::canonical_for_test(
+            "downloads",
+            &dir.path().join("downloads"),
+            vec![crate::infra::path_authority::PathOperation::DownloadFile],
+        );
+        let destination = app_root.id.clone();
+        let authority = crate::infra::path_authority::PathAuthority::open(
+            dir.path().join("path-authority.json"),
+            vec![app_root],
+        )
+        .unwrap();
+        let body = b"[Event \"Catalogue\"]\n\n1. e4 e5 *\n";
+        let transport = Arc::new(MockTransport {
+            responses: Mutex::new(vec![Ok(DownloadResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                content_length: Some(body.len() as u64),
+                stream: Box::pin(futures_util::stream::iter(vec![Ok(
+                    bytes::Bytes::from_static(body),
+                )])),
+            })]),
+            requests_seen: Mutex::new(vec![]),
+        });
+        let state = AppState {
+            http_transport: transport,
+            ..Default::default()
+        };
+        state.pgn_path_authority.install(authority).unwrap();
+        let app = test_progress_app();
+        let events = Arc::new(Mutex::new(Vec::<crate::progress::ProgressEvent>::new()));
+        let recorded = events.clone();
+        let listener = app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+            let payload: crate::progress::ProgressEvent =
+                serde_json::from_str(event.payload()).unwrap();
+            recorded.lock().unwrap().push(payload);
+        });
+
+        let (job_id, lease) = test_download_lease(&state);
+        let (_, _, games_written) = download_to_destination(
+            "catalogue-job",
+            "https://example.com/catalogue.pgn",
+            destination,
+            "catalogue.pgn".into(),
+            app.handle(),
+            &state,
+            None,
+            Some(body.len() as u32),
+            job_id,
+            lease,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(games_written, 0);
+        let emitted = events.lock().unwrap();
+        assert!(!emitted.is_empty());
+        assert!(
+            emitted.iter().all(|event| event.count.is_none()),
+            "non-game download must never report a count: {emitted:?}"
+        );
+        app.unlisten(listener);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn lichess_account_download_count_emission_non_stale_error_continues_and_stale_lease_cancels(
+    ) {
+        use crate::db::linked_collections::tests::{game, Fixture};
+
+        let fixture = Fixture::new();
+        let g1 = game(None, "e4 e5", "g1")
+            .replace("https://www.chess.com", "https://lichess.org/G0000001");
+        let coverage = format!(
+            "{}\n",
+            crate::lichess::coverage_object("G0000001", true, 100)
+        );
+        let (state, app, _, _) = lichess_runtime_state(
+            &fixture,
+            vec![
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: Some(coverage.len() as u64),
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        coverage.clone(),
+                    ))])),
+                }),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: None,
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        format!("{g1}\n"),
+                    ))])),
+                }),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: Some(coverage.len() as u64),
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        coverage,
+                    ))])),
+                }),
+                Ok(DownloadResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    content_length: None,
+                    stream: Box::pin(futures_util::stream::iter(vec![Ok(bytes::Bytes::from(
+                        format!("{g1}\n"),
+                    ))])),
+                }),
+            ],
+            None,
+        );
+
+        // Non-stale emission error is logged and the download completes.
+        let non_stale_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hits = non_stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &crate::progress::RunningProgressUpdate| {
+                if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Some(Err(Error::Conflict("synthetic emit failure".into())))
+                } else {
+                    None
+                }
+            },
+        ));
+        let job_ok = state.operations.prepare_download("fixture-window").unwrap();
+        let ok = download_lichess_games_runtime(
+            None,
+            fixture.download_destination(),
+            "ok.pgn".into(),
+            "player".into(),
+            None,
+            job_ok,
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+            None,
+        )
+        .await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            ok.is_ok(),
+            "non-stale emission error must not fail download: {ok:?}"
+        );
+        assert!(non_stale_hits.load(Ordering::SeqCst) >= 1);
+
+        // Stale lease during counting cancels the operation.
+        let stale_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hits = stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &crate::progress::RunningProgressUpdate| {
+                if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Some(Err(Error::StaleProgressLease))
+                } else {
+                    None
+                }
+            },
+        ));
+        let job_stale = state.operations.prepare_download("fixture-window").unwrap();
+        let cancelled = download_lichess_games_runtime(
+            None,
+            fixture.download_destination(),
+            "stale.pgn".into(),
+            "player".into(),
+            None,
+            job_stale,
+            "fixture-window",
+            app.handle(),
+            &state,
+            crate::chesscom::ExportScope::Resumable,
+            None,
+        )
+        .await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            matches!(cancelled, Err(Error::Cancellation)),
+            "stale lease during counting must cancel download: {cancelled:?}"
+        );
+        assert!(stale_hits.load(Ordering::SeqCst) >= 1);
     }
 }

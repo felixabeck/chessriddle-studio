@@ -26,6 +26,7 @@ pub(crate) struct RuntimeDownload {
     pub(crate) receipt_error: Option<Error>,
     pub(crate) coverage_holds: Option<Vec<crate::lichess::CoverageHold>>,
     pub(crate) coverage_floor_ms: Option<i64>,
+    pub(crate) games_written: u32,
 }
 
 pub const READ_RESERVATION_TTL: Duration = Duration::from_secs(60);

@@ -1069,6 +1069,154 @@ pub(crate) fn scan_game_ranges(
         .map_err(|error| crate::cancellable_read::map_read_error(error, cancellation))
 }
 
+#[derive(Default)]
+struct PgnGameBoundaryState {
+    in_game: bool,
+    header_block_ended: bool,
+    in_brace_comment: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LineBoundary {
+    Continue,
+    FirstGameStart,
+    NextGameStart,
+}
+
+impl PgnGameBoundaryState {
+    fn feed_line(&mut self, line: &str) -> LineBoundary {
+        let header = is_tag_header(line, self.in_brace_comment);
+        let escaped_line =
+            !self.in_brace_comment && line.trim_start_matches([' ', '\t']).starts_with('%');
+        let escaped_or_line_comment = escaped_line
+            || (!self.in_brace_comment && line.trim_start_matches([' ', '\t']).starts_with(';'));
+        let non_whitespace = !escaped_or_line_comment && !line.trim().is_empty();
+        let boundary = if header && self.header_block_ended {
+            self.header_block_ended = false;
+            LineBoundary::NextGameStart
+        } else if non_whitespace && !self.in_game {
+            self.in_game = true;
+            LineBoundary::FirstGameStart
+        } else {
+            LineBoundary::Continue
+        };
+        if !header && !escaped_line && self.in_game {
+            self.header_block_ended = true;
+        }
+        if !header && !escaped_or_line_comment {
+            update_brace_comment(line, &mut self.in_brace_comment);
+        }
+        boundary
+    }
+
+    fn in_brace_comment(&self) -> bool {
+        self.in_brace_comment
+    }
+}
+
+/// Counts PGN games incrementally across arbitrary byte chunks using the same
+/// per-line boundary state machine as `scan_games_cancelled`. Lines exceeding
+/// `MAX_LINE_LEN` or non-UTF-8 input stop counting and keep the last count.
+#[derive(Default)]
+pub(crate) struct StreamingPgnGameCounter {
+    boundary: PgnGameBoundaryState,
+    bom_checked: bool,
+    bom_buf: [u8; 3],
+    bom_len: usize,
+    line: Vec<u8>,
+    count: u32,
+    stopped: bool,
+}
+
+impl StreamingPgnGameCounter {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn push_bytes(&mut self, mut chunk: &[u8]) -> u32 {
+        if self.stopped || chunk.is_empty() {
+            return self.count;
+        }
+        if !self.bom_checked {
+            let need = self.bom_buf.len() - self.bom_len;
+            let take = need.min(chunk.len());
+            self.bom_buf[self.bom_len..self.bom_len + take].copy_from_slice(&chunk[..take]);
+            self.bom_len += take;
+            chunk = &chunk[take..];
+            if self.bom_len < self.bom_buf.len() {
+                return self.count;
+            }
+            self.bom_checked = true;
+            if self.bom_buf != [0xEF, 0xBB, 0xBF] {
+                let prefix = self.bom_buf;
+                self.push_body_bytes(&prefix);
+                if self.stopped {
+                    return self.count;
+                }
+            }
+        }
+        if !chunk.is_empty() {
+            self.push_body_bytes(chunk);
+        }
+        self.count
+    }
+
+    pub(crate) fn finish(&mut self) -> u32 {
+        if self.stopped {
+            return self.count;
+        }
+        if !self.bom_checked && self.bom_len > 0 {
+            self.bom_checked = true;
+            let prefix = self.bom_buf;
+            let len = self.bom_len;
+            self.push_body_bytes(&prefix[..len]);
+            if self.stopped {
+                return self.count;
+            }
+        }
+        if !self.line.is_empty() {
+            self.consume_buffered_line();
+        }
+        self.count
+    }
+
+    fn push_body_bytes(&mut self, bytes: &[u8]) {
+        for part in bytes.split_inclusive(|byte| *byte == b'\n') {
+            if self.line.len().saturating_add(part.len()) > MAX_LINE_LEN {
+                self.stop();
+                return;
+            }
+            self.line.extend_from_slice(part);
+            if part.last() == Some(&b'\n') {
+                self.consume_buffered_line();
+                if self.stopped {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn consume_buffered_line(&mut self) {
+        let Ok(text) = std::str::from_utf8(&self.line) else {
+            self.stop();
+            return;
+        };
+        match self.boundary.feed_line(text) {
+            LineBoundary::FirstGameStart | LineBoundary::NextGameStart => {
+                self.count = self.count.saturating_add(1);
+            }
+            LineBoundary::Continue => {}
+        }
+        self.line.clear();
+    }
+
+    fn stop(&mut self) {
+        self.stopped = true;
+        self.line.clear();
+        self.line.shrink_to_fit();
+    }
+}
+
 fn scan_games_cancelled<R: Read + Seek>(
     reader: R,
     cancellation: &CancellationToken,
@@ -1093,9 +1241,7 @@ fn scan_games_cancelled<R: Read + Seek>(
     };
     let mut games: Vec<GameRange> = Vec::new();
     let mut line = Vec::new();
-    let mut game_start = None;
-    let mut header_block_ended = false;
-    let mut in_brace_comment = false;
+    let mut boundary = PgnGameBoundaryState::default();
     #[cfg(test)]
     let mut observed_attempt = false;
     loop {
@@ -1120,42 +1266,32 @@ fn scan_games_cancelled<R: Read + Seek>(
             observe_scan_attempt_action();
         }
         let line = std::str::from_utf8(&line).map_err(|_| malformed("PGN is not valid UTF-8"))?;
-        let header = is_tag_header(line, in_brace_comment);
-        let escaped_line =
-            !in_brace_comment && line.trim_start_matches([' ', '\t']).starts_with('%');
-        let escaped_or_line_comment = escaped_line
-            || (!in_brace_comment && line.trim_start_matches([' ', '\t']).starts_with(';'));
-        let non_whitespace = !escaped_or_line_comment && !line.trim().is_empty();
-        if header && header_block_ended {
-            games
-                .last_mut()
-                .expect("game start implies a game range")
-                .end = line_start;
-            game_start = Some(line_start);
-            header_block_ended = false;
-            games.push(GameRange {
-                start: line_start,
-                end: line_start,
-            });
-        } else if non_whitespace && game_start.is_none() {
-            game_start = Some(line_start.max(start));
-            games.push(GameRange {
-                start: line_start.max(start),
-                end: line_start.max(start),
-            });
-        }
-        if !header && !escaped_line && game_start.is_some() {
-            header_block_ended = true;
-        }
-        if !header && !escaped_or_line_comment {
-            update_brace_comment(line, &mut in_brace_comment);
+        match boundary.feed_line(line) {
+            LineBoundary::NextGameStart => {
+                games
+                    .last_mut()
+                    .expect("game start implies a game range")
+                    .end = line_start;
+                games.push(GameRange {
+                    start: line_start,
+                    end: line_start,
+                });
+            }
+            LineBoundary::FirstGameStart => {
+                let origin = line_start.max(start);
+                games.push(GameRange {
+                    start: origin,
+                    end: origin,
+                });
+            }
+            LineBoundary::Continue => {}
         }
     }
     let end = reader.stream_position()?;
     if let Some(last) = games.last_mut() {
         last.end = end;
     }
-    if in_brace_comment {
+    if boundary.in_brace_comment() {
         return Err(malformed("PGN brace comment is not closed before EOF"));
     }
     Ok(games)
@@ -9360,5 +9496,77 @@ mod tests {
         let body = std::fs::read_to_string(&path).expect("read appended PGN");
         assert!(body.contains("[Event \"A\"]"));
         assert!(body.contains("[Event \"B\"]"));
+    }
+
+    #[test]
+    fn streaming_pgn_game_counter_matches_scan_game_ranges_at_every_split_point() {
+        let payload = concat!(
+            "\u{FEFF}",
+            "; leading line comment\r\n",
+            "% escape line before first game\r\n",
+            "[Event \"Cup {Final}\"]\r\n",
+            "[White \"Łukasz\"]\r\n",
+            "[Black \"Müller\"]\r\n",
+            "\r\n",
+            "1. e4 e5 { multi-line comment\r\n",
+            "[Event \"Fake inside brace comment\"]\r\n",
+            "still comment } 2. Nf3 Nc6 1-0\r\n",
+            "\r\n",
+            "; [Event \"Commented out game\"]\r\n",
+            "% [Event \"Escaped out game\"]\r\n",
+            "[Event \"Second Game\"]\r\n",
+            "[Site \"https://lichess.org/AbCdEfGh\"]\r\n",
+            "\r\n",
+            "1. d4 d5 1/2-1/2\r\n",
+            "\r\n",
+            "[Event \"Third Game\"]\n",
+            "\n",
+            "1. c4 *"
+        )
+        .as_bytes();
+        let expected = scan_game_ranges(io::Cursor::new(payload), &CancellationToken::new())
+            .expect("valid PGN payload must scan")
+            .len() as u32;
+        assert_eq!(expected, 3);
+
+        for split in 0..=payload.len() {
+            let mut counter = StreamingPgnGameCounter::new();
+            counter.push_bytes(&payload[..split]);
+            counter.push_bytes(&payload[split..]);
+            assert_eq!(
+                counter.finish(),
+                expected,
+                "count mismatch at 2-way split {split}"
+            );
+        }
+
+        for chunk_size in [1, 2, 3, 7, 19] {
+            let mut counter = StreamingPgnGameCounter::new();
+            for chunk in payload.chunks(chunk_size) {
+                counter.push_bytes(chunk);
+            }
+            assert_eq!(
+                counter.finish(),
+                expected,
+                "count mismatch for chunk_size {chunk_size}"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_pgn_game_counter_stops_without_failing_on_overlong_line_or_invalid_utf8() {
+        let mut overlong_counter = StreamingPgnGameCounter::new();
+        overlong_counter.push_bytes(b"[Event \"One\"]\n\n1. e4 e5 *\n\n");
+        assert_eq!(overlong_counter.count, 1);
+        let huge = vec![b'a'; MAX_LINE_LEN + 16];
+        overlong_counter.push_bytes(&huge);
+        overlong_counter.push_bytes(b"\n[Event \"Two\"]\n\n1. d4 d5 *\n");
+        assert_eq!(overlong_counter.finish(), 1);
+
+        let mut utf8_counter = StreamingPgnGameCounter::new();
+        utf8_counter.push_bytes(b"[Event \"One\"]\n\n1. e4 e5 *\n\n");
+        assert_eq!(utf8_counter.count, 1);
+        utf8_counter.push_bytes(b"\xff\xfe\n[Event \"Two\"]\n\n1. d4 d5 *\n");
+        assert_eq!(utf8_counter.finish(), 1);
     }
 }

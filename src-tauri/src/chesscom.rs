@@ -10,8 +10,9 @@ use crate::{
         path_authority::{ArtifactPublication, PathRef},
     },
     progress::{
-        begin_progress, complete_preserving_result, update_progress_with_state, ProgressLease,
-        ProgressState,
+        begin_progress_with_count, complete_preserving_result, report_running_progress,
+        update_progress_with_state, CountProgressThrottle, GameCountSink, ProgressLease,
+        ProgressState, RunningProgressUpdate,
     },
     AppState,
 };
@@ -43,6 +44,7 @@ const MAX_INDEX_BYTES: usize = 512 * 1024;
 const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PGN_BYTES: usize = 100 * 1024 * 1024;
 const MAX_PUBLIC_JSON_BYTES: usize = 1024 * 1024;
+const STAGING_PROGRESS_SHARE: f32 = 90.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExportScope {
@@ -243,15 +245,17 @@ async fn requested_archives(
 }
 
 /// Exports `player`'s rated standard games of the given time classes that ended at or after
-/// `since_ms` into an anonymous temporary file, oldest month first. A player without a matching
-/// game yields an empty file. Nothing is published anywhere.
+/// `since_ms` into an anonymous temporary file, oldest month first, returning the file and the
+/// number of games written. A player without a matching game yields an empty file. Nothing is
+/// published anywhere.
 pub(crate) async fn export_filtered_games_to_file(
     state: &AppState,
     player: &str,
     since_ms: Option<i64>,
     time_classes: Vec<&'static str>,
     cancellation: &CancellationToken,
-) -> Result<std::fs::File, Error> {
+    count: GameCountSink<'_>,
+) -> Result<(std::fs::File, u32), Error> {
     if !valid_player(player) {
         return Err(Error::InvalidInput("invalid Chess.com player name".into()));
     }
@@ -271,16 +275,20 @@ pub(crate) async fn export_filtered_games_to_file(
             .spawn_cancellable(cancellation.clone(), |_| Ok(tempfile::tempfile()?))
             .await?;
         let mut total_pgn_bytes = 0usize;
+        let mut games_written = 0u32;
+        let base = count.initial_count.unwrap_or(0);
+        let mut throttle = CountProgressThrottle::new(count.initial_count);
         for (archive, _, _) in archives {
             let bytes = fetch_bounded(state, archive, MAX_ARCHIVE_BYTES, cancellation).await?;
             let time_classes = time_classes.clone();
             let budget = MAX_PGN_BYTES - total_pgn_bytes;
-            let (file, written) = crate::infra::blocking::BLOCKING_GATEWAY
+            let (file, written, month_games) = crate::infra::blocking::BLOCKING_GATEWAY
                 .spawn_cancellable(cancellation.clone(), move |token| {
                     let games: ArchiveGames = serde_json::from_slice(&bytes).map_err(|_| {
                         Error::InvalidInput("Chess.com returned an invalid game archive".into())
                     })?;
                     let mut written = 0usize;
+                    let mut month_games = 0u32;
                     for game in games.games {
                         if token.is_cancelled() {
                             return Err(Error::Cancellation);
@@ -296,15 +304,27 @@ pub(crate) async fn export_filtered_games_to_file(
                         }
                         staged.write_all(pgn.as_bytes())?;
                         staged.write_all(b"\n")?;
+                        month_games = month_games.saturating_add(1);
                     }
                     staged.flush()?;
-                    Ok((staged, written))
+                    Ok((staged, written, month_games))
                 })
                 .await?;
             staged = file;
             total_pgn_bytes += written;
+            games_written = games_written.saturating_add(month_games);
+            if month_games > 0 {
+                let cumulative = base.saturating_add(games_written);
+                if throttle.record_if_due(cumulative, std::time::Instant::now()) {
+                    (count.on_count)(cumulative)?;
+                }
+            }
         }
-        Ok::<_, Error>(staged)
+        let final_cumulative = base.saturating_add(games_written);
+        if throttle.record_final(final_cumulative) {
+            (count.on_count)(final_cumulative)?;
+        }
+        Ok::<_, Error>((staged, games_written))
     };
     tokio::time::timeout_at(deadline, export)
         .await
@@ -414,6 +434,7 @@ pub async fn download_chess_com_games(
             state.inner().clone(),
             ExportScope::Complete,
             true,
+            None,
         )
         .await,
     )
@@ -431,6 +452,7 @@ pub(crate) async fn download_chess_com_games_runtime<R: tauri::Runtime>(
     state: AppState,
     scope: ExportScope,
     fail_progress_on_receipt_error: bool,
+    initial_count: Option<u32>,
 ) -> Result<RuntimeDownload, Error> {
     let admission_key = format!("chesscom_{}", player.to_ascii_lowercase());
     let lease = state.operations.claim_download(
@@ -463,6 +485,7 @@ pub(crate) async fn download_chess_com_games_runtime<R: tauri::Runtime>(
             ExportLimits::default(),
             scope,
             fail_progress_on_receipt_error,
+            initial_count,
         ),
     )
     .await
@@ -507,11 +530,13 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
     limits: ExportLimits,
     scope: ExportScope,
     fail_progress_on_receipt_error: bool,
+    initial_count: Option<u32>,
 ) -> Result<RuntimeDownload, Error> {
     if cancellation.is_cancelled() {
         return Err(Error::Cancellation);
     }
-    let progress = begin_progress(&state.progress_state, &app, job_id)?;
+    let progress = begin_progress_with_count(&state.progress_state, &app, job_id, initial_count)?;
+    let progress_error_diagnosed = std::sync::atomic::AtomicBool::new(false);
 
     let result = async {
         let deadline = tokio::time::Instant::now() + limits.timeout;
@@ -539,6 +564,9 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
         // without losing the prefix or exposing a partially written archive.
         let mut months = Vec::new();
         let mut total_pgn_bytes = 0usize;
+        let mut games_written = 0u32;
+        let base = initial_count.unwrap_or(0);
+        let mut throttle = CountProgressThrottle::new(initial_count);
         let mut last_month = None;
         let mut stopped = false;
         let total = archives.len();
@@ -560,6 +588,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                         // stages empty like a variant-only month (d-20261125-51).
                         let mut staged = tempfile::NamedTempFile::new()?;
                         let mut month_bytes = 0usize;
+                        let mut month_games = 0u32;
                         let mut skipped_without_pgn = 0usize;
                         for game in games.games {
                             if token.is_cancelled() {
@@ -586,6 +615,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                             staged.write_all(b"\n")?;
                             #[cfg(test)]
                             capture_staged_pgn_bytes(b"\n");
+                            month_games = month_games.saturating_add(1);
                         }
                         if skipped_without_pgn != 0 {
                             log::warn!(
@@ -593,12 +623,12 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
                             );
                         }
                         staged.flush()?;
-                        Ok(Some((staged, month_bytes)))
+                        Ok(Some((staged, month_bytes, month_games)))
                     })
                     .await
             })
             .await;
-            let (staged, month_bytes) = match staged_month {
+            let (staged, month_bytes, month_games) = match staged_month {
                 Ok(Ok(Some(month))) => month,
                 Ok(Ok(None)) if scope == ExportScope::Resumable && !months.is_empty() => {
                     stopped = true;
@@ -618,17 +648,41 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             };
             months.push(staged);
             total_pgn_bytes += month_bytes;
+            games_written = games_written.saturating_add(month_games);
             last_month = Some((year, month));
-            update_progress_with_state(
-                &state.progress_state,
-                &app,
-                &progress,
-                ((index + 1) as f32 / total as f32) * 90.0,
-                ProgressState::Running,
-            )?;
+            let cumulative = base.saturating_add(games_written);
+            if month_games > 0 && throttle.record_if_due(cumulative, std::time::Instant::now()) {
+                report_running_progress(
+                    &state.progress_state,
+                    &app,
+                    &progress,
+                    RunningProgressUpdate {
+                        progress: ((index + 1) as f32 / total as f32) * STAGING_PROGRESS_SHARE,
+                        count: Some(cumulative),
+                    },
+                    "Chess.com export",
+                    &progress_error_diagnosed,
+                    &cancellation,
+                )?;
+            }
         }
         if months.is_empty() {
             return Err(Error::ResourceLimit("too many Chess.com archives".into()));
+        }
+        let final_cumulative = base.saturating_add(games_written);
+        if throttle.record_final(final_cumulative) {
+            report_running_progress(
+                &state.progress_state,
+                &app,
+                &progress,
+                RunningProgressUpdate {
+                    progress: (months.len() as f32 / total as f32) * STAGING_PROGRESS_SHARE,
+                    count: Some(final_cumulative),
+                },
+                "Chess.com export",
+                &progress_error_diagnosed,
+                &cancellation,
+            )?;
         }
         let coverage_floor_ms = if stopped {
             last_month.map(next_month_floor).transpose()?
@@ -683,6 +737,7 @@ async fn download_chess_com_games_core<R: tauri::Runtime>(
             receipt_error,
             coverage_holds: None,
             coverage_floor_ms,
+            games_written,
         })
     }
     .await;
@@ -855,6 +910,7 @@ mod tests {
                     },
                     ExportScope::Complete,
                     true,
+                    None,
                 ),
             )
             .await
@@ -1078,6 +1134,7 @@ mod tests {
                 state.clone(),
                 ExportScope::Complete,
                 true,
+                None,
             )
             .await;
             assert!(
@@ -1126,6 +1183,7 @@ mod tests {
                 state.clone(),
                 ExportScope::Complete,
                 true,
+                None,
             )
             .await;
             let runtime_error = result.as_ref().unwrap_err();
@@ -1217,6 +1275,7 @@ mod tests {
                 limits,
                 scope,
                 true,
+                None,
             ),
         )
         .await
@@ -2158,5 +2217,175 @@ mod tests {
             .as_ref()
             .unwrap()
             .has_persistent_id(&artifact.handle.id.id));
+    }
+
+    #[tokio::test]
+    async fn download_chess_com_games_runtime_reports_increasing_counts_and_games_written() {
+        use tauri::Listener;
+        use tauri_specta::Event;
+
+        let index = br#"{"archives":["https://api.chess.com/pub/player/felix/games/2026/08","https://api.chess.com/pub/player/felix/games/2026/09","https://api.chess.com/pub/player/felix/games/2026/10"]}"#;
+        let month1 = br#"{"games":[{"pgn":"1. e4 e5"},{"pgn":"1. d4 d5"}]}"#;
+        let month_empty = br#"{"games":[]}"#;
+        let month3 = br#"{"games":[{"pgn":"1. c4 c5"},{"pgn":"1. Nf3 Nf6"},{"pgn":"1. g3 g6"}]}"#;
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([
+                response(index),
+                response(month1),
+                response(month_empty),
+                response(month3),
+                response(index),
+                response(month1),
+                response(month_empty),
+                response(month3),
+            ])),
+        });
+        let (_dir, state, destination, _root, app) = export_fixture(transport);
+        let events = Arc::new(Mutex::new(Vec::<crate::progress::ProgressEvent>::new()));
+        let recorded = events.clone();
+        let listener = app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+            let payload: crate::progress::ProgressEvent =
+                serde_json::from_str(event.payload()).unwrap();
+            recorded.lock().unwrap().push(payload);
+        });
+
+        let job1 = state.operations.prepare_download("test").unwrap();
+        let downloaded1 = download_chess_com_games_runtime(
+            destination.clone(),
+            "chunk1.pgn".into(),
+            "felix".into(),
+            None,
+            job1.clone(),
+            app.handle().clone(),
+            "test",
+            state.clone(),
+            ExportScope::Resumable,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(downloaded1.games_written, 5);
+        let job1_events: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == job1)
+            .cloned()
+            .collect();
+        let counts: Vec<u32> = job1_events.iter().filter_map(|e| e.count).collect();
+        assert_eq!(counts.first().copied(), Some(2));
+        assert_eq!(counts.last().copied(), Some(5));
+        assert!(counts.windows(2).all(|w| w[0] <= w[1]), "{counts:?}");
+        assert_eq!(job1_events.last().unwrap().state, ProgressState::Succeeded);
+        assert_eq!(job1_events.last().unwrap().count, Some(5));
+
+        let job2 = state.operations.prepare_download("test").unwrap();
+        let downloaded2 = download_chess_com_games_runtime(
+            destination,
+            "chunk2.pgn".into(),
+            "felix".into(),
+            None,
+            job2.clone(),
+            app.handle().clone(),
+            "test",
+            state.clone(),
+            ExportScope::Resumable,
+            false,
+            Some(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(downloaded2.games_written, 5);
+        let job2_events: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == job2)
+            .cloned()
+            .collect();
+        assert_eq!(job2_events.first().unwrap().count, Some(10));
+        assert_eq!(job2_events.last().unwrap().count, Some(15));
+        app.unlisten(listener);
+    }
+
+    #[tokio::test]
+    async fn chesscom_account_download_count_emission_non_stale_error_continues_and_stale_lease_cancels(
+    ) {
+        let transport = Arc::new(ExportTransport {
+            responses: Mutex::new(VecDeque::from([
+                response(INDEX),
+                response(ARCHIVE),
+                response(INDEX),
+                response(ARCHIVE),
+            ])),
+        });
+        let (_dir, state, destination, _root, app) = export_fixture(transport);
+
+        let non_stale_hits = Arc::new(AtomicUsize::new(0));
+        let hits = non_stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &RunningProgressUpdate| {
+                if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Some(Err(Error::Conflict("synthetic emit failure".into())))
+                } else {
+                    None
+                }
+            },
+        ));
+        let job_ok = state.operations.prepare_download("test").unwrap();
+        let ok = download_chess_com_games_runtime(
+            destination.clone(),
+            "ok.pgn".into(),
+            "felix".into(),
+            None,
+            job_ok,
+            app.handle().clone(),
+            "test",
+            state.clone(),
+            ExportScope::Resumable,
+            false,
+            None,
+        )
+        .await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            ok.is_ok(),
+            "non-stale emission error must not fail Chess.com download: {ok:?}"
+        );
+        assert!(non_stale_hits.load(Ordering::SeqCst) >= 1);
+
+        let stale_hits = Arc::new(AtomicUsize::new(0));
+        let hits = stale_hits.clone();
+        crate::progress::set_running_progress_override(Some(
+            move |update: &RunningProgressUpdate| {
+                if update.count.is_some() && hits.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Some(Err(Error::StaleProgressLease))
+                } else {
+                    None
+                }
+            },
+        ));
+        let job_stale = state.operations.prepare_download("test").unwrap();
+        let cancelled = download_chess_com_games_runtime(
+            destination,
+            "stale.pgn".into(),
+            "felix".into(),
+            None,
+            job_stale,
+            app.handle().clone(),
+            "test",
+            state.clone(),
+            ExportScope::Resumable,
+            false,
+            None,
+        )
+        .await;
+        crate::progress::clear_running_progress_override();
+        assert!(
+            matches!(cancelled, Err(Error::Cancellation)),
+            "stale lease during counting must cancel Chess.com download: {cancelled:?}"
+        );
+        assert!(stale_hits.load(Ordering::SeqCst) >= 1);
     }
 }

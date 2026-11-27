@@ -315,7 +315,7 @@ pub(crate) async fn import_account_games_with_download<R, D, F>(
 ) -> Result<AccountCompletion, Error>
 where
     R: tauri::Runtime,
-    D: FnMut(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
+    D: FnMut(AccountImportRequest, String, String, Option<u32>, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
     F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
@@ -346,6 +346,7 @@ async fn download_account<R: tauri::Runtime>(
     request: AccountImportRequest,
     ticket: String,
     owner: String,
+    initial_count: Option<u32>,
     app: tauri::AppHandle<R>,
     state: AppState,
 ) -> Result<RuntimeDownload, Error> {
@@ -362,6 +363,7 @@ async fn download_account<R: tauri::Runtime>(
             &app,
             &state,
             crate::chesscom::ExportScope::Resumable,
+            initial_count,
         )
         .await
     } else {
@@ -376,6 +378,7 @@ async fn download_account<R: tauri::Runtime>(
             state.clone(),
             crate::chesscom::ExportScope::Resumable,
             false,
+            initial_count,
         )
         .await
     };
@@ -408,7 +411,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
     mut download: D,
 ) where
     R: tauri::Runtime,
-    D: FnMut(AccountImportRequest, String, String, tauri::AppHandle<R>, AppState) -> F
+    D: FnMut(AccountImportRequest, String, String, Option<u32>, tauri::AppHandle<R>, AppState) -> F
         + Send
         + 'static,
     F: Future<Output = Result<RuntimeDownload, Error>> + Send + 'static,
@@ -423,6 +426,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
     tokio::spawn(async move {
         let terminal = run_native_operation(lease, "import_account_games", async move {
             let outcome = std::panic::AssertUnwindSafe(async {
+                let mut loaded_games: Option<u32> = None;
                 loop {
                     if cancellation.is_cancelled() {
                         return Err(Error::Cancellation);
@@ -472,6 +476,7 @@ pub(crate) async fn start_account_completion<R, D, F>(
                                     snapshot.request.clone(),
                                     ticket.clone(),
                                     native_owner.clone(),
+                                    loaded_games,
                                     app.clone(),
                                     state.clone(),
                                 )
@@ -479,6 +484,11 @@ pub(crate) async fn start_account_completion<R, D, F>(
                                 state.operations.release_download(&ticket, &native_owner)?;
                                 let downloaded = downloaded?;
                                 downloaded_in_attempt = true;
+                                loaded_games = Some(
+                                    loaded_games
+                                        .unwrap_or(0)
+                                        .saturating_add(downloaded.games_written),
+                                );
                                 snapshot.coverage_holds = downloaded.coverage_holds;
                                 snapshot.coverage_floor_ms = downloaded.coverage_floor_ms;
                                 downloaded.publication
@@ -519,10 +529,11 @@ pub(crate) async fn start_account_completion<R, D, F>(
                                 {
                                     log::warn!("account import notification failed: {error}");
                                 }
-                                let progress = crate::progress::begin_progress(
+                                let progress = crate::progress::begin_progress_with_count(
                                     &state.progress_state,
                                     &app,
                                     snapshot.progress_id.clone(),
+                                    loaded_games,
                                 )?;
                                 let account = crate::db::AccountImportContext {
                                     identity: crate::db::linked_collections::AccountIdentity {
@@ -749,6 +760,7 @@ mod tests {
                 receipt_error: Some(Error::Conflict("receipt recording failed".into())),
                 coverage_floor_ms: None,
                 coverage_holds: None,
+                games_written: 0,
             }),
             "lichess",
             "receipt-failure-account",
@@ -806,9 +818,10 @@ mod tests {
             },
         };
 
-        let downloaded = download_account(request, ticket, owner, app.handle().clone(), state)
-            .await
-            .unwrap();
+        let downloaded =
+            download_account(request, ticket, owner, None, app.handle().clone(), state)
+                .await
+                .unwrap();
         assert!(downloaded.receipt_error.is_none());
         let requests = transport.requests_seen.lock().unwrap();
         assert_eq!(requests.len(), 2);
@@ -918,7 +931,7 @@ mod tests {
                 app_handle,
                 "main".into(),
                 s,
-                move |_req, _ticket, _owner, _app, _state| {
+                move |_req, _ticket, _owner, _initial_count, _app, _state| {
                     download_invoked_flag.store(true, Ordering::SeqCst);
                     let handle = pub_handle.clone();
                     async move {
@@ -930,6 +943,7 @@ mod tests {
                             receipt_error: None,
                             coverage_holds: None,
                             coverage_floor_ms: None,
+                            games_written: 1,
                         })
                     }
                 },
@@ -963,5 +977,147 @@ mod tests {
             completion.outcome
         );
         assert!(download_invoked.load(Ordering::SeqCst));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn download_account_forwards_initial_count_to_lichess_and_chesscom_runtimes() {
+        use crate::db::linked_collections::tests::Fixture;
+        use crate::fs::tests::{coverage_response, export_pgn_response, lichess_runtime_state};
+        use crate::infra::net::DownloadResponse;
+        use tauri::Listener as _;
+        use tauri_specta::Event as _;
+
+        // 1. Lichess branch forwards `Some(25)`.
+        let lichess_fixture = Fixture::new();
+        let coverage = format!(
+            "{}\n",
+            crate::lichess::coverage_object("Blitz001", true, 100)
+        );
+        let (lichess_state, lichess_app, _, _) = lichess_runtime_state(
+            &lichess_fixture,
+            vec![Ok(coverage_response(&coverage)), Ok(export_pgn_response())],
+            None,
+        );
+        let lichess_events = Arc::new(std::sync::Mutex::new(
+            Vec::<crate::progress::ProgressEvent>::new(),
+        ));
+        let recorded = lichess_events.clone();
+        let lichess_listener =
+            lichess_app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+                let payload: crate::progress::ProgressEvent =
+                    serde_json::from_str(event.payload()).unwrap();
+                recorded.lock().unwrap().push(payload);
+            });
+        let lichess_owner = "account-workflow:forward-lichess".to_owned();
+        let lichess_ticket = lichess_state
+            .operations
+            .prepare_download(&lichess_owner)
+            .unwrap();
+        let lichess_request = AccountImportRequest {
+            provider: "lichess".into(),
+            account: "player".into(),
+            account_handle: None,
+            destination: lichess_fixture.download_destination(),
+            since_ms: None,
+            pending_batch: None,
+            target: AccountImportTarget::Linked {
+                collection: Uuid::new_v4().to_string(),
+            },
+        };
+        let lichess_downloaded = download_account(
+            lichess_request,
+            lichess_ticket.clone(),
+            lichess_owner,
+            Some(25),
+            lichess_app.handle().clone(),
+            lichess_state,
+        )
+        .await
+        .unwrap();
+        assert_eq!(lichess_downloaded.games_written, 1);
+        let events: Vec<_> = lichess_events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == lichess_ticket)
+            .cloned()
+            .collect();
+        assert_eq!(
+            events.first().and_then(|e| e.count),
+            Some(25),
+            "Lichess download_account must forward initial_count: {events:?}"
+        );
+        assert_eq!(events.last().and_then(|e| e.count), Some(26));
+        lichess_app.unlisten(lichess_listener);
+
+        // 2. Chess.com branch forwards `Some(40)`.
+        let chesscom_fixture = Fixture::new();
+        let index = br#"{"archives":["https://api.chess.com/pub/player/felix/games/2026/09"]}"#;
+        let archive = br#"{"games":[{"pgn":"[Event \"Live\"]\n\n1. e4 e5 1-0"}]}"#;
+        let json_resp = |body: &'static [u8]| DownloadResponse {
+            status: 200,
+            headers: reqwest::header::HeaderMap::new(),
+            content_length: Some(body.len() as u64),
+            stream: Box::pin(futures_util::stream::iter(vec![Ok(
+                bytes::Bytes::from_static(body),
+            )])),
+        };
+        let (chesscom_state, chesscom_app, _, _) = lichess_runtime_state(
+            &chesscom_fixture,
+            vec![Ok(json_resp(index)), Ok(json_resp(archive))],
+            None,
+        );
+        let chesscom_events = Arc::new(std::sync::Mutex::new(
+            Vec::<crate::progress::ProgressEvent>::new(),
+        ));
+        let recorded = chesscom_events.clone();
+        let chesscom_listener =
+            chesscom_app.listen_any(crate::progress::ProgressEvent::NAME, move |event| {
+                let payload: crate::progress::ProgressEvent =
+                    serde_json::from_str(event.payload()).unwrap();
+                recorded.lock().unwrap().push(payload);
+            });
+        let chesscom_owner = "account-workflow:forward-chesscom".to_owned();
+        let chesscom_ticket = chesscom_state
+            .operations
+            .prepare_download(&chesscom_owner)
+            .unwrap();
+        let chesscom_request = AccountImportRequest {
+            provider: "chesscom".into(),
+            account: "felix".into(),
+            account_handle: None,
+            destination: chesscom_fixture.download_destination(),
+            since_ms: None,
+            pending_batch: None,
+            target: AccountImportTarget::Linked {
+                collection: Uuid::new_v4().to_string(),
+            },
+        };
+        let chesscom_downloaded = download_account(
+            chesscom_request,
+            chesscom_ticket.clone(),
+            chesscom_owner,
+            Some(40),
+            chesscom_app.handle().clone(),
+            chesscom_state,
+        )
+        .await
+        .unwrap();
+        assert_eq!(chesscom_downloaded.games_written, 1);
+        let events: Vec<_> = chesscom_events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.id == chesscom_ticket)
+            .cloned()
+            .collect();
+        assert_eq!(
+            events.first().and_then(|e| e.count),
+            Some(40),
+            "Chess.com download_account must forward initial_count: {events:?}"
+        );
+        assert_eq!(events.last().and_then(|e| e.count), Some(41));
+        chesscom_app.unlisten(chesscom_listener);
     }
 }

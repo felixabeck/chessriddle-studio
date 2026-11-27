@@ -4205,8 +4205,12 @@ mod blocking_offload_scans {
             "{lichess}"
         );
         let destination = body_at_indent(fs, "async fn download_to_destination_inner<");
+        let compact_destination: String =
+            destination.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(
-            destination.contains("begin_progress(&state.progress_state, app, id.to_owned())"),
+            compact_destination.contains(
+                "begin_progress_with_count(&state.progress_state,app,id.to_owned(),initial_count,)"
+            ),
             "{destination}"
         );
 
@@ -4233,7 +4237,9 @@ mod blocking_offload_scans {
         );
         let core = body_at_indent(chesscom, "async fn download_chess_com_games_core<");
         assert!(
-            core.contains("begin_progress(&state.progress_state, &app, job_id)"),
+            core.contains(
+                "begin_progress_with_count(&state.progress_state, &app, job_id, initial_count)"
+            ),
             "{core}"
         );
         assert!(!core.contains("format!(\"chesscom_"), "{core}");

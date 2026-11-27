@@ -116,6 +116,82 @@ pub struct ProgressLease {
 pub(crate) type ProgressUpdateHook<'a> =
     dyn Fn(&ProgressLease, f32) -> Option<Result<(), Error>> + Sync + 'a;
 
+pub(crate) const COUNT_EMIT_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Carries an optional initial count and callback for streaming game-count producers.
+pub(crate) struct GameCountSink<'a> {
+    pub(crate) initial_count: Option<u32>,
+    pub(crate) on_count: &'a mut (dyn FnMut(u32) -> Result<(), Error> + Send),
+}
+
+/// Bounds live game-count emissions to at most one per `COUNT_EMIT_INTERVAL`
+/// during a stream, plus one final update when the payload completes.
+pub(crate) struct CountProgressThrottle {
+    last_emitted_count: Option<u32>,
+    last_emitted_at: Option<Instant>,
+}
+
+impl CountProgressThrottle {
+    pub(crate) fn new(initial_count: Option<u32>) -> Self {
+        Self {
+            last_emitted_count: initial_count,
+            last_emitted_at: None,
+        }
+    }
+
+    pub(crate) fn record_if_due(&mut self, count: u32, now: Instant) -> bool {
+        if self.last_emitted_count == Some(count) {
+            return false;
+        }
+        if self
+            .last_emitted_at
+            .is_some_and(|at| now.saturating_duration_since(at) < COUNT_EMIT_INTERVAL)
+        {
+            return false;
+        }
+        self.last_emitted_count = Some(count);
+        self.last_emitted_at = Some(now);
+        true
+    }
+
+    pub(crate) fn record_final(&mut self, count: u32) -> bool {
+        if self.last_emitted_count == Some(count) {
+            return false;
+        }
+        self.last_emitted_count = Some(count);
+        true
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RunningProgressUpdate {
+    pub(crate) progress: f32,
+    pub(crate) count: Option<u32>,
+}
+
+#[cfg(test)]
+type RunningProgressOverride = Box<dyn FnMut(&RunningProgressUpdate) -> Option<Result<(), Error>>>;
+
+#[cfg(test)]
+std::thread_local! {
+    static RUNNING_PROGRESS_OVERRIDE: std::cell::RefCell<Option<RunningProgressOverride>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn set_running_progress_override(
+    override_fn: Option<impl FnMut(&RunningProgressUpdate) -> Option<Result<(), Error>> + 'static>,
+) {
+    RUNNING_PROGRESS_OVERRIDE.with(|slot| {
+        *slot.borrow_mut() = override_fn.map(|f| Box::new(f) as RunningProgressOverride);
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn clear_running_progress_override() {
+    RUNNING_PROGRESS_OVERRIDE.with(|slot| *slot.borrow_mut() = None);
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 pub struct ProgressItem {
     pub id: String,
@@ -123,6 +199,9 @@ pub struct ProgressItem {
     pub progress: f32,
     pub finished: bool,
     pub state: ProgressState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub failure: Option<ErrorPayload>,
@@ -136,6 +215,9 @@ pub struct ProgressEvent {
     pub finished: bool,
     pub state: ProgressState,
     pub cleared: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub failure: Option<ErrorPayload>,
@@ -219,9 +301,20 @@ impl ProgressStore {
         }
     }
 
+    #[cfg(test)]
     fn start_with_snapshot_at(
         &self,
         id: String,
+        now: Instant,
+        observe: Option<&mut dyn FnMut()>,
+    ) -> Result<(ProgressLease, ProgressItem), Error> {
+        self.start_with_count_snapshot_at(id, None, now, observe)
+    }
+
+    fn start_with_count_snapshot_at(
+        &self,
+        id: String,
+        initial_count: Option<u32>,
         now: Instant,
         #[cfg(test)] observe: Option<&mut dyn FnMut()>,
     ) -> Result<(ProgressLease, ProgressItem), Error> {
@@ -241,6 +334,7 @@ impl ProgressStore {
             progress: 0.0,
             finished: false,
             state: ProgressState::Running,
+            count: initial_count,
             failure: None,
         };
         state.entries.insert(
@@ -272,6 +366,7 @@ impl ProgressStore {
             .map(|(lease, _)| lease)
     }
 
+    #[cfg(test)]
     fn transition_at(
         &self,
         lease: &ProgressLease,
@@ -279,15 +374,35 @@ impl ProgressStore {
         requested_state: ProgressState,
         now: Instant,
     ) -> Result<(ProgressItem, bool), Error> {
-        self.transition_with_failure_at(lease, progress, requested_state, None, now)
+        self.transition_with_failure_and_count_at(lease, progress, requested_state, None, None, now)
     }
 
+    #[cfg(test)]
     fn transition_with_failure_at(
         &self,
         lease: &ProgressLease,
         progress: f32,
         requested_state: ProgressState,
         failure: Option<ErrorPayload>,
+        now: Instant,
+    ) -> Result<(ProgressItem, bool), Error> {
+        self.transition_with_failure_and_count_at(
+            lease,
+            progress,
+            requested_state,
+            failure,
+            None,
+            now,
+        )
+    }
+
+    fn transition_with_failure_and_count_at(
+        &self,
+        lease: &ProgressLease,
+        progress: f32,
+        requested_state: ProgressState,
+        failure: Option<ErrorPayload>,
+        count: Option<u32>,
         now: Instant,
     ) -> Result<(ProgressItem, bool), Error> {
         let mut state = self
@@ -313,16 +428,25 @@ impl ProgressStore {
             } else {
                 ProgressState::Running
             };
+            let count = match (existing.count, count) {
+                (Some(current), Some(incoming)) => Some(current.max(incoming)),
+                (Some(current), None) => Some(current),
+                (None, Some(incoming)) => Some(incoming),
+                (None, None) => None,
+            };
             ProgressItem {
                 id: lease.id.clone(),
                 generation: lease.generation,
                 progress: progress.max(existing.progress),
                 finished: state.is_terminal(),
                 state,
+                count,
                 failure,
             }
         };
-        let changed = item.progress != existing.progress || item.state != existing.state;
+        let changed = item.progress != existing.progress
+            || item.state != existing.state
+            || item.count != existing.count;
         if changed {
             stored.item = item.clone();
             stored.updated_at = now;
@@ -331,6 +455,7 @@ impl ProgressStore {
         Ok((item, changed))
     }
 
+    #[cfg(test)]
     pub fn transition(
         &self,
         lease: &ProgressLease,
@@ -338,6 +463,23 @@ impl ProgressStore {
         requested_state: ProgressState,
     ) -> Result<(ProgressItem, bool), Error> {
         self.transition_at(lease, progress, requested_state, Instant::now())
+    }
+
+    pub fn transition_with_count(
+        &self,
+        lease: &ProgressLease,
+        progress: f32,
+        count: Option<u32>,
+        requested_state: ProgressState,
+    ) -> Result<(ProgressItem, bool), Error> {
+        self.transition_with_failure_and_count_at(
+            lease,
+            progress,
+            requested_state,
+            None,
+            count,
+            Instant::now(),
+        )
     }
 
     fn get_at(&self, id: &str, now: Instant) -> Result<Option<ProgressItem>, Error> {
@@ -417,6 +559,7 @@ fn emit<R: tauri::Runtime>(
         finished: item.finished,
         state: item.state,
         cleared,
+        count: item.count,
         failure: item.failure,
     }
     .emit(app)?;
@@ -428,16 +571,36 @@ pub fn begin_progress<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     id: String,
 ) -> Result<ProgressLease, Error> {
-    begin_progress_with_emitter(store, id, |item| emit(app, item, false))
+    begin_progress_with_count(store, app, id, None)
 }
 
+pub fn begin_progress_with_count<R: tauri::Runtime>(
+    store: &ProgressStore,
+    app: &tauri::AppHandle<R>,
+    id: String,
+    initial_count: Option<u32>,
+) -> Result<ProgressLease, Error> {
+    begin_progress_with_count_emitter(store, id, initial_count, |item| emit(app, item, false))
+}
+
+#[cfg(test)]
 fn begin_progress_with_emitter(
     store: &ProgressStore,
     id: String,
     emit_item: impl FnOnce(ProgressItem) -> Result<(), Error>,
 ) -> Result<ProgressLease, Error> {
-    let (lease, item) = store.start_with_snapshot_at(
+    begin_progress_with_count_emitter(store, id, None, emit_item)
+}
+
+fn begin_progress_with_count_emitter(
+    store: &ProgressStore,
+    id: String,
+    initial_count: Option<u32>,
+    emit_item: impl FnOnce(ProgressItem) -> Result<(), Error>,
+) -> Result<ProgressLease, Error> {
+    let (lease, item) = store.start_with_count_snapshot_at(
         id,
+        initial_count,
         Instant::now(),
         #[cfg(test)]
         None,
@@ -460,7 +623,20 @@ pub fn update_progress_with_state<R: tauri::Runtime>(
     progress: f32,
     state: ProgressState,
 ) -> Result<(), Error> {
-    update_progress_with_emitter(store, lease, progress, state, |item| emit(app, item, false))
+    update_progress_with_count(store, app, lease, progress, None, state)
+}
+
+pub fn update_progress_with_count<R: tauri::Runtime>(
+    store: &ProgressStore,
+    app: &tauri::AppHandle<R>,
+    lease: &ProgressLease,
+    progress: f32,
+    count: Option<u32>,
+    state: ProgressState,
+) -> Result<(), Error> {
+    update_progress_with_count_emitter(store, lease, progress, count, state, |item| {
+        emit(app, item, false)
+    })
 }
 
 pub(crate) fn publish_download_failure<R: tauri::Runtime>(
@@ -469,11 +645,12 @@ pub(crate) fn publish_download_failure<R: tauri::Runtime>(
     lease: &ProgressLease,
     failure: ErrorPayload,
 ) -> Result<(), Error> {
-    let (item, changed) = store.transition_with_failure_at(
+    let (item, changed) = store.transition_with_failure_and_count_at(
         lease,
         0.0,
         ProgressState::Failed,
         Some(failure),
+        None,
         Instant::now(),
     )?;
     if changed {
@@ -489,11 +666,48 @@ fn update_progress_with_emitter(
     state: ProgressState,
     emit_item: impl FnOnce(ProgressItem) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let (item, changed) = store.transition(lease, progress, state)?;
+    update_progress_with_count_emitter(store, lease, progress, None, state, emit_item)
+}
+
+fn update_progress_with_count_emitter(
+    store: &ProgressStore,
+    lease: &ProgressLease,
+    progress: f32,
+    count: Option<u32>,
+    state: ProgressState,
+    emit_item: impl FnOnce(ProgressItem) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let (item, changed) = store.transition_with_count(lease, progress, count, state)?;
     if changed {
         emit_item(item)?;
     }
     Ok(())
+}
+
+/// Reports a running progress/count update through `handle_running_progress_result`,
+/// cancelling on a stale lease and logging any other emission error once per operation.
+pub(crate) fn report_running_progress<R: tauri::Runtime>(
+    store: &ProgressStore,
+    app: &tauri::AppHandle<R>,
+    lease: &ProgressLease,
+    update: RunningProgressUpdate,
+    operation: &str,
+    diagnosed: &AtomicBool,
+    cancellation: &CancellationToken,
+) -> Result<(), Error> {
+    let result = update_progress_with_count(
+        store,
+        app,
+        lease,
+        update.progress,
+        update.count,
+        ProgressState::Running,
+    );
+    #[cfg(test)]
+    let result = RUNNING_PROGRESS_OVERRIDE
+        .with(|slot| slot.borrow_mut().as_mut().and_then(|f| f(&update)))
+        .unwrap_or(result);
+    handle_running_progress_result(result, operation, lease, diagnosed, Some(cancellation))
 }
 
 /// Running updates are best effort, except a revoked lease cancels a token-owning operation.
@@ -680,6 +894,7 @@ fn clear_progress_with(
         progress: 0.0,
         finished: true,
         state: ProgressState::Cancelled,
+        count: None,
         failure: None,
     };
     if let Err(error) = emit_cleared(item) {
@@ -826,6 +1041,7 @@ mod tests {
                 progress: 30.0,
                 finished: false,
                 state: ProgressState::Running,
+                count: None,
                 failure: None,
             };
             let event = ProgressEvent {
@@ -835,6 +1051,7 @@ mod tests {
                 finished: false,
                 state: ProgressState::Running,
                 cleared: false,
+                count: None,
                 failure: None,
             };
             assert_eq!(serde_json::to_value(&item).unwrap()["generation"], digits);
@@ -1738,5 +1955,100 @@ mod tests {
         release_tx.send(()).unwrap();
         native.await.unwrap().unwrap();
         assert!(registry.wait_for_drain(Duration::ZERO).unwrap());
+    }
+
+    #[test]
+    fn progress_store_count_semantics_emit_monotonic_and_preserve_on_none_and_terminal() {
+        let store = ProgressStore::default();
+        let lease = store.start("count-job".into()).unwrap();
+        assert_eq!(store.get("count-job").unwrap().unwrap().count, None);
+
+        // Count-only change emits.
+        let (item, changed) = store
+            .transition_with_count(&lease, 0.0, Some(5), ProgressState::Running)
+            .unwrap();
+        assert!(changed);
+        assert_eq!(item.count, Some(5));
+        assert_eq!(item.progress, 0.0);
+
+        // Same count does not emit.
+        let (_, changed) = store
+            .transition_with_count(&lease, 0.0, Some(5), ProgressState::Running)
+            .unwrap();
+        assert!(!changed);
+
+        // Lower count never replaces higher count.
+        let (item, changed) = store
+            .transition_with_count(&lease, 0.0, Some(3), ProgressState::Running)
+            .unwrap();
+        assert!(!changed);
+        assert_eq!(item.count, Some(5));
+
+        // Higher count replaces and emits.
+        let (item, changed) = store
+            .transition_with_count(&lease, 0.0, Some(9), ProgressState::Running)
+            .unwrap();
+        assert!(changed);
+        assert_eq!(item.count, Some(9));
+
+        // Percentage-only update without a count keeps existing count.
+        let (item, changed) = store
+            .transition(&lease, 40.0, ProgressState::Running)
+            .unwrap();
+        assert!(changed);
+        assert_eq!(item.progress, 40.0);
+        assert_eq!(item.count, Some(9));
+
+        // Terminal transitions keep the count.
+        for terminal in [
+            ProgressState::Succeeded,
+            ProgressState::Failed,
+            ProgressState::Cancelled,
+        ] {
+            let terminal_store = ProgressStore::default();
+            let terminal_lease = terminal_store.start("terminal-job".into()).unwrap();
+            terminal_store
+                .transition_with_count(&terminal_lease, 25.0, Some(17), ProgressState::Running)
+                .unwrap();
+            let (item, changed) = terminal_store
+                .transition(&terminal_lease, 100.0, terminal)
+                .unwrap();
+            assert!(changed);
+            assert_eq!(item.state, terminal);
+            assert_eq!(item.count, Some(17));
+            assert_eq!(
+                terminal_store.get("terminal-job").unwrap().unwrap().count,
+                Some(17)
+            );
+        }
+    }
+
+    #[test]
+    fn begin_progress_with_count_emits_initial_count_in_start_event() {
+        let store = ProgressStore::default();
+        let mut emitted = Vec::new();
+        let lease = begin_progress_with_count_emitter(&store, "chunk-2".into(), Some(42), |item| {
+            emitted.push(item);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0].id, "chunk-2");
+        assert_eq!(emitted[0].generation, lease.generation);
+        assert_eq!(emitted[0].count, Some(42));
+        assert_eq!(emitted[0].state, ProgressState::Running);
+        assert_eq!(store.get("chunk-2").unwrap().unwrap().count, Some(42));
+    }
+
+    #[test]
+    fn count_progress_throttle_bounds_running_emissions_within_250ms() {
+        let start = Instant::now();
+        let mut throttle = CountProgressThrottle::new(None);
+        assert!(throttle.record_if_due(1, start));
+        assert!(!throttle.record_if_due(2, start + Duration::from_millis(50)));
+        assert!(!throttle.record_if_due(10, start + Duration::from_millis(249)));
+        assert!(throttle.record_if_due(11, start + COUNT_EMIT_INTERVAL));
+        assert!(!throttle.record_final(11));
+        assert!(throttle.record_final(12));
     }
 }
