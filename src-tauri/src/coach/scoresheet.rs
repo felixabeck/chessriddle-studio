@@ -35,6 +35,8 @@ pub(crate) const MAX_READ_ROUNDS: usize = 4;
 const MAX_ROWS: usize = 300;
 const MAX_HEADER_CHARS: usize = 120;
 const MAX_STOPPED_TOKENS: usize = 600;
+const MAX_CLOCK_SECONDS: u32 = 36_000;
+const MAX_PLAUSIBLE_CLOCK_RISE_SECONDS: u32 = 60;
 const UNREADABLE_TOKEN: &str = "?";
 
 const SYSTEM_PROMPT: &str = "\
@@ -53,13 +55,13 @@ Rules:\n\
     \"whiteElo\": \"\", \"blackElo\": \"\"\n\
   },\n\
   \"moves\": [\n\
-    { \"n\": 1, \"white\": \"e4\", \"black\": \"e5\", \"unsure\": [] }\n\
+    { \"n\": 1, \"white\": \"e4\", \"black\": \"e5\", \"whiteClock\": \"\", \"blackClock\": \"\", \"unsure\": [] }\n\
   ]\n\
 }\n\
 - Use status \"no_image\" if you cannot see any attached image.\n\
 - Use status \"not_a_scoresheet\" if the photos are not a chess scoresheet.\n\
 - Leave absent header fields as empty strings.\n\
-- In each row, \"n\" is the 1-based move number, \"white\" and \"black\" are the SAN moves, and \"unsure\" lists any of \"white\" or \"black\" that you could not read with confidence.\n\
+- In each row, \"n\" is the 1-based move number, \"white\" and \"black\" are the SAN moves, \"whiteClock\" and \"blackClock\" are optional remaining clock times written next to the move, exactly as written (e.g. \"86\" or \"1:26\"; empty if none), and \"unsure\" lists any of \"white\" or \"black\" that you could not read with confidence.\n\
 - Put \"?\" for any cell on the sheet that is unreadable.";
 
 const INITIAL_USER_PROMPT: &str = "Transcribe this chess scoresheet into the required JSON object.";
@@ -98,6 +100,9 @@ pub(crate) struct ScoresheetHeaders {
 pub(crate) struct ScoresheetMove {
     pub san: String,
     pub unsure: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub clock: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -105,6 +110,9 @@ pub(crate) struct ScoresheetMove {
 pub(crate) struct ScoresheetStop {
     pub ply: u32,
     pub tokens: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub clocks: Option<Vec<Option<u32>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -146,6 +154,8 @@ struct ParsedRow {
     n: usize,
     white: Option<String>,
     black: Option<String>,
+    white_clock: Option<u32>,
+    black_clock: Option<u32>,
     unsure_white: bool,
     unsure_black: bool,
 }
@@ -161,6 +171,7 @@ struct ParsedReply {
 struct SheetCell {
     token: String,
     unsure: bool,
+    clock: Option<u32>,
 }
 
 /// Extracts the first balanced JSON object `{ ... }` from `text`, tolerating surrounding prose or
@@ -306,6 +317,63 @@ fn parse_headers(value: Option<&Value>) -> Option<ScoresheetHeaders> {
     })
 }
 
+fn parse_leading_clock_part(part: &str) -> Option<u32> {
+    if part.is_empty() || part.len() > 6 || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    part.parse::<u32>().ok()
+}
+
+fn parse_sexagesimal_clock_part(part: &str) -> Option<u32> {
+    let bytes = part.as_bytes();
+    if bytes.len() != 2 || !(b'0'..=b'5').contains(&bytes[0]) || !bytes[1].is_ascii_digit() {
+        return None;
+    }
+    Some(u32::from(bytes[0] - b'0') * 10 + u32::from(bytes[1] - b'0'))
+}
+
+/// Mirrors `parseClockInput` in `src/utils/clock.ts`: plain whole number is minutes (`"86"` -> 5160),
+/// `"h:mm"` and `"h:mm:ss"` parse hours/minutes/seconds, upper bound 10 h (`36_000` s).
+fn parse_clock_str(raw: &str) -> Option<u32> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.split(':');
+    let first = parts.next()?;
+    match (parts.next(), parts.next(), parts.next()) {
+        (None, None, None) => {
+            let minutes = parse_leading_clock_part(first)?;
+            let seconds = minutes.checked_mul(60)?;
+            (seconds <= MAX_CLOCK_SECONDS).then_some(seconds)
+        }
+        (Some(second), third, None) => {
+            let hours = parse_leading_clock_part(first)?;
+            let minutes = parse_sexagesimal_clock_part(second)?;
+            let secs = match third {
+                Some(part) => parse_sexagesimal_clock_part(part)?,
+                None => 0,
+            };
+            let total = hours
+                .checked_mul(3600)?
+                .checked_add(minutes.checked_mul(60)?)?
+                .checked_add(secs)?;
+            (total <= MAX_CLOCK_SECONDS).then_some(total)
+        }
+        _ => None,
+    }
+}
+
+/// Parses an optional JSON clock field (`string` or `number`). Any malformed or out-of-range value
+/// becomes `None` and never fails the scoresheet reply.
+fn parse_clock_cell(value: Option<&Value>) -> Option<u32> {
+    match value {
+        Some(Value::String(raw)) => parse_clock_str(raw),
+        Some(Value::Number(num)) => parse_clock_str(&num.to_string()),
+        _ => None,
+    }
+}
+
 fn parse_cell(value: Option<&Value>) -> Option<Option<String>> {
     match value {
         None | Some(Value::Null) => Some(None),
@@ -361,6 +429,8 @@ fn parse_reply(text: &str, require_status: bool) -> Option<ParsedReply> {
 
                 let white = parse_cell(row.get("white"))?;
                 let black = parse_cell(row.get("black"))?;
+                let white_clock = parse_clock_cell(row.get("whiteClock"));
+                let black_clock = parse_clock_cell(row.get("blackClock"));
                 let mut unsure_white = false;
                 let mut unsure_black = false;
                 if let Some(unsure_val) = row.get("unsure") {
@@ -380,6 +450,8 @@ fn parse_reply(text: &str, require_status: bool) -> Option<ParsedReply> {
                     n,
                     white,
                     black,
+                    white_clock,
+                    black_clock,
                     unsure_white,
                     unsure_black,
                 });
@@ -427,6 +499,7 @@ fn rows_to_ply_slice(rows: &[ParsedRow], start_at_zero: bool) -> Option<(usize, 
         SheetCell {
             token: UNREADABLE_TOKEN.into(),
             unsure: false,
+            clock: None,
         };
         last_ply - start_ply + 1
     ];
@@ -437,6 +510,7 @@ fn rows_to_ply_slice(rows: &[ParsedRow], start_at_zero: bool) -> Option<(usize, 
                 slice[base - start_ply] = SheetCell {
                     token: cell_token(white),
                     unsure: row.unsure_white,
+                    clock: row.white_clock,
                 };
             }
         }
@@ -445,6 +519,7 @@ fn rows_to_ply_slice(rows: &[ParsedRow], start_at_zero: bool) -> Option<(usize, 
                 slice[base + 1 - start_ply] = SheetCell {
                     token: cell_token(black),
                     unsure: row.unsure_black,
+                    clock: row.black_clock,
                 };
             }
         }
@@ -483,11 +558,32 @@ fn replay_cells(cells: &[SheetCell]) -> ReplayResult {
         moves.push(ScoresheetMove {
             san,
             unsure: cell.unsure,
+            clock: cell.clock,
         });
     }
     ReplayResult {
         moves,
         failed: None,
+    }
+}
+
+/// Marks a move `unsure` when its clock rises more than 60 s above the same side's previous
+/// reading, except on move 40, 41, 60 or 61 where a time-control period bonus can be added.
+fn mark_implausible_clocks(moves: &mut [ScoresheetMove]) {
+    let mut prev_clock: [Option<u32>; 2] = [None, None];
+    for (ply, mv) in moves.iter_mut().enumerate() {
+        let Some(clock) = mv.clock else {
+            continue;
+        };
+        let side = ply % 2;
+        let move_number = ply / 2 + 1;
+        let exempt = matches!(move_number, 40 | 41 | 60 | 61);
+        if let Some(prev) = prev_clock[side] {
+            if !exempt && clock > prev.saturating_add(MAX_PLAUSIBLE_CLOCK_RISE_SECONDS) {
+                mv.unsure = true;
+            }
+        }
+        prev_clock[side] = Some(clock);
     }
 }
 
@@ -509,6 +605,7 @@ fn correction_prompt(failed_ply: usize, failed_token: &str, position: &Chess) ->
          Position FEN: {fen}\n\
          Legal moves: {}\n\
          Look at the scoresheet photos again and return ONE JSON object {{\"status\":\"ok\",\"moves\":[...]}} \
+         with the same row shape (including \"whiteClock\" and \"blackClock\" if written) \
          starting from move {move_number} (or an earlier row if the misreading was earlier). \
          If the first returned row starts on Black's move, leave \"white\" empty.",
         legal_moves.join(", ")
@@ -600,11 +697,12 @@ async fn run_scoresheet_rounds(
 
     // Replay and run bounded correction rounds on illegal moves.
     loop {
-        let replay = replay_cells(&cells);
+        let mut replay = replay_cells(&cells);
         let Some((failed_ply, failed_position)) = replay.failed else {
             if replay.moves.is_empty() {
                 return Err(CoachError::ScoresheetUnreadable);
             }
+            mark_implausible_clocks(&mut replay.moves);
             return Ok(ScoresheetGame {
                 headers,
                 moves: replay.moves,
@@ -612,23 +710,35 @@ async fn run_scoresheet_rounds(
             });
         };
 
-        let build_stopped = |moves: Vec<ScoresheetMove>,
+        let build_stopped = |mut moves: Vec<ScoresheetMove>,
                              cells: &[SheetCell]|
          -> Result<ScoresheetGame, CoachError> {
             if moves.is_empty() {
                 return Err(CoachError::ScoresheetUnreadable);
             }
-            let remaining: Vec<String> = cells[failed_ply..]
+            mark_implausible_clocks(&mut moves);
+            let remaining_cells = &cells[failed_ply..];
+            let remaining: Vec<String> = remaining_cells
                 .iter()
                 .take(MAX_STOPPED_TOKENS)
                 .map(|cell| cell.token.clone())
                 .collect();
+            let remaining_clocks: Vec<Option<u32>> = remaining_cells
+                .iter()
+                .take(MAX_STOPPED_TOKENS)
+                .map(|cell| cell.clock)
+                .collect();
+            let clocks = remaining_clocks
+                .iter()
+                .any(Option::is_some)
+                .then_some(remaining_clocks);
             Ok(ScoresheetGame {
                 headers: headers.clone(),
                 moves,
                 stopped: Some(ScoresheetStop {
                     ply: u32::try_from(failed_ply).unwrap_or(u32::MAX),
                     tokens: remaining,
+                    clocks,
                 }),
             })
         };
@@ -674,6 +784,7 @@ async fn run_scoresheet_rounds(
             cells.push(SheetCell {
                 token: UNREADABLE_TOKEN.into(),
                 unsure: false,
+                clock: None,
             });
         }
         for (offset, mut cell) in replacement.into_iter().enumerate() {
@@ -681,6 +792,11 @@ async fn run_scoresheet_rounds(
             let prev = prev_cells.get(ply);
             let changed = prev.is_some_and(|old| old.token != cell.token);
             let prev_unsure = prev.is_some_and(|old| old.unsure);
+            if !changed && cell.clock.is_none() {
+                if let Some(old) = prev {
+                    cell.clock = old.clock;
+                }
+            }
             if ply == failed_ply || changed || prev_unsure {
                 cell.unsure = true;
             }
@@ -893,20 +1009,24 @@ mod tests {
             vec![
                 ScoresheetMove {
                     san: "e4".into(),
-                    unsure: false
+                    unsure: false,
+                    clock: None,
                 },
                 ScoresheetMove {
                     san: "e5".into(),
-                    unsure: false
+                    unsure: false,
+                    clock: None,
                 },
                 // Replaced failed token -> marked unsure.
                 ScoresheetMove {
                     san: "Nf3".into(),
-                    unsure: true
+                    unsure: true,
+                    clock: None,
                 },
                 ScoresheetMove {
                     san: "Nc6".into(),
-                    unsure: false
+                    unsure: false,
+                    clock: None,
                 },
             ]
         );
@@ -989,6 +1109,7 @@ mod tests {
             Some(ScoresheetStop {
                 ply: 2,
                 tokens: vec!["?".into(), "Nc6".into(), "Bb5".into(), "a6".into()],
+                clocks: None,
             })
         );
     }
@@ -1256,30 +1377,36 @@ mod tests {
                 // Model-flagged white on row 1.
                 ScoresheetMove {
                     san: "e4".into(),
-                    unsure: true
+                    unsure: true,
+                    clock: None,
                 },
                 ScoresheetMove {
                     san: "e5".into(),
-                    unsure: false
+                    unsure: false,
+                    clock: None,
                 },
                 // Non-failed ply 2 changed from Nf3 to Bb5 by correction -> marked unsure.
                 ScoresheetMove {
                     san: "Bb5".into(),
-                    unsure: true
+                    unsure: true,
+                    clock: None,
                 },
                 // Model-flagged black on row 2 preserved across correction.
                 ScoresheetMove {
                     san: "Nc6".into(),
-                    unsure: true
+                    unsure: true,
+                    clock: None,
                 },
                 // Failed ply 4 -> marked unsure.
                 ScoresheetMove {
                     san: "Bxc6".into(),
-                    unsure: true
+                    unsure: true,
+                    clock: None,
                 },
                 ScoresheetMove {
                     san: "dxc6".into(),
-                    unsure: false
+                    unsure: false,
+                    clock: None,
                 },
             ]
         );
@@ -1357,6 +1484,7 @@ mod tests {
             Some(ScoresheetStop {
                 ply: 2,
                 tokens: vec!["Qa5".into(), "Nc6".into()],
+                clocks: None,
             })
         );
 
@@ -1378,6 +1506,7 @@ mod tests {
             Some(ScoresheetStop {
                 ply: 2,
                 tokens: vec!["Ke3".into(), "Nc6".into()],
+                clocks: None,
             })
         );
 
@@ -1400,7 +1529,291 @@ mod tests {
             Some(ScoresheetStop {
                 ply: 2,
                 tokens: vec!["Ke3".into(), "Nc6".into()],
+                clocks: None,
             })
         );
+    }
+
+    #[test]
+    fn clock_parser_matches_o1_rule_and_rejects_malformed_or_out_of_range() {
+        for (input, expected) in [
+            ("86", 5160),
+            (" 86 ", 5160),
+            ("1:26", 5160),
+            ("1:26:30", 5190),
+            ("0:59", 3540),
+            ("600", 36_000),
+            ("10:00", 36_000),
+            ("10:00:00", 36_000),
+            ("0", 0),
+        ] {
+            assert_eq!(parse_clock_str(input), Some(expected), "input {input:?}");
+        }
+
+        let nine_400 = "9".repeat(400);
+        let zero_400 = "0".repeat(400);
+        for invalid in [
+            "",
+            "   ",
+            "\t\n",
+            "601",
+            "10:00:01",
+            "1:60",
+            "1:00:60",
+            "1:5",
+            "1:005",
+            "abc",
+            "-5",
+            "1.5",
+            "1:20:30:40",
+            "1 : 26",
+            nine_400.as_str(),
+            zero_400.as_str(),
+        ] {
+            assert_eq!(parse_clock_str(invalid), None, "invalid {invalid:?}");
+        }
+
+        assert_eq!(parse_clock_cell(Some(&json!(86))), Some(5160));
+        assert_eq!(parse_clock_cell(Some(&json!(0))), Some(0));
+        assert_eq!(parse_clock_cell(Some(&json!(600))), Some(36_000));
+        assert_eq!(parse_clock_cell(Some(&json!(601))), None);
+        assert_eq!(parse_clock_cell(Some(&json!(-5))), None);
+        assert_eq!(parse_clock_cell(Some(&json!(1.5))), None);
+        assert_eq!(parse_clock_cell(Some(&json!(true))), None);
+        assert_eq!(parse_clock_cell(Some(&json!(["86"]))), None);
+        assert_eq!(parse_clock_cell(Some(&json!({"m": 86}))), None);
+        assert_eq!(parse_clock_cell(Some(&Value::Null)), None);
+        assert_eq!(parse_clock_cell(None), None);
+    }
+
+    #[tokio::test]
+    async fn reply_with_clocks_parses_strings_and_numbers_and_drops_garbage_without_failing() {
+        let reply = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "whiteClock": "86", "black": "e5", "blackClock": 86 },
+                { "n": 2, "white": "Nf3", "whiteClock": "1:26", "black": "Nc6", "blackClock": "garbage" },
+                { "n": 3, "white": "Bb5", "whiteClock": "601", "black": "a6", "blackClock": { "bad": true } }
+            ]
+        })
+        .to_string();
+        let backend = ScriptedBackend::new(vec![text(&reply)]);
+        let game = run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url()],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("read succeeds with garbage clocks dropped");
+
+        let clocks: Vec<Option<u32>> = game.moves.iter().map(|m| m.clock).collect();
+        assert_eq!(
+            clocks,
+            vec![Some(5160), Some(5160), Some(5160), None, None, None]
+        );
+        assert!(game.moves.iter().all(|m| !m.unsure));
+
+        // Absent clock is omitted when serializing ScoresheetMove.
+        let serialized = serde_json::to_value(&game.moves[3]).expect("serialize");
+        assert!(serialized.get("clock").is_none());
+    }
+
+    #[tokio::test]
+    async fn correction_round_preserves_old_clock_for_unchanged_token_and_uses_new_clock_for_changed_token(
+    ) {
+        let round1 = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "whiteClock": "90", "black": "e5", "blackClock": "89" },
+                { "n": 2, "white": "Ke3", "whiteClock": "88", "black": "Nc6", "blackClock": "87" },
+                { "n": 3, "white": "Bb5", "whiteClock": "86", "black": "a6", "blackClock": "85" }
+            ]
+        })
+        .to_string();
+        // Correction changes 2. Ke3 -> 2. Nf3 (with new clock "84"), keeps 2... Nc6 without clock
+        // (keeps old "87"), keeps 3. Bb5 with updated clock "83", and changes 3... a6 -> 3... Nf6
+        // without clock (takes None, not old "85").
+        let round2 = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 2, "white": "Nf3", "whiteClock": "84", "black": "Nc6" },
+                { "n": 3, "white": "Bb5", "whiteClock": "83", "black": "Nf6" }
+            ]
+        })
+        .to_string();
+        let backend = ScriptedBackend::new(vec![text(&round1), text(&round2)]);
+        let game = run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url()],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("repaired game");
+
+        let clocks: Vec<Option<u32>> = game.moves.iter().map(|m| m.clock).collect();
+        assert_eq!(
+            clocks,
+            vec![
+                Some(5400), // 1. e4 kept
+                Some(5340), // 1... e5 kept
+                Some(5040), // 2. Nf3 changed -> took correction's "84"
+                Some(5220), // 2... Nc6 unchanged & no clock -> kept old "87"
+                Some(4980), // 3. Bb5 unchanged & new clock -> took "83"
+                None,       // 3... Nf6 changed & no clock -> None
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn stopped_read_returns_parallel_clocks_for_remaining_tokens() {
+        let round1 = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "whiteClock": "90", "black": "e5", "blackClock": "89" },
+                { "n": 2, "white": "?", "black": "Nc6", "blackClock": "87" },
+                { "n": 3, "white": "Bb5", "whiteClock": "1:26", "black": "a6" }
+            ]
+        })
+        .to_string();
+        let backend = ScriptedBackend::new(vec![text(&round1), text(&round1)]);
+        let game = run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url()],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("stopped game");
+
+        assert_eq!(
+            game.stopped,
+            Some(ScoresheetStop {
+                ply: 2,
+                tokens: vec!["?".into(), "Nc6".into(), "Bb5".into(), "a6".into()],
+                clocks: Some(vec![None, Some(5220), Some(5160), None]),
+            })
+        );
+    }
+
+    #[test]
+    fn plausibility_marks_rises_above_60s_unsure_except_on_moves_40_41_60_61() {
+        // Build 62 full moves (124 plies) with legal placeholder moves.
+        let make_moves = || -> Vec<ScoresheetMove> {
+            (0..124)
+                .map(|_| ScoresheetMove {
+                    san: "Nf3".into(),
+                    unsure: false,
+                    clock: None,
+                })
+                .collect()
+        };
+
+        // Rise of 60 s is plausible; rise of 61 s is implausible and keeps the value.
+        let mut basic = make_moves();
+        basic[0].clock = Some(5000); // White move 1
+        basic[2].clock = Some(5060); // White move 2 (+60 s -> ok)
+        basic[4].clock = Some(5121); // White move 3 (+61 s -> unsure)
+        basic[1].clock = Some(4000); // Black move 1
+        basic[3].clock = Some(4200); // Black move 2 (+200 s -> unsure)
+        mark_implausible_clocks(&mut basic);
+        assert!(!basic[0].unsure);
+        assert!(!basic[2].unsure);
+        assert!(basic[4].unsure);
+        assert_eq!(basic[4].clock, Some(5121));
+        assert!(!basic[1].unsure);
+        assert!(basic[3].unsure);
+        assert_eq!(basic[3].clock, Some(4200));
+
+        // Test boundary move numbers for White (even plies) and Black (odd plies):
+        // move 39 -> marked unsure; move 40 -> exempt; move 41 -> exempt; move 42 -> marked unsure;
+        // move 60 -> exempt; move 61 -> exempt; move 62 -> marked unsure.
+        for side in 0..=1usize {
+            for (move_num, expect_unsure) in [
+                (39usize, true),
+                (40, false),
+                (41, false),
+                (42, true),
+                (60, false),
+                (61, false),
+                (62, true),
+            ] {
+                let mut moves = make_moves();
+                let prev_ply = (move_num - 2) * 2 + side;
+                let curr_ply = (move_num - 1) * 2 + side;
+                moves[prev_ply].clock = Some(600);
+                moves[curr_ply].clock = Some(2400); // +1800 s period bonus
+                mark_implausible_clocks(&mut moves);
+                assert_eq!(
+                    moves[curr_ply].unsure, expect_unsure,
+                    "side={side} move={move_num}"
+                );
+                assert_eq!(moves[curr_ply].clock, Some(2400));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn run_scoresheet_read_marks_implausible_clock_rise_unsure_in_complete_and_stopped_reads()
+    {
+        // (a) Complete read: White's clock jumps from 80 min (4800 s) to 82 min (4920 s) on move 2.
+        let complete = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "whiteClock": "80", "black": "e5", "blackClock": "80" },
+                { "n": 2, "white": "Nf3", "whiteClock": "82", "black": "Nc6", "blackClock": "79" }
+            ]
+        })
+        .to_string();
+        let backend = ScriptedBackend::new(vec![text(&complete)]);
+        let game = run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url()],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("complete read");
+        assert!(game.stopped.is_none());
+        assert!(!game.moves[0].unsure);
+        assert!(game.moves[2].unsure);
+        assert_eq!(game.moves[2].clock, Some(4920));
+        assert!(!game.moves[3].unsure);
+
+        // (b) Stopped read: same implausible rise on move 2, followed by unreadable "?" on move 3.
+        let stopped = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "whiteClock": "80", "black": "e5", "blackClock": "80" },
+                { "n": 2, "white": "Nf3", "whiteClock": "82", "black": "Nc6", "blackClock": "79" },
+                { "n": 3, "white": "?", "whiteClock": "78", "black": "a6", "blackClock": "77" }
+            ]
+        })
+        .to_string();
+        let backend = ScriptedBackend::new(vec![text(&stopped), text(&stopped)]);
+        let game = run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url()],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("stopped read");
+        assert!(game.stopped.is_some());
+        assert!(!game.moves[0].unsure);
+        assert!(game.moves[2].unsure);
+        assert_eq!(game.moves[2].clock, Some(4920));
+        assert!(!game.moves[3].unsure);
     }
 }

@@ -87,7 +87,7 @@ beforeEach(() => {
 });
 
 describe("scoresheet tree building", () => {
-    test("composes PGN with headers and numbered SAN moves", () => {
+    test("composes PGN with headers, numbered SAN moves, and optional clock comments", () => {
         const pgn = scoresheetGameToPgn(sampleGame());
         expect(pgn).toContain('[Event "Club Open"]');
         expect(pgn).toContain('[White "Alice"]');
@@ -97,6 +97,17 @@ describe("scoresheet tree building", () => {
         expect(pgn).toContain('[BlackElo "1790"]');
         expect(pgn).toContain('[Result "1-0"]');
         expect(pgn).toContain("1. e4 e5 2. Nf3 1-0");
+
+        const withClocks = scoresheetGameToPgn(
+            sampleGame({
+                moves: [
+                    { san: "e4", unsure: false, clock: 5160 },
+                    { san: "e5", unsure: true },
+                    { san: "Nf3", unsure: false, clock: 5190 },
+                ],
+            }),
+        );
+        expect(withClocks).toContain("1. e4 {[%clk 1:26:00]} e5 2. Nf3 {[%clk 1:26:30]} 1-0");
     });
 
     test("completely read game keeps game-end default, marks unsure nodes, sets review state and dirty", async () => {
@@ -332,6 +343,85 @@ describe("scoresheet continuation helpers", () => {
         expect(nf3.san).toBe("Nf3");
         expect(nf3.halfMoves).toBe(3);
         expect(nf3.children).toHaveLength(0);
+    });
+
+    test("continuation plans and replayScoresheetMoves carry clocks in seconds across after-stop and replace-middle", () => {
+        const tree = defaultTree();
+        const e4 = appendSan(tree.root, "e4");
+        e4.clock = 5400;
+        const e5 = appendSan(e4, "e5");
+        e5.clock = 5340;
+        const nf3 = appendSan(e5, "Nf3");
+        nf3.clock = 5280;
+        const nc6 = appendSan(nf3, "Nc6"); // L = 4
+        nc6.clock = 5220;
+
+        // after-stop slices stopped.clocks at L - ply (4 - 3 = 1) and exposes stoppedPlyClock when L === ply + 1.
+        expect(
+            planScoresheetContinuation(tree.root, [0, 0, 0, 0], {
+                stopped: { ply: 3, tokens: ["?", "Bb5", "a6"], clocks: [5220, 5160, null] },
+            }),
+        ).toEqual({
+            kind: "after-stop",
+            stoppedPlyClock: 5220,
+            moves: [
+                { san: "Bb5", unsure: false, clock: 5160 },
+                { san: "a6", unsure: false },
+            ],
+        });
+        expect(
+            planScoresheetContinuation(tree.root, [0, 0, 0, 0], {
+                stopped: { ply: 3, tokens: ["?", "Bb5", "a6"], clocks: [null, 5160, null] },
+            }),
+        ).toEqual({
+            kind: "after-stop",
+            moves: [
+                { san: "Bb5", unsure: false, clock: 5160 },
+                { san: "a6", unsure: false },
+            ],
+        });
+        // L > ply + 1 (4 > 2 + 1): user played two moves past the stop, so no stoppedPlyClock.
+        expect(
+            planScoresheetContinuation(tree.root, [0, 0, 0, 0], {
+                stopped: {
+                    ply: 2,
+                    tokens: ["?", "?", "Bb5", "a6"],
+                    clocks: [5280, 5220, 5160, 5100],
+                },
+            }),
+        ).toEqual({
+            kind: "after-stop",
+            moves: [
+                { san: "Bb5", unsure: false, clock: 5160 },
+                { san: "a6", unsure: false, clock: 5100 },
+            ],
+        });
+
+        // replace-middle carries clocks from old main-line nodes AND remaining stopped tokens.
+        appendSan(e4, "c5"); // [0, 1]
+        const replacePlan = planScoresheetContinuation(tree.root, [0, 1], {
+            stopped: { ply: 4, tokens: ["Bb5", "a6"], clocks: [null, 5100] },
+        });
+        expect(replacePlan).toEqual({
+            kind: "replace-middle",
+            parentPath: [0],
+            oldMainLineMoveCount: 2,
+            moves: [
+                { san: "Nf3", unsure: false, clock: 5280 },
+                { san: "Nc6", unsure: false, clock: 5220 },
+                { san: "Bb5", unsure: false },
+                { san: "a6", unsure: false, clock: 5100 },
+            ],
+        });
+
+        // replayScoresheetMoves sets node.clock directly in seconds (not ms).
+        const replayed = replayScoresheetMoves(nc6, [
+            { san: "Bb5", unsure: false, clock: 5160 },
+            { san: "a6", unsure: false },
+        ]);
+        expect(replayed).toBe(2);
+        expect(nc6.children[0].clock).toBe(5160);
+        expect(nc6.children[0].children[0].clock).toBeUndefined();
     });
 });
 

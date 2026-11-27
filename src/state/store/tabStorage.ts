@@ -1,5 +1,6 @@
 import { warnSafely } from "@/platform/errors";
 import { ANNOTATION_INFO, MAX_NAG } from "@/utils/annotation";
+import { MAX_CLOCK_SECONDS } from "@/utils/clock";
 import { reportPersistError } from "@/state/persistError";
 import { coachSessionSchema, readStoredCoachSession } from "@/state/coachSession";
 import { puzzleSessionSchema } from "@/state/puzzleSession";
@@ -124,6 +125,10 @@ function createLegacyAnnotationsSchema() {
 export const MAX_SCORESHEET_TOKENS = 600;
 export const MAX_SCORESHEET_TOKEN_LENGTH = 12;
 
+const scoresheetStopClocksSchema = z
+    .array(z.union([z.number().int().min(0).max(MAX_CLOCK_SECONDS), z.null()]))
+    .max(MAX_SCORESHEET_TOKENS);
+
 const scoresheetReviewSchema = z.object({
     stopped: z
         .object({
@@ -131,7 +136,13 @@ const scoresheetReviewSchema = z.object({
             tokens: z
                 .array(z.string().min(1).max(MAX_SCORESHEET_TOKEN_LENGTH))
                 .max(MAX_SCORESHEET_TOKENS),
+            clocks: scoresheetStopClocksSchema.optional().catch(undefined),
         })
+        .transform(({ clocks, ...stopped }) =>
+            clocks !== undefined && clocks.length <= stopped.tokens.length
+                ? { ...stopped, clocks }
+                : stopped,
+        )
         .optional(),
 });
 

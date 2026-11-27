@@ -3286,8 +3286,49 @@ test("scoresheetReview and unsure marks round-trip through tab storage when a re
     const read = storage.read("scoresheet-roundtrip")?.state as ReturnType<typeof defaultTree>;
 
     expect(read.scoresheetReview).toEqual({ stopped: { ply: 2, tokens: ["Nf3", "Nc6", "?"] } });
+    expect(Object.hasOwn(read.scoresheetReview!.stopped!, "clocks")).toBe(false);
     expect(read.root.children[0].unsure).toBe(true);
     expect(read.root.children[0].children[0].unsure).toBeUndefined();
+
+    // Sparse clocks ([null, 5160], including 0 and 36000 bounds) round-trip intact.
+    const withClocks = treeWithPaths({});
+    withClocks.scoresheetReview = {
+        stopped: { ply: 2, tokens: ["Nf3", "Nc6", "Bb5", "a6"], clocks: [null, 5160, 0, 36_000] },
+    };
+    storage.seed("scoresheet-clocks-roundtrip", withClocks);
+    const readClocks = storage.read("scoresheet-clocks-roundtrip")?.state as ReturnType<
+        typeof defaultTree
+    >;
+    expect(readClocks.scoresheetReview).toEqual({
+        stopped: { ply: 2, tokens: ["Nf3", "Nc6", "Bb5", "a6"], clocks: [null, 5160, 0, 36_000] },
+    });
+});
+
+test("malformed or oversized scoresheetReview.stopped.clocks is dropped while keeping the review readable", () => {
+    const badClocksList: unknown[] = [
+        "bad",
+        [-1],
+        [36_001],
+        [1.5],
+        ["86"],
+        [5160, 5100, 5040], // longer than tokens (2)
+        Array(601).fill(null), // exceeds MAX_SCORESHEET_TOKENS
+    ];
+    for (const [index, badClocks] of badClocksList.entries()) {
+        const tree = treeWithPaths({}) as unknown as Record<string, unknown>;
+        tree.scoresheetReview = {
+            stopped: { ply: 2, tokens: ["Nf3", "Nc6"], clocks: badClocks },
+        };
+        sessionStorage.setItem(`bad-stop-clocks-${index}`, JSON.stringify(tree));
+        const read = storage.read(`bad-stop-clocks-${index}`)?.state as ReturnType<
+            typeof defaultTree
+        >;
+        expect(read).toBeDefined();
+        expect(read.scoresheetReview).toEqual({
+            stopped: { ply: 2, tokens: ["Nf3", "Nc6"] },
+        });
+        expect(Object.hasOwn(read.scoresheetReview!.stopped!, "clocks")).toBe(false);
+    }
 });
 
 test("malformed scoresheetReview or unsure fields read as absent and never fail rehydration", () => {

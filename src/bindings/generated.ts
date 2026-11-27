@@ -2562,12 +2562,12 @@ export type ScoreValue =
 { type: "mate"; value: number }
 export type ScoresheetGame = { headers: ScoresheetHeaders; moves: ScoresheetMove[]; stopped: ScoresheetStop | null }
 export type ScoresheetHeaders = { white: string; black: string; event: string; site: string; date: string; round: string; result: string; whiteElo: string; blackElo: string }
-export type ScoresheetMove = { san: string; unsure: boolean }
+export type ScoresheetMove = { san: string; unsure: boolean; clock?: number | null }
 export type ScoresheetPhoto = { dataUrl: string }
 export type ScoresheetPhotoBatch = { photos: ScoresheetPhoto[]; skipped: number; failed: number }
 export type ScoresheetPhotosDropped = { drop: string }
 export type ScoresheetReadInput = { connection: CoachConnectionHandle; model: string; effort?: string | null; photos: string[] }
-export type ScoresheetStop = { ply: number; tokens: string[] }
+export type ScoresheetStop = { ply: number; tokens: string[]; clocks?: (number | null)[] | null }
 export type Segment = { type: "text"; text: string } | 
 /**
  * A line that is legal from the turn position, in the library's SAN with its engine moves.

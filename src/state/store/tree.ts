@@ -879,8 +879,13 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
 
                     if (plan.kind === "after-stop") {
                         const userNode = getNodeAtPath(state.root, state.position);
+                        const rescuedClock =
+                            userNode.clock === undefined && plan.stoppedPlyClock !== undefined;
+                        if (rescuedClock) {
+                            userNode.clock = plan.stoppedPlyClock;
+                        }
                         const replayed = replayScoresheetMoves(userNode, plan.moves);
-                        if (replayed > 0 || userNode.unsure !== undefined) {
+                        if (replayed > 0 || rescuedClock || userNode.unsure !== undefined) {
                             delete userNode.unsure;
                             state.dirty = true;
                         }
@@ -897,6 +902,11 @@ function treeMutationActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMu
                     promoteVariation(state, userPath);
                     const oldLinePath = [...plan.parentPath, 1];
                     const oldLineNode = getNodeAtPath(state.root, oldLinePath);
+
+                    if (userNode.clock === undefined && oldLineNode.clock !== undefined) {
+                        userNode.clock = oldLineNode.clock;
+                        delete oldLineNode.clock;
+                    }
 
                     const oldLastNode = getMainlineEndNode(oldLineNode);
                     if (allOldReplayed && oldLastNode.gameEnd !== undefined) {

@@ -12,6 +12,8 @@ export interface ScoresheetReviewStop {
     ply: number;
     /** Sheet tokens from `ply` onward (`tokens[0]` is the token that did not fit). */
     tokens: string[];
+    /** Optional per-token remaining clock times in seconds, parallel to `tokens` (`null` = absent). */
+    clocks?: (number | null)[];
 }
 
 export interface ScoresheetReview {
@@ -583,6 +585,8 @@ export interface ScoresheetRemaining {
     color: "white" | "black";
     /** Remaining sheet tokens from `nextPly` onward. */
     tokens: string[];
+    /** Optional per-token remaining clock times in seconds, parallel to `tokens`. */
+    clocks?: (number | null)[];
     /** The token that did not fit, present only while the main line still ends at the stop. */
     failedToken?: string;
 }
@@ -602,19 +606,22 @@ export function deriveScoresheetRemaining(
     initialHalfMoves = 0,
 ): ScoresheetRemaining | null {
     if (!stopped || stopped.tokens.length === 0) return null;
-    const { ply, tokens } = stopped;
+    const { ply, tokens, clocks } = stopped;
     let nextPly: number;
     let remaining: string[];
+    let remainingClocks: (number | null)[] | undefined;
     let failedToken: string | undefined;
 
     if (mainLineLength < ply) {
         nextPly = ply;
         remaining = tokens;
+        remainingClocks = clocks;
     } else {
         const offset = mainLineLength - ply;
         if (offset >= tokens.length) return null;
         nextPly = mainLineLength;
         remaining = tokens.slice(offset);
+        remainingClocks = clocks?.slice(offset);
         if (offset === 0) failedToken = tokens[0];
     }
 
@@ -622,9 +629,14 @@ export function deriveScoresheetRemaining(
     const color: "white" | "black" = halfMoves % 2 === 1 ? "white" : "black";
     const moveNumber = Math.ceil(halfMoves / 2);
 
-    return failedToken !== undefined
-        ? { nextPly, moveNumber, color, tokens: remaining, failedToken }
-        : { nextPly, moveNumber, color, tokens: remaining };
+    return {
+        nextPly,
+        moveNumber,
+        color,
+        tokens: remaining,
+        ...(remainingClocks !== undefined ? { clocks: remainingClocks } : {}),
+        ...(failedToken !== undefined ? { failedToken } : {}),
+    };
 }
 
 /** Paths of main-line nodes currently marked `unsure`, in ply order (root is never included). */

@@ -2495,6 +2495,28 @@ test("deriveScoresheetRemaining covers L < ply, L = ply, L > ply and exhausted t
     expect(deriveScoresheetRemaining(stopped, 7)).toBeNull();
     expect(deriveScoresheetRemaining(undefined, 0)).toBeNull();
     expect(deriveScoresheetRemaining({ ply: 4, tokens: [] }, 2)).toBeNull();
+
+    const stoppedWithClocks = {
+        ply: 4,
+        tokens: ["Nxe5", "d6", "Nf3"],
+        clocks: [5220, null, 5100],
+    };
+    // L < ply passes clocks through unchanged.
+    expect(deriveScoresheetRemaining(stoppedWithClocks, 2)).toStrictEqual({
+        nextPly: 4,
+        moveNumber: 3,
+        color: "white",
+        tokens: ["Nxe5", "d6", "Nf3"],
+        clocks: [5220, null, 5100],
+    });
+    // L > ply slices clocks in parallel with tokens.
+    expect(deriveScoresheetRemaining(stoppedWithClocks, 5)).toStrictEqual({
+        nextPly: 5,
+        moveNumber: 3,
+        color: "black",
+        tokens: ["d6", "Nf3"],
+        clocks: [null, 5100],
+    });
 });
 
 test("stripUnsureMarks copies every node without its mark and leaves the source tree unchanged", () => {
@@ -3014,6 +3036,126 @@ test("continueScoresheet after-stop is a no-op when first remaining token is ill
     expect(store.getState().root).toBe(rootBefore);
     expect(store.getState().dirty).toBe(false);
     expect(store.getState().history.past).toHaveLength(0);
+});
+
+test("continueScoresheet preserves clocks on after-stop and rescues clocks on after-stop and replace-middle", () => {
+    // Case A: after-stop rescues stopped.clocks[0] onto the user's move at the stopped ply when
+    // it has no clock, and replays remaining tokens with their clocks in seconds.
+    const afterStop = defaultTree();
+    const s1 = addMove(afterStop.root, "e2e4");
+    const s2 = addMove(s1, "e7e5");
+    const s3 = addMove(s2, "g1f3");
+    addMove(s3, "b8c6"); // user plays the stopped-ply move (ply 3, L = 4) without a clock
+    afterStop.scoresheetReview = {
+        stopped: { ply: 3, tokens: ["?", "Bb5", "a6"], clocks: [5220, 5160, 5100] },
+    };
+    afterStop.position = [0, 0, 0, 0];
+
+    const afterStopStore = createTreeStore(undefined, afterStop);
+    afterStopStore.getState().continueScoresheet();
+    expect(getNodeAtPath(afterStopStore.getState().root, [0, 0, 0, 0]).clock).toBe(5220);
+    expect(getNodeAtPath(afterStopStore.getState().root, [0, 0, 0, 0, 0]).clock).toBe(5160);
+    expect(getNodeAtPath(afterStopStore.getState().root, [0, 0, 0, 0, 0, 0]).clock).toBe(5100);
+
+    // Case A2: after-stop keeps the user's existing clock at the stopped ply (never overwritten by stopped.clocks[0]).
+    const afterStopKeepOwn = defaultTree();
+    const a2m1 = addMove(afterStopKeepOwn.root, "e2e4");
+    const a2m2 = addMove(a2m1, "e7e5");
+    const a2m3 = addMove(a2m2, "g1f3");
+    const a2m4 = addMove(a2m3, "b8c6");
+    a2m4.clock = 5200;
+    afterStopKeepOwn.scoresheetReview = {
+        stopped: { ply: 3, tokens: ["?", "Bb5"], clocks: [5220, 5160] },
+    };
+    afterStopKeepOwn.position = [0, 0, 0, 0];
+
+    const afterStopKeepOwnStore = createTreeStore(undefined, afterStopKeepOwn);
+    afterStopKeepOwnStore.getState().continueScoresheet();
+    expect(getNodeAtPath(afterStopKeepOwnStore.getState().root, [0, 0, 0, 0]).clock).toBe(5200);
+    expect(getNodeAtPath(afterStopKeepOwnStore.getState().root, [0, 0, 0, 0, 0]).clock).toBe(5160);
+
+    // Case A3: after-stop where only the stopped-ply clock is rescued and nothing replays ("?"):
+    // the user's move receives the clock and the store is marked dirty.
+    const afterStopClockOnly = defaultTree();
+    const a3m1 = addMove(afterStopClockOnly.root, "e2e4");
+    const a3m2 = addMove(a3m1, "e7e5");
+    const a3m3 = addMove(a3m2, "g1f3");
+    addMove(a3m3, "b8c6"); // no clock, no unsure mark
+    afterStopClockOnly.scoresheetReview = {
+        stopped: { ply: 3, tokens: ["?", "?", "a6"], clocks: [5220, null, 5100] },
+    };
+    afterStopClockOnly.position = [0, 0, 0, 0];
+
+    const afterStopClockOnlyStore = createTreeStore(undefined, afterStopClockOnly);
+    afterStopClockOnlyStore.getState().continueScoresheet();
+    expect(getNodeAtPath(afterStopClockOnlyStore.getState().root, [0, 0, 0, 0]).clock).toBe(5220);
+    expect(
+        getNodeAtPath(afterStopClockOnlyStore.getState().root, [0, 0, 0, 0]).children,
+    ).toHaveLength(0);
+    expect(afterStopClockOnlyStore.getState().dirty).toBe(true);
+
+    // Case B: replace-middle moves replaced node's clock to user's move when it has none,
+    // and carries old main-line clocks and stopped clocks onto the new main line.
+    const replace = defaultTree();
+    const r1 = addMove(replace.root, "e2e4");
+    r1.clock = 5400;
+    const r2 = addMove(r1, "e7e5");
+    r2.clock = 5340;
+    const r3 = addMove(r2, "g1f3");
+    r3.clock = 5280;
+    const r4 = addMove(r3, "b8c6");
+    r4.clock = 5220;
+    addMove(r1, "c7c5"); // user replacement at [0, 1] without a clock
+    replace.scoresheetReview = {
+        stopped: { ply: 4, tokens: ["Bb5"], clocks: [5160] },
+    };
+    replace.position = [0, 1];
+
+    const replaceStore = createTreeStore(undefined, replace);
+    replaceStore.getState().continueScoresheet();
+
+    // Plain old line is deleted; user's c5 rescued e5's clock, and Nf3/Nc6/Bb5 kept theirs.
+    expect(getNodeAtPath(replaceStore.getState().root, [0]).children).toHaveLength(1);
+    expect(getNodeAtPath(replaceStore.getState().root, [0, 0]).san).toBe("c5");
+    expect(getNodeAtPath(replaceStore.getState().root, [0, 0]).clock).toBe(5340);
+    expect(getNodeAtPath(replaceStore.getState().root, [0, 0, 0]).clock).toBe(5280);
+    expect(getNodeAtPath(replaceStore.getState().root, [0, 0, 0, 0]).clock).toBe(5220);
+    expect(getNodeAtPath(replaceStore.getState().root, [0, 0, 0, 0, 0]).clock).toBe(5160);
+
+    // Case C: non-plain old line with user move lacking a clock moves the clock onto the user's
+    // move and removes it from the kept old variation node.
+    const keptMoved = defaultTree();
+    const km1 = addMove(keptMoved.root, "e2e4");
+    const km2 = addMove(km1, "e7e5");
+    km2.clock = 5340;
+    km2.comment = "keep variation";
+    addMove(km2, "g1f3");
+    addMove(km1, "c7c5"); // user replacement at [0, 1] without a clock
+    keptMoved.scoresheetReview = {};
+    keptMoved.position = [0, 1];
+
+    const keptMovedStore = createTreeStore(undefined, keptMoved);
+    keptMovedStore.getState().continueScoresheet();
+    expect(getNodeAtPath(keptMovedStore.getState().root, [0, 0]).clock).toBe(5340);
+    expect(getNodeAtPath(keptMovedStore.getState().root, [0, 1]).clock).toBeUndefined();
+
+    // Case D: non-plain old line when the user's move already has a clock: the user's existing
+    // clock is kept intact and the kept old variation node keeps its own clock.
+    const kept = defaultTree();
+    const k1 = addMove(kept.root, "e2e4");
+    const k2 = addMove(k1, "e7e5");
+    k2.clock = 5340;
+    k2.comment = "keep variation";
+    addMove(k2, "g1f3");
+    const userWithClock = addMove(k1, "c7c5");
+    userWithClock.clock = 5300;
+    kept.scoresheetReview = {};
+    kept.position = [0, 1];
+
+    const keptStore = createTreeStore(undefined, kept);
+    keptStore.getState().continueScoresheet();
+    expect(getNodeAtPath(keptStore.getState().root, [0, 0]).clock).toBe(5300);
+    expect(getNodeAtPath(keptStore.getState().root, [0, 1]).clock).toBe(5340);
 });
 
 test("clearReviewMark clears the mark as one undoable edit and is a no-op when absent", () => {

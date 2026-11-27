@@ -1,7 +1,7 @@
 import { INITIAL_FEN, makeFen } from "chessops/fen";
 import { makeSan, parseSan } from "chessops/san";
 import type { Outcome, ScoresheetGame, ScoresheetMove } from "@/bindings";
-import { headersToPGN, parsePGN } from "@/utils/chess";
+import { headersToPGN, makeClk, parsePGN } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import {
     countMainPly,
@@ -10,6 +10,7 @@ import {
     getNodeAtPath,
     getResolvedPathLength,
     type GameHeaders,
+    type ScoresheetRemaining,
     type ScoresheetReview,
     type TreeNode,
     type TreeState,
@@ -106,7 +107,11 @@ export function scoresheetGameToPgn(game: ScoresheetGame): string {
         if (ply % 2 === 0) {
             movetextParts.push(`${Math.floor(ply / 2) + 1}.`);
         }
-        movetextParts.push(game.moves[ply].san);
+        const move = game.moves[ply];
+        movetextParts.push(move.san);
+        if (move.clock != null) {
+            movetextParts.push(`{[%clk ${makeClk(move.clock)}]}`);
+        }
     }
     const movetext = movetextParts.join(" ");
     return movetext ? `${headerPgn}\n${movetext} ${result}\n` : `${headerPgn}\n${result}\n`;
@@ -160,6 +165,7 @@ export async function buildScoresheetTree(
               stopped: {
                   ply: game.stopped.ply,
                   tokens: [...game.stopped.tokens],
+                  ...(game.stopped.clocks != null ? { clocks: [...game.stopped.clocks] } : {}),
               },
           }
         : {};
@@ -172,6 +178,8 @@ type ScoresheetContinuationPlan =
           kind: "after-stop";
           /** Remaining sheet tokens from `tokens[L - ply]` onward. */
           moves: ScoresheetMove[];
+          /** Clock recorded at the stopped ply, when the user's move sits right on it (`L === ply + 1`). */
+          stoppedPlyClock?: number;
       }
     | {
           kind: "replace-middle";
@@ -182,6 +190,15 @@ type ScoresheetContinuationPlan =
           /** Moves to replay: old main line after the replaced move, then (when `L >= ply`) remaining sheet tokens. */
           moves: ScoresheetMove[];
       };
+
+function remainingToScoresheetMoves(
+    remaining: Pick<ScoresheetRemaining, "tokens" | "clocks">,
+): ScoresheetMove[] {
+    return remaining.tokens.map((san, index) => {
+        const clock = remaining.clocks?.[index];
+        return typeof clock === "number" ? { san, unsure: false, clock } : { san, unsure: false };
+    });
+}
 
 /**
  * Determines whether "Continue with the rest of the sheet" is enabled at `position` and returns
@@ -213,9 +230,14 @@ export function planScoresheetContinuation(
         }
         const remaining = deriveScoresheetRemaining(stopped, mainLineLength, root.halfMoves);
         if (!remaining || remaining.tokens.length === 0) return null;
+        const stoppedPlyClock =
+            mainLineLength === stopped.ply + 1 && typeof stopped.clocks?.[0] === "number"
+                ? stopped.clocks[0]
+                : undefined;
         return {
             kind: "after-stop",
-            moves: remaining.tokens.map((san) => ({ san, unsure: false })),
+            moves: remainingToScoresheetMoves(remaining),
+            ...(stoppedPlyClock !== undefined ? { stoppedPlyClock } : {}),
         };
     }
 
@@ -230,7 +252,11 @@ export function planScoresheetContinuation(
     const moves: ScoresheetMove[] = [];
     let cur = replacedNode.children[0];
     while (cur && cur.san !== null) {
-        moves.push({ san: cur.san, unsure: cur.unsure === true });
+        moves.push(
+            cur.clock !== undefined
+                ? { san: cur.san, unsure: cur.unsure === true, clock: cur.clock }
+                : { san: cur.san, unsure: cur.unsure === true },
+        );
         cur = cur.children[0];
     }
     const oldMainLineMoveCount = moves.length;
@@ -243,9 +269,7 @@ export function planScoresheetContinuation(
             root.halfMoves,
         );
         if (remaining) {
-            for (const token of remaining.tokens) {
-                moves.push({ san: token, unsure: false });
-            }
+            moves.push(...remainingToScoresheetMoves(remaining));
         }
     }
 
@@ -288,7 +312,7 @@ export function isPlainScoresheetLine(startNode: TreeNode): boolean {
 /**
  * Strictly parses and appends `moves` as a linear chain under `tailNode`, stopping at the first
  * token that is not a legal SAN move in the current position (`?` is never legal).
- * Preserves each move's `unsure` mark. Returns the number of moves appended.
+ * Preserves each move's `unsure` mark and `clock` (in seconds). Returns the number of moves appended.
  */
 export function replayScoresheetMoves(
     tailNode: TreeNode,
@@ -312,6 +336,7 @@ export function replayScoresheetMoves(
             san,
             halfMoves,
         });
+        if (entry.clock != null) nextNode.clock = entry.clock;
         if (entry.unsure) nextNode.unsure = true;
         tail.children.push(nextNode);
         tail = nextNode;
