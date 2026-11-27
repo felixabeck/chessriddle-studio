@@ -29986,7 +29986,7 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 
 ### The windowed "All" database list e2e test expects a fresh 100-row chunk after returning to the Library and fails when the list kept its 250 loaded rows
 
-* **ID:** f-20261127-13 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-13 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 3ba7ff5f-9a7e-4158-823c-3b12ca3ff36c
 
 * **Impact class:** tooling
@@ -29996,7 +29996,10 @@ Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root ope
 * **Fix:** decide which behaviour is intended for a return to the Library in All mode (keep the loaded rows or start again at one chunk), make the product deterministic, and assert that behaviour instead of a timing-dependent one.
 * **Repair owner:** a9595a38-9fa5-484b-a802-6c5d84aa6d1a on tuxedo-felix, 2026-11-27T10:06:42Z
 * **First red:** Test run 45975375568 on `3965fff33` (job `e2e` 140425669478). The e2e job streak includes earlier reds 45974973498 and 45969736439 owned by handled f-20261127-12 (different test). This finding owns the windowed-All remount failure first observed on 45975375568.
-<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"13ca140d4ca10485fbe071b20d4e20a7f3a89519e3c11d910dd36c0bc4a71dc4","header_sha256":"e7c16a14bc8c97299c8d667ddb18c8821aff3190fe7482bb1f1d516c1469027f","header_status":"open","input_sha256":"9ee3f11ac743456db01f24396b4e5e6539e32606733852507ae4d9839c04f0d6","kind":"mutation-receipt","operation":"26cf32128cbff653e2f7249dac258579648559b4166a8864c6f81258ee6d6133","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-13"],"target":"f-20261127-13","v":1} -->
+<!-- ledger-meta {"command":"set-header","effect_lines":2,"effect_sha256":"13ca140d4ca10485fbe071b20d4e20a7f3a89519e3c11d910dd36c0bc4a71dc4","header_sha256":"e8004b8a9de256c5cf8fb412329698ad3729cc971f76f26c0df6cedf78a9184d","header_status":"handled","input_sha256":"9ee3f11ac743456db01f24396b4e5e6539e32606733852507ae4d9839c04f0d6","kind":"mutation-receipt","operation":"26cf32128cbff653e2f7249dac258579648559b4166a8864c6f81258ee6d6133","options":{"headers":{"Status":"open"},"section":null},"request_id_sha256":null,"results":["f-20261127-13"],"target":"f-20261127-13","v":1} -->
+
+Handled. After opening a game from All mode, returning to Library may keep the loaded chunks when the Games list stays mounted (`useDatabaseListQuery` extraState). d-20261127-08: keep those rows; the e2e loads until row 180 exists instead of requiring "Showing 100 of 250". Sort still resets via identity change. Proof: `node scripts/run-e2e-container.mjs e2e/database-files.spec.ts --grep "windowed All mode"` → 1 passed (4.2s). Commit 4334a7091. CI run 45975375568.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"404c46d183ebf3e64b4c9f51a21e8a2ecc90a460ae9f219ac0315467a91ca428","header_sha256":"e8004b8a9de256c5cf8fb412329698ad3729cc971f76f26c0df6cedf78a9184d","header_status":"handled","input_sha256":"e450c6c679aaea2223d5c71602e88851837791457992c7de69203e4b46e75e49","kind":"mutation-receipt","operation":"b3abf88bbc697630b3a42c05523183d8cf74e4301ed514cc9348cba2ebb39e1c","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-13"],"target":"f-20261127-13","v":1} -->
 
 ---
 
