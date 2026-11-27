@@ -30055,3 +30055,17 @@ Handled. The 14 stale baselines (Info panel Time control row shifting the conten
 * **Failure scenario:** Opening a game with `[%clk ...]` annotations makes `<Clock />` visible (`visibility: visible`). Running `assertAccessible()` flags `aria-progressbar-name` on the Mantine `<Progress>` inside `.blackClock` / `.whiteClock` and `color-contrast` (1.88:1 in light, 2.44:1 in dark, 2.91:1 in dim) on the inactive clock's text because `opacity: 0.5` dims the whole clock paper below WCAG 4.5:1.
 * **Evidence:** Observed during `pnpm test:e2e:container` on `e2e/game-report.spec.ts` after adding `[%clk ...]` annotations to the fixture PGN (`game-report`, `game-report-dark`, `game-report-narrow`, `game-report-320`, `game-report-scaled`, `game-report-wide`, `game-report-dim`).
 * **Fix direction:** Add an accessible name (`aria-label`) to the clock `<Progress>` and replace `opacity: 0.5` on the inactive clock with a scheme-aware dimmed text/surface treatment that preserves >= 4.5:1 contrast.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Active tab label in Dim scheme fails axe `color-contrast` (3.71:1)
+
+* **ID:** f-20261127-11 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** build-game-review-game-review-20261127-071118-cfe0f504
+
+* **Where:** `src/styles/Tabs.module.css:19-23` (`.tab[data-active]` inside `.list` with `background: var(--cf-surface-inset)`).
+* **Failure scenario:** When the Dim theme (`data-mantine-color-scheme="dark"` + `data-cf-theme-variant="dim"`) is active on the analysis board's panel tabs, axe `color-contrast` reports 3.71:1 (`#d0b26d` on `#5a5347`, expected 4.5:1) on the active `.tab[data-active]` label.
+* **Evidence:** Observed during `pnpm test:e2e:container` in the new `game-report-dim` project on `e2e/game-report.spec.ts` (`#mantine-*-tab-report > .mantine-Tabs-tabLabel`).
+* **Fix direction:** Adjust `.tab[data-active]` foreground/background mix in `src/styles/Tabs.module.css` (or Dim surface mix) so the active tab text meets >= 4.5:1 against its computed Dim background.
