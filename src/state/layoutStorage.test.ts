@@ -36,6 +36,7 @@ import {
     hiddenEngineAreas,
     isEnginePlaceholderArea,
     placeArea,
+    shownArrangement,
 } from "./boardArrangement";
 import { defaultKindLayouts, defaultLayoutForKind, LAYOUT_PRESETS } from "./layoutPresets";
 
@@ -750,8 +751,39 @@ describe("per-kind live state, apply, CRUD, fail-closed writes, and Reset", () =
             ]),
         ).toBe(true);
         const applied = store.get(boardLayoutFamily("game"));
-        expect(arrangementEngineAreas(applied.arrangement)).toEqual([engineAreaId("sf-enabled")]);
+        // With one loaded engine, the second side-by-side slot stays a hidden placeholder.
+        expect(arrangementEngineAreas(applied.arrangement)).toEqual([
+            engineAreaId("sf-enabled"),
+            "engine:@2",
+        ]);
         expect(applied.tabsHidden).toBe(false);
+        // The hidden placeholder leaves no empty tile: the lone engine sits directly under the board.
+        const oneEngine = [{ id: "sf-enabled", loaded: true }];
+        const shownOne = shownArrangement(
+            applied.arrangement,
+            new Set(hiddenEngineAreas(applied.arrangement, oneEngine)),
+        );
+        expect(shownOne).toMatchObject({
+            first: { direction: "column", first: "left", second: engineAreaId("sf-enabled") },
+        });
+
+        // With no loaded engine, both placeholders hide and the board fills its column.
+        expect(applyBoardLayoutToKind(store, "game", "preset:repertoire", [])).toBe(true);
+        const noEngines = store.get(boardLayoutFamily("game")).arrangement;
+        const shownNone = shownArrangement(noEngines, new Set(hiddenEngineAreas(noEngines, [])));
+        expect(shownNone).toMatchObject({ first: "left" });
+
+        // With two loaded engines, the Repertoire preset fills both side-by-side engine slots.
+        expect(
+            applyBoardLayoutToKind(store, "game", "preset:repertoire", [
+                { id: "sf-a", loaded: true },
+                { id: "sf-b", loaded: true },
+            ]),
+        ).toBe(true);
+        expect(arrangementEngineAreas(store.get(boardLayoutFamily("game")).arrangement)).toEqual([
+            engineAreaId("sf-a"),
+            engineAreaId("sf-b"),
+        ]);
     });
 
     test("save, replace (including at cap 20), rename (including casing-only), and delete enforce rules", () => {

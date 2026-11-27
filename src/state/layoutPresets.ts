@@ -55,30 +55,38 @@ export const LAYOUT_PRESETS: readonly LayoutPreset[] = [
         id: "preset:repertoire",
         nameKey: i18nKey("Board.Layout.Preset.Repertoire"),
         layout: {
+            // Felix's own Repertoire layout (2026-11-27): two engine windows side by side under the
+            // board; one loaded engine leaves the second slot as a hidden placeholder.
             arrangement: {
                 direction: "row",
                 first: {
                     direction: "column",
                     first: "left",
-                    second: enginePlaceholderAreaId(1),
-                    splitPercentage: 70,
+                    second: {
+                        direction: "row",
+                        first: enginePlaceholderAreaId(1),
+                        second: enginePlaceholderAreaId(2),
+                        splitPercentage: 50,
+                    },
+                    splitPercentage: 84,
                 },
                 second: {
                     direction: "column",
-                    first: "database",
-                    splitPercentage: 30,
-                    second: {
+                    first: {
                         direction: "column",
-                        first: "topRight",
-                        splitPercentage: 35,
-                        second: {
-                            direction: "row",
-                            first: "bottomRight",
-                            second: "annotate",
-                            splitPercentage: 55,
-                        },
+                        first: "database",
+                        second: "topRight",
+                        splitPercentage: 63,
                     },
+                    second: {
+                        direction: "row",
+                        first: "bottomRight",
+                        second: "annotate",
+                        splitPercentage: 59,
+                    },
+                    splitPercentage: 59,
                 },
+                splitPercentage: 44,
             },
             tabsHidden: false,
         },

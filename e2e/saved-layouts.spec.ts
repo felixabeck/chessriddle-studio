@@ -280,7 +280,12 @@ test("saved-layouts: per-kind presets, kind isolation, save/replace, menus, shor
         arrangement: DEFAULT_BOARD_ARRANGEMENT,
         tabsHidden: false,
     });
-    expect(afterReset.kinds.repertoire.arrangement.first.second).toBe("engine:@1");
+    expect(afterReset.kinds.repertoire.arrangement.first.second).toEqual({
+        direction: "row",
+        first: "engine:@1",
+        second: "engine:@2",
+        splitPercentage: 50,
+    });
     expect(afterReset.kinds.preparation.arrangement.second.first).toBe("database");
 
     // Return to the game tab (shows restored Game review preset) and delete the saved layout.

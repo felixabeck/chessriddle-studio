@@ -157,7 +157,17 @@ test("board-arrange: carries over legacy beside + pinned database, handles width
     expect(afterReset.kinds.repertoire.tabsHidden).toBe(false);
     expect(afterReset.kinds.repertoire.arrangement).toMatchObject({
         direction: "row",
-        first: { direction: "column", first: "left", second: "engine:@1", splitPercentage: 70 },
+        first: {
+            direction: "column",
+            first: "left",
+            second: {
+                direction: "row",
+                first: "engine:@1",
+                second: "engine:@2",
+                splitPercentage: 50,
+            },
+            splitPercentage: 84,
+        },
     });
     expect(afterReset.kinds.preparation.tabsHidden).toBe(false);
     expect(afterReset.kinds.preparation.arrangement).toMatchObject({
