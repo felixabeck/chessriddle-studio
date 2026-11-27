@@ -29884,7 +29884,7 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### The scoresheet photo build lowered app-infrastructure backend function coverage below its baseline (CI rust job red on master)
 
-* **ID:** f-20261127-05 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-05 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 45935946250
 * **Repair owner:** Claude Code build session 654468e5 (scoresheet-photo-panel) on tuxedo-felix, 2026-11-27T04:12Z
@@ -29892,6 +29892,9 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Fix:** cover the new native functions with tests (the ratchet must not be rebaselined, docs/coverage.md); then the push gates and a green Test run on master.
 * **Spotted outside diff:** -
 * The same run's `rust-macos-test` failure (`db::content_validation_tests::content_validation_metadata_returns_during_active_scan_and_only_one_of_many_scans_takes_gateway`) passed on `c5a3633db` and failed only on the records-only commit `dd3dfea0e`; it is a timing flake, not this regression.
+
+Fixed in 6b246eb9e: 25 path-authority tests cover the read-only default-root openers, sweep workspace refusals and typed capability errors; app-infrastructure functions 5105/7620 locally, baseline unchanged. Test run 45941326401 on master green (rust coverage ratchet included).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5db9e66f86f396fce059fb863ac71384e720748b277acc9acafcb790d4aa79a7","header_sha256":"5c633cf58603ea0a3dc4ba0121ea55d2a5ce6d32e742d91c129d14ec674c5fa2","header_status":"handled","input_sha256":"e3f13444ae7617fb54875b3001fafc8b1d70a2ed92e18911128eda4c7f2f1854","kind":"mutation-receipt","operation":"8421bd181aae8c6092763fdbc591c9b52c02690cd91204bd51d7e875c8cbc6da","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-05"],"target":"f-20261127-05","v":1} -->
 
 ---
 
