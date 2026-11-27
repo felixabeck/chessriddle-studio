@@ -30023,7 +30023,7 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 
 ### Clock-times push left 14 e2e screenshot baselines stale
 
-* **ID:** f-20261127-16 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-16 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 34341be4-16eb-480c-9feb-16366ec4136d
 
 * **Impact class:** tooling
@@ -30033,3 +30033,6 @@ Handled. After opening a game from All mode, returning to Library may keep the l
 * **Fix:** confirm each diff shows only the intended new Clock field / Time control row, regenerate those baselines in the container, and run the whole e2e suite in the container before pushing.
 * **Repair owner:** 34341be4-16eb-480c-9feb-16366ec4136d on tuxedo-atlas, 2026-11-27T11:41:47Z
 * **First red:** Test run 45989505612 on `5204b89e3` (job `e2e`).
+
+Handled. The 14 stale baselines (Info panel Time control row shifting the content below it) were regenerated in the container after inspecting every Playwright diff image; only the new row and the shift changed. Proof: `node scripts/run-e2e-container.mjs --update-snapshots=changed` over the 9 specs (83 passed), then the full container suite `node scripts/run-e2e-container.mjs` → 582 passed. Commit 4e6b15819. CI run 45989505612.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"0f067c81f30842113ba4a0710bf3a4aba97c21948ffe39a1ee094c90ecf1d8e4","header_sha256":"0b5e353fb050f084aac1c4c97ce9b7eb3fe19eb71940fec725ae93f08f2c143b","header_status":"handled","input_sha256":"e4314f84ae544b716ab548fb8dd8948780b9187d6d514dda2b6d72dfb8688f2e","kind":"mutation-receipt","operation":"2aea20fcc3493f012f87055a14403ad290e8173f3f104e3070da4ebcf9c3be8b","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-16"],"target":"f-20261127-16","v":1} -->
