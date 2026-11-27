@@ -5,7 +5,6 @@ import {
     buildInAppMenuItems,
     installAppMenuSurface,
     menuWindowPlatform,
-    openPageFromMenu,
     openPgnFromMenu,
     renderResizeHandles,
     resetInstallChainForTests,
@@ -479,31 +478,6 @@ test("openPgnFromMenu rejects when openFile rejects", async () => {
         }),
     ).rejects.toThrow("read failed");
 });
-
-test.each(["/settings", "/accounts", "/engines", "/guide"] as const)(
-    "openPageFromMenu awaits navigate to %s",
-    async (to) => {
-        const nav = deferred<void>();
-        let navigatedTo: string | undefined;
-        const pending = openPageFromMenu({
-            navigate: (opts) => {
-                navigatedTo = opts.to;
-                return nav.promise;
-            },
-            to,
-        });
-        let settled = false;
-        void pending.then(() => {
-            settled = true;
-        });
-        await Promise.resolve();
-        expect(settled).toBe(false);
-        expect(navigatedTo).toBe(to);
-        nav.resolve();
-        await pending;
-        expect(settled).toBe(true);
-    },
-);
 
 test("bindAppMenuCallbacks returns runMenu's promise for each wired command", async () => {
     const opened = deferred<void>();

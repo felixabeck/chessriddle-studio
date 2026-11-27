@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   coachTurn: vi.fn(),
   cancelAnalysis: vi.fn(),
   coachOpenUsage: vi.fn(),
-  navigate: vi.fn(),
+  showPageTab: vi.fn(),
   engines: [] as unknown[],
   refreshRepertoireIndex: vi.fn(),
   repertoireContext: vi.fn(),
@@ -37,7 +37,9 @@ vi.mock("@/platform/native", () => ({
   error: vi.fn(() => Promise.resolve()),
 }));
 vi.mock("@/utils/sound", () => ({ playSound: vi.fn() }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
+vi.mock("@/components/tabs/TabCommands", () => ({
+  useTabCommands: () => ({ showPageTab: mocks.showPageTab }),
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
@@ -58,6 +60,7 @@ const { coachTurnFamily, fileWorkspaceAtom, referenceDbAtom } = await import("@/
 const { coachNoticeAcceptedAtom, coachSelectionAtom } = await import("@/state/coach");
 const { applyCoachTurnEvent } = await import("@/state/coachTurns");
 const { closeTreeStore, createTreeStore } = await import("@/state/store/tree");
+const { settingsNavigationRequestAtom } = await import("@/state/settingsNavigation");
 const { WorkspaceTabScope } = await import("@/state/tabScope");
 const { default: CoachPanel } = await import("./CoachPanel");
 
@@ -191,7 +194,11 @@ test("without a connection or an engine the panel says what is needed and where"
   await render();
   expect(host.textContent).toContain("Coach.NoConnection");
   await act(async () => button("Coach.OpenSettings").click());
-  expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/settings" });
+  expect(atoms.get(settingsNavigationRequestAtom)?.target).toEqual({
+    kind: "category",
+    category: "coach",
+  });
+  expect(mocks.showPageTab).toHaveBeenLastCalledWith("settings");
   expect(host.querySelector("textarea")).toBeNull();
 });
 
@@ -200,7 +207,7 @@ test("without a local engine there is no composer, only the way to the engines",
   await render();
   expect(host.textContent).toContain("Coach.NoEngine");
   await act(async () => button("Coach.OpenEngines").click());
-  expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/engines" });
+  expect(mocks.showPageTab).toHaveBeenLastCalledWith("engines");
   expect(host.querySelector("textarea")).toBeNull();
 });
 

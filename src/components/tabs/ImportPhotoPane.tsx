@@ -1,5 +1,5 @@
 import { Button, Group, Loader, Text } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
+import { useTabCommands } from "./TabCommands";
 import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import { Clipboard, ImagePlus, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -86,7 +86,7 @@ function ImportPhotoPane({
   onReadingChange,
 }: ImportPhotoPaneProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { showPageTab } = useTabCommands();
   const store = useStore();
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const hasConnection = useAtomValue(assistantAvailableAtom);
@@ -250,8 +250,8 @@ function ImportPhotoPane({
   const handleOpenSettings = useCallback(() => {
     onClose();
     requestSettingsNavigation({ kind: "category", category: "coach" }, store);
-    void navigate({ to: "/settings" });
-  }, [navigate, onClose, store]);
+    void showPageTab("settings");
+  }, [onClose, showPageTab, store]);
 
   const runRead = useCallback(async () => {
     if (readingRef.current) return;

@@ -1,7 +1,6 @@
 import { useOwnerTabId } from "@/state/tabScope";
 import { Button, Group, Paper, ScrollArea, Space, Stack, Text } from "@mantine/core";
 import { ChevronsUpDown, Pause, Play, Settings } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue } from "jotai";
 import {
   memo,
@@ -20,6 +19,7 @@ import { IconAction } from "@/components/common/IconAction";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { BoardArrangementContext } from "@/components/tabs/BoardTabLayout";
+import { useTabCommands } from "@/components/tabs/TabCommands";
 import { allEnabledFamily, enableAllFamily, enginesAtom } from "@/state/atoms";
 import { engineAreaId } from "@/state/boardArrangement";
 import { getVariationLine } from "@/utils/chess";
@@ -118,7 +118,7 @@ function AnalysisPanel() {
   const allEnabled = useAtomValue(allEnabledFamily(useOwnerTabId()));
 
   const [pos] = positionFromFen(currentNodeFen);
-  const navigate = useNavigate();
+  const { showPageTab } = useTabCommands();
 
   return (
     <Stack h="100%" pt="xs" pl="xs" style={{ minWidth: 0, minHeight: 0 }}>
@@ -195,7 +195,7 @@ function AnalysisPanel() {
               flex={1}
               variant="default"
               onClick={() => {
-                navigate({ to: "/engines" });
+                void showPageTab("engines");
               }}
               leftSection={<Settings size="0.875rem" />}
             >

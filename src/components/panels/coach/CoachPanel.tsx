@@ -1,11 +1,11 @@
 import { Button, Stack, Text } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore as useAtomStore } from "jotai";
 import { useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { useCoachErrorMessages } from "@/components/settings/coach/useCoachErrorMessages";
+import { useTabCommands } from "@/components/tabs/TabCommands";
 import { coachTurnFamily, enginesAtom, fileWorkspaceAtom, referenceDbAtom } from "@/state/atoms";
 import {
   coachEngineAtom,
@@ -16,6 +16,7 @@ import {
 import { sendCoachMessage, startNewCoachConversation, stopCoachTurn } from "@/state/coachTurns";
 import { currentCollectionDatabase, useCollectionCurrency } from "@/state/linkedCollections";
 import { refreshRepertoireIndex } from "@/state/repertoireIndex";
+import { requestSettingsNavigation } from "@/state/settingsNavigation";
 import { useOwnerTabId, useTabAtom } from "@/state/tabScope";
 import { AiComposer } from "./AiComposer";
 import {
@@ -32,7 +33,7 @@ import classes from "./CoachPanel.module.css";
 function CoachPanel() {
   const { t } = useTranslation();
   const errors = useCoachErrorMessages();
-  const navigate = useNavigate();
+  const { showPageTab } = useTabCommands();
   const atoms = useAtomStore();
   const tab = useOwnerTabId();
   const tree = useContext(TreeStateContext)!;
@@ -102,12 +103,15 @@ function CoachPanel() {
       errors={errors}
       noConnectionText={t("Coach.NoConnection")}
       onReload={() => void reloadConnections()}
-      onOpenSettings={() => void navigate({ to: "/settings" })}
+      onOpenSettings={() => {
+        requestSettingsNavigation({ kind: "category", category: "coach" }, atoms);
+        void showPageTab("settings");
+      }}
     >
       {engines !== undefined && !engine ? (
         <Stack className={classes.empty} align="flex-start" gap="sm">
           <Text>{t("Coach.NoEngine")}</Text>
-          <Button variant="default" onClick={() => void navigate({ to: "/engines" })}>
+          <Button variant="default" onClick={() => void showPageTab("engines")}>
             {t("Coach.OpenEngines")}
           </Button>
         </Stack>

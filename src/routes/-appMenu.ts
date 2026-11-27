@@ -400,15 +400,6 @@ export async function openPgnFromMenu<File>(deps: {
     if (id !== null) await deps.navigate({ to: "/" });
 }
 
-export type MenuPagePath = "/settings" | "/accounts" | "/engines" | "/guide";
-
-export async function openPageFromMenu(deps: {
-    navigate: (opts: { to: string }) => void | Promise<unknown>;
-    to: MenuPagePath;
-}): Promise<void> {
-    await deps.navigate({ to: deps.to });
-}
-
 export async function runNativeMenuAction(
     command: () => Promise<unknown>,
     notify: (error: unknown) => void,

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   ask: vi.fn(),
   useIncomingGameLinks: vi.fn(),
   navigate: vi.fn(),
+  showPageTab: vi.fn(),
   firedByNativeMenu: vi.fn((_action: string) => false),
 }));
 vi.mock("@/components/boards/boardCommands", () => ({
@@ -139,7 +140,7 @@ vi.mock("@/components/tabs/TabCommands", () => ({
     renameTab: () => undefined,
     reorderTabs: () => undefined,
     pageTabs: [],
-    showPageTab: () => undefined,
+    showPageTab: mocks.showPageTab,
     closePageTab: () => undefined,
   }),
 }));
@@ -235,6 +236,7 @@ beforeEach(() => {
   mocks.pickPgnFile.mockReset().mockResolvedValue(null);
   mocks.ask.mockReset().mockResolvedValue(false);
   mocks.navigate.mockReset().mockResolvedValue(undefined);
+  mocks.showPageTab.mockReset().mockResolvedValue(undefined);
   mocks.firedByNativeMenu.mockReset().mockReturnValue(false);
 });
 
@@ -661,7 +663,7 @@ test("the root asks for a native menu only on macOS", async () => {
   }
 });
 
-test("the Help-menu Guide action navigates to /guide", async () => {
+test("RootShell menu openers route Settings, Accounts, Engines, and Guide through showPageTab", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root: Root = createRoot(host);
@@ -671,9 +673,18 @@ test("the Help-menu Guide action navigates to /guide", async () => {
   });
   expect(mocks.lastCallbacks).not.toBeNull();
   await act(async () => {
+    await mocks.lastCallbacks?.openSettings();
+    await mocks.lastCallbacks?.openAccounts();
+    await mocks.lastCallbacks?.openEngines();
     await mocks.lastCallbacks?.openGuide();
   });
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/guide" });
+  expect(mocks.showPageTab.mock.calls).toEqual([
+    ["settings"],
+    ["accounts"],
+    ["engines"],
+    ["guide"],
+  ]);
+  expect(mocks.navigate).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   host.remove();
 });

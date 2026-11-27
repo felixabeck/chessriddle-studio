@@ -34,14 +34,17 @@ const fixtures = vi.hoisted(() => ({
   notifyUnlessCancelled: vi.fn(),
   navigate: vi.fn(),
   pathname: "/",
+  href: null as string | null,
   reactiveRouter: false,
   routeListeners: new Set<() => void>(),
   navigateImpl: (options: { to?: string; href?: string; replace?: boolean }) => {
-    fixtures.navigate(options);
+    const result = fixtures.navigate(options);
     if (fixtures.reactiveRouter && typeof options?.to === "string") {
       fixtures.pathname = options.to;
+      fixtures.href = options.to;
       for (const listener of fixtures.routeListeners) listener();
     }
+    return result instanceof Promise ? result : Promise.resolve();
   },
   tabs: [
     { value: "current", name: "Current", type: "new", gameOrigin: { kind: "none" } },
@@ -148,10 +151,11 @@ vi.mock("@tanstack/react-router", async () => {
     useRouterState: ({
       select,
     }: {
-      select: (state: { location: { pathname: string } }) => unknown;
+      select: (state: { location: { pathname: string; href: string } }) => unknown;
     }) => {
       const pathname = useSyncExternalStore(subscribeRoute, () => fixtures.pathname);
-      return select({ location: { pathname } });
+      const href = useSyncExternalStore(subscribeRoute, () => fixtures.href ?? fixtures.pathname);
+      return select({ location: { pathname, href } });
     },
   };
 });
@@ -247,6 +251,7 @@ beforeEach(() => {
   fixtures.createTab.mockResolvedValue("created");
   fixtures.hotkeyBindings = null;
   fixtures.pathname = "/";
+  fixtures.href = null;
   fixtures.reactiveRouter = false;
   fixtures.routeListeners.clear();
   fixtures.navigate.mockReset();
@@ -544,3 +549,127 @@ test.each(offBoardActivationCases)(
     expect(latest!.activeTab).toBe("B");
   },
 );
+
+test("showPageTab restores last href, returns a Promise, falls back on rejection, and resets on closePageTab", async () => {
+  const {
+    clearSettingsScroll,
+    getSettingsScrollGeneration,
+    readSettingsScroll,
+    recordSettingsScroll,
+  } = await import("@/state/settingsNavigation");
+  clearSettingsScroll();
+  sessionStorage.clear();
+  localStorage.clear();
+
+  // Visit /settings?category=sound so pageTabHrefRef records it.
+  fixtures.pathname = "/settings";
+  fixtures.href = "/settings?category=sound";
+  await renderOwner();
+
+  const genBeforeClose = getSettingsScrollGeneration();
+  recordSettingsScroll({ mode: "category", category: "sound" }, 220, genBeforeClose);
+
+  // Already on Settings: showPageTab resolves without navigating.
+  await act(async () => {
+    const result = latest!.showPageTab("settings");
+    expect(result).toBeInstanceOf(Promise);
+    await result;
+  });
+  expect(fixtures.navigate).not.toHaveBeenCalled();
+
+  // Switch away to Library, then return via showPageTab("settings") -> restores last href.
+  fixtures.pathname = "/library";
+  fixtures.href = "/library";
+  await renderOwner();
+  await act(async () => {
+    await latest!.showPageTab("settings");
+  });
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ href: "/settings?category=sound" });
+
+  // No web-storage write of Settings last location (category/q/scroll).
+  expect(JSON.stringify(Object.entries(sessionStorage))).not.toContain("category=sound");
+  expect(JSON.stringify(Object.entries(localStorage))).not.toContain("category=sound");
+
+  // If navigating to the saved href rejects, fall back to /settings.
+  fixtures.navigate.mockReset();
+  fixtures.navigate.mockRejectedValueOnce(new Error("stale href")).mockResolvedValueOnce(undefined);
+  await act(async () => {
+    await latest!.showPageTab("settings");
+  });
+  expect(fixtures.navigate.mock.calls).toEqual([
+    [{ href: "/settings?category=sound" }],
+    [{ to: "/settings" }],
+  ]);
+
+  // If both last-href and the /settings fallback reject, showPageTab rejects with the fallback error.
+  fixtures.pathname = "/settings";
+  fixtures.href = "/settings?category=sound";
+  await renderOwner();
+  fixtures.pathname = "/library";
+  fixtures.href = "/library";
+  await renderOwner();
+  fixtures.navigate.mockReset();
+  const fallbackError = new Error("fallback failed");
+  fixtures.navigate
+    .mockRejectedValueOnce(new Error("stale href"))
+    .mockRejectedValueOnce(fallbackError);
+  await expect(latest!.showPageTab("settings")).rejects.toBe(fallbackError);
+  expect(fixtures.navigate.mock.calls).toEqual([
+    [{ href: "/settings?category=sound" }],
+    [{ to: "/settings" }],
+  ]);
+
+  // If last-href rejects and the /settings fallback is deferred, showPageTab waits for the fallback to settle.
+  fixtures.pathname = "/settings";
+  fixtures.href = "/settings?category=sound";
+  await renderOwner();
+  fixtures.pathname = "/library";
+  fixtures.href = "/library";
+  await renderOwner();
+  fixtures.navigate.mockReset();
+  let resolveFallback!: () => void;
+  const fallbackPromise = new Promise<void>((resolve) => {
+    resolveFallback = resolve;
+  });
+  fixtures.navigate
+    .mockRejectedValueOnce(new Error("stale href"))
+    .mockReturnValueOnce(fallbackPromise);
+  let settled = false;
+  const pendingFallback = latest!.showPageTab("settings").then(() => {
+    settled = true;
+  });
+  await vi.waitFor(() =>
+    expect(fixtures.navigate.mock.calls).toEqual([
+      [{ href: "/settings?category=sound" }],
+      [{ to: "/settings" }],
+    ]),
+  );
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  resolveFallback();
+  await pendingFallback;
+  expect(settled).toBe(true);
+
+  // Re-record a last href, then closePageTab("settings") clears href, clears scroll, and bumps generation.
+  fixtures.pathname = "/settings";
+  fixtures.href = "/settings?category=sound";
+  await renderOwner();
+  fixtures.pathname = "/library";
+  fixtures.href = "/library";
+  await renderOwner();
+  fixtures.navigate.mockReset();
+
+  await act(async () => {
+    latest!.closePageTab("settings");
+  });
+  expect(getSettingsScrollGeneration()).toBeGreaterThan(genBeforeClose);
+  expect(readSettingsScroll({ mode: "category", category: "sound" })).toBeUndefined();
+  // Stale generation write after close is ignored.
+  recordSettingsScroll({ mode: "category", category: "board" }, 180, genBeforeClose);
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBeUndefined();
+
+  await act(async () => {
+    await latest!.showPageTab("settings");
+  });
+  expect(fixtures.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/settings" });
+});

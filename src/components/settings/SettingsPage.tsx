@@ -15,10 +15,10 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useHotkeys } from "@mantine/hooks";
 import { RotateCcw, Search } from "lucide-react";
-import { useLoaderData } from "@tanstack/react-router";
+import { useLoaderData, useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { RESET } from "jotai/utils";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSWRConfig } from "swr";
 import { changeLocale } from "@/i18n";
@@ -65,7 +65,16 @@ import {
   restoreOpenTabsAtom,
 } from "@/state/atoms";
 import { coachEnabledAtom } from "@/state/coach";
-import { settingsNavigationRequestAtom } from "@/state/settingsNavigation";
+import {
+  clearSettingsScrollKey,
+  getSettingsScrollGeneration,
+  readSettingsScroll,
+  recordSettingsScroll,
+  settingsNavigationRequestAtom,
+  settingsScrollKeyId,
+  type SettingsScrollKey,
+} from "@/state/settingsNavigation";
+import { Route, settingsRouteSearch } from "@/routes/settings";
 import { keybindLabel, keyMapAtom } from "@/state/keybinds";
 import { resetBoardLayoutsAtom } from "@/state/layoutStorage";
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP } from "@/state/fontScale";
@@ -141,6 +150,7 @@ const MOVE_HIGHLIGHT_OPACITY_MARKS = [
 ];
 
 const COMPACT_SETTINGS_WIDTH_EM = 50;
+const MAX_PENDING_WRITTEN_QUERIES = 32;
 
 function AdvancedActionButton({
   label,
@@ -180,17 +190,74 @@ export async function loadPgnDirectoryStatus(fileWorkspace: FileWorkspaceHandle 
   return tauri.getFileFolderStatus(workspace);
 }
 
+function scrollViewportTo(viewport: HTMLDivElement | null, top: number) {
+  if (!viewport) return;
+  if (typeof viewport.scrollTo === "function") {
+    viewport.scrollTo({ top, behavior: "auto" });
+  }
+  viewport.scrollTop = top;
+}
+
 export default function Page() {
   const { t, i18n } = useTranslation();
   const { mutate: mutateCache } = useSWRConfig();
+  const navigate = useNavigate();
+  const { category: urlCategory, q: urlQuery } = Route.useSearch();
+  const activeCategory: SettingCategory = urlCategory ?? "board";
+  const normalizedUrlQuery = urlQuery ?? "";
   const compactTabs = useScaledMaxWidth(COMPACT_SETTINGS_WIDTH_EM);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState<SettingCategory>("board");
+  const [searchQuery, setSearchQuery] = useState(normalizedUrlQuery);
+  const pendingWrittenQueriesRef = useRef<string[]>([]);
+  const prevUrlQueryRef = useRef(normalizedUrlQuery);
   const [highlightedSettingId, setHighlightedSettingId] = useState<SettingId | null>(null);
-  const [pendingScroll, setPendingScroll] = useState<{ settingId: SettingId } | null>(null);
+  const [pendingScroll, setPendingScroll] = useState<{
+    settingId: SettingId;
+    category: SettingCategory;
+  } | null>(null);
   const [navigationRequest, setNavigationRequest] = useAtom(settingsNavigationRequestAtom);
   const pageRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const categoryViewportRef = useRef<HTMLDivElement>(null);
+  const searchViewportRef = useRef<HTMLDivElement>(null);
+  const scrollGenerationRef = useRef(getSettingsScrollGeneration());
+  const restoredScrollKeyRef = useRef<string | null>(null);
+  const suppressScrollRecordRef = useRef(false);
+
+  useEffect(() => {
+    if (normalizedUrlQuery === prevUrlQueryRef.current) return;
+    prevUrlQueryRef.current = normalizedUrlQuery;
+    const matchIndex = pendingWrittenQueriesRef.current.indexOf(normalizedUrlQuery);
+    if (matchIndex !== -1) {
+      pendingWrittenQueriesRef.current.splice(0, matchIndex + 1);
+      return;
+    }
+    pendingWrittenQueriesRef.current = [];
+    setSearchQuery(normalizedUrlQuery);
+  }, [normalizedUrlQuery]);
+
+  const updateSearchQuery = useCallback(
+    (nextQuery: string) => {
+      setSearchQuery(nextQuery);
+      setPendingScroll(null);
+      const latestPendingOrCommitted =
+        pendingWrittenQueriesRef.current.at(-1) ?? prevUrlQueryRef.current;
+      if (nextQuery !== latestPendingOrCommitted) {
+        pendingWrittenQueriesRef.current.push(nextQuery);
+        if (pendingWrittenQueriesRef.current.length > MAX_PENDING_WRITTEN_QUERIES) {
+          pendingWrittenQueriesRef.current.splice(
+            0,
+            pendingWrittenQueriesRef.current.length - MAX_PENDING_WRITTEN_QUERIES,
+          );
+        }
+      }
+      void navigate({
+        to: "/settings",
+        search: settingsRouteSearch(activeCategory, nextQuery),
+        replace: true,
+      });
+    },
+    [activeCategory, navigate],
+  );
 
   const [keyMap, setKeyMap] = useAtom(keyMapAtom);
   const [isNative, setIsNative] = useAtom(nativeBarAtom);
@@ -684,34 +751,126 @@ export default function Page() {
     return revealNestedId === setting.id;
   };
 
+  const hasApplicableNavigationRequest = useMemo(() => {
+    if (!navigationRequest) return false;
+    if (navigationRequest.target.kind === "category") {
+      return categories.includes(navigationRequest.target.category);
+    }
+    const targetId = navigationRequest.target.settingId;
+    const targetSetting = settings.find((setting) => setting.id === targetId);
+    return Boolean(targetSetting && categories.includes(targetSetting.category));
+  }, [navigationRequest, categories, settings]);
+
+  const isSearchView = filteredSettings !== null;
+  const currentScrollKey: SettingsScrollKey = useMemo(
+    () =>
+      isSearchView
+        ? { mode: "search", q: searchQuery }
+        : { mode: "category", category: effectiveCategory },
+    [isSearchView, searchQuery, effectiveCategory],
+  );
+  const currentScrollKeyId = settingsScrollKeyId(currentScrollKey);
+  const currentScrollKeyRef = useRef(currentScrollKey);
+  currentScrollKeyRef.current = currentScrollKey;
+  const currentScrollKeyIdRef = useRef(currentScrollKeyId);
+  currentScrollKeyIdRef.current = currentScrollKeyId;
+
+  useLayoutEffect(() => {
+    if (restoredScrollKeyRef.current === currentScrollKeyId) return;
+    restoredScrollKeyRef.current = currentScrollKeyId;
+    if (hasApplicableNavigationRequest || pendingScroll) return;
+    const viewport = isSearchView ? searchViewportRef.current : categoryViewportRef.current;
+    const savedY = readSettingsScroll(currentScrollKey) ?? 0;
+    suppressScrollRecordRef.current = true;
+    scrollViewportTo(viewport, savedY);
+    suppressScrollRecordRef.current = false;
+  }, [
+    currentScrollKey,
+    currentScrollKeyId,
+    hasApplicableNavigationRequest,
+    isSearchView,
+    pendingScroll,
+  ]);
+
+  useEffect(() => {
+    const viewport = isSearchView ? searchViewportRef.current : categoryViewportRef.current;
+    if (!viewport) return;
+    const onScroll = () => {
+      if (suppressScrollRecordRef.current) return;
+      if (restoredScrollKeyRef.current !== currentScrollKeyIdRef.current) return;
+      recordSettingsScroll(
+        currentScrollKeyRef.current,
+        viewport.scrollTop,
+        scrollGenerationRef.current,
+      );
+    };
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener("scroll", onScroll);
+    };
+  }, [isSearchView]);
+
   useEffect(() => {
     if (!navigationRequest) return;
     setNavigationRequest((current) => (current?.id === navigationRequest.id ? null : current));
 
     if (navigationRequest.target.kind === "category") {
-      if (!categories.includes(navigationRequest.target.category)) return;
+      const targetCategory = navigationRequest.target.category;
+      if (!categories.includes(targetCategory)) return;
+      clearSettingsScrollKey({ mode: "category", category: targetCategory });
+      pendingWrittenQueriesRef.current = [];
       setSearchQuery("");
-      setActiveCategory(navigationRequest.target.category);
       setHighlightedSettingId(null);
       setPendingScroll(null);
+      if (!isSearchView && effectiveCategory === targetCategory) {
+        suppressScrollRecordRef.current = true;
+        scrollViewportTo(categoryViewportRef.current, 0);
+        suppressScrollRecordRef.current = false;
+      }
+      void navigate({
+        to: "/settings",
+        search: settingsRouteSearch(targetCategory, ""),
+        replace: true,
+      });
       return;
     }
 
     const targetId = navigationRequest.target.settingId;
     const targetSetting = settings.find((setting) => setting.id === targetId);
     if (!targetSetting || !categories.includes(targetSetting.category)) return;
+    clearSettingsScrollKey({ mode: "category", category: targetSetting.category });
+    pendingWrittenQueriesRef.current = [];
     setSearchQuery("");
-    setActiveCategory(targetSetting.category);
     setHighlightedSettingId(targetSetting.id);
-    setPendingScroll({ settingId: targetSetting.id });
-  }, [navigationRequest, categories, settings, setNavigationRequest]);
+    setPendingScroll({ settingId: targetSetting.id, category: targetSetting.category });
+    void navigate({
+      to: "/settings",
+      search: settingsRouteSearch(targetSetting.category, ""),
+      replace: true,
+    });
+  }, [
+    navigationRequest,
+    categories,
+    settings,
+    setNavigationRequest,
+    navigate,
+    effectiveCategory,
+    isSearchView,
+  ]);
 
   useEffect(() => {
     if (!pendingScroll || filteredSettings) return;
+    if (effectiveCategory !== pendingScroll.category) return;
     const row = pageRef.current?.querySelector<HTMLElement>(
       `[data-setting-id="${pendingScroll.settingId}"]`,
     );
-    if (!row) return;
+    if (!row) {
+      setPendingScroll(null);
+      suppressScrollRecordRef.current = true;
+      scrollViewportTo(categoryViewportRef.current, 0);
+      suppressScrollRecordRef.current = false;
+      return;
+    }
     row.scrollIntoView?.({ block: "center", behavior: "auto" });
     setPendingScroll(null);
   }, [pendingScroll, filteredSettings, effectiveCategory]);
@@ -926,15 +1085,14 @@ export default function Page() {
           leftSection={<Search size="1rem" />}
           value={searchQuery}
           onChange={(e) => {
-            setSearchQuery(e.currentTarget.value);
-            setPendingScroll(null);
+            updateSearchQuery(e.currentTarget.value);
           }}
           onKeyDown={(e) => {
             if (e.key === "f" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
             }
             if (e.key === "Escape") {
-              setSearchQuery("");
+              updateSearchQuery("");
               searchInputRef.current?.blur();
             }
           }}
@@ -942,7 +1100,7 @@ export default function Page() {
         />
       </Group>
       {filteredSettings ? (
-        <ScrollArea flex={1} px="md">
+        <ScrollArea flex={1} px="md" viewportRef={searchViewportRef}>
           <div className={classes.panel}>{renderSearchResults()}</div>
           <Text size="xs" c="dimmed" ta="right" py="md">
             {t("Settings.Version", { version })}
@@ -953,9 +1111,15 @@ export default function Page() {
           value={effectiveCategory}
           onChange={(value) => {
             if (value && categories.includes(value as SettingCategory)) {
-              setActiveCategory(value as SettingCategory);
+              const nextCategory = value as SettingCategory;
+              pendingWrittenQueriesRef.current = [];
+              setSearchQuery("");
               setHighlightedSettingId(null);
               setPendingScroll(null);
+              void navigate({
+                to: "/settings",
+                search: settingsRouteSearch(nextCategory, ""),
+              });
             }
           }}
           orientation={compactTabs ? "horizontal" : "vertical"}
@@ -973,7 +1137,7 @@ export default function Page() {
         >
           <GroupedSidebarTabs groups={sidebarGroups} compact={compactTabs} />
           <Stack flex={1} className={shellClasses.content}>
-            <ScrollArea className={shellClasses.scroll}>
+            <ScrollArea className={shellClasses.scroll} viewportRef={categoryViewportRef}>
               {categories.map((category) => {
                 const title = (
                   <Text size="lg" fw={500} className={`${classes.title} wrap-anywhere`}>

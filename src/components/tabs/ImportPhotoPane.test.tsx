@@ -43,7 +43,7 @@ const MODEL: ModelInfo = {
 };
 
 const mocks = vi.hoisted(() => ({
-  navigate: vi.fn(),
+  showPageTab: vi.fn(),
   warnSafely: vi.fn(),
   coachAvailable: vi.fn(),
   coachHasConnection: vi.fn(),
@@ -72,8 +72,8 @@ vi.mock("@/platform/errors", async (importOriginal) => ({
   warnSafely: (message: string) => mocks.warnSafely(message),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => mocks.navigate,
+vi.mock("./TabCommands", () => ({
+  useTabCommands: () => ({ showPageTab: mocks.showPageTab }),
 }));
 
 vi.mock("@/platform/tauri", () => ({
@@ -368,7 +368,7 @@ test("without a connection shows hint, navigates to AI settings, and subscribes 
       category: "coach",
     },
   });
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/settings" });
+  expect(mocks.showPageTab).toHaveBeenCalledWith("settings");
 });
 
 test("choosing photos appends thumbnails in order, removes one, caps at 4, and reports skipped/failed", async () => {

@@ -645,3 +645,23 @@ finding ids and date.
   `d-20261125-65`, and the Photo tab staying in the tab strip as `d-20261125-66`, in
   `tasks/decisions.md`; plan `tasks/plans/2026-11-25-board-layout-arrange.md`.
 - **Date:** 2026-11-25.
+
+## 2026-11-27 — Settings remembers its view while its tab stays open
+
+- **Question:** Switching from Settings to another tab and clicking the still-open Settings tab
+  reset Settings to Board at the top. Should Settings remember where the user left off, and what
+  should reset it?
+- **Choice:** While the Settings tab stays open in this run, switching to another tab (a board or
+  Library) and returning to Settings restores the same category, search query, and scroll offset.
+  Closing the Settings tab with its X and opening Settings again starts at Board with an empty
+  search at the top. Restarting the app (even when the Settings tab comes back with
+  restore-open-tabs) starts at Board. A deep link from the Assistant, Guide, Coach, or photo import
+  wins over the remembered view. Highlight is one-shot and is not restored.
+- **Felix's reason:** Agreed lifetimes on 2026-11-27: switching away from Settings and back to the
+  still-open Settings tab must remember the place he left; closing the tab and opening Settings
+  again starts at Board. He accepted putting category and search on the Settings URL so the
+  existing in-run page-tab last-location path restores them, matching Engines' `selected` search
+  param.
+- **Technical record:** plan `tasks/plans/2026-11-27-settings-view-restore.md` and `d-20261127-06`
+  in `tasks/decisions.md` (alongside `d-20261121-02`).
+- **Date:** 2026-11-27.

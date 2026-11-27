@@ -1,4 +1,10 @@
 import { MantineProvider, VisuallyHidden } from "@mantine/core";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { createStore, getDefaultStore, Provider } from "jotai";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -16,9 +22,12 @@ import {
 } from "@/state/atoms";
 import { readRestoreOpenTabsPreference, RESTORE_OPEN_TABS_KEY } from "@/state/restoreOpenTabs";
 import {
+  clearSettingsScroll,
+  readSettingsScroll,
   requestSettingsNavigation,
   settingsNavigationRequestAtom,
 } from "@/state/settingsNavigation";
+import { Route as SettingsRoute } from "@/routes/settings";
 import { catalogueI18n } from "@/tests/catalogues";
 import { installInlineComputedStyleStub } from "@/tests/computedStyle";
 import { installMatchMediaStub } from "@/tests/matchMedia";
@@ -30,13 +39,10 @@ import classes from "./SettingsPage.module.css";
 
 const platformMock = vi.hoisted(() => vi.fn(() => "windows"));
 vi.mock("@/platform/native", () => ({
+  getVersion: vi.fn().mockResolvedValue("test"),
   platform: platformMock,
   warn: vi.fn(),
   error: vi.fn(),
-}));
-vi.mock("@tanstack/react-router", async (original) => ({
-  ...(await original<typeof import("@tanstack/react-router")>()),
-  useLoaderData: () => ({ version: "test" }),
 }));
 const translation = vi.hoisted(() => ({
   identity: (key: string) => key,
@@ -190,6 +196,8 @@ afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   host?.remove();
   localStorage.clear();
+  sessionStorage.clear();
+  clearSettingsScroll();
   translation.t = translation.identity;
   layout.compact = false;
   coach.enabled = false;
@@ -213,21 +221,36 @@ afterEach(async () => {
   else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
-async function renderSettingsPage(atoms = createStore()) {
+async function renderSettingsPage(atoms = createStore(), initialEntry = "/settings") {
   const container = document.createElement("div");
   host = container;
   document.body.append(container);
   root = createRoot(container);
-  await act(async () =>
+  const rootRoute = createRootRoute();
+  const settingsChild = SettingsRoute.update({
+    id: "/settings",
+    path: "/settings",
+    getParentRoute: () => rootRoute,
+  } as never).update({
+    component: Page,
+    errorComponent: () => <div data-testid="settings-error-component">error</div>,
+  });
+  const history = createMemoryHistory({ initialEntries: [initialEntry] });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([settingsChild]),
+    history,
+  });
+  await act(async () => {
+    await router.load();
     root!.render(
       <Provider store={atoms}>
         <MantineProvider env="test">
-          <Page />
+          <RouterProvider router={router} />
         </MantineProvider>
       </Provider>,
-    ),
-  );
-  return { atoms, host: container };
+    );
+  });
+  return { atoms, host: container, router, history };
 }
 
 /** Opens the select named `label`, checks its current value and option order, and picks `choice`. */
@@ -681,21 +704,23 @@ test("switching tabs manually clears a prior setting highlight", async () => {
   expect(host.querySelectorAll("[data-highlighted]")).toHaveLength(0);
 });
 
-test("a consumed request does not act again on remount", async () => {
+test("a consumed request writes the category to the URL and remount keeps it while dropping highlight", async () => {
   const atoms = createStore();
   requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
-  const { host: firstHost } = await renderSettingsPage(atoms);
+  const { host: firstHost, router: firstRouter } = await renderSettingsPage(atoms);
 
   expect(
     firstHost
       .querySelector('[role="tab"][aria-selected="true"]')
       ?.getAttribute("data-settings-category"),
   ).toBe("sound");
+  expect(firstRouter.state.location.href).toBe("/settings?category=sound");
   expect(
     firstHost.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted"),
   ).toBe("true");
   expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
 
+  const savedHref = firstRouter.state.location.href;
   await act(async () => root!.unmount());
   firstHost.remove();
   root = undefined;
@@ -703,12 +728,12 @@ test("a consumed request does not act again on remount", async () => {
   const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
   scrollSpy.mockClear();
 
-  const { host: secondHost } = await renderSettingsPage(atoms);
+  const { host: secondHost } = await renderSettingsPage(atoms, savedHref);
   expect(
     secondHost
       .querySelector('[role="tab"][aria-selected="true"]')
       ?.getAttribute("data-settings-category"),
-  ).toBe("board");
+  ).toBe("sound");
   expect(secondHost.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   expect(scrollSpy).not.toHaveBeenCalled();
 });
@@ -1214,4 +1239,415 @@ test("SettingsPage Databases, Engines, and Puzzles rows handle Pending + Cancel 
   getPendingFolderSwitch()?.resolve(null);
   setPendingFolderSwitch(null);
   await expect(puzPending).resolves.toBeNull();
+});
+
+test("fail-open URL search handles category=sound, unknown category, hidden coach, and numeric q=123 without ErrorComponent", async () => {
+  // category=sound renders Sound.
+  {
+    const { host } = await renderSettingsPage(createStore(), "/settings?category=sound");
+    expect(host.querySelector('[data-testid="settings-error-component"]')).toBeNull();
+    expect(
+      host
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.getAttribute("data-settings-category"),
+    ).toBe("sound");
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+  }
+
+  // Unknown category renders Board without ErrorComponent.
+  {
+    const { host } = await renderSettingsPage(createStore(), "/settings?category=nonexistent");
+    expect(host.querySelector('[data-testid="settings-error-component"]')).toBeNull();
+    expect(
+      host
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.getAttribute("data-settings-category"),
+    ).toBe("board");
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+  }
+
+  // Hidden coach category renders Board without rewriting the URL.
+  {
+    coach.enabled = false;
+    const { host, router } = await renderSettingsPage(createStore(), "/settings?category=coach");
+    expect(host.querySelector('[data-testid="settings-error-component"]')).toBeNull();
+    expect(
+      host
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.getAttribute("data-settings-category"),
+    ).toBe("board");
+    expect(router.state.location.href).toBe("/settings?category=coach");
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+  }
+
+  // Numeric q=123 coerces to string "123" and shows the search view without ErrorComponent.
+  {
+    const { host } = await renderSettingsPage(createStore(), "/settings?q=123");
+    expect(host.querySelector('[data-testid="settings-error-component"]')).toBeNull();
+    const input = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+    expect(input.value).toBe("123");
+    expect(host.querySelector('[role="tab"]')).toBeNull();
+  }
+});
+
+test("typing search updates input immediately, writes q with replace, and remount restores search view without touching web storage", async () => {
+  const { host, router, history } = await renderSettingsPage();
+  const initialLength = history.length;
+  const localBefore = Object.entries(localStorage);
+  const sessionBefore = Object.entries(sessionStorage);
+  const input = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "vol");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(input.value).toBe("vol");
+  await vi.waitFor(() => expect(router.state.location.href).toBe("/settings?q=vol"));
+  expect(history.length).toBe(initialLength);
+  expect(Object.entries(localStorage)).toEqual(localBefore);
+  expect(Object.entries(sessionStorage)).toEqual(sessionBefore);
+
+  const savedHref = router.state.location.href;
+  await act(async () => root!.unmount());
+  host.remove();
+  root = undefined;
+
+  const { host: remountHost } = await renderSettingsPage(createStore(), savedHref);
+  expect(
+    remountHost.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')?.value,
+  ).toBe("vol");
+  expect(remountHost.querySelector('[data-setting-id="volume"]')).not.toBeNull();
+  expect(remountHost.querySelector('[role="tab"]')).toBeNull();
+});
+
+test("a live request overrides a restored URL while a hidden coach request preserves it", async () => {
+  // Live volume request overrides /settings?category=general&q=font.
+  {
+    const atoms = createStore();
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+    const { host, router } = await renderSettingsPage(atoms, "/settings?category=general&q=font");
+    expect(
+      host
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.getAttribute("data-settings-category"),
+    ).toBe("sound");
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')?.value).toBe(
+      "",
+    );
+    expect(host.querySelector('[data-setting-id="volume"]')?.getAttribute("data-highlighted")).toBe(
+      "true",
+    );
+    expect(router.state.location.href).toBe("/settings?category=sound");
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+  }
+
+  // Hidden coach request preserves /settings?category=general&q=font.
+  {
+    coach.enabled = false;
+    const atoms = createStore();
+    requestSettingsNavigation({ kind: "category", category: "coach" }, atoms);
+    const { host, router } = await renderSettingsPage(atoms, "/settings?category=general&q=font");
+    expect(atoms.get(settingsNavigationRequestAtom)).toBeNull();
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')?.value).toBe(
+      "font",
+    );
+    expect(router.state.location.href).toBe("/settings?category=general&q=font");
+  }
+});
+
+test("remount restores saved scroll for category and search viewports; category switch does not leak scrollTop; close clear blocks late writes", async () => {
+  const { host, router } = await renderSettingsPage();
+  const localBefore = Object.entries(localStorage);
+  const sessionBefore = Object.entries(sessionStorage);
+  const categoryViewport = host.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!;
+  expect(categoryViewport).not.toBeNull();
+
+  // Scroll Board to 260.
+  categoryViewport.scrollTop = 260;
+  await act(async () => {
+    categoryViewport.dispatchEvent(new Event("scroll"));
+  });
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBe(260);
+  expect(Object.entries(localStorage)).toEqual(localBefore);
+  expect(Object.entries(sessionStorage)).toEqual(sessionBefore);
+
+  // Switch to Sound: Sound restores 0 and does not record Board's leaked 260.
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[role="tab"][data-settings-category="sound"]')!.click();
+  });
+  await vi.waitFor(() => expect(router.state.location.href).toBe("/settings?category=sound"));
+  expect(categoryViewport.scrollTop).toBe(0);
+  expect(readSettingsScroll({ mode: "category", category: "sound" })).toBeUndefined();
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBe(260);
+
+  // Scroll Sound to 140, unmount, remount at /settings?category=sound -> restores 140.
+  categoryViewport.scrollTop = 140;
+  await act(async () => {
+    categoryViewport.dispatchEvent(new Event("scroll"));
+  });
+  await act(async () => root!.unmount());
+  host.remove();
+  root = undefined;
+
+  const { host: soundRemount } = await renderSettingsPage(
+    createStore(),
+    "/settings?category=sound",
+  );
+  const remountCatViewport = soundRemount.querySelector<HTMLDivElement>(
+    ".mantine-ScrollArea-viewport",
+  )!;
+  expect(remountCatViewport.scrollTop).toBe(140);
+
+  // Search view scroll restore: scroll search viewport to 95, unmount, remount at /settings?q=font.
+  const searchInput = soundRemount.querySelector<HTMLInputElement>(
+    'input[placeholder="Common.Search"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      searchInput,
+      "font",
+    );
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const searchViewport = soundRemount.querySelector<HTMLDivElement>(
+    ".mantine-ScrollArea-viewport",
+  )!;
+  searchViewport.scrollTop = 95;
+  await act(async () => {
+    searchViewport.dispatchEvent(new Event("scroll"));
+  });
+  await act(async () => root!.unmount());
+  soundRemount.remove();
+  root = undefined;
+
+  const { host: searchRemount } = await renderSettingsPage(createStore(), "/settings?q=font");
+  const remountSearchViewport = searchRemount.querySelector<HTMLDivElement>(
+    ".mantine-ScrollArea-viewport",
+  )!;
+  expect(remountSearchViewport.scrollTop).toBe(95);
+
+  // Simulate closePageTab("settings") clearing scroll & bumping generation while still mounted:
+  // a late scroll event + unmount must NOT rewrite scroll, and later Board starts at 0.
+  clearSettingsScroll();
+  remountSearchViewport.scrollTop = 333;
+  await act(async () => {
+    remountSearchViewport.dispatchEvent(new Event("scroll"));
+  });
+  await act(async () => root!.unmount());
+  searchRemount.remove();
+  root = undefined;
+  expect(readSettingsScroll({ mode: "search", q: "font" })).toBeUndefined();
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBeUndefined();
+
+  const { host: freshBoard } = await renderSettingsPage(createStore(), "/settings");
+  expect(freshBoard.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!.scrollTop).toBe(
+    0,
+  );
+});
+
+test("live navigation request does not restore saved scroll and successful scrollIntoView is not reset to 0", async () => {
+  // Seed saved scroll for sound = 280.
+  const { host: firstHost } = await renderSettingsPage(createStore(), "/settings?category=sound");
+  const firstViewport = firstHost.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!;
+  firstViewport.scrollTop = 280;
+  await act(async () => {
+    firstViewport.dispatchEvent(new Event("scroll"));
+  });
+  await act(async () => root!.unmount());
+  firstHost.remove();
+  root = undefined;
+
+  // Mount with a live volume request: saved 280 must NOT be applied, and viewport stays where scrollIntoView put it.
+  const scrollIntoViewMock = vi.fn(function (this: HTMLElement) {
+    const viewport = this.closest<HTMLDivElement>(".mantine-ScrollArea-viewport");
+    if (viewport) viewport.scrollTop = 412;
+  });
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoViewMock,
+  });
+  const originalScrollTo = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTo");
+  const scrollToMock = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollTo", {
+    configurable: true,
+    value: scrollToMock,
+  });
+
+  try {
+    const atoms = createStore();
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+    const { host: secondHost } = await renderSettingsPage(atoms, "/settings?category=sound");
+    expect(scrollToMock).not.toHaveBeenCalledWith(expect.objectContaining({ top: 280 }));
+    expect(scrollIntoViewMock).toHaveBeenCalledOnce();
+    expect(
+      secondHost.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!.scrollTop,
+    ).toBe(412);
+  } finally {
+    if (originalScrollTo) Object.defineProperty(Element.prototype, "scrollTo", originalScrollTo);
+    else Reflect.deleteProperty(Element.prototype, "scrollTo");
+  }
+});
+
+test("missing scrollTo fails open, and unresolvable pendingScroll clears only once the target category is on screen", async () => {
+  // Missing scrollTo fails open on restore without throwing.
+  const originalScrollTo = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTo");
+  Object.defineProperty(Element.prototype, "scrollTo", {
+    configurable: true,
+    value: undefined,
+  });
+  try {
+    const { host } = await renderSettingsPage(createStore(), "/settings");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')).not.toBeNull();
+    await act(async () => root!.unmount());
+    host.remove();
+    root = undefined;
+  } finally {
+    if (originalScrollTo) Object.defineProperty(Element.prototype, "scrollTo", originalScrollTo);
+    else Reflect.deleteProperty(Element.prototype, "scrollTo");
+  }
+
+  // Target category on screen, row missing -> clears pendingScroll and sets viewport to 0.
+  const atoms = createStore();
+  const { host: mountedHost, router } = await renderSettingsPage(atoms, "/settings?category=sound");
+  const viewport = mountedHost.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!;
+  viewport.scrollTop = 190;
+  const volumeRow = mountedHost.querySelector<HTMLElement>('[data-setting-id="volume"]')!;
+  // Hide the row attribute to simulate an unresolvable row on the target category.
+  volumeRow.removeAttribute("data-setting-id");
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+  expect(viewport.scrollTop).toBe(0);
+  // Restore attribute and switch away/back: pendingScroll was cleared, so scrollIntoView does not fire later.
+  volumeRow.setAttribute("data-setting-id", "volume");
+  const scrollSpy = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+  scrollSpy.mockClear();
+  await act(async () => {
+    await router.navigate({ to: "/settings", search: { category: "general" } });
+  });
+  await act(async () => {
+    await router.navigate({ to: "/settings", search: { category: "sound" } });
+  });
+  expect(scrollSpy).not.toHaveBeenCalled();
+
+  // Row missing before the category URL commits does NOT clear pendingScroll prematurely:
+  // starting from Board, requesting volume waits for category=sound to commit and then scrolls volume into view.
+  await act(async () => {
+    await router.navigate({ to: "/settings", search: {} });
+  });
+  const categoriesAtScroll: Array<string | null> = [];
+  scrollSpy.mockClear();
+  scrollSpy.mockImplementation(() => {
+    categoriesAtScroll.push(
+      mountedHost
+        .querySelector('[role="tab"][aria-selected="true"]')
+        ?.getAttribute("data-settings-category") ?? null,
+    );
+  });
+  await act(async () => {
+    requestSettingsNavigation({ kind: "setting", settingId: "volume" }, atoms);
+  });
+  await vi.waitFor(() => expect(router.state.location.href).toBe("/settings?category=sound"));
+  expect(scrollSpy).toHaveBeenCalledOnce();
+  expect(categoriesAtScroll).toEqual(["sound"]);
+});
+
+test("mounted URL navigation syncs search input and rapid a -> empty -> b typing preserves the draft", async () => {
+  const { host, router } = await renderSettingsPage();
+  const input = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  expect(input.value).toBe("");
+  expect(host.querySelector('[role="tablist"]')).not.toBeNull();
+
+  // Mounted URL navigation (no remount) syncs the search input and shows the search view.
+  await act(async () => {
+    await router.navigate({ to: "/settings", search: { q: "font" } });
+  });
+  expect(input.value).toBe("font");
+  expect(host.querySelector('[role="tab"]')).toBeNull();
+  expect(host.querySelector('[data-setting-id="font-size"]')).not.toBeNull();
+
+  // Reset to /settings so prevUrlQueryRef is "".
+  await act(async () => {
+    await router.navigate({ to: "/settings", search: {} });
+  });
+  expect(input.value).toBe("");
+
+  // Rapid a -> "" -> b while earlier navigations are still in flight: each navigation commits in order
+  // and the intermediate "" commit must not wipe the "b" draft.
+  const originalNavigate = router.navigate.bind(router);
+  const queuedNavigations: Array<() => Promise<void>> = [];
+  const navigateSpy = vi.spyOn(router, "navigate").mockImplementation(((options: never) => {
+    const step = deferred<void>();
+    queuedNavigations.push(async () => {
+      await originalNavigate(options);
+      step.resolve();
+    });
+    return step.promise;
+  }) as typeof router.navigate);
+
+  try {
+    const typeQuery = (query: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+
+    await act(async () => {
+      typeQuery("a");
+    });
+    await act(async () => {
+      typeQuery("");
+    });
+    await act(async () => {
+      typeQuery("b");
+    });
+    expect(input.value).toBe("b");
+    expect(queuedNavigations).toHaveLength(3);
+
+    for (const commit of queuedNavigations) {
+      await act(async () => {
+        await commit();
+      });
+      expect(input.value).toBe("b");
+    }
+
+    expect(router.state.location.href).toBe("/settings?q=b");
+    expect(input.value).toBe("b");
+  } finally {
+    navigateSpy.mockRestore();
+  }
+});
+
+test("same-category navigation request resets viewport scrollTop to 0 and Escape clears search and URL q", async () => {
+  const { atoms, host, router } = await renderSettingsPage();
+  const viewport = host.querySelector<HTMLDivElement>(".mantine-ScrollArea-viewport")!;
+  viewport.scrollTop = 190;
+  await act(async () => {
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBe(190);
+
+  await act(async () => {
+    requestSettingsNavigation({ kind: "category", category: "board" }, atoms);
+  });
+  expect(viewport.scrollTop).toBe(0);
+  expect(readSettingsScroll({ mode: "category", category: "board" })).toBeUndefined();
+
+  await searchSettings(host, "font");
+  await vi.waitFor(() => expect(router.state.location.href).toBe("/settings?q=font"));
+  const input = host.querySelector<HTMLInputElement>('input[placeholder="Common.Search"]')!;
+  expect(input.value).toBe("font");
+
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(input.value).toBe("");
+  await vi.waitFor(() => expect(router.state.location.href).toBe("/settings"));
 });

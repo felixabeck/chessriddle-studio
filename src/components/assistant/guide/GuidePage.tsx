@@ -1,5 +1,4 @@
 import { Button, Card, Divider, Group, ScrollArea, Stack, Tabs, Text, Title } from "@mantine/core";
-import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ArrowRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +16,6 @@ import { useTabCommands } from "@/components/tabs/TabCommands";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
 import { resolveSupportedLocale } from "@/i18n";
 import { logFailureSafely, safeFailureContext } from "@/platform/errors";
-import { openPageFromMenu } from "@/routes/-appMenu";
 import { coachEnabledAtom } from "@/state/coach";
 import { buildAssistantTargets } from "../targets";
 import {
@@ -74,8 +72,7 @@ type GuideLoadState =
  */
 export default function GuidePage() {
   const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
-  const { newTab } = useTabCommands();
+  const { newTab, showPageTab } = useTabCommands();
   const compact = useScaledMaxWidth(COMPACT_GUIDE_WIDTH_EM);
   const coachEnabled = useAtomValue(coachEnabledAtom);
   const resolvedLocale = resolveSupportedLocale(i18n.resolvedLanguage || i18n.language);
@@ -130,15 +127,9 @@ export default function GuidePage() {
     [platform, t],
   );
 
-  const openAccounts = useCallback(
-    () => openPageFromMenu({ navigate, to: "/accounts" }),
-    [navigate],
-  );
-  const openEngines = useCallback(() => openPageFromMenu({ navigate, to: "/engines" }), [navigate]);
-  const openSettings = useCallback(
-    () => openPageFromMenu({ navigate, to: "/settings" }),
-    [navigate],
-  );
+  const openAccounts = useCallback(() => showPageTab("accounts"), [showPageTab]);
+  const openEngines = useCallback(() => showPageTab("engines"), [showPageTab]);
+  const openSettings = useCallback(() => showPageTab("settings"), [showPageTab]);
   const targetActions = useAssistantTargetActions({
     createNewTab: newTab,
     openAccounts,

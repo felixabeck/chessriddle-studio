@@ -74,7 +74,6 @@ import {
   fullscreenShortcut,
   installAppMenuSurface,
   menuWindowPlatform,
-  openPageFromMenu,
   openPgnFromMenu,
   renderResizeHandles,
   runNativeMenuAction,
@@ -149,7 +148,7 @@ function RootShell() {
     if (coachEnabled) void refreshAssistantAvailability();
   }, [coachEnabled, refreshAssistantAvailability]);
   const jotaiStore = useJotaiStore();
-  const { newTab } = useTabCommands();
+  const { newTab, showPageTab } = useTabCommands();
   useIncomingGameLinks();
 
   const [, setTabs] = useAtom(tabsAtom);
@@ -225,16 +224,10 @@ function RootShell() {
     [navigate, setTabs],
   );
 
-  const openSettings = useCallback(
-    () => openPageFromMenu({ navigate, to: "/settings" }),
-    [navigate],
-  );
-  const openAccounts = useCallback(
-    () => openPageFromMenu({ navigate, to: "/accounts" }),
-    [navigate],
-  );
-  const openEngines = useCallback(() => openPageFromMenu({ navigate, to: "/engines" }), [navigate]);
-  const openGuide = useCallback(() => openPageFromMenu({ navigate, to: "/guide" }), [navigate]);
+  const openSettings = useCallback(() => showPageTab("settings"), [showPageTab]);
+  const openAccounts = useCallback(() => showPageTab("accounts"), [showPageTab]);
+  const openEngines = useCallback(() => showPageTab("engines"), [showPageTab]);
+  const openGuide = useCallback(() => showPageTab("guide"), [showPageTab]);
 
   // The board consumes the request once it is mounted, so show the workspace first. No root
   // hotkey: Ctrl+S stays bound in the board alone, so one key press never starts two saves.

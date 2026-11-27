@@ -29,6 +29,7 @@ import {
 import { firedByNativeMenu, keyMapAtom } from "@/state/keybinds";
 import { pageTabsAtom, type PageTab } from "@/state/pageTabs";
 import { restorePuzzleSession } from "@/state/puzzleSession";
+import { clearSettingsScroll } from "@/state/settingsNavigation";
 import { tabStorage } from "@/state/store/tabStorage";
 import {
   closeTreeStore,
@@ -74,7 +75,7 @@ export type TabCommands = {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   newTab: () => void;
   pageTabs: PageTab[];
-  showPageTab: (page: PageTab) => void;
+  showPageTab: (page: PageTab) => Promise<void>;
   closePageTab: (page: PageTab) => void;
 };
 
@@ -163,10 +164,18 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   }, [href, pathname]);
 
   const showPageTab = useCallback(
-    (page: PageTab) => {
+    async (page: PageTab): Promise<void> => {
       if (pageTabOf(pathname) === page) return;
       const last = pageTabHrefRef.current[page];
-      void navigate(last ? { href: last } : { to: `/${page}` });
+      if (last) {
+        try {
+          await navigate({ href: last });
+          return;
+        } catch {
+          delete pageTabHrefRef.current[page];
+        }
+      }
+      await navigate({ to: `/${page}` });
     },
     [navigate, pathname],
   );
@@ -174,6 +183,7 @@ export function TabCommandsProvider({ children }: { children: ReactNode }) {
   const closePageTab = useCallback(
     (page: PageTab) => {
       delete pageTabHrefRef.current[page];
+      if (page === "settings") clearSettingsScroll();
       setPageTabs((open) => open.filter((candidate) => candidate !== page));
       if (pageTabOf(pathname) === page) void navigate(returnTargetRef.current);
     },

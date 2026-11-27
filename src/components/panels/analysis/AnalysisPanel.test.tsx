@@ -14,6 +14,7 @@ import AnalysisPanel, { applyEngineOrder } from "./AnalysisPanel";
 
 const reorder = vi.hoisted(() => ({
   reconcile: vi.fn(),
+  showPageTab: vi.fn(),
   cards: new Map<
     string,
     {
@@ -32,7 +33,9 @@ vi.mock("@/platform/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/platform/tauri")>();
   return { ...actual, tauri: { ...actual.tauri, reconcileEngineAttachments: reorder.reconcile } };
 });
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@/components/tabs/TabCommands", () => ({
+  useTabCommands: () => ({ showPageTab: reorder.showPageTab }),
+}));
 vi.mock("./BestMoves", () => ({
   default: (props: any) => {
     reorder.cards.set(props.engine.id, props);
@@ -273,4 +276,23 @@ test("refused routed reorder rolls its presentation back to committed order", as
   await act(async () => reject(new Error("drag refused")));
   await vi.waitFor(() => expect(order()).toEqual(["first", "second"]));
   expect(h.store.get(enginesAtom)?.map((item) => item.id)).toEqual(["first", "second"]);
+});
+
+test("Manage Engines opens the engines page tab via showPageTab", async () => {
+  installResizeObserverStub();
+  reorder.showPageTab.mockReset().mockResolvedValue(undefined);
+  h = engineDisplayHarness();
+  await h.store.set(enginesAtom, []);
+  await h.render(
+    <BoardArrangementContext.Provider value={makeArrangementCtx()}>
+      <TreeStateContext.Provider value={createTreeStore()}>
+        <AnalysisPanel />
+      </TreeStateContext.Provider>
+    </BoardArrangementContext.Provider>,
+  );
+  const manageButton = [...h.host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (btn) => btn.textContent === "Board.Analysis.ManageEngines",
+  )!;
+  await act(async () => manageButton.click());
+  expect(reorder.showPageTab).toHaveBeenCalledExactlyOnceWith("engines");
 });

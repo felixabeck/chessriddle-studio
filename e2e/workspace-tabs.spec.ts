@@ -1994,6 +1994,30 @@ test("workspace-tabs: tabs stay in the row on Library and Settings, and the Sett
     await closeSettings.click();
     await expect(page).toHaveURL("/");
     await expect(settings).toHaveCount(0);
+
+    // Switching away from Settings and returning keeps the chosen category; closing resets to Board.
+    await openSettingsFromMenu();
+    await page.locator('[role="tab"][data-settings-category="sound"]').click();
+    await expect(page).toHaveURL("/settings?category=sound");
+    await expect(page.locator('[role="tab"][data-settings-category="sound"]')).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await page.getByRole("link", { name: "Library", exact: true }).click();
+    await expect(page).toHaveURL("/library");
+    await showSettings.click();
+    await expect(page).toHaveURL("/settings?category=sound");
+    await expect(page.locator('[role="tab"][data-settings-category="sound"]')).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
+    await closeSettings.click();
+    await expect(page).toHaveURL("/library");
+    await openSettingsFromMenu();
+    await expect(page.locator('[role="tab"][data-settings-category="board"]')).toHaveAttribute(
+        "aria-selected",
+        "true",
+    );
 });
 
 test("workspace-tabs: F2 and Shift+F10 reach rename and the tab menu", async ({ page }) => {

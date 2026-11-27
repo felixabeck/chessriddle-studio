@@ -21,6 +21,7 @@ const enCatalogue = enUS.translation as Record<string, string>;
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   newTab: vi.fn(),
+  showPageTab: vi.fn(),
   openFeedback: vi.fn(),
   notificationsShow: vi.fn(),
   logError: vi.fn(() => Promise.resolve()),
@@ -34,7 +35,7 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 vi.mock("@/components/tabs/TabCommands", () => ({
-  useTabCommands: () => ({ newTab: mocks.newTab }),
+  useTabCommands: () => ({ newTab: mocks.newTab, showPageTab: mocks.showPageTab }),
 }));
 vi.mock("@/components/feedback/openFeedbackContext", () => ({
   useOpenFeedback: () => mocks.openFeedback,
@@ -115,6 +116,7 @@ beforeEach(() => {
     return template.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => options[name] ?? "");
   };
   mocks.navigate.mockResolvedValue(undefined);
+  mocks.showPageTab.mockResolvedValue(undefined);
   mocks.logError.mockResolvedValue(undefined);
   atoms = createStore();
   host = document.createElement("div");
@@ -325,9 +327,9 @@ test("clicking links runs through the shared target actions hook and reports lin
 
   expect(mocks.newTab).toHaveBeenCalledOnce();
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/library" });
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/accounts" });
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/engines" });
-  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/settings" });
+  expect(mocks.showPageTab).toHaveBeenCalledWith("accounts");
+  expect(mocks.showPageTab).toHaveBeenCalledWith("engines");
+  expect(mocks.showPageTab).toHaveBeenCalledWith("settings");
 
   // Setting link sets the navigation request atom and opens Settings.
   const aiTab = host.querySelector<HTMLButtonElement>(
@@ -357,7 +359,7 @@ test("clicking links runs through the shared target actions hook and reports lin
   };
   window.addEventListener("unhandledrejection", onUnhandled);
   try {
-    mocks.navigate.mockRejectedValueOnce(new Error("route failed"));
+    mocks.showPageTab.mockRejectedValueOnce(new Error("route failed"));
     await act(async () => {
       settingsLink.click();
     });
