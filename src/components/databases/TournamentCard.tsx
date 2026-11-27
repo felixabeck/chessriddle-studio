@@ -20,12 +20,17 @@ import type {
 import { getTournamentGames } from "@/utils/db";
 import { DatabaseListFooter, DEFAULT_PAGE_SIZE } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
-import { dateColumn, numericColumn, tableScrollAreaProps } from "./databaseColumns";
+import { dateColumn, displayedRound, numericColumn, tableScrollAreaProps } from "./databaseColumns";
 import PlayerRatingCell from "./PlayerRatingCell";
 import { ALL_RECORDS_MAX_ROWS } from "./useDatabaseListQuery";
 import { useWindowedTableRows } from "./useWindowedTableRows";
 
-type TournamentGameSortKey = "date" | "ply_count";
+type TournamentGameSortKey = "date" | "ply_count" | "round";
+
+function tournamentSortKey(accessor: string): TournamentGameSortKey {
+  if (accessor === "ply_count" || accessor === "round") return accessor;
+  return "date";
+}
 
 function compareTournamentGames(
   a: NormalizedGame,
@@ -33,8 +38,8 @@ function compareTournamentGames(
   key: TournamentGameSortKey,
   direction: "asc" | "desc",
 ): number {
-  const left = a[key] ?? null;
-  const right = b[key] ?? null;
+  const left = key === "round" ? displayedRound(a.round) || null : (a[key] ?? null);
+  const right = key === "round" ? displayedRound(b.round) || null : (b[key] ?? null);
   if (left === right) return 0;
   if (left === null) return 1;
   if (right === null) return -1;
@@ -98,7 +103,7 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
     direction: "asc",
   });
 
-  const key = sort.columnAccessor === "ply_count" ? "ply_count" : "date";
+  const key = tournamentSortKey(String(sort.columnAccessor));
   const sortedGames = games
     ? [...games].sort((a, b) => compareTournamentGames(a, b, key, sort.direction))
     : [];
@@ -249,6 +254,13 @@ function TournamentCard({ tournament, file }: { tournament: Event; file: Databas
                     },
                     { ...dateColumn, accessor: "date", title: t("Common.Date"), sortable: true },
                     { accessor: "result", title: t("Board.Database.Local.Result") },
+                    {
+                      ...dateColumn,
+                      accessor: "round",
+                      title: t("GameInfo.Round"),
+                      sortable: true,
+                      render: ({ round }) => displayedRound(round),
+                    },
                     {
                       ...numericColumn,
                       accessor: "ply_count",

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 import {
   dateColumn,
+  displayedRound,
   formatEventDateRange,
   numericColumn,
   truncatedTextColumn,
@@ -34,6 +35,19 @@ test("truncated text caps only its content and preserves the full value in a nat
   host.innerHTML = renderToStaticMarkup(preset.render({ site: null }));
   expect(host.querySelector("span")!.textContent).toBe("");
   expect(host.querySelector("span")!.title).toBe("");
+});
+
+test.each([
+  [null, ""],
+  [undefined, ""],
+  ["", ""],
+  ["?", ""],
+  ["1", "1"],
+  ["3.1", "3.1"],
+  ["Final", "Final"],
+  ["0", "0"],
+])("displayedRound(%j) is %j", (value, expected) => {
+  expect(displayedRound(value)).toBe(expected);
 });
 
 test.each([

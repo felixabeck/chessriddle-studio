@@ -157,6 +157,18 @@ vi.mock("mantine-datatable", () => ({
         >
           Sort plies descending
         </button>
+        <button
+          type="button"
+          onClick={() => onSortStatusChange({ columnAccessor: "round", direction: "asc" })}
+        >
+          Sort round ascending
+        </button>
+        <button
+          type="button"
+          onClick={() => onSortStatusChange({ columnAccessor: "round", direction: "desc" })}
+        >
+          Sort round descending
+        </button>
       </div>
     );
   },
@@ -619,15 +631,19 @@ test("changing sort in TournamentCard resets the game list scroll viewport to th
 test.each([
   { button: "Sort date ascending", expected: [5, 3, 1, 4, 2] },
   { button: "Sort plies descending", expected: [4, 1, 5, 3, 2] },
+  { button: "Sort round ascending", expected: [4, 5, 3, 2, 1] },
+  { button: "Sort round descending", expected: [5, 4, 3, 2, 1] },
 ])(
   "$button preserves payload order for tied games and keeps missing values last",
   async ({ button, expected }) => {
     const dates = ["2026.01.02", "2026.01.03", "2026.01.02", null, "2026.01.02"];
     const plies = [40, 60, 40, null, 60];
+    const rounds = ["2", "1", "?", "", null];
     const payload = games(5).map((game, index) => ({
       ...game,
       date: dates[index],
       ply_count: plies[index],
+      round: rounds[index],
     }));
     mocks.getTournamentGames.mockResolvedValue({ data: payload });
     await render(file("tied-games"));

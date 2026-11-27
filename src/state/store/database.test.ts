@@ -469,6 +469,7 @@ describe("database-view panel hydration", () => {
         "result",
         "event",
         "site",
+        "round",
     ])("preserves the supported game sort %s", async (sort) => {
         const games = {
             ...validGames,

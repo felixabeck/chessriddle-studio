@@ -176,6 +176,19 @@ fn game_sorts_break_ties_by_id_in_sort_direction_across_pages() {
             range1: Some((2000, 3000)),
             range2: None,
         },
+        GameSortCase {
+            sort: GameSort::Round,
+            driver_index: "CREATE INDEX games_white_elo_idx ON Games(WhiteElo);",
+            seed_sql: "INSERT INTO Games(ID, WhiteMaterial, BlackMaterial, Moves, WhiteElo, Round) VALUES
+                (10, 0, 0, X'', 2600, NULL),
+                (11, 0, 0, X'', 2500, '1'),
+                (12, 0, 0, X'', 2400, '1'),
+                (13, 0, 0, X'', 2300, '1'),
+                (14, 0, 0, X'', 2200, '2'),
+                (15, 0, 0, X'', 2100, NULL);",
+            range1: Some((2000, 3000)),
+            range2: None,
+        },
     ];
 
     let mut failures = Vec::new();

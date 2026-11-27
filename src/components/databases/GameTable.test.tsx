@@ -326,6 +326,7 @@ test.each([
   ["black", "black"],
   ["result", "result"],
   ["event", "event"],
+  ["round", "round"],
   ["site", "site"],
 ] as const)("%s column sorting requests the native %s sort", async (accessor, sort) => {
   await render();

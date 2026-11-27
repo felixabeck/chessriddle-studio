@@ -17,7 +17,7 @@ import { query_games, sameDatabaseHandle } from "@/utils/db";
 import { isHotkeySuppressed } from "@/utils/keyboardOwnership";
 import { DatabaseListFooter } from "./DatabaseListFooter";
 import { DatabaseViewStateContext } from "./DatabaseViewStateContext";
-import { dateColumn, numericColumn, truncatedTextColumn } from "./databaseColumns";
+import { dateColumn, displayedRound, numericColumn, truncatedTextColumn } from "./databaseColumns";
 import { EditGameDataModal, type EditGameDataTarget } from "./EditGameDataModal";
 import GameCard from "./GameCard";
 import GridLayout from "./GridLayout";
@@ -36,6 +36,7 @@ const gameSortByAccessor = {
   result: "result",
   ply_count: "plyCount",
   event: "event",
+  round: "round",
   site: "site",
 } as const satisfies Partial<Record<keyof NormalizedGame, GameSort>>;
 type GameSortAccessor = keyof typeof gameSortByAccessor;
@@ -273,6 +274,13 @@ function GameTable() {
                   accessor: "event",
                   title: t("Databases.Game.Event"),
                   sortable: true,
+                },
+                {
+                  ...dateColumn,
+                  accessor: "round",
+                  title: t("GameInfo.Round"),
+                  sortable: true,
+                  render: ({ round }) => displayedRound(round),
                 },
                 {
                   ...truncatedTextColumn<NormalizedGame>((game) => game.site),

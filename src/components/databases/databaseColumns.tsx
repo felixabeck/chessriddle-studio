@@ -39,6 +39,10 @@ export function truncatedTextColumn<T>(value: (record: T) => string | null | und
   } satisfies Partial<DataTableColumn<T>>;
 }
 
+export function displayedRound(round: string | null | undefined): string {
+  return round == null || round === "" || round === "?" ? "" : round;
+}
+
 function displayedDate(date: string | null | undefined): string {
   return (
     date

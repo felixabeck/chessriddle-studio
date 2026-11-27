@@ -148,6 +148,14 @@ function headers() {
   );
 }
 
+function expectRoundHeaderSortable() {
+  const roundHeader = [...host.querySelectorAll("th")].find(
+    (header) => header.textContent === "Runde",
+  );
+  expect(roundHeader).toBeDefined();
+  expect(roundHeader!.classList.contains("mantine-datatable-header-cell-sortable")).toBe(true);
+}
+
 test("GameTable renders German column headers without an English fallback", async () => {
   await render(<GameTable />);
   expect(headers()).toEqual([
@@ -157,8 +165,10 @@ test("GameTable renders German column headers without an English fallback", asyn
     "Ergebnis",
     "Halbzüge",
     "Ereignis",
+    "Runde",
     "Ort",
   ]);
+  expectRoundHeaderSortable();
 });
 
 test("board-panel games render German column headers", async () => {
@@ -219,7 +229,8 @@ test.each(["games", "players", "tournaments", "tournament"])(
 
 test("TournamentCard renders German game headers and leaves the actions header empty", async () => {
   await render(<TournamentCard tournament={tournament} file={file} />);
-  expect(headers()).toEqual(["", "Weiß", "Schwarz", "Datum", "Ergebnis", "Halbzüge"]);
+  expect(headers()).toEqual(["", "Weiß", "Schwarz", "Datum", "Ergebnis", "Runde", "Halbzüge"]);
+  expectRoundHeaderSortable();
 });
 
 test("PlayerTable renders translated column titles", async () => {
@@ -293,7 +304,29 @@ test("GameTable renders shared date, plies, event and site presets without refor
   expect(cells[2].textContent).toBe(game.date);
   expectNumeric(cells[4]);
   expectTruncated(cells[5], game.event);
-  expectTruncated(cells[6], game.site);
+  expectDate(cells[6]);
+  expect(cells[6].textContent).toBe("");
+  expectTruncated(cells[7], game.site);
+});
+
+test.each([
+  ["games", "?", ""],
+  ["tournament", "?", ""],
+  ["games", "3.1", "3.1"],
+  ["tournament", "3.1", "3.1"],
+] as const)("%s renders stored round %j as %j", async (view, stored, expected) => {
+  game.round = stored;
+  try {
+    await render(
+      view === "games" ? <GameTable /> : <TournamentCard tournament={tournament} file={file} />,
+    );
+    const index = headers().indexOf("Runde");
+    expect(index).toBeGreaterThan(-1);
+    const cells = host.querySelectorAll<HTMLElement>("tbody tr:first-child td");
+    expect(cells[index].textContent).toBe(expected);
+  } finally {
+    game.round = undefined;
+  }
 });
 
 test("board-panel GamesTable renders the shared date preset and Notation cell", async () => {
@@ -332,7 +365,9 @@ test("TournamentCard renders shared Games and Leaderboard presets", async () => 
   const cells = host.querySelectorAll<HTMLElement>("table:first-of-type tbody tr:first-child td");
   expectDate(cells[3]);
   expect(cells[3].textContent).toBe(game.date);
-  expectNumeric(cells[5]);
+  expectDate(cells[5]);
+  expect(cells[5].textContent).toBe("");
+  expectNumeric(cells[6]);
   await act(async () => activeDatabaseViewStore.getState().setTournamentsActiveTab("leaderboard"));
   const leaderboard = host.querySelector('[role="tabpanel"][id$="-panel-leaderboard"]')!;
   const ranks = leaderboard.querySelectorAll<HTMLElement>("tbody tr");

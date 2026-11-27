@@ -34,6 +34,8 @@ pub enum GameSort {
     Event,
     #[serde(rename = "site")]
     Site,
+    #[serde(rename = "round")]
+    Round,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Type)]
@@ -840,6 +842,7 @@ pub(super) fn load_games(
             ),
             GameSort::Event => order_by_then_id!(events::name, events::year, events::id),
             GameSort::Site => order_by_then_id!(sites::name, sites::id),
+            GameSort::Round => order_by_then_id!(games::round),
         };
         let count = matches.filter(|_| !query_options.skip_count);
         #[cfg(all(test, unix))]

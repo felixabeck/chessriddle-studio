@@ -3100,6 +3100,15 @@ mod tests {
             GameSort::PlyCount
         );
         assert!(serde_json::from_value::<GameSort>(json!("ply_count")).is_err());
+        assert_eq!(
+            serde_json::from_value::<GameSort>(json!("round")).unwrap(),
+            GameSort::Round
+        );
+        assert_eq!(
+            serde_json::to_value(GameSort::Round).unwrap(),
+            json!("round")
+        );
+        assert!(serde_json::from_value::<GameSort>(json!("Round")).is_err());
     }
 
     #[test]
