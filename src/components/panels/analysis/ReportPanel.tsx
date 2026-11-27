@@ -299,9 +299,7 @@ function ReportPanel() {
                 onCancel={handleCancel}
                 completeOnProgressSuccess={false}
                 labels={{
-                  action: summaryCurrent
-                    ? t("Board.Analysis.RegenerateReport")
-                    : t("Board.Analysis.GenerateReport"),
+                  action: t("Board.Analysis.GenerateReport"),
                   inProgress: t("Board.Analysis.GeneratingReport"),
                 }}
                 inProgress={inProgress}

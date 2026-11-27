@@ -505,7 +505,7 @@ test("TimeStrip hides below half clocked moves, renders from half, omits spent=n
     expect(tip).toContain("2. Nf3");
     expect(tip).toContain("Board.Analysis.Report.TimeSpent");
     expect(tip).toContain("Board.Analysis.Report.TimeLeft");
-    expect(tip).toContain("Annotate.TimeTrouble");
+    expect(tip).toContain("Board.Analysis.Report.Tag.TimeTrouble");
   });
 
   await act(async () => bars[1].click());

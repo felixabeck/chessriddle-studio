@@ -112,7 +112,7 @@ function TimeBar({
       )}
       {entry.inTimeTrouble && (
         <Text fz="xs" fw={600} c="var(--cf-annotation-red-text)">
-          {t("Annotate.TimeTrouble")}
+          {t("Board.Analysis.Report.Tag.TimeTrouble")}
         </Text>
       )}
     </Stack>

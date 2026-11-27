@@ -952,7 +952,7 @@ test("during an active run on a current report, the progress control stays visib
   await renderPanel();
   expect(mocks.progressButtonProps).toMatchObject({
     id: "op-running",
-    labels: { action: "Board.Analysis.RegenerateReport" },
+    labels: { action: "Board.Analysis.GenerateReport" },
   });
 });
 
