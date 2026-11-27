@@ -15363,3 +15363,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** Removes the stale first render at its single owner and mirrors d-20261126-26's admission fix. Plan `tasks/plans/2026-11-27-tab-activation-priority.md`, plan review r1–r4 (agy). Reversal path: restore `startTransition` for the off-board branch only together with a commit witness every navigating caller awaits, keeping the new renderer test in `TabCommands.test.tsx` green.
 * **Decided by:** Claude Code (Opus 5.5) drain session bfd4856b-826f-496b-be10-6265adeaa33b, build tab-activation-priority, under full auto · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e215d2d831f3e84cb8d7f2a0e03d33bc21726165d3ab80fa7a306c1ef9155eb5","input_sha256":"2e9e778c2496021c086ac29b071751216ace911302aad6b3f1abfdaea2ecabb1","kind":"mutation-receipt","operation":"145981988e2e86df48df93d6cdf0dd9f5c444a6f710304a2ee57376d2ae69861","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-05"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-06 — Where do Settings' remembered category, search query, and scroll offset live while the tab stays open?
+
+* **Question:** Where do Settings' remembered category, search query, and scroll offset live while the tab stays open?
+* **Governs:** -
+* **Chosen:** Settings category and q live in the route search (fail-open); scroll is process memory in settingsNavigation.ts, cleared on closePageTab("settings").
+* **Rejected:** sessionStorage for last location (already rejected in d-20261121-02); keep-alive of SettingsPage.
+* **Reason:** Putting category and q on the Settings URL reuses TabCommands' in-run pageTabHrefRef restoration (matching Engines' selected param) with no new web-storage key, while fail-open validateSearch prevents invalid URLs from rendering ErrorComponent; holding scroll in process memory avoids URL noise and keeping SettingsPage's Coach connections and directory loads alive off-screen, and clearing with a close generation prevents stale writes after tab close.
+* **Decided by:** Plan 2026-11-27-settings-view-restore (Felix's accepted shape, 2026-11-27) · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"e9e8754b40e1beabcba5a608dffb591f33a0f26ef3bea908e449789d9a86eef6","input_sha256":"bb3042e1144fdd0976262748f127d9efa504d773022b5df91240bf35b54bf265","kind":"mutation-receipt","operation":"077570f85bed176208c8ba1777c3779975257a1cdd313b00891aa4cd670d46dc","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-06"],"target":"decisions-ledger","v":1} -->
