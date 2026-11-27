@@ -29832,3 +29832,20 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 * **Failure scenario:** a local full e2e run (and CI on a busy runner) turns red on unchanged code, which blocks or confuses a push.
 * **Fix direction:** make the drag deterministic: wait for the drag to start (pointer capture or the preview) before moving to the target, re-measure the target after the drag starts, and assert the outcome instead of the transient preview where the preview is not the subject; prove with `--repeat-each=30` while another heavy gate runs.
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
+
+---
+
+## 2026-11-27 — filed through the inbox spool
+
+### Backend coverage CI fails since the PDF import: hayro 0.9 needs rustc 1.92 but the coverage nightly is 1.89
+
+* **ID:** f-20261127-03 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 45914524821
+* **Repair owner:** 93bbb2cf-735b-4b10-9674-372fa0805ae9 on tuxedo-atlas, 2026-11-27T00:43:36Z
+* **Where:** `scripts/toolchain-versions.mjs` (`RUST_COVERAGE_TOOLCHAIN = "nightly-2025-06-01"`), `.github/workflows/test.yml` job `rust` step "Run Rust tests with coverage", `rust-toolchain.toml` comment; introduced by `e20e8ea50` (hayro 0.9.0 added in `src-tauri/Cargo.toml`).
+* **Defect:** the backend coverage run builds with the pinned `nightly-2025-06-01` (rustc 1.89.0-nightly), and cargo refuses hayro 0.9.0 and its hayro-* crates, which declare `rust-version = 1.92` (0.7 and 0.8 declare the same). Stable is pinned at 1.98.0, so only the coverage toolchain is too old.
+* **Observed:** CI `Test` run 45914524821 on `f94c29fcb` (first red; code pushed in `5bd2b095b..518ed403d`), job `rust`: "error: rustc 1.89.0-nightly is not supported by the following packages: hayro@0.9.0 requires rustc 1.92 …", `cargo exited with status 101`. Every other job, including e2e, macOS and Windows tests, succeeded.
+* **Failure scenario:** every push to master is red on the `rust` job, so `ci:remote:check` refuses further pushes and the backend coverage ratchet is not measured.
+* **Fix direction:** raise `RUST_COVERAGE_TOOLCHAIN` (and its mirrors) to a nightly whose rustc is at least 1.92 with working branch coverage, run the backend coverage gate locally, and handle any coverage measurement change through the writer guard (docs/coverage.md), never by lowering floors.
+* **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
