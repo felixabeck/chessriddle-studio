@@ -15596,3 +15596,31 @@ Former private decision identifier: d-20261029-14
 * **Reason:** `.sources[data-sources="2"|"3"]` is a 100px/72px Move-column grid whose source cells must match `OpeningsTable` within 2px (`e2e/database-files.spec.ts`). `Position: Exact` is wider than that track. Felix wanted the gear on the first header line, not a broken table. Reversal path: restore the separate `space-between` controls `Group` above `.sources`.
 * **Decided by:** Grok full auto, 2026-11-27, plan-review PH-1 · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"5cf5ace95cfc5309eb200432bae34e4cd5b189c1aab94257b88a5a86d08ab9bc","input_sha256":"dee591f81dd9637fd6a81a0bc9574bca576252278eda7cabee46645dfd200a4a","kind":"mutation-receipt","operation":"651596f4dcbe0eec8610a06a2820965b9fa57c7cf2a27df485ad8f0e32a63af1","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-30"],"target":"decisions-ledger","v":1} -->
+
+### d-20261127-23 — Should GameTable Round sort be a server GameSort variant or a client sort of the current page?
+
+* **Question:** Should GameTable Round sort be a server GameSort variant or a client sort of the current page?
+* **Governs:** -
+* **Chosen:** Add `GameSort::Round` with wire name `"round"` and `order_by_then_id!(games::round)`, and map `gameSortByAccessor.round` to it.
+* **Rejected:** Display-only Round on GameTable, or sorting only the current page in the renderer.
+* **Reason:** Every other GameTable data column is sortable and the table is server-paged, so a client sort of the current page would order only that page. Reversal path: drop `GameSort::Round` and the Round header sort.
+* **Decided by:** Grok orchestrator, worktree games-round-column, under full auto · **Superseded-by:** -
+
+### d-20261127-24 — Should Round sort be lexicographic or natural order?
+
+* **Question:** Should Round sort be lexicographic or natural order so that "10" follows "2"?
+* **Governs:** -
+* **Chosen:** Lexicographic order of present round strings, matching Event/Site/Result. `"10"` sorts before `"2"`.
+* **Rejected:** Natural/"10 after 2" sort in SQL or JS.
+* **Reason:** Typical events have 5–9 rounds, so `"1"`…`"9"` already read in order. Natural order would be a second mechanism (SQL CAST vs JS parse) for one column. Reversal path: add a natural-order comparator on both GameTable SQL and TournamentCard.
+* **Decided by:** Grok orchestrator, worktree games-round-column, under full auto · **Superseded-by:** -
+
+### d-20261127-25 — How should blank-rendered Round values sort on TournamentCard versus GameTable?
+
+* **Question:** How should blank-rendered Round values (`null`, `""`, `"?"`) sort on TournamentCard versus GameTable?
+* **Governs:** -
+* **Chosen:** TournamentCard compares `displayedRound(value) || null` for `key === "round"`, so blank-rendered cells sort last in both directions. GameTable SQL stays `order_by_then_id!(games::round)` on stored text, including `"?"` and `""`, with SQLite NULLS FIRST on ASC.
+* **Rejected:** Unifying both lists on one NULL/"?" rule, or sorting TournamentCard `"?"` as ordinary text.
+* **Reason:** Completeness scanning is the tournament list, which is fully loaded and can remap blank cells. GameTable follows Result/Date original-text SQL. Date/PlyCount already disagree on NULL order between the two lists. Reversal path: change `compareTournamentGames` or the SQL arm independently.
+* **Decided by:** Grok orchestrator, worktree games-round-column, under full auto · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":26,"effect_sha256":"ab0fef3c2ced8c75917c6c43d7fd9fe461cb97ab20cf0624b0348d235ab96899","input_sha256":"d814dc9a52317e951f060ca95a75c3cf5a24d00cbb9628aa331f2eb6be353e42","kind":"mutation-receipt","operation":"e474d0fc7c5ffd4c5f0c9304f9542be8d3bc4339c4baa3bdb5d3bac43a0556f4","options":{"section":null},"request_id_sha256":null,"results":["d-20261127-23","d-20261127-24","d-20261127-25"],"target":"decisions-ledger","v":1} -->
