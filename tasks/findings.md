@@ -29775,12 +29775,15 @@ The same run's e2e failure (notation-hierarchy-scaled "overflow-only stacked geo
 
 ### The Info panel's chapter accordion nests the "Add game" button inside the accordion trigger button
 
-* **ID:** f-20261126-16 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261126-16 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 
 * **Impact class:** ux
 * **Spotted outside diff:** while writing `e2e/saved-layouts.spec.ts` in the saved-layouts build (2026-11-26), a full-page `assertAccessible()` on a fresh opponent-preparation tab reported axe `nested-interactive`; the spec now checks the layout dialogs only (commit 640daa931).
 * **Failure scenario:** `src/components/panels/info/GameSelectorAccordion.tsx` renders the `IconAction` "Add game" (`Board.Action.AddGame`) inside `Accordion.Control`, which is itself a `<button>`. A button inside a button is invalid HTML: screen readers announce one merged control, keyboard focus order is undefined across browsers, and axe reports `nested-interactive` on every analysis tab that shows the chapter accordion (visible in Felix's 2026-11-26 screenshot as the "+" beside "3. Systeme mit Sge7").
 * **Open question:** none; move the action out of the trigger (e.g. `Accordion.Control`'s sibling or Mantine's `chevron`-adjacent slot) so trigger and action are separate focusable controls, then run a full-page `assertAccessible()` on a file-backed tab.
+
+Handled. `IconAction` "Add game" is a sibling of `Accordion.Control` inside a header `Group`, so trigger and action are separate focusable controls. `stopPropagation` is gone. Unit test `Add game sits outside the chapter accordion trigger` asserts the button is not inside the control, Add game does not expand the accordion, and the trigger still expands. Opponent-prep e2e runs full-page `assertAccessible()` on a file-backed tab. Repertoire-preset snapshot re-recorded for the `[title][chevron][+]` header order. Commit `21e140b18`. Review (agy, r1, role normal): correctness, root-cause, tests, code-quality, minimalism all APPROVED. Skipped joiners f-20261127-07 and f-20261127-18 (do not share `GameSelectorAccordion.tsx`). GameRow `role="option"` nested IconActions filed during review (inbox during this run).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5b0b0a322d268cce0c0ce29e4aea0ec435117531c9d548d123b8ca0aafeb6b28","header_sha256":"0e0f46f6fd2f1ca60a00428d0fa95e4458ca3c5f91d58ce2a103698c9a29b3b7","header_status":"handled","input_sha256":"589877aa179a85ea8bab61832c7247b2f3c39861a44fe40e1848ce1fbd6fb4ab","kind":"mutation-receipt","operation":"29be91915aa0ae4a994da9f94e2b26031b53dc93aa9a3305e619fcf25347b869","options":{"section":null},"request_id_sha256":null,"results":["f-20261126-16"],"target":"f-20261126-16","v":1} -->
 
 ---
 
