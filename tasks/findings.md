@@ -30268,7 +30268,7 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 
 ### Practice move rows, engine stats and game-list index still dim text with opacity
 
-* **ID:** f-20261127-21 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-21 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 0a17f348-c189-4394-b690-a15696ba3a44
 * **Impact class:** ux
 * **Spotted outside diff:** yes, review-root-cause of f-20261127-15 (drain session 0a17f348-c189-4394-b690-a15696ba3a44)
@@ -30278,6 +30278,9 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 * **Related:** f-20261127-15 (board clocks; Root `-`, named here). f-20261124-02 handled the same opacity-on-text defect for analysis moves after the game end (d-20261124-04).
 * **Proof:** `paintedText` / ancestor opacity chain of 1 and `contrastRatio >= 4.5` on one dimmed Practice move row, one dimmed BestMoves stats group, and one GameSelector `.index` in light/dark/dim.
 * **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
+
+Closed. Commit `5df2ba1af`. Practice rare-move rows, engine stats Group, inert engine lines, game-list index, and FenSearch FEN take `--mantine-color-dimmed` at full opacity (d-20261124-04). Inert engine SAN uses `--notation-unannotated-move-color` on `.line[inert]`. Rejected: restoring 0.45/0.5 opacity; passing `analysis={inert}` into MoveCell (italic is the analysis-after-game-end cue). Proof: related Vitest 2549 passed; container e2e `engine-gap` + `files-preview` 48 passed (ancestor opacity chain 1, `paintedText` contrast ≥ 4.5, computed SAN colour equals `--mantine-color-dimmed`). Snapshots: engine-gap-dimmed, engine-failure-historical-lines, files-labelled-game, files-preview, files-inline-comment-prose. Practice rare-row e2e skipped (unit tests pin the dimmed colour). Lenses r3: correctness, root-cause, tests, engine-protocol APPROVED.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"3dbd341df625c815f2ff679b5878a80819777f849bd5019fcde608caa6426b97","header_sha256":"ee8515c4df0eff86a61e4996f574257d27c79cc5de774f704b0b110aa3c46610","header_status":"handled","input_sha256":"adc15ffd0ec5c62d28ec4467daf893047c78e93e37d852b6f30a4f2f9c1480d6","kind":"mutation-receipt","operation":"b4bceb47d0a0218e3f9886bf669cafc197cef54c6260363b1d611af704fa0051","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-21"],"target":"f-20261127-21","v":1} -->
 
 ---
 
