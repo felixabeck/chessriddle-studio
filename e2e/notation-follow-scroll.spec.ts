@@ -453,12 +453,63 @@ test("notation-follow-scroll: held arrow key keeps the list with the board while
     await openLongGame(page, mockScenario);
     await toggleNotationViewOption(page, "Table view");
     await page.mouse.click(5, 5);
-    for (let ply = 1; ply <= 60; ply += 1) await page.keyboard.press("ArrowRight", { delay: 0 });
+    // A held key, sent inside the page with one capped frame between repeats so each key lands
+    // while the previous turn is still animating. One Playwright round trip per key ran past
+    // the test timeout on hosted WebKit (f-20261127-23, and this test in CI run 46132619700).
+    // The list is read in the same evaluate one frame after every key: a read after further
+    // round trips found the 150 ms turn already finished and could not see a missing snap.
+    const samples = await page.evaluate(
+        async ({ repeats, frameCapMs }) => {
+            const target = document.activeElement ?? document.body;
+            const read = () => {
+                const viewport = [
+                    ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
+                ].find((element) => element.querySelector("[data-index]"));
+                const cell = viewport?.querySelector<HTMLElement>('[data-notation-current="true"]');
+                if (!viewport || !cell) return null;
+                const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+                const bounds = cell.getBoundingClientRect();
+                return {
+                    top: viewport.scrollTop,
+                    height: viewport.clientHeight,
+                    cellTop: bounds.top - viewportTop,
+                    cellBottom: bounds.bottom - viewportTop,
+                };
+            };
+            const result: ReturnType<typeof read>[] = [];
+            for (let repeat = 0; repeat < repeats; repeat += 1) {
+                for (const type of ["keydown", "keyup"]) {
+                    target.dispatchEvent(
+                        new KeyboardEvent(type, {
+                            key: "ArrowRight",
+                            code: "ArrowRight",
+                            bubbles: true,
+                            cancelable: true,
+                        }),
+                    );
+                }
+                await new Promise<void>((resolve) => {
+                    let done = false;
+                    const finish = () => {
+                        if (done) return;
+                        done = true;
+                        resolve();
+                    };
+                    requestAnimationFrame(finish);
+                    setTimeout(finish, frameCapMs);
+                });
+                result.push(read());
+            }
+            return result;
+        },
+        { repeats: 60, frameCapMs: CHANGE_TICK_MS },
+    );
+    // The interrupted turns snap as the keys come, so the list stays with the board after
+    // every key instead of catching up over several animations.
+    samples.forEach((sample, index) => expectVisible(sample, `one frame after key ${index + 1}`));
     await expect(page.locator('[data-notation-current="true"] button').first()).toHaveText(
         moveText(60),
     );
-    // One frame after the last key: the interrupted turns snapped as the keys came, so the list
-    // is already with the board instead of catching up over several animations.
     expectVisible(await followState(page, 1), "after 60 fast steps");
 });
 
