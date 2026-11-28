@@ -30434,7 +30434,7 @@ Closed. Commit `b9b832514`. Re-recorded the four Generate-report dialog snapshot
 
 ### Hosted notation-hierarchy-scaled overflow clip 374px > 270px after Save-to
 
-* **ID:** f-20261128-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-03 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
 * **Impact class:** tooling
 * **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change `e2e/notation-hierarchy.spec.ts` or chessground sizing.
@@ -30453,3 +30453,6 @@ Took over repair: published filing had no Repair owner line. Same e2e streak as 
 * **CI run:** 46085092838
 * **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"c0ec6570c5304217107f627a417d08011b147318cf52f2e2cd46c3918082c07d","input_sha256":"e1f927567be0684bc4424d30777d3a2eabefdf36d323a87fee762cddc612f5cf","kind":"mutation-receipt","operation":"28a023b926e6ef3ef13a36ccb746916e573bbe0af7bfda634b2724ddfb5877d6","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-03"],"target":"f-20261128-03","v":1} -->
+
+Closed. Commit `24d025367`. Product cause was BoardBar min-content (ml 2.5rem plus unshrinkable actions) overflowing the eval-column Box at 320px/200% (`div.: x 374px > 270px`), not a chessground wrap race. Padding the eval inset inside `w="100%"` `miw={0}` and letting Saved truncate clears the clip. Rejected: `toPass()` around `assertNothingClipped` (d-20261117-05); ancestor overflowX polling in `waitForBoardSizeSettled`; restoring right `flexShrink: 0` (reintroduced 329>270). Proof: container `--project=notation-hierarchy-scaled --grep "overflow-only stacked annotation"` passed without toPass. Lenses r1 REVISE then closure: adopted wait hunks deleted; remaining flexShrink blocker skipped as false positive against the measured clip.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2e86e7268ae146228ef3935e4b68590d14b75837ab0259b22ae55d11db950a85","header_sha256":"3f4f2c5a34f1f56e0ba04d7bced038289a652505fa7c10c6d4ce61166b962c88","header_status":"handled","input_sha256":"f2d191eb39d7dedf8799946a8f99a8c7880f17b15146454c1ad21532ea59036c","kind":"mutation-receipt","operation":"d09f55a65c495f3144961ee82ba378474bd8ff04033c4e3b104e3a9c8687fa46","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-03"],"target":"f-20261128-03","v":1} -->
