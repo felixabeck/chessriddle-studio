@@ -30652,7 +30652,7 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 
 ### Download game-count throttle test is wall-clock flaky on Windows CI
 
-* **ID:** f-20261128-11 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-11 · **Status:** handled · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **CI run:** 46137791487
 * **First red:** Test run 46137791487 on `35659adec`, job `rust-windows-test` (that push changed no Rust code).
@@ -30663,6 +30663,8 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Proof:** `cargo test --bins -- fs::tests::download_payload_network_bounds` passes; replacing the throttle with one emission per chunk still fails the bound.
 * **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
 * **Repair owner:** 6c2fb393-fed1-4c29-a42b-3fd3e461839e on tuxedo-atlas, 2026-11-28T11:54:54Z
+* **Handled 2026-11-28 (duplicate):** the same red was already owned and repaired by drain e5eee374 under f-20261128-09, commit `def1a783f` (running updates bounded by elapsed time; the exact interval stays pinned by the injected-clock progress test). No separate change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"dfad69024ba8dcce10053adf85970841d749c4b15c51220b29b1eca9572406d6","header_sha256":"c0338833bf4a73a6b56757b5c64c0838e6beced2d63bea4e2adc39e26a0c4661","header_status":"handled","input_sha256":"140e6d1d1bf502101d0a99da5b35ec565a166334d35ca01efe6daeaa1f969c67","kind":"mutation-receipt","operation":"82ebbc8af06ac66cd717a5b8cb701adcf2258f4ce4a99a78b3b2ce2497a4b953","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-11"],"target":"f-20261128-11","v":1} -->
 
 ---
 
