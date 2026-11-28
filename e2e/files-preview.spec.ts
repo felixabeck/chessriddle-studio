@@ -82,8 +82,8 @@ async function openDragFile(
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
-    const list = page.getByRole("listbox", { name: "Games", exact: true });
-    const second = list.locator('[data-line-index="1"] [role="option"]');
+    const list = page.getByRole("list", { name: "Games", exact: true });
+    const second = list.locator('[data-line-index="1"] [role="button"]');
     if (repertoire) await expectLineTitle(second, "White 2", "Black 2");
     else await expect(second).toHaveText(/White 2 - Black 2/);
     return list;
@@ -112,14 +112,14 @@ test("files-preview: repertoire clicks below the threshold select and double cli
     // The line gains moves below; this layout check writes nothing back to the mock collection.
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
     const list = await openDragFile(page, mockScenario);
-    const second = list.locator('[data-line-index="1"] [role="option"]');
+    const second = list.locator('[data-line-index="1"] [role="button"]');
     const box = (await second.boundingBox())!;
     await page.mouse.move(box.x + 45, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + 47, box.y + box.height / 2 + 1);
     await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
     await page.mouse.up();
-    await expect(second).toHaveAttribute("aria-selected", "true");
+    await expect(second).toHaveAttribute("aria-current", "true");
     expect(await lineMoves(page)).toEqual([]);
     await second.dblclick();
     await expect(page).toHaveURL(/\/$/);
@@ -190,7 +190,7 @@ for (const belowHeading of [false, true]) {
         }
         const list = await openDragFile(page, mockScenario);
         const indexCell = list
-            .locator('[data-line-index="1"] [role="option"] > .mantine-Text-root')
+            .locator('[data-line-index="1"] [role="button"] > .mantine-Text-root')
             .first();
         await expect(indexCell).toHaveText("2");
         const indexStyle = await indexCell.evaluate((element) => {
@@ -208,7 +208,8 @@ for (const belowHeading of [false, true]) {
             contrastRatio(indexPaint.color, indexPaint.layers),
             `game-list index contrast (${belowHeading ? "dark" : "light"})`,
         ).toBeGreaterThanOrEqual(4.5);
-        const source = list.locator('[data-line-index="1"] [role="option"]');
+        // A drag copies the whole line, the row control together with its actions.
+        const source = list.locator('[data-line-index="1"] [data-line-part="line"]');
         const heading = list.locator('[data-line-index="3"] [data-line-part="section"]');
         await expect(heading).toBeInViewport({ ratio: 1 });
         const box = await startLineDrag(page, source);
@@ -217,7 +218,7 @@ for (const belowHeading of [false, true]) {
         expect(previewBox.width).toBeCloseTo(box.width, 0);
         expect(previewBox.height).toBeCloseTo(box.height, 0);
         const target = (await (
-            belowHeading ? list.locator('[data-line-index="3"] [role="option"]') : heading
+            belowHeading ? list.locator('[data-line-index="3"] [data-line-part="line"]') : heading
         ).boundingBox())!;
         await page.mouse.move(target.x + 60, target.y + 3, { steps: 5 });
         const marker = page.locator("[data-line-drop-marker]");
@@ -244,7 +245,7 @@ for (const belowHeading of [false, true]) {
             gameMove: { kind: "line", source: 1, before: 3, belowHeading },
             revision: "drag-revision",
         });
-        await expectLineTitle(list.locator('[aria-selected="true"]'), "White 1", "Black 1");
+        await expectLineTitle(list.locator('[aria-current="true"]'), "White 1", "Black 1");
         await expect(preview).toHaveCount(0);
         await expect(marker).toHaveCount(0);
     });
@@ -262,11 +263,11 @@ test("files-preview: a section moves by its heading only to a section boundary",
     const source = (await heading.boundingBox())!;
     await page.mouse.move(source.x + 45, source.y + source.height / 2);
     await page.mouse.down();
-    const middle = (await list.locator('[data-line-index="1"] [role="option"]').boundingBox())!;
+    const middle = (await list.locator('[data-line-index="1"] [role="button"]').boundingBox())!;
     await page.mouse.move(middle.x + 60, middle.y + 5, { steps: 5 });
     const preview = page.locator("[data-line-drag-preview]");
     await expect(preview).toHaveText("Second section");
-    const row = (await list.locator('[data-line-index="3"] [role="option"]').boundingBox())!;
+    const row = (await list.locator('[data-line-index="3"] [role="button"]').boundingBox())!;
     expect((await preview.boundingBox())!.height).toBe(row.height);
     await expect(page.locator("[data-line-drop-marker]")).toBeHidden();
     const target = (await list
@@ -297,7 +298,7 @@ test("files-preview: stationary edge scrolling keeps a drag after its source unm
     }));
     expect(dimensions.height).toBeGreaterThan(0);
     expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.height + 300);
-    const source = list.locator('[data-line-index="0"] [role="option"]');
+    const source = list.locator('[data-line-index="0"] [role="button"]');
     await startLineDrag(page, source);
     const bounds = (await viewport.boundingBox())!;
     await page.mouse.move(bounds.x + 60, bounds.y + bounds.height - 4);
@@ -333,28 +334,29 @@ test("files-preview: Escape cancels a drag and section buttons never start one",
     mockScenario,
 }) => {
     const list = await openDragFile(page, mockScenario);
-    const row = list.locator('[data-line-index="1"] [role="option"]');
-    const button = row.getByRole("button", { name: "Start section here", exact: true });
-    await row.hover();
+    const line = list.locator('[data-line-index="1"] [data-line-part="line"]');
+    const row = line.locator('[role="button"]');
+    const button = line.getByRole("button", { name: "Start section here", exact: true });
+    await line.hover();
     const icon = (await button.locator("svg").boundingBox())!;
     await page.mouse.move(icon.x + icon.width / 2, icon.y + icon.height / 2);
     await page.mouse.down();
     await page.mouse.move(icon.x - 60, icon.y, { steps: 5 });
     await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
     await page.mouse.up();
-    await startLineDrag(page, row);
+    await startLineDrag(page, line);
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-line-drag-preview]")).toHaveCount(0);
     await expect(page.locator("[data-line-drop-marker]")).toHaveCount(0);
     await page.mouse.up();
     expect(await lineMoves(page)).toEqual([]);
     await row.click();
-    await expect(row).toHaveAttribute("aria-selected", "true");
+    await expect(row).toHaveAttribute("aria-current", "true");
 });
 
 test("files-preview: other file types keep their row gestures", async ({ page, mockScenario }) => {
     const list = await openDragFile(page, mockScenario, false);
-    const second = list.locator('[data-line-index="1"] [role="option"]');
+    const second = list.locator('[data-line-index="1"] [role="button"]');
     const box = (await second.boundingBox())!;
     await page.mouse.move(box.x + 45, box.y + box.height / 2);
     await page.mouse.down();
@@ -363,7 +365,7 @@ test("files-preview: other file types keep their row gestures", async ({ page, m
     await page.mouse.up();
     expect(await lineMoves(page)).toEqual([]);
     await second.click();
-    await expect(second).toHaveAttribute("aria-selected", "true");
+    await expect(second).toHaveAttribute("aria-current", "true");
     await second.dblclick();
     await expect(page).toHaveURL(/\/$/);
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });
@@ -407,9 +409,9 @@ async function openSectionedFile(
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, file.name);
-    const list = page.getByRole("listbox", { name: "Games", exact: true });
+    const list = page.getByRole("list", { name: "Games", exact: true });
     const viewport = page.locator(".mantine-ScrollArea-viewport").filter({ has: list });
-    const late = list.getByRole("option", { name: /White 40 - Black 40/ });
+    const late = list.getByRole("button", { name: /White 40 - Black 40/ });
     return { file, list, viewport, late };
 }
 
@@ -434,7 +436,7 @@ test("files-preview: returning to Library restores a late game after section hea
         "aria-selected",
         "true",
     );
-    await expect(late).toHaveAttribute("aria-selected", "true");
+    await expect(late).toHaveAttribute("aria-current", "true");
     await expect(late).toHaveAttribute("aria-description", "Section 40");
     await expectCellStaysInViewport(late);
 });
@@ -650,8 +652,12 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
         await page.goto("/library");
         await page.getByRole("button", { name: "Choose folder", exact: true }).click();
         await selectFilesTreeRow(page, gameOpeningFixture.file.name);
-        const second = page.getByRole("option", { name: /Second White - Second Black/ });
-        const first = page.getByRole("option", { name: /First White - First Black/ });
+        const second = page
+            .getByRole("list", { name: "Games", exact: true })
+            .getByRole("button", { name: /Second White - Second Black/ });
+        const first = page
+            .getByRole("list", { name: "Games", exact: true })
+            .getByRole("button", { name: /First White - First Black/ });
         await expect(second).toBeVisible();
         const openGame = page.getByRole("button", { name: "Open game", exact: true });
         await expect(openGame).toHaveText("Open game");
@@ -661,12 +667,12 @@ for (const gesture of ["button", "double-click", "Enter"] as const) {
         if (gesture === "button") {
             const before = await second.boundingBox();
             await second.click();
-            await expect(second).toHaveAttribute("aria-selected", "true");
+            await expect(second).toHaveAttribute("aria-current", "true");
             await expect(page).toHaveURL("/library");
             expect(await second.boundingBox()).toEqual(before);
             await openGame.click();
         } else if (gesture === "double-click") {
-            await expect(first).toHaveAttribute("aria-selected", "true");
+            await expect(first).toHaveAttribute("aria-current", "true");
             await second.dblclick();
         } else {
             await second.focus();
@@ -693,9 +699,11 @@ test("files-preview: a move key takes focus off the clicked row, Enter before it
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, gameOpeningFixture.file.name);
-    const second = page.getByRole("option", { name: /Second White - Second Black/ });
+    const second = page
+        .getByRole("list", { name: "Games", exact: true })
+        .getByRole("button", { name: /Second White - Second Black/ });
     await second.click();
-    await expect(second).toHaveAttribute("aria-selected", "true");
+    await expect(second).toHaveAttribute("aria-current", "true");
     await expect(second).toBeFocused();
     const firstMove = page.getByRole("button", { name: "d4", exact: true });
     await expect(firstMove).toBeVisible();
@@ -766,17 +774,20 @@ test("files-preview: a repertoire line shows its section icon where it can be fo
     page,
     mockScenario,
     capture,
+    assertAccessible,
 }) => {
     const file = { ...repertoireFile, metadata: { type: "repertoire" as const, tags: [] } };
     await mockScenario({ commands: filesWorkspaceCommands([[file]], pgnFileCommands) });
     await page.goto("/library");
     await page.getByRole("button", { name: /choose folder/i }).click();
     await selectFilesTreeRow(page, file.name);
-    const rows = page.getByRole("option");
+    const rows = page.locator('[data-line-part="line"]');
     const iconOf = (row: Locator) =>
         row.getByRole("button", { name: "Start section here", exact: true });
     await expect(iconOf(rows.nth(0))).toHaveCSS("opacity", "1");
     await expect(iconOf(rows.nth(1))).toHaveCSS("opacity", "0");
+    // The section icons sit beside each row control, so no control nests another (nested-interactive).
+    await assertAccessible();
     await capture("files-section-icon");
 
     await rows.nth(1).hover();
@@ -785,8 +796,8 @@ test("files-preview: a repertoire line shows its section icon where it can be fo
     const dialog = page.getByRole("dialog", { name: "Section", exact: true });
     await expect(dialog.getByRole("textbox", { name: "Name" })).toBeVisible();
     await capture("files-section-dialog");
-    await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
-    await expect(rows.nth(1)).toHaveAttribute("aria-selected", "false");
+    await expect(rows.nth(0).locator('[role="button"]')).toHaveAttribute("aria-current", "true");
+    await expect(rows.nth(1).locator('[role="button"]')).not.toHaveAttribute("aria-current");
 });
 
 test("files-preview: a section's icon opens its choices inside the window", async ({
@@ -809,7 +820,7 @@ test("files-preview: a section's icon opens its choices inside the window", asyn
     await selectFilesTreeRow(page, file.name);
     await expect(page.getByText("mit g3").first()).toBeVisible();
     await page
-        .getByRole("option")
+        .locator('[data-line-part="line"]')
         .first()
         .getByRole("button", { name: "Section", exact: true })
         .click();

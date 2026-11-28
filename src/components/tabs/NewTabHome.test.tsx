@@ -1172,11 +1172,11 @@ async function expandChapters(type: "game" | "repertoire" = "game") {
   await open("Chapters");
   expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
   expect(mocks.openFile).not.toHaveBeenCalled();
-  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(2);
 }
 
 async function activateChapter(index = 1, gesture: "click" | "keyboard" = "click") {
-  const chapter = host.querySelectorAll<HTMLElement>('[role="option"]')[index];
+  const chapter = host.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[index];
   expect(chapter).toBeTruthy();
   await act(async () => {
     if (gesture === "click") chapter.click();
@@ -1192,7 +1192,7 @@ test("a rejected Library count notifies and leaves its row collapsed", async () 
   await open("Chapters");
   expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
   expect(rows()[0].getAttribute("aria-expanded")).toBe("false");
-  expect(host.querySelector('[role="listbox"]')).toBeNull();
+  expect(host.querySelector('[role="list"]')).toBeNull();
   expect(mocks.openFile).not.toHaveBeenCalled();
 });
 
@@ -1221,7 +1221,7 @@ test.each(["collapse", "filter", "search", "other row", "unmount"])(
     if (action === "unmount") await act(async () => root.render(null));
     expect(signal.aborted).toBe(true);
     await act(async () => finish(2));
-    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    expect(host.querySelector('[role="list"]')).toBeNull();
     expect(host.querySelector('[aria-expanded="true"]')).toBeNull();
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(mocks.openFile).toHaveBeenCalledTimes(action === "other row" ? 1 : 0);
@@ -1241,7 +1241,7 @@ test.each([0, 1])(
       { ownerId: "home", store, signal: expect.any(AbortSignal) },
     );
     expect(rows()[0].getAttribute("aria-expanded")).toBe("false");
-    expect(host.querySelector('[role="listbox"]')).toBeNull();
+    expect(host.querySelector('[role="list"]')).toBeNull();
   },
 );
 
@@ -1290,8 +1290,8 @@ test.each(["click", "keyboard"] as const)(
   async (gesture) => {
     await expandChapters();
     expect(
-      [...host.querySelectorAll('[role="option"]')].every(
-        (row) => row.getAttribute("aria-selected") === "false",
+      [...host.querySelectorAll('[data-line-index] [role="button"]')].every(
+        (row) => row.getAttribute("aria-current") === null,
       ),
     ).toBe(true);
     expect(host.querySelector('button[aria-label="Files.RemoveGame"]')).toBeNull();
@@ -1314,7 +1314,7 @@ test.each(["click", "keyboard"] as const)(
 test("a Due chapter opens on Practice and clicking its expanded row collapses it", async () => {
   await expandChapters("repertoire");
   await open("Chapters");
-  expect(host.querySelector('[role="listbox"]')).toBeNull();
+  expect(host.querySelector('[role="list"]')).toBeNull();
   mocks.due["Chapters.pgn"] = { count: 3, failed: false };
   await filter("due");
   await open("Chapters");
@@ -1330,7 +1330,7 @@ test.each([new Error("Read failed"), new Error("Parse failed"), new StaleFileGam
     await activateChapter();
     expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("Common.Error", error);
     expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
-    expect(host.querySelector('[role="listbox"]')).not.toBeNull();
+    expect(host.querySelector('[role="list"]')).not.toBeNull();
     expect(mocks.navigate).not.toHaveBeenCalled();
   },
 );
@@ -1344,7 +1344,7 @@ test("a stale refusal recounts removed chapters and retry uses the refreshed ide
   ]);
   await render();
   await open("Chapters");
-  expect(host.querySelectorAll('[role="option"]')).toHaveLength(3);
+  expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(3);
   const signal = mocks.count.mock.lastCall![1].signal as AbortSignal;
   mocks.count.mockResolvedValueOnce(2);
   mocks.readGames.mockResolvedValue(chapterGames("refreshed"));
@@ -1354,7 +1354,7 @@ test("a stale refusal recounts removed chapters and retry uses the refreshed ide
   expect(mocks.count).toHaveBeenLastCalledWith(handle("Chapters.pgn"), { signal });
   expect(mocks.readGames.mock.calls.length).toBeGreaterThan(reads);
   expect(mocks.readGames.mock.lastCall!.slice(1, 3)).toEqual([0, 1]);
-  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(2);
   expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
   await activateChapter();
   expect(mocks.openFile).toHaveBeenCalledTimes(2);
@@ -1374,7 +1374,7 @@ test.each([0, 1])(
     mocks.readGames.mockResolvedValue(chapterGames("refreshed").slice(0, count));
     mocks.openFile.mockRejectedValueOnce(new StaleFileGameError());
     await activateChapter();
-    expect(host.querySelectorAll('[role="option"]')).toHaveLength(count);
+    expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(count);
     expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
     expect(mocks.openFile).toHaveBeenCalledOnce();
     expect(mocks.navigate).not.toHaveBeenCalled();
@@ -1391,7 +1391,7 @@ test("a failed stale recount notifies and preserves the current picker", async (
   expect(mocks.notify).toHaveBeenLastCalledWith("Common.Error", error);
   expect(mocks.readGames).toHaveBeenCalledTimes(reads);
   expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
-  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(2);
   await activateChapter();
   expect(mocks.openFile.mock.lastCall![2].expected).toEqual({
     stamp: "original-1",
@@ -1418,7 +1418,7 @@ test("a stale recount cannot publish into a newer picker request", async () => {
   await act(async () => finish(0));
   expect(mocks.readGames).toHaveBeenCalledTimes(reads);
   expect(rows()[0].getAttribute("aria-expanded")).toBe("true");
-  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[data-line-index] [role="button"]')).toHaveLength(2);
 });
 
 test("repeated chapter gestures during a pending open create exactly one tab", async () => {
@@ -1445,7 +1445,7 @@ test("repeated chapter gestures during a pending open create exactly one tab", a
   await activateChapter(1, "keyboard");
   await act(async () =>
     host
-      .querySelector('[role="option"]')!
+      .querySelector('[data-line-index] [role="button"]')!
       .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
   );
   expect(mocks.openFile).toHaveBeenCalledOnce();

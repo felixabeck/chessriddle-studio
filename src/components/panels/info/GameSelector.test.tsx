@@ -344,7 +344,7 @@ test.each([
     }
     await act(async () => root.render(<List />));
     await vi.waitFor(() => expect(observed.size).toBe(1));
-    const row = host.querySelector('[role="option"]')!;
+    const row = host.querySelector('[data-line-index] [role="button"]')!;
     expect(row.textContent).toContain(name);
     expect(row.textContent).not.toContain("?");
     expect(row.textContent).not.toContain(" - ");
@@ -366,7 +366,7 @@ test.each([
     observed = renderPageLoader(vi.fn());
   });
   await vi.waitFor(() => expect(observed.games.size).toBe(1));
-  const row = host.querySelector('[role="option"]')!;
+  const row = host.querySelector('[data-line-index] [role="button"]')!;
   expect(row.textContent).toContain(name);
 });
 
@@ -393,7 +393,7 @@ test.each([false, true])(
     const expectTitle = (repertoire: boolean) => {
       const name = repertoire ? "Dragon" : "Dragon - ?";
       expect(observed.get(0)?.name).toBe(name);
-      expect(host.querySelector('[role="option"]')?.textContent).toBe(`1${name}`);
+      expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).toBe(`1${name}`);
     };
     await act(async () => root.render(<List repertoire={initial} />));
     expectTitle(initial);
@@ -448,12 +448,14 @@ test("the active title renders from headers without writing into the disk cache"
   }
   await act(async () => root.render(<List />));
   expect(observed.size).toBe(0);
-  expect(host.querySelector('[role="option"]')?.textContent).toContain("Dragon");
+  expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).toContain("Dragon");
   const merge = mocks.useVirtualPageLoader.mock.calls.at(-1)![2];
   await act(async () => merge(0, [[0, row]]));
   expect(observed.get(0)).toEqual(row);
-  expect(host.querySelector('[role="option"]')?.textContent).toContain("Dragon");
-  expect(host.querySelector('[role="option"]')?.textContent).not.toContain("Old line");
+  expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).toContain("Dragon");
+  expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).not.toContain(
+    "Old line",
+  );
 });
 
 test("a revision change hides cached titles and aborts old reads before switching lines", async () => {
@@ -491,7 +493,7 @@ test("a revision change hides cached titles and aborts old reads before switchin
   expect(host.textContent).toContain("Saved first");
   expect(observed.get(0)).toBe(diskRow);
   await act(async () => root.render(<List revision="r2" activePage={1} />));
-  const firstRow = () => host.querySelector('[data-line-index="0"] [role="option"]')!;
+  const firstRow = () => host.querySelector('[data-line-index="0"] [role="button"]')!;
   expect(firstRow().textContent).toBe("1...");
   await act(async () => oldPage.resolve([{ ...firstGame, pgn: "Stale first", revision: "r1" }]));
   expect(firstRow().textContent).toBe("1...");
@@ -535,7 +537,7 @@ test.each(["tooLarge", "unreadable"] as const)(
       );
     }
     await act(async () => root.render(<List revision="r1" />));
-    expect(host.querySelector('[role="option"]')?.textContent).toBe(
+    expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).toBe(
       `1${translation.t(failure === "tooLarge" ? "Files.GameTooLarge" : "Files.GameUnreadable")}`,
     );
     expect(host.querySelector("button[aria-label]")?.hasAttribute("disabled")).toBe(true);
@@ -545,7 +547,7 @@ test.each(["tooLarge", "unreadable"] as const)(
     mocks.readGames.mockResolvedValue([{ ...firstGame, revision: "r2" }]);
     mocks.parsePGN.mockReset().mockResolvedValue({ headers: { event: "Recovered" } });
     await act(async () => root.render(<List revision="r2" />));
-    expect(host.querySelector('[role="option"]')?.textContent).toBe("1Recovered");
+    expect(host.querySelector('[data-line-index] [role="button"]')?.textContent).toBe("1Recovered");
     expect(mocks.readGames).toHaveBeenCalledTimes(2);
   },
 );
@@ -610,7 +612,7 @@ test.each(["wheel", "touchmove", "pointerdown", "keydown", "focusin"])(
     const games = new Map<number, GameSelectorRow>([[0, { name: "First" }]]);
     await renderReveal(games);
     expect(mocks.scrollToOffset).toHaveBeenCalled();
-    const viewport = host.querySelector('[role="listbox"]')!.parentElement!;
+    const viewport = host.querySelector('[role="list"]')!.parentElement!;
     await act(async () =>
       viewport.dispatchEvent(
         type === "keydown"
@@ -635,7 +637,9 @@ test("a failed row read during reveal adds no read and never changes the selecte
     signal: expect.any(AbortSignal),
   });
   expect(setPage).not.toHaveBeenCalled();
-  expect(host.querySelector('[role="option"]')?.getAttribute("aria-selected")).toBe("true");
+  expect(
+    host.querySelector('[data-line-index] [role="button"]')?.getAttribute("aria-current"),
+  ).toBe("true");
   expect(notifications.show).toHaveBeenCalledOnce();
 });
 
@@ -734,11 +738,11 @@ test("single click selects, non-first double-click and row Enter activate explic
       />,
     ),
   );
-  const rows = host.querySelectorAll<HTMLElement>('[role="option"]');
+  const rows = host.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]');
   expect(rows).toHaveLength(2);
   expect(rows[1].tabIndex).toBe(0);
   expect(rows[1].hasAttribute("data-move-key-releases-focus")).toBe(true);
-  expect(rows[0].getAttribute("aria-selected")).toBe("true");
+  expect(rows[0].getAttribute("aria-current")).toBe("true");
   await act(async () => rows[1].click());
   expect(setPage).toHaveBeenCalledExactlyOnceWith(1);
   expect(activate).not.toHaveBeenCalled();
@@ -748,9 +752,11 @@ test("single click selects, non-first double-click and row Enter activate explic
       new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true }),
     );
     rows[1]
-      .querySelector("button")!
+      .parentElement!.querySelector("button")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    rows[1].querySelector("button")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    rows[1]
+      .parentElement!.querySelector("button")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   });
   expect(activate.mock.calls).toEqual([[1]]);
   await act(async () => {
@@ -823,9 +829,9 @@ test("stores a middle omission without parsing, notifying, retrying or activatin
   });
   expect(host.textContent).toContain("Readable before");
   expect(host.textContent).toContain("Readable after");
-  const row = host.querySelectorAll<HTMLElement>('[role="option"]')[1];
+  const row = host.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1];
   expect(row.textContent).toBe(`2${translation.t("Files.GameTooLarge")}`);
-  expect(row.querySelector("button")?.disabled).toBe(true);
+  expect(row.closest('[data-line-part="line"]')!.querySelector("button")?.disabled).toBe(true);
   await act(async () => {
     row.click();
     row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -1078,11 +1084,13 @@ test("an unreadable row selects, activates, and cannot delete", async () => {
     omission: "unreadable",
     identity: { stamp: secondGame.stamp, revision: secondGame.revision },
   });
-  const rows = host.querySelectorAll<HTMLElement>('[role="option"]');
+  const rows = host.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]');
   expect(rows).toHaveLength(3);
   const unreadable = rows[1];
   expect(unreadable.textContent).toContain(translation.t("Files.GameUnreadable"));
-  expect(unreadable.querySelector("button")?.disabled).toBe(true);
+  expect(unreadable.closest('[data-line-part="line"]')!.querySelector("button")?.disabled).toBe(
+    true,
+  );
 
   await act(async () => unreadable.click());
   expect(setPage).toHaveBeenCalledExactlyOnceWith(1);
@@ -1288,7 +1296,7 @@ test.each(["reload", "file change", "list reset", "disabled", "unmount"])(
         ),
       );
     await act(async () => render());
-    const list = host.querySelector<HTMLElement>('[role="listbox"]')!;
+    const list = host.querySelector<HTMLElement>('[role="list"]')!;
     list.setPointerCapture = vi.fn();
     list.hasPointerCapture = () => false;
     const fire = (target: EventTarget, type: string, clientX: number) => {
@@ -1299,7 +1307,7 @@ test.each(["reload", "file change", "list reset", "disabled", "unmount"])(
       });
       target.dispatchEvent(event);
     };
-    fire(list.querySelector('[role="option"]')!, "pointerdown", 10);
+    fire(list.querySelector('[data-line-index] [role="button"]')!, "pointerdown", 10);
     fire(window, "pointermove", 20);
     expect(document.querySelector("[data-line-drag-preview]")).not.toBeNull();
     await act(async () => render(true));
@@ -1316,10 +1324,10 @@ test("a named section shows its heading above the line that starts it", async ()
     [0, { name: "First", identity }],
     [1, { name: "Second", section: "mit g3", identity }],
   ]);
-  const [first, second] = Array.from(host.querySelectorAll<HTMLElement>('[role="presentation"]'));
+  const [first, second] = Array.from(host.querySelectorAll<HTMLElement>('[role="listitem"]'));
   expect(first.textContent).not.toContain("mit g3");
   expect(second.textContent?.startsWith("mit g3")).toBe(true);
-  const option = second.querySelector<HTMLElement>('[role="option"]');
+  const option = second.querySelector<HTMLElement>('[data-line-index] [role="button"]');
   expect(option?.getAttribute("aria-description")).toBe("mit g3");
 });
 
@@ -1340,7 +1348,7 @@ test("right-clicking a loaded line opens the section editor where allowed", asyn
     [0, { name: "First", identity }],
     [1, { name: "Second", section: "", identity }],
   ]);
-  const slot = host.querySelector<HTMLElement>('[role="presentation"]')!;
+  const slot = host.querySelector<HTMLElement>('[role="listitem"]')!;
   const event = new MouseEvent("contextmenu", {
     bubbles: true,
     cancelable: true,
@@ -1361,7 +1369,7 @@ test("right-clicking a loaded line opens the section editor where allowed", asyn
 });
 
 function sectionButton() {
-  return host.querySelector<HTMLButtonElement>('[role="option"] button');
+  return host.querySelector<HTMLButtonElement>('[data-line-part="line"] button');
 }
 
 test.each([
@@ -1403,6 +1411,63 @@ test("clicking the icon does not select or open the line", async () => {
   expect(activate).not.toHaveBeenCalled();
 });
 
+test("the row actions sit beside the row control, never inside it", async () => {
+  await act(async () => {
+    root.render(
+      <GameSelector
+        games={new Map([[0, { name: "First", identity }]])}
+        setGames={vi.fn()}
+        setPage={vi.fn()}
+        deleteGame={vi.fn()}
+        total={1}
+        path={path}
+        activePage={0}
+        editableSections
+      />,
+    );
+  });
+  expect(host.querySelector('[role="list"] > [role="listitem"]')).not.toBeNull();
+  const control = host.querySelector<HTMLElement>('[data-line-index="0"] [role="button"]')!;
+  expect(control.getAttribute("aria-current")).toBe("true");
+  expect(control.querySelector("button, [role='button']")).toBeNull();
+  const actions = [...host.querySelectorAll<HTMLButtonElement>('[data-line-part="line"] button')];
+  expect(actions.map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Partie entfernen",
+    "Abschnitt hier beginnen",
+  ]);
+  for (const action of actions) expect(control.contains(action)).toBe(false);
+});
+
+test("Space selects the row like a click and Enter opens it", async () => {
+  const setPage = vi.fn();
+  const activate = vi.fn();
+  await act(async () => {
+    root.render(
+      <GameSelector
+        games={new Map([[0, { name: "First", identity }]])}
+        setGames={vi.fn()}
+        setPage={setPage}
+        onActivate={activate}
+        total={1}
+        path={path}
+        activePage={1}
+      />,
+    );
+  });
+  const control = host.querySelector<HTMLElement>('[data-line-index="0"] [role="button"]')!;
+  expect(control.getAttribute("aria-current")).toBeNull();
+  const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+  await act(async () => control.dispatchEvent(space));
+  expect(space.defaultPrevented).toBe(true);
+  expect(setPage).toHaveBeenCalledWith(0);
+  expect(activate).not.toHaveBeenCalled();
+  await act(async () =>
+    control.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(activate).toHaveBeenCalledWith(0);
+  expect(setPage).toHaveBeenCalledTimes(1);
+});
+
 test.each([
   ["a list without section editing", { name: "First", identity }, false],
   ["a line that has no identity yet", { name: "First" }, true],
@@ -1416,7 +1481,7 @@ test.each([
   ["a line that has no identity yet", { name: "First" }, true],
 ])("right-clicking %s opens nothing", async (_name, row, editable) => {
   await renderSections([[0, row as GameSelectorRow]], editable as boolean);
-  const slot = host.querySelector<HTMLElement>('[role="presentation"]')!;
+  const slot = host.querySelector<HTMLElement>('[role="listitem"]')!;
   await act(async () =>
     slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
@@ -1457,7 +1522,7 @@ async function renderAnchor(
 }
 
 function anchorViewport() {
-  return host.querySelector<HTMLElement>('[role="listbox"]')!.parentElement!;
+  return host.querySelector<HTMLElement>('[role="list"]')!.parentElement!;
 }
 
 test.each([
@@ -1470,7 +1535,7 @@ test.each([
   mocks.scrollToOffset.mockClear();
   mocks.scrollToOffset.mockImplementationOnce(() => {
     // The write must see the committed height, rather than the old 300px maximum.
-    expect(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height).toBe("402px");
+    expect(host.querySelector<HTMLElement>('[role="list"]')!.style.height).toBe("402px");
   });
   await renderAnchor([
     [0, "First"],
@@ -1512,7 +1577,7 @@ test.each(["wheel", "touchmove", "pointerdown", "keydown", "focusin"])(
     await renderAnchor();
     anchorViewport().scrollTop = 45;
     mocks.measure.mockImplementationOnce(() => {
-      expect(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height).toBe("300px");
+      expect(host.querySelector<HTMLElement>('[role="list"]')!.style.height).toBe("300px");
       expect(mocks.scrollToOffset).not.toHaveBeenCalled();
       anchorViewport().dispatchEvent(new Event(type, { bubbles: true }));
     });
@@ -1527,7 +1592,7 @@ test("section anchor yields to reveal, which repeats with committed geometry and
   anchorViewport().scrollTop = 45;
   mocks.scrollToOffset.mockClear();
   mocks.getOffsetForIndex.mockImplementation(() => [
-    Number.parseFloat(host.querySelector<HTMLElement>('[role="listbox"]')!.style.height) - 60,
+    Number.parseFloat(host.querySelector<HTMLElement>('[role="list"]')!.style.height) - 60,
     "auto",
   ]);
   await renderAnchor([[0, "Heading"]], true);
@@ -1560,7 +1625,7 @@ test("section anchor skips a total change in the same commit", async () => {
 });
 
 async function openEditor(index: number) {
-  const slot = host.querySelectorAll<HTMLElement>('[role="presentation"]')[index];
+  const slot = host.querySelectorAll<HTMLElement>('[role="listitem"]')[index];
   await act(async () =>
     slot.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
   );
@@ -1618,7 +1683,7 @@ test.each(["saved-unconfirmed", "refresh"])("%s reloads the list from the file",
 
 test("row index uses the index CSS module class with dimmed colour and no opacity dimming", async () => {
   await act(async () => renderSelector(new Map([[0, { name: "First" }]]), vi.fn()));
-  const row = host.querySelector('[role="option"]')!;
+  const row = host.querySelector('[data-line-index] [role="button"]')!;
   const indexEl = row.querySelector("p")!;
   expect(indexEl.textContent).toBe("1");
   expect(indexEl.classList.contains(classes.index)).toBe(true);

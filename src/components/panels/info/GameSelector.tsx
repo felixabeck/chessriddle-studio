@@ -364,7 +364,7 @@ export default function GameSelector({
     >
       <Box
         ref={listRef}
-        role="listbox"
+        role="list"
         aria-label={t("Common.Games")}
         style={{
           height: totalSize,
@@ -471,10 +471,21 @@ function GameRow({
             nameFirst,
           })
       : undefined;
+  const activation = gameRowActivation(index, onActivate ?? setPage);
+  const rowControl = {
+    ...activation,
+    onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+      activation.onKeyDown(event);
+      // A button selects on Space as a click does; Enter keeps opening the game.
+      if (event.key !== " " || event.repeat || event.target !== event.currentTarget) return;
+      event.preventDefault();
+      setPage(index);
+    },
+  };
 
   return (
     <div
-      role="presentation"
+      role="listitem"
       className={classes.slot}
       data-line-index={index}
       style={style}
@@ -517,37 +528,43 @@ function GameRow({
           )}
         </div>
       )}
+      {/* The row control and its actions are siblings, so no button sits inside another control. */}
       <Group
         data-line-part="line"
-        role="option"
-        aria-selected={index === activePage}
-        aria-description={section || undefined}
-        {...(omitted ? {} : gameRowActivation(index, onActivate ?? setPage))}
-        {...moveKeyReleasesFocus}
         style={{ height: rowHeight, flex: "none" }}
-        justify="space-between"
         wrap="nowrap"
         gap="xs"
         className={cx(classes.row, {
           [classes.active]: index === activePage,
         })}
-        onClick={() => {
-          if (omitted) return;
-          setPage(index);
-        }}
       >
-        <Text fz="xs" c="dimmed" className={classes.index}>
-          {formatNumber(index + 1)}
-        </Text>
-        <Text fz="sm" truncate flex={1} lh="sm">
-          {title || game ? <GameTitle title={title ?? game!} repertoire={repertoire} /> : "..."}
-        </Text>
+        <Group
+          role="button"
+          aria-current={index === activePage ? "true" : undefined}
+          aria-disabled={omitted || undefined}
+          aria-description={section || undefined}
+          {...(omitted ? {} : rowControl)}
+          {...moveKeyReleasesFocus}
+          wrap="nowrap"
+          gap="xs"
+          className={classes.rowControl}
+          onClick={() => {
+            if (omitted) return;
+            setPage(index);
+          }}
+        >
+          <Text fz="xs" c="dimmed" className={classes.index}>
+            {formatNumber(index + 1)}
+          </Text>
+          <Text fz="sm" truncate flex={1} lh="sm">
+            {title || game ? <GameTitle title={title ?? game!} repertoire={repertoire} /> : "..."}
+          </Text>
+        </Group>
         {deleteGame && (
           <IconAction
             label={t("Files.RemoveGame")}
             disabled={!canDelete}
-            onClick={(event) => {
-              event.stopPropagation();
+            onClick={() => {
               if (!game?.identity) return;
               setDeleteSnapshot({ index, ...game.identity });
               toggleDelete(true);
@@ -569,7 +586,6 @@ function GameRow({
                 : t("Files.LineSection.Title", { defaultValue: "Section" })
             }
             onClick={(event) => {
-              event.stopPropagation();
               const bounds = event.currentTarget.getBoundingClientRect();
               openSectionEditor(bounds.left, bounds.bottom, section === undefined);
             }}

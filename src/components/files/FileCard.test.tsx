@@ -1029,7 +1029,7 @@ describe("FileCard", () => {
     );
     const seed = vi.spyOn(tabStorage, "seed");
     await renderActualList();
-    const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
+    const second = container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1];
     await act(async () => {
       second.click();
       second.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -1039,7 +1039,9 @@ describe("FileCard", () => {
     expect(mocks.readGame).toHaveBeenCalledExactlyOnceWith(sampleFileA.handle, 1, undefined);
     expect(openButton().disabled).toBe(true);
     // Selection changes while the fresh read still belongs to the second game.
-    await act(async () => container.querySelectorAll<HTMLElement>('[role="option"]')[0].click());
+    await act(async () =>
+      container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[0].click(),
+    );
     await act(async () => settle(stampedGame('[Event "Fresh second"]\n\n1. d4 *')));
     expect(seed).toHaveBeenCalledWith(
       expect.any(String),
@@ -1060,7 +1062,7 @@ describe("FileCard", () => {
   test("row-focused Enter opens and remembers the non-first file game without a preceding click", async () => {
     mocks.readGame.mockResolvedValue(stampedGame('[Event "Fresh second"]\n\n1. d4 *'));
     await renderActualList();
-    const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
+    const second = container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1];
     expect(second.tabIndex).toBe(0);
     await act(async () => {
       second.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -1075,9 +1077,10 @@ describe("FileCard", () => {
     });
     await renderWithMantine(null, root);
     await renderWithMantine(<FileCard selected={sampleFileA} onEditMetadata={vi.fn()} />, root);
-    expect(container.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain(
-      "2Preview",
-    );
+    expect(
+      container.querySelector('[data-line-index] [role="button"][aria-current="true"]')
+        ?.textContent,
+    ).toContain("2Preview");
   });
 
   test.each([
@@ -1101,7 +1104,9 @@ describe("FileCard", () => {
       const openFile = vi.spyOn(openFileModule, "openFile");
       const currentGame = stampedGame('[Event "Fresh second"]\n\n1. d4 *', "changed");
       mocks.readGame.mockResolvedValue(currentGame);
-      const second = container.querySelectorAll<HTMLElement>('[role="option"]')[1];
+      const second = container.querySelectorAll<HTMLElement>(
+        '[data-line-index] [role="button"]',
+      )[1];
       await act(async () => second.click());
       expect(getDefaultStore().get(libraryGamePositionAtom)?.index).toBe(1);
       const originalText = second.textContent;
@@ -1125,9 +1130,10 @@ describe("FileCard", () => {
           expect.objectContaining({ message: i18n.t("Files.LineSection.Stale") }),
         );
         expect(mocks.readGames).toHaveBeenCalledWith(sampleFileA.handle, 0, 1, expect.anything());
-        expect(container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent).toBe(
-          originalText,
-        );
+        expect(
+          container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1]
+            ?.textContent,
+        ).toBe(originalText);
         expect(openFile).toHaveBeenNthCalledWith(1, expect.anything(), expect.anything(), {
           gameNumber: 1,
           expected: originalExpected,
@@ -1144,9 +1150,10 @@ describe("FileCard", () => {
         });
         expect(mocks.readGame).toHaveBeenCalledTimes(2);
         expect(mocks.readGame).toHaveBeenLastCalledWith(sampleFileA.handle, 1, undefined);
-        expect(container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent).toBe(
-          originalText,
-        );
+        expect(
+          container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1]
+            ?.textContent,
+        ).toBe(originalText);
         expect(seed).not.toHaveBeenCalled();
         expect(getDefaultStore().get(tabsAtom)).toEqual([]);
         expect(mocks.navigate).not.toHaveBeenCalled();
@@ -1155,7 +1162,8 @@ describe("FileCard", () => {
       }
       await vi.waitFor(() =>
         expect(
-          container.querySelectorAll<HTMLElement>('[role="option"]')[1]?.textContent,
+          container.querySelectorAll<HTMLElement>('[data-line-index] [role="button"]')[1]
+            ?.textContent,
         ).toContain("Fresh second"),
       );
 

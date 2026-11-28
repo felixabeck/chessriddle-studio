@@ -1909,18 +1909,20 @@ for (const scheme of ["light", "dark"] as const) {
         await expect(row).toHaveAttribute("aria-expanded", "true");
         await expect(tabs).toHaveCount(1);
         await expect(tabs.first()).toContainText("New Tab");
-        const list = page.locator("[data-home-library]").getByRole("listbox");
-        await expect(list.getByRole("option")).toHaveCount(2);
-        await expect(list.getByRole("option", { selected: true })).toHaveCount(0);
+        const list = page
+            .locator("[data-home-library]")
+            .getByRole("list", { name: "Games", exact: true });
+        await expect(list.getByRole("button")).toHaveCount(2);
+        await expect(list.locator('[aria-current="true"]')).toHaveCount(0);
         await testInfo.attach(`library-chapters-expanded-${scheme}.png`, {
             body: await page.screenshot(),
             contentType: "image/png",
         });
         await row.focus();
         await page.keyboard.press("Tab");
-        await expect(list.getByRole("option").first()).toBeFocused();
+        await expect(list.getByRole("button").first()).toBeFocused();
         await page.keyboard.press("Tab");
-        await expect(list.getByRole("option").nth(1)).toBeFocused();
+        await expect(list.getByRole("button").nth(1)).toBeFocused();
         await page.keyboard.press("Enter");
         await expect(tabs).toHaveCount(1);
         await expect(tabs.first()).toHaveText("Morra");
@@ -1939,7 +1941,11 @@ for (const scheme of ["light", "dark"] as const) {
         ).toBeVisible();
         await page.getByRole("tab", { name: "Info", exact: true }).click();
         await page.getByRole("button", { name: /^2\. Morra/ }).click();
-        await page.getByRole("listbox").getByRole("option").filter({ hasText: "First" }).click();
+        await page
+            .getByRole("list", { name: "Games", exact: true })
+            .locator('[role="button"]')
+            .filter({ hasText: "First" })
+            .click();
         await expect(tabs.first()).toHaveText("First");
         expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 0 });
         await tabs.first().hover();

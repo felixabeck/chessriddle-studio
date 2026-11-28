@@ -22,6 +22,13 @@
   background-color: var(--cf-interactive);
 }
 
+/* Fills the line up to the actions, so the whole title area selects the game. */
+.rowControl {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+
 .active {
   font-weight: 500;
   border-left: 3px solid transparent;

@@ -65,7 +65,7 @@ async function openSecondChapterOnAnnotate(page: Page) {
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);
-    const secondChapter = page.locator('[data-line-index="1"] [role="option"]');
+    const secondChapter = page.locator('[data-line-index="1"] [role="button"]');
     await secondChapter.dblclick();
     await expect(page).toHaveURL("/");
     expect((await activeWorkspaceTab(page))?.gameOrigin).toMatchObject({ gameNumber: 1 });

@@ -280,7 +280,7 @@ test("import PGN into open repertoire without reference DB shows review mark, Ma
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, "White Rep");
-    await page.locator('[data-line-index="0"] [role="option"]').dblclick();
+    await page.locator('[data-line-index="0"] [role="button"]').dblclick();
     await expect(page).toHaveURL("/");
 
     await page.getByRole("tab", { name: "Practice", exact: true }).click();

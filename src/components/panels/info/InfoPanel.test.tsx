@@ -533,7 +533,7 @@ describe("InfoPanel game loading and cancellation", () => {
     const heading = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     await act(async () => heading.click());
     await vi.waitFor(() => expect(mocks.readGames).toHaveBeenCalled());
-    const row = () => container.querySelector<HTMLElement>('[role="option"]')!;
+    const row = () => container.querySelector<HTMLElement>('[data-line-index] [role="button"]')!;
     const name = container.querySelector<HTMLInputElement>(
       'input[aria-label="GameInfo.LineName"]',
     )!;
@@ -656,7 +656,7 @@ describe("InfoPanel game loading and cancellation", () => {
       container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
     );
     const previousRow = () =>
-      container.querySelector<HTMLElement>('[data-line-index="0"] [role="option"]')!;
+      container.querySelector<HTMLElement>('[data-line-index="0"] [role="button"]')!;
     expect(previousRow().textContent).toContain("Old line");
     for (const [label, value] of [
       ["GameInfo.LineName", "Dragon System"],
@@ -675,7 +675,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(dimmedIdea(previousRow())).toBe("6...Dc7 plan");
     const pageReads = mocks.readGames.mock.calls.length;
     await act(async () =>
-      container.querySelector<HTMLElement>('[data-line-index="1"] [role="option"]')!.click(),
+      container.querySelector<HTMLElement>('[data-line-index="1"] [role="button"]')!.click(),
     );
     await expectPageConfirmation();
     return { previousRow, pageReads, diskRows, savedRows };
@@ -688,7 +688,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
     expect(treeStore.getState().dirty).toBe(false);
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
-    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().getAttribute("aria-current")).toBeNull();
     expect(previousRow().textContent).toContain("Dragon System");
     expect(dimmedIdea(previousRow())).toBe("6...Dc7 plan");
     expect(previousRow().textContent).not.toContain("Old line");
@@ -703,7 +703,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(mocks.readGames).toHaveBeenCalledTimes(pageReads);
     expect(treeStore.getState().dirty).toBe(false);
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
-    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().getAttribute("aria-current")).toBeNull();
     expect(previousRow().textContent).toContain("Old line");
     expect(dimmedIdea(previousRow())).toBe("Old idea");
     expect(previousRow().textContent).not.toContain("Dragon System");
@@ -730,7 +730,7 @@ describe("InfoPanel game loading and cancellation", () => {
     expect(mocks.readGames.mock.calls.length).toBeGreaterThan(pageReads);
     expect(oldSignal.aborted).toBe(true);
     expect(jotaiStore.get(currentTabAtom)?.gameOrigin).toMatchObject({ gameNumber: 1 });
-    expect(previousRow().getAttribute("aria-selected")).toBe("false");
+    expect(previousRow().getAttribute("aria-current")).toBeNull();
     expect(previousRow().textContent).toContain("...");
 
     await act(async () => oldPage.resolve(diskRows));
@@ -841,7 +841,7 @@ describe("InfoPanel game loading and cancellation", () => {
   }
 
   async function activateActualRow() {
-    const row = container.querySelector<HTMLElement>('[role="option"]')!;
+    const row = container.querySelector<HTMLElement>('[data-line-index] [role="button"]')!;
     expect(row).not.toBeNull();
     await act(async () => {
       row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -1556,7 +1556,7 @@ describe("InfoPanel game loading and cancellation", () => {
       mocks.parsePGN.mockResolvedValue({ headers: { event: "Selected" } });
       treeStore.getState().setComment("Unsaved edit");
       await act(async () => root.render(renderPanel()));
-      const row = container.querySelector<HTMLElement>('[role="option"]')!;
+      const row = container.querySelector<HTMLElement>('[data-line-index] [role="button"]')!;
       expect(row).not.toBeNull();
       await act(async () => {
         row.dispatchEvent(
