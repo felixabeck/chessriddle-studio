@@ -30406,3 +30406,24 @@ Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverag
 * **Proof:** `pnpm test:e2e:container --project=game-report --project=game-report-narrow --grep "Generate report|without an engine"` fails those four screenshots before the fix and passes after it.
 * **Related:** f-20261124-19 (compact-menu snapshot class, different dialog); the Save-to copy-menu finding on the same run.
 * **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Hosted notation-hierarchy-scaled overflow clip 374px > 270px after Save-to
+
+* **ID:** f-20261128-03 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
+* **Impact class:** tooling
+* **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change `e2e/notation-hierarchy.spec.ts` or chessground sizing.
+* **CI run:** 46084548911
+* **First red:** Test run 46076853831 on `e0edb6b50165f4131a84a6da261fb2312c4ebac9` is the first red of this e2e job streak; this clip assertion fails on 46084548911, head `ff4ce6f39`.
+* **Failure scenario:** Test run 46084548911 job `e2e` 140790946531: `[notation-hierarchy-scaled] › e2e/notation-hierarchy.spec.ts:508` `assertNothingClipped` fails with `content clipped: div.: x 374px > 270px` (expected `[]`, received that one offender) at `e2e/fixtures.ts:803`.
+* **Where:** `e2e/notation-hierarchy.spec.ts:508` (`overflow-only stacked annotation stays over its square`), assertion in `e2e/fixtures.ts` `assertNothingClipped`.
+* **Defect:** under the full hosted suite the scaled overflow-only annotation is still measured while a `div` is 374 px against a 270 px clip. Same assertion class as handled f-20261117-05 (then 195 px > 174 px, verifier wait for `cg-container` to match wrap).
+* **Fix:** reproduce with `pnpm test:e2e:container --project=notation-hierarchy-scaled` under full-suite load; extend the existing `waitForBoardSizeSettled` wait if the wrap/`cg-container` mismatch is back, or wait for the annotation node to finish moving. Do not weaken `assertNothingClipped`.
+* **Proof:** `pnpm test:e2e:container --project=notation-hierarchy-scaled --grep "overflow-only stacked annotation"` fails the clip check before the fix under the load that produced 374>270 and passes after it; the unscaled `notation-hierarchy` project still passes.
+* **Follow-up of:** f-20261117-05
+* **Related:** f-20261117-05 (handled board-size settle wait); f-20261120-09 (board-keyboard stale cg-container clip).
+* **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
