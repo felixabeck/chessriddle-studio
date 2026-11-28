@@ -907,11 +907,17 @@ export async function chooseApplicationMenuItem(page: Page, name: string | RegEx
 }
 
 export async function chooseBoardMoreAction(page: Page, name: string | RegExp) {
-    await page.getByRole("button", { name: "More actions", exact: true }).click();
-    await page
+    const more = page.getByRole("button", { name: "More actions", exact: true });
+    const item = page
         .getByRole("menu")
-        .getByRole("menuitem", { name, exact: typeof name === "string" })
-        .click();
+        .getByRole("menuitem", { name, exact: typeof name === "string" });
+    await expect(async () => {
+        if ((await item.count()) === 0) {
+            await more.click();
+        }
+        await expect(item).toBeVisible();
+        await item.click({ timeout: 2000 });
+    }).toPass({ timeout: 10_000, intervals: [100, 250, 500] });
 }
 
 export async function toggleNotationViewOption(page: Page, name: string | RegExp) {

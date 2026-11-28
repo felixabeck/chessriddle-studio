@@ -151,7 +151,16 @@ test("renders actions at the right end after children and keeps the name truncat
   const rightGroup = bar.lastElementChild as HTMLElement;
   const nameText = leftGroup.querySelector<HTMLElement>("p")!;
   expect(leftGroup.style.minWidth).toBe("0px");
+  expect(leftGroup.style.flex).toBe("1 1 auto");
   expect(nameText.dataset.truncate).toBe("end");
-  expect(rightGroup.style.flexShrink).toBe("0");
+  expect(rightGroup.style.flexGrow).toBe("0");
+  expect(rightGroup.style.flexShrink).toBe("1");
+  expect(rightGroup.style.minWidth).toBe("0px");
+  expect(bar.style.minWidth).toBe("0rem");
+  expect(bar.style.width).toBe("100%");
+  expect(bar.style.paddingLeft).toBe("var(--board-bar-inset, 2.5rem)");
+  expect(bar.style.paddingRight).toBe("var(--mantine-spacing-xs)");
+  expect(bar.style.marginLeft).toBe("");
+  expect(bar.style.marginRight).toBe("");
   expect(Array.from(rightGroup.children, (child) => child.textContent)).toEqual(["Mat", "Flip"]);
 });

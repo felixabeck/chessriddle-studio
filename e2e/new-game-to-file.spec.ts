@@ -28,7 +28,7 @@ const savedWrite = {
     revision: "saved-generation",
 };
 
-function repertoireCommands() {
+function repertoireCommands(fileRevision: string = savedWrite.revision) {
     return filesWorkspaceCommands([[repertoireFile]], {
         ...pgnFileCommands,
         ...databaseCommands(gameOpeningFixture.databaseId, "opening.db3", {
@@ -42,10 +42,10 @@ function repertoireCommands() {
         }),
         count_pgn_games: { result: repertoireFile.gameCount },
         write_game: { result: savedWrite },
-        // Native file_revision reports the written generation after an append. Only file tabs
-        // poll it and neither test has one before its save, so the saved revision is the only
-        // answer the 2 s freshness poll may see; a stale one shows "different game" on slow runs.
-        file_revision: { result: savedWrite.revision },
+        // File tabs poll file_revision every 2s: tests that become a file tab only after
+        // write_game must answer the written generation, whereas the in-place-update test opens
+        // a file tab first and must answer read_game's revision ("e2e-pgn-revision").
+        file_revision: { result: fileRevision },
         list_file_workspace: {
             results: [
                 { entries: [repertoireFile], unread: [] },
@@ -212,7 +212,7 @@ test("Save a copy targeting the tab's own file updates the existing game in plac
 }) => {
     await seedBoardLayouts(page);
     await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
-    await mockScenario({ commands: repertoireCommands() });
+    await mockScenario({ commands: repertoireCommands("e2e-pgn-revision") });
     await page.goto("/library");
     await page.getByRole("button", { name: "Choose folder", exact: true }).click();
     await selectFilesTreeRow(page, repertoireFile.name);

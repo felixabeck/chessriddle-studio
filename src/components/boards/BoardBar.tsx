@@ -34,15 +34,17 @@ export function BoardBar({
   return (
     <Group
       data-board-bar={placement}
-      ml="2.5rem"
-      mr="xs"
+      pl="var(--board-bar-inset, 2.5rem)"
+      pr="xs"
+      w="100%"
+      miw={0}
       h={height}
       justify="space-between"
       wrap="nowrap"
       align={towardBoard}
       gap="xs"
     >
-      <Group gap={6} align="baseline" wrap="nowrap" style={{ minWidth: 0 }}>
+      <Group gap={6} align="baseline" wrap="nowrap" style={{ minWidth: 0, flex: "1 1 auto" }}>
         {(hasPlayerName || (placeholder && onNameClick)) &&
           (onNameClick ? (
             <UnstyledButton
@@ -71,7 +73,7 @@ export function BoardBar({
         )}
       </Group>
 
-      <Group align={towardBoard} wrap="nowrap" gap="xs" style={{ flexShrink: 0 }}>
+      <Group align={towardBoard} wrap="nowrap" gap="xs" style={{ flex: "0 1 auto", minWidth: 0 }}>
         {children}
         {actions}
       </Group>

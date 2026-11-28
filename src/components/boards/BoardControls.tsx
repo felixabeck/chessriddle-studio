@@ -155,7 +155,7 @@ function BoardControls({
   });
 
   return (
-    <Group gap={4} wrap="nowrap" data-no-drag="true">
+    <Group gap={4} wrap="nowrap" miw={0} data-no-drag="true">
       {canTakeBack && onTakeBack && (
         <IconAction
           label={t("Board.Action.TakeBack", { defaultValue: "Take back" })}
@@ -196,9 +196,16 @@ function BoardControls({
         </IconAction>
       ) : (
         showAutoSaveStatus && (
-          <Group gap={4} wrap="nowrap" c="dimmed" role="status" aria-live="polite">
+          <Group
+            gap={4}
+            wrap="nowrap"
+            c="dimmed"
+            role="status"
+            aria-live="polite"
+            style={{ minWidth: 0 }}
+          >
             {!dirty && <Check size="0.875rem" aria-hidden="true" />}
-            <Text size="sm" c="dimmed">
+            <Text size="sm" c="dimmed" truncate>
               {t(dirty ? "Board.SaveStatus.Saving" : "Board.SaveStatus.Saved")}
             </Text>
           </Group>

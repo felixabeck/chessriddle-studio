@@ -602,8 +602,10 @@ function Board({
             flexDirection: "column",
             width: "100%",
             height: "100%",
+            minWidth: 0,
             flexWrap: "nowrap",
             overflow: "hidden",
+            "--board-bar-inset": `calc(${evalColumnWidth} + var(--board-gap, var(--mantine-spacing-sm)))`,
             maxWidth:
               // The board is square, so its width is capped by the height left for it. Terms in order:
               // the board area's height (defaulting to the viewport minus navigation row 2.625rem and
@@ -638,8 +640,10 @@ function Board({
           <Box h={BAR_GUTTER} />
           <Group
             data-board-surface
+            w="100%"
             style={{
               position: "relative",
+              minWidth: 0,
               flexWrap: "nowrap",
               columnGap: "var(--board-gap, var(--mantine-spacing-sm))",
               // The wrapper clips horizontally; the eval column leaves room for the grid's focus

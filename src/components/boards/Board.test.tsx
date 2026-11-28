@@ -788,6 +788,9 @@ test("board width cap uses --board-area-height with viewport fallback", async ()
     "var(--board-area-height, calc(100vh - 2.625rem - var(--mantine-spacing-sm)))",
   );
   expect(maxWidth).not.toContain("--board-below-height");
+  const barInset = surface.parentElement!.style.getPropertyValue("--board-bar-inset");
+  expect(barInset).toContain("var(--board-eval-width, 25px)");
+  expect(barInset).toContain("var(--board-gap, var(--mantine-spacing-sm))");
 });
 
 test("forwards actions into the top BoardBar only", async () => {
