@@ -30412,6 +30412,11 @@ Took over repair: published filing had no Repair owner line, and this drain's pu
 * **Related:** f-20261124-19 (compact-menu snapshot class, different dialog); the Save-to copy-menu finding on the same run.
 * **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
 
+Took over repair: published filing had no Repair owner line. Same e2e streak as f-20261128-01; newest completed red Test 46085092838 still fails the four Generate-report dialog snapshots. Do not install f2a2ec68e.
+* **CI run:** 46085092838
+* **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
+<!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"be01042964ed9e401690c3bb66fa2a43fd1946802d2e9d96785926fe8dca0505","input_sha256":"d0b0a3e7f2a830267df95cff2f5ada8b1a3c7d7fd64dae4cbad0ce0b13821810","kind":"mutation-receipt","operation":"ae4333412f420d2e955e448ba9f15786fa11f743b02a7a1f4f154440b15ff715","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-02"],"target":"f-20261128-02","v":1} -->
+
 ---
 
 ## 2026-11-28 — filed through the inbox spool
