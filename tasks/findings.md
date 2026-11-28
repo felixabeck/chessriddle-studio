@@ -30460,3 +30460,41 @@ Took over repair: published filing had no Repair owner line. Same e2e streak as 
 
 Closed. Commit `24d025367`. Product cause was BoardBar min-content (ml 2.5rem plus unshrinkable actions) overflowing the eval-column Box at 320px/200% (`div.: x 374px > 270px`), not a chessground wrap race. Padding the eval inset inside `w="100%"` `miw={0}` and letting Saved truncate clears the clip. Rejected: `toPass()` around `assertNothingClipped` (d-20261117-05); ancestor overflowX polling in `waitForBoardSizeSettled`; restoring right `flexShrink: 0` (reintroduced 329>270). Proof: container `--project=notation-hierarchy-scaled --grep "overflow-only stacked annotation"` passed without toPass. Lenses r1 REVISE then closure: adopted wait hunks deleted; remaining flexShrink blocker skipped as false positive against the measured clip.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"2e86e7268ae146228ef3935e4b68590d14b75837ab0259b22ae55d11db950a85","header_sha256":"3f4f2c5a34f1f56e0ba04d7bced038289a652505fa7c10c6d4ce61166b962c88","header_status":"handled","input_sha256":"f2d191eb39d7dedf8799946a8f99a8c7880f17b15146454c1ad21532ea59036c","kind":"mutation-receipt","operation":"d09f55a65c495f3144961ee82ba378474bd8ff04033c4e3b104e3a9c8687fa46","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-03"],"target":"f-20261128-03","v":1} -->
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### BoardBar shrink that cleared 320/200 clips overflows the 1024x700 player bar
+
+* **ID:** f-20261128-04 · **Status:** open · **Area:** frontend-ui · **Root:** board-bar-fit · **Entry:** inline · **Blocked:** none
+* **Filed from:** aae05993-cc5b-4333-b71c-bdb83fa312d7
+* **Impact class:** ux
+* **Follow-up of:** f-20261128-03
+* **Spotted outside diff:** hosted Test of the f-20261128-03 repair push (BoardBar padding inset + Saved shrink). Job-level owner check classified the e2e streak as inherited (first red run 46076853831 on `e0edb6b50`).
+* **CI run:** 46093395135
+* **First red:** Test run 46093395135 on `05f70acc07a856e08adf5ee201b1e2076af7d682` is the first run of this *BoardBar overflow*; the e2e *job* streak still starts at 46076853831.
+* **Failure scenario:** Open a live game at viewport 1024x700 with a long player name (board-keyboard fixture `Grandmaster VeryLongOpponentNameForNarrowBoardBarTruncationVerification`). The top BoardBar `scrollWidth` is 553px against `clientWidth` 493px, so the name and actions overflow the bar instead of truncating inside it.
+* **Where:** `src/components/boards/BoardBar.tsx` (left `flex: 1 1 auto`, right `flex: 0 1 auto`); assertion `e2e/board-keyboard.spec.ts:1475` (`assertNarrowTopBar`); test `e2e/board-keyboard.spec.ts:1491`.
+* **Defect:** Commit `24d025367` padded `--board-bar-inset` and let the Saved cluster shrink so 320/200 `notation-hierarchy-scaled` stopped clipping (hosted Test 46093395135: that scaled clip now passes). The same shrink leaves min-content 60px wider than the bar at 1024x700. Review-correctness r1 predicted this; restoring right `flexShrink: 0` was skipped because it reintroduced 329>270 at 320/200. Both viewports must fit.
+* **Also on this run, BoardBar-visible snapshots** (inspect CI `*-diff.png` before any re-record; do not re-record natively): `clock-times-annotate.png`, `import-photo-review-tab.png`, `saved-layouts-repertoire-preset.png`, `save-to-database-modal.png`, `board-bar-autosave-saved.png`, `file-new-game-name-dialog.png`, `citations-notation.png`, `game-interrupted.png`.
+* **Fix:** make BoardBar fit both 320/200 overflow-only stacked annotation and 1024x700 long-name player bar (name truncates, actions stay on one row, no min-content overflow). Then re-record only the snapshots whose `*-diff.png` is the bar. Do not restore right `flexShrink: 0` as the only change. Do not wrap `assertNothingClipped` in `toPass` (d-20261117-05).
+* **Proof:** `pnpm test:e2e:container --project=board-keyboard --grep "narrow 1024x700 top bar"` fails `scrollWidth <= clientWidth+1` before the fix and passes after it; `notation-hierarchy-scaled` overflow-only stacked annotation still passes; listed snapshot projects pass after container re-record of inspected diffs.
+* **Related:** f-20261128-03 (handled; 320/200 clip this shrink repaired); f-20261117-05 (handled; `waitForBoardSizeSettled`); d-20261117-05.
+* **Found by:** Grok, drain session aae05993-cc5b-4333-b71c-bdb83fa312d7, Test 46093395135
+
+### notation-follow-scroll WebKit walk still exceeds 135s after the in-page evaluate repair
+
+* **ID:** f-20261128-05 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** aae05993-cc5b-4333-b71c-bdb83fa312d7
+* **Impact class:** tooling
+* **Follow-up of:** f-20261127-23
+* **Spotted outside diff:** hosted Test 46093395135 of `05f70acc0` (BoardBar repair). The e2e job streak is inherited (first red 46076853831 on `e0edb6b50`). f-20261127-23 is handled and cites only 46046820962.
+* **CI run:** 46093395135
+* **Failure scenario:** `[notation-follow-scroll-webkit] › e2e/notation-follow-scroll.spec.ts:287` inline view walk times out at 135s on `page.evaluate` (`Error: page.evaluate: Test timeout of 135000ms exceeded`). Same test passed on 46084548911 and failed on 46085092838.
+* **Where:** `e2e/notation-follow-scroll.spec.ts:287` (inline WebKit walk).
+* **Defect:** f-20261127-23 moved the 160-ply walk into one `page.evaluate`. On hosted WebKit that evaluate still sometimes exceeds the 135s test timeout. Not a BoardBar product failure (notation-hierarchy-scaled passed on this run).
+* **Fix:** bound the in-page walk so hosted WebKit finishes under 135s (fewer settle frames, chunked evaluate, or a WebKit-only budget), and keep the geometry assertions. Do not treat this as f-20261127-25 (download-count) or the BoardBar 1024x700 overflow.
+* **Proof:** `pnpm test:e2e:container --project=notation-follow-scroll-webkit --grep "inline view turns the page"` finishes under 135s after the fix; reverting the bound makes the hosted-class timeout reproducible or the container run exceed 135s.
+* **Related:** f-20261127-23 (handled; in-page evaluate repair).
+* **Found by:** Grok, drain session aae05993-cc5b-4333-b71c-bdb83fa312d7, Test 46093395135
