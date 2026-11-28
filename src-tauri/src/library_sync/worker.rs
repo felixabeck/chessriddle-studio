@@ -2685,12 +2685,28 @@ mod tests {
         .await
     }
 
+    /// Isolated this wait finishes in ~2 s. Under `cargo test --bins` the same
+    /// unoptimized debug export of 5,001 games plus a 5 MiB TooLarge fixture
+    /// shares host CPU and disk with ~4,000 other tests and exceeded the 5 s
+    /// budget (`Syncing { done: 0, total: 0 }`). Test `BLOCKING_GATEWAY` is
+    /// per-thread, so this is not permit starvation.
+    const WAIT_FOR_HEAVY_DATABASE_EXPORT: Duration = Duration::from_secs(30);
+
     async fn wait_for_state(
         owner: &LibrarySyncOwner,
         workspace: &FileWorkspaceHandle,
         predicate: impl Fn(&LibrarySyncSnapshot) -> bool,
     ) -> LibrarySyncSnapshot {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        wait_for_state_for(owner, workspace, Duration::from_secs(5), predicate).await
+    }
+
+    async fn wait_for_state_for(
+        owner: &LibrarySyncOwner,
+        workspace: &FileWorkspaceHandle,
+        timeout: Duration,
+        predicate: impl Fn(&LibrarySyncSnapshot) -> bool,
+    ) -> LibrarySyncSnapshot {
+        let deadline = Instant::now() + timeout;
         loop {
             let snap = owner.snapshot(workspace.clone()).await.unwrap();
             if predicate(&snap) {
@@ -2698,8 +2714,12 @@ mod tests {
             }
             assert!(
                 Instant::now() < deadline,
-                "timed out waiting for state; last snapshot: {:?}",
-                snap.state
+                "timed out waiting for state; last snapshot: {:?}; files: {:?}",
+                snap.state,
+                snap.files
+                    .iter()
+                    .map(|f| (f.name.as_str(), f.selected, &f.status))
+                    .collect::<Vec<_>>(),
             );
             tokio::time::sleep(Duration::from_millis(15)).await;
         }
@@ -5474,12 +5494,17 @@ mod tests {
 
         drop(held_connections);
 
-        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
-            s.state == LibrarySyncState::Synced
-                && s.files.iter().any(|f| {
-                    f.name == "Busy Mega" && f.status == LibrarySyncFileStatus::TooManyGames
-                })
-        })
+        let synced = wait_for_state_for(
+            &harness.owner,
+            &harness.workspace,
+            WAIT_FOR_HEAVY_DATABASE_EXPORT,
+            |s| {
+                s.state == LibrarySyncState::Synced
+                    && s.files.iter().any(|f| {
+                        f.name == "Busy Mega" && f.status == LibrarySyncFileStatus::TooManyGames
+                    })
+            },
+        )
         .await;
         let mega = synced.files.iter().find(|f| f.name == "Busy Mega").unwrap();
         assert!(!mega.selected);
@@ -5550,12 +5575,17 @@ mod tests {
             .turn_on(harness.workspace.clone(), vec![])
             .await
             .unwrap();
-        let initial = wait_for_state(&harness.owner, &harness.workspace, |s| {
-            s.state == LibrarySyncState::Synced
-                && s.files.iter().any(|f| f.name == "Too Large DB")
-                && s.files.iter().any(|f| f.name == "Stale Overcap")
-                && s.files.iter().any(|f| f.name == "Stale Empty")
-        })
+        let initial = wait_for_state_for(
+            &harness.owner,
+            &harness.workspace,
+            WAIT_FOR_HEAVY_DATABASE_EXPORT,
+            |s| {
+                s.state == LibrarySyncState::Synced
+                    && s.files.iter().any(|f| f.name == "Too Large DB")
+                    && s.files.iter().any(|f| f.name == "Stale Overcap")
+                    && s.files.iter().any(|f| f.name == "Stale Empty")
+            },
+        )
         .await;
         for (name, expected) in [
             ("Too Large DB", LibrarySyncFileStatus::TooLarge),
