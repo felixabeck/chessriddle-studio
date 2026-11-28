@@ -30545,7 +30545,7 @@ Commit: 51726d7533f929eb7fafc713b9826fdebaa65180
 
 ### Home-summary Combobox snapshots stale after Dim gold-pill label fix
 
-* **ID:** f-20261128-06 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-06 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** build-library-sync-databases-20261127-233411-90c56946
 * **Impact class:** tooling
 * **Follow-up of:** f-20261127-22
@@ -30559,3 +30559,6 @@ Commit: 51726d7533f929eb7fafc713b9826fdebaa65180
 * **Proof:** `pnpm test:e2e:container --project=accounts-puzzles-engines --grep "home summary partial statistics|home summary keeps one username"` fails those two screenshots on `7ec3a983e` and passes after the container re-record.
 * **Related:** f-20261127-22 (handled; Dim gold-pill labels; Root `-`).
 * **Found by:** Grok, library-sync-databases build, Test 46114948455
+
+Re-recorded only `e2e/accounts-puzzles-engines.spec.ts-snapshots/home-summary-player-sites-accounts-puzzles-engines.png` and `home-summary-separate-sites-accounts-puzzles-engines.png` in the pinned container. Commit `ac84f7eb4`. Proof: `pnpm test:e2e:container --project=accounts-puzzles-engines --grep "home summary partial statistics|home summary keeps one username"` failed those two screenshots (435 and 388 pixels) then passed 2/2 after `--update-snapshots=changed`. CI diffs showed only the selected Combobox option label (gold → `--cf-foreground`). Did not re-record natively. Contrast product change in `78e1c93cf` stands.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ca2fd6fa4e96347271dcffbbcd8c76a2e303b04516227277331c74023bf70982","header_sha256":"f1f18f40fac3038729985db83d612c763a658cd43c9cca03b1edeb77af1736b6","header_status":"handled","input_sha256":"023014cefdf165ed730e316b4e6b3017194456044fb2786229a969ee2f318ee8","kind":"mutation-receipt","operation":"bc6fc6d5fc036a83c8102715f69b33bda0bb0bcde93d7b8c25d22806b74edbce","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-06"],"target":"f-20261128-06","v":1} -->
