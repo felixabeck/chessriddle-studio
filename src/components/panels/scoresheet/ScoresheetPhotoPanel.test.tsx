@@ -15,8 +15,12 @@ import {
 } from "@/state/scoresheetPhotos";
 import { CoachCommandError } from "@/platform/coach";
 import { closeTreeStore, createTreeStore, type TreeStore } from "@/state/store/tree";
-import { SCORESHEET_PHOTOS_TAG, withScoresheetPhotoIds } from "@/utils/scoresheet";
-import { defaultTree, getNodeAtPath } from "@/utils/treeReducer";
+import {
+  findScoresheetCell,
+  SCORESHEET_PHOTOS_TAG,
+  withScoresheetPhotoIds,
+} from "@/utils/scoresheet";
+import { defaultTree, getNodeAtPath, type ScoresheetReviewLayout } from "@/utils/treeReducer";
 import ScoresheetPhotoPanel, {
   adjacentUnsurePath,
   formatScoresheetRemainingTokens,
@@ -205,6 +209,218 @@ test("shows the photo with overlay controls (enlarge top-right, page overlay onl
   // Enlarge and page overlays stay present in full-size mode.
   expect(host.querySelector("[data-scoresheet-enlarge-overlay]")).not.toBeNull();
   expect(host.querySelector("[data-scoresheet-page-overlay]")).not.toBeNull();
+});
+
+function layoutBlock(page: number, firstMove: number, rows: number) {
+  return {
+    page,
+    firstMove,
+    rows,
+    topLeft: [100, 200] as [number, number],
+    topRight: [300, 200] as [number, number],
+    bottomLeft: [100, 800] as [number, number],
+    bottomRight: [300, 800] as [number, number],
+  };
+}
+
+/** Moves 1–2 on the first photo, moves 3–22 on the second. */
+function twoPageLayout(photoIds: string[] | null): ScoresheetReviewLayout {
+  return { photoIds, blocks: [layoutBlock(0, 1, 2), layoutBlock(1, 3, 20)] };
+}
+
+const SIX_PLIES = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"];
+
+function withLayout(store: TreeStore, layout: ScoresheetReviewLayout): TreeStore {
+  store.setState({ scoresheetReview: { ...store.getState().scoresheetReview, layout } });
+  return store;
+}
+
+const marker = () => host.querySelector("[data-scoresheet-cell-marker]");
+const markerPoints = () => marker()?.querySelector("polygon")?.getAttribute("points");
+const pageLabel = () => host.querySelector("[data-scoresheet-page]")?.textContent;
+
+function expectedPoints(store: TreeStore, position: number[]): string {
+  const state = store.getState();
+  const cell = findScoresheetCell(state.scoresheetReview?.layout, state.root, position)!;
+  return cell.quad.map(([x, y]) => `${x},${y}`).join(" ");
+}
+
+test("marks the selected move's cell, shows its page on every selection change, and leaves the page arrows free until the next one", async () => {
+  setUnsavedScoresheetPhotos("tab-cell", [PHOTO_1, PHOTO_2]);
+  const store = withLayout(
+    buildReviewStore("tab-cell", { moves: SIX_PLIES, variationUnsure: true }),
+    twoPageLayout(null),
+  );
+  await renderPanel(store, "tab-cell");
+
+  // Start position: no cell, first page.
+  expect(marker()).toBeNull();
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+
+  await act(async () => store.getState().goToMove([0]));
+  expect(marker()?.getAttribute("aria-hidden")).toBe("true");
+  expect(markerPoints()).toBe(expectedPoints(store, [0]));
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+
+  // Move 3 White sits on the second photo: the panel turns the page.
+  await act(async () => store.getState().goToMove([0, 0, 0, 0, 0]));
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=2,total=2)");
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_2);
+  expect(markerPoints()).toBe(expectedPoints(store, [0, 0, 0, 0, 0]));
+
+  // A manual page turn stays, without a marker on a page that does not hold the move.
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[aria-label="Scoresheet.PreviousPage"]')!.click();
+  });
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+  expect(marker()).toBeNull();
+  await act(async () => store.getState().setHeaders({ ...store.getState().headers, round: "4" }));
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+
+  // The next selection change turns the page again.
+  await act(async () => store.getState().goToMove([0, 0, 0, 0, 0, 0]));
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=2,total=2)");
+  expect(markerPoints()).toBe(expectedPoints(store, [0, 0, 0, 0, 0, 0]));
+
+  // A variation move takes the cell of its ply (move 1 Black, first photo).
+  await act(async () => store.getState().goToMove([0, 1]));
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+  expect(markerPoints()).toBe(expectedPoints(store, [0, 0]));
+
+  // Full size keeps the marker.
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[aria-label="Scoresheet.FullSize"]')!.click();
+  });
+  expect(markerPoints()).toBe(expectedPoints(store, [0, 0]));
+
+  // Back to the start: no marker, the page stays.
+  await act(async () => store.getState().goToMove([]));
+  expect(marker()).toBeNull();
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+});
+
+test("switching to a tab whose selected move is on a later photo shows that photo", async () => {
+  setUnsavedScoresheetPhotos("tab-switch-a", [PHOTO_1, PHOTO_2]);
+  setUnsavedScoresheetPhotos("tab-switch-b", [PHOTO_1, PHOTO_2]);
+  const first = withLayout(
+    buildReviewStore("tab-switch-a", { moves: SIX_PLIES }),
+    twoPageLayout(null),
+  );
+  const second = withLayout(
+    buildReviewStore("tab-switch-b", { moves: SIX_PLIES }),
+    twoPageLayout(null),
+  );
+  // Both tabs select the same move, so only the tab differs between them.
+  first.getState().goToMove([0, 0, 0, 0, 0]);
+  second.getState().goToMove([0, 0, 0, 0, 0]);
+  await renderPanel(first, "tab-switch-a");
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=2,total=2)");
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[aria-label="Scoresheet.PreviousPage"]')!.click();
+  });
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=1,total=2)");
+
+  await renderPanel(second, "tab-switch-b");
+  expect(pageLabel()).toBe("Scoresheet.PageOf(current=2,total=2)");
+  expect(markerPoints()).toBe(expectedPoints(second, [0, 0, 0, 0, 0]));
+});
+
+test("a Load photo again that is overtaken by a tab switch keeps the layout", async () => {
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+  const stale = withLayout(
+    buildReviewStore("tab-stale-reload", { moves: SIX_PLIES }),
+    twoPageLayout(null),
+  );
+  const other = buildReviewStore("tab-stale-other", { moves: SIX_PLIES });
+  let finishStore: (ids: string[]) => void = () => {};
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce({
+    photos: [{ dataUrl: PHOTO_2 }],
+    skipped: 0,
+    failed: 0,
+  });
+  mocks.scoresheetStorePhotos.mockImplementationOnce(
+    () => new Promise<string[]>((resolve) => (finishStore = resolve)),
+  );
+  await renderPanel(stale, "tab-stale-reload");
+  await act(async () => loadButton().click());
+
+  await renderPanel(other, "tab-stale-other");
+  await act(async () => finishStore(["1".repeat(64)]));
+  expect(stale.getState().scoresheetReview?.layout).toEqual(twoPageLayout(null));
+  expect(stale.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBeUndefined();
+});
+
+test("shows no marker without a layout or when the layout belongs to other photos", async () => {
+  const ID_SHOWN = "a".repeat(64);
+  const ID_OTHER = "b".repeat(64);
+  cacheStoredScoresheetPhotos([ID_SHOWN], [PHOTO_1]);
+
+  const plain = buildReviewStore("tab-no-layout", { moves: SIX_PLIES });
+  plain.setState({ headers: withScoresheetPhotoIds(plain.getState().headers, [ID_SHOWN]) });
+  await renderPanel(plain, "tab-no-layout");
+  await act(async () => plain.getState().goToMove([0]));
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+  expect(marker()).toBeNull();
+
+  const other = withLayout(buildReviewStore("tab-other-photos", { moves: SIX_PLIES }), {
+    photoIds: [ID_OTHER],
+    blocks: [layoutBlock(0, 1, 20)],
+  });
+  other.setState({ headers: withScoresheetPhotoIds(other.getState().headers, [ID_SHOWN]) });
+  await renderPanel(other, "tab-other-photos");
+  await act(async () => other.getState().goToMove([0]));
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_1);
+  expect(marker()).toBeNull();
+
+  // The matching ids show it.
+  await act(async () =>
+    other.setState({
+      scoresheetReview: { layout: { photoIds: [ID_SHOWN], blocks: [layoutBlock(0, 1, 20)] } },
+    }),
+  );
+  expect(marker()).not.toBeNull();
+});
+
+test("Load photo again drops the layout whether the new photos are stored or stay unsaved", async () => {
+  const loadButton = () =>
+    Array.from(host.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Scoresheet.LoadPhotoAgain"),
+    )!;
+  const picked = { photos: [{ dataUrl: PHOTO_2 }], skipped: 0, failed: 0 };
+
+  // Stored outcome: the photos are gone from memory, Load photo again stores new ones.
+  const stored = withLayout(
+    buildReviewStore("tab-reload-stored", { moves: SIX_PLIES }),
+    twoPageLayout(null),
+  );
+  stored.getState().goToMove([0]);
+  await renderPanel(stored, "tab-reload-stored");
+  expect(host.querySelector("[data-scoresheet-no-photo]")).not.toBeNull();
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce(picked);
+  await act(async () => loadButton().click());
+  expect(stored.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBe("1".repeat(64));
+  expect(stored.getState().scoresheetReview).toEqual({});
+  expect(marker()).toBeNull();
+
+  // Unsaved outcome: the ids stay absent and would still match the layout's `null`, so only the
+  // drop keeps the old layout off the new photo.
+  const unsaved = withLayout(
+    buildReviewStore("tab-reload-unsaved", { moves: SIX_PLIES }),
+    twoPageLayout(null),
+  );
+  unsaved.getState().goToMove([0]);
+  await renderPanel(unsaved, "tab-reload-unsaved");
+  mocks.scoresheetPickPhotos.mockResolvedValueOnce(picked);
+  mocks.scoresheetStorePhotos.mockRejectedValueOnce(new CoachCommandError("photoStorage"));
+  await act(async () => loadButton().click());
+  expect(getUnsavedScoresheetPhotos("tab-reload-unsaved")).toEqual([PHOTO_2]);
+  expect(host.querySelector("img")?.getAttribute("src")).toBe(PHOTO_2);
+  expect(unsaved.getState().headers.other?.[SCORESHEET_PHOTOS_TAG]).toBeUndefined();
+  expect(unsaved.getState().scoresheetReview).toEqual({});
+  expect(marker()).toBeNull();
 });
 
 test("shows a no-photo-in-memory state with Load photo again when no photo is loaded, and omits Mark as checked at zero marks", async () => {

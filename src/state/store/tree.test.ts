@@ -2551,6 +2551,48 @@ test("getMainLineUnsurePaths never reports the root, even when it carries a mark
     expect(getMainLineUnsurePaths(root)).toEqual([[0]]);
 });
 
+test("clearScoresheetLayout drops only the review's layout, records no undo step and leaves dirty alone", () => {
+    const id = crypto.randomUUID();
+    persistedIds.push(id);
+    const initial = defaultTree();
+    addMove(initial.root, "e2e4");
+    initial.scoresheetReview = {
+        stopped: { ply: 1, tokens: ["Nf3"] },
+        layout: {
+            photoIds: null,
+            blocks: [
+                {
+                    page: 0,
+                    firstMove: 1,
+                    rows: 20,
+                    topLeft: [100, 200],
+                    topRight: [300, 200],
+                    bottomLeft: [100, 800],
+                    bottomRight: [300, 800],
+                },
+            ],
+        },
+    };
+    const store = createTreeStore(id, initial);
+
+    store.getState().clearScoresheetLayout();
+    expect(store.getState().scoresheetReview).toEqual({ stopped: { ply: 1, tokens: ["Nf3"] } });
+    expect(store.getState().dirty).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+
+    // Persisted state loses the layout too.
+    tabStorage.flush();
+    const stored = deserializeStorageValue(sessionStorage.getItem(id)!) as {
+        state: { scoresheetReview?: Record<string, unknown> };
+    };
+    expect(stored.state.scoresheetReview).toEqual({ stopped: { ply: 1, tokens: ["Nf3"] } });
+
+    // Without a review it changes nothing.
+    store.setState({ scoresheetReview: undefined });
+    store.getState().clearScoresheetLayout();
+    expect(store.getState().scoresheetReview).toBeUndefined();
+});
+
 test("scoresheet review marks travel with undo, clear is not undoable, and no mark is stored without a review on either write route", () => {
     const id = crypto.randomUUID();
     persistedIds.push(id);

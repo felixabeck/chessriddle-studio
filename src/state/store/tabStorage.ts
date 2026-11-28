@@ -23,6 +23,14 @@ import {
 } from "@/utils/gameReview";
 import { z } from "zod";
 import { linkedGameLocatorSchema } from "@/utils/pathCapabilities";
+import {
+    formatScoresheetPhotosTag,
+    MAX_SCORESHEET_LAYOUT_BLOCK_ROWS,
+    MAX_SCORESHEET_LAYOUT_BLOCKS,
+    MAX_SCORESHEET_MOVE_NUMBER,
+    MAX_SCORESHEET_PHOTOS,
+    SCORESHEET_LAYOUT_SCALE,
+} from "@/utils/scoresheet";
 import type { PersistStorage, StorageValue } from "zustand/middleware";
 import { decodeCompressedOrJson, serializeStorageValue } from "./debouncedStorage";
 import { persistStorageWriteError } from "../storageWriteError";
@@ -135,22 +143,63 @@ const scoresheetStopClocksSchema = z
     .array(z.union([z.number().int().min(0).max(MAX_CLOCK_SECONDS), z.null()]))
     .max(MAX_SCORESHEET_TOKENS);
 
-const scoresheetReviewSchema = z.object({
-    stopped: z
-        .object({
-            ply: z.number().int().nonnegative(),
-            tokens: z
-                .array(z.string().min(1).max(MAX_SCORESHEET_TOKEN_LENGTH))
-                .max(MAX_SCORESHEET_TOKENS),
-            clocks: scoresheetStopClocksSchema.optional().catch(undefined),
-        })
-        .transform(({ clocks, ...stopped }) =>
-            clocks !== undefined && clocks.length <= stopped.tokens.length
-                ? { ...stopped, clocks }
-                : stopped,
-        )
-        .optional(),
-});
+const scoresheetLayoutCornerSchema = z.tuple([
+    z.number().int().min(0).max(SCORESHEET_LAYOUT_SCALE),
+    z.number().int().min(0).max(SCORESHEET_LAYOUT_SCALE),
+]);
+
+const scoresheetLayoutBlockSchema = z
+    .object({
+        page: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_SCORESHEET_PHOTOS - 1),
+        firstMove: z.number().int().min(1).max(MAX_SCORESHEET_MOVE_NUMBER),
+        rows: z.number().int().min(1).max(MAX_SCORESHEET_LAYOUT_BLOCK_ROWS),
+        topLeft: scoresheetLayoutCornerSchema,
+        topRight: scoresheetLayoutCornerSchema,
+        bottomLeft: scoresheetLayoutCornerSchema,
+        bottomRight: scoresheetLayoutCornerSchema,
+    })
+    .refine((block) => block.firstMove + block.rows - 1 <= MAX_SCORESHEET_MOVE_NUMBER);
+
+/**
+ * The native reading checked the block shapes and their disjoint move ranges when the layout was
+ * read; a stored layout is re-checked for its bounds and for pages within its own photos.
+ */
+const scoresheetLayoutSchema = z
+    .object({
+        photoIds: z
+            .array(z.string())
+            .refine((ids) => formatScoresheetPhotosTag(ids) !== null)
+            .nullable(),
+        blocks: z.array(scoresheetLayoutBlockSchema).min(1).max(MAX_SCORESHEET_LAYOUT_BLOCKS),
+    })
+    .refine(({ photoIds, blocks }) =>
+        blocks.every((block) => block.page < (photoIds?.length ?? MAX_SCORESHEET_PHOTOS)),
+    );
+
+const scoresheetReviewSchema = z
+    .object({
+        layout: scoresheetLayoutSchema.optional().catch(undefined),
+        stopped: z
+            .object({
+                ply: z.number().int().nonnegative(),
+                tokens: z
+                    .array(z.string().min(1).max(MAX_SCORESHEET_TOKEN_LENGTH))
+                    .max(MAX_SCORESHEET_TOKENS),
+                clocks: scoresheetStopClocksSchema.optional().catch(undefined),
+            })
+            .transform(({ clocks, ...stopped }) =>
+                clocks !== undefined && clocks.length <= stopped.tokens.length
+                    ? { ...stopped, clocks }
+                    : stopped,
+            )
+            .optional(),
+    })
+    // A malformed layout is dropped on its own, leaving no `layout` key behind.
+    .transform(({ layout, ...review }) => (layout === undefined ? review : { ...review, layout }));
 
 /**
  * A stored scoresheet review as it is read back. Anything that does not match the schema is

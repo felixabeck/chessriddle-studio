@@ -27,8 +27,12 @@ import {
 import { useOwnerTabId } from "@/state/tabScope";
 import { formatNumberedMove, numberMoves } from "@/utils/format";
 import {
+  findScoresheetCell,
   getScoresheetPhotoIds,
   planScoresheetContinuation,
+  SCORESHEET_LAYOUT_SCALE,
+  scoresheetLayoutMatchesPhotos,
+  type ScoresheetCell,
   withScoresheetPhotoIds,
 } from "@/utils/scoresheet";
 import {
@@ -74,6 +78,41 @@ export function adjacentUnsurePath(
   return unsurePaths[unsurePaths.length - 1];
 }
 
+interface ImageBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** The drawn image's box inside the viewport's scrollable content, read from the current layout. */
+function readImageBox(image: HTMLImageElement): ImageBox {
+  return {
+    left: image.offsetLeft,
+    top: image.offsetTop,
+    width: image.offsetWidth,
+    height: image.offsetHeight,
+  };
+}
+
+/** The marker's bounds in the viewport's scrollable content, in CSS pixels. */
+function markerBounds(cell: ScoresheetCell, box: ImageBox) {
+  const xs = cell.quad.map(([x]) => box.left + (x / SCORESHEET_LAYOUT_SCALE) * box.width);
+  const ys = cell.quad.map(([, y]) => box.top + (y / SCORESHEET_LAYOUT_SCALE) * box.height);
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys),
+  };
+}
+
+/** Scroll offset along one axis that brings `[start, end]` fully into view, centred, or `null`. */
+function scrollToReveal(scroll: number, size: number, start: number, end: number): number | null {
+  if (start >= scroll && end <= scroll + size) return null;
+  return Math.max(0, Math.round((start + end) / 2 - size / 2));
+}
+
 function ScoresheetPhotoPanel() {
   const { t } = useTranslation();
   const tabId = useOwnerTabId();
@@ -86,6 +125,7 @@ function ScoresheetPhotoPanel() {
   const goToMove = useStore(store, (s) => s.goToMove);
   const clearUnsureMark = useStore(store, (s) => s.clearUnsureMark);
   const continueScoresheet = useStore(store, (s) => s.continueScoresheet);
+  const clearScoresheetLayout = useStore(store, (s) => s.clearScoresheetLayout);
 
   const photoIds = useMemo(() => getScoresheetPhotoIds(headers), [headers]);
   const resolved = useResolvedScoresheetPhotos(tabId, photoIds);
@@ -102,6 +142,11 @@ function ScoresheetPhotoPanel() {
   tabIdRef.current = tabId;
   const pickRequestRef = useRef(0);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [imageBox, setImageBox] = useState<ImageBox | null>(null);
+  // The photo the <img> has finished loading; until it matches the shown photo, the element may
+  // still carry the previous page's size.
+  const [loadedPhotoUrl, setLoadedPhotoUrl] = useState<string | null>(null);
 
   const measureScrollbarInsets = useCallback(() => {
     const el = viewportRef.current;
@@ -139,15 +184,18 @@ function ScoresheetPhotoPanel() {
       if (!mountedRef.current || pickRequestRef.current !== requestId) return;
       const pickedUrls = batch.photos.map((photo) => photo.dataUrl);
       if (pickedUrls.length > 0) {
+        // The new photos were never laid out, so each outcome that installs them drops the layout.
         try {
           const ids = await tauri.scoresheetStorePhotos(pickedUrls);
           if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+          clearScoresheetLayout();
           cacheStoredScoresheetPhotos(ids, pickedUrls);
           clearUnsavedScoresheetPhotos(ownerTab);
           retry();
           setHeaders(withScoresheetPhotoIds(store.getState().headers, ids));
         } catch (storeCause) {
           if (!mountedRef.current || pickRequestRef.current !== requestId) return;
+          clearScoresheetLayout();
           setUnsavedScoresheetPhotos(ownerTab, pickedUrls, coachErrorCode(storeCause));
         }
         setPage(0);
@@ -161,21 +209,111 @@ function ScoresheetPhotoPanel() {
         setLoadingPhotos(false);
       }
     }
-  }, [errorMessages, loadingPhotos, retry, setHeaders, store, t]);
+  }, [clearScoresheetLayout, errorMessages, loadingPhotos, retry, setHeaders, store, t]);
 
   const totalPages = slots.length;
   const safePage = totalPages > 0 ? Math.min(page, totalPages - 1) : 0;
   const currentSlot = totalPages > 0 ? slots[safePage] : null;
   const currentPhotoUrl = currentSlot?.status === "ok" ? currentSlot.dataUrl : null;
 
+  const layout = review?.layout;
+  const cell = useMemo(
+    () =>
+      layout && scoresheetLayoutMatchesPhotos(layout, photoIds)
+        ? findScoresheetCell(layout, root, position)
+        : null,
+    [layout, photoIds, root, position],
+  );
+  const cellPage = cell?.page;
+
+  // Show the page of the selected move whenever the selection changes; the page arrows stay free
+  // until the next change. Declared after the tab reset above so it wins on a tab switch.
+  const selectionKey = `${tabId}:${position.join(",")}`;
+  const jumpedSelectionRef = useRef<string | null>(null);
   useEffect(() => {
-    measureScrollbarInsets();
-    const el = viewportRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measureScrollbarInsets);
-    observer.observe(el);
+    if (jumpedSelectionRef.current === selectionKey) return;
+    jumpedSelectionRef.current = selectionKey;
+    if (cellPage !== undefined) setPage(cellPage);
+  }, [selectionKey, cellPage]);
+
+  const measureImageBox = useCallback(() => {
+    const image = imageRef.current;
+    const next = image ? readImageBox(image) : null;
+    setImageBox((prev) =>
+      prev === next ||
+      (prev &&
+        next &&
+        prev.left === next.left &&
+        prev.top === next.top &&
+        prev.width === next.width &&
+        prev.height === next.height)
+        ? prev
+        : next,
+    );
+  }, []);
+
+  useEffect(() => {
+    const measure = () => {
+      measureScrollbarInsets();
+      measureImageBox();
+    };
+    measure();
+    const image = imageRef.current;
+    const viewport = viewportRef.current;
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    if (image) observer.observe(image);
+    if (viewport) observer.observe(viewport);
     return () => observer.disconnect();
-  }, [measureScrollbarInsets, fullSize, safePage, currentPhotoUrl]);
+  }, [measureScrollbarInsets, measureImageBox, fullSize, safePage, currentPhotoUrl]);
+
+  const markerCell =
+    cell !== null && cell.page === safePage && currentPhotoUrl !== null ? cell : null;
+  const imageReady =
+    currentPhotoUrl !== null &&
+    loadedPhotoUrl === currentPhotoUrl &&
+    imageBox !== null &&
+    imageBox.width > 0 &&
+    imageBox.height > 0;
+
+  // In full size, bring the marker into view when the selection, page or size mode changes, and once
+  // the image has its size. Plain resizes leave the user's scroll position alone.
+  const revealKey = markerCell && imageReady ? `${selectionKey}:${safePage}:${fullSize}` : null;
+  const revealedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (revealKey === null) {
+      // The marker left (start position, another page, uncovered move): reveal it again on return.
+      revealedKeyRef.current = null;
+      return;
+    }
+    if (revealKey === revealedKeyRef.current) return;
+    const viewport = viewportRef.current;
+    const image = imageRef.current;
+    if (!fullSize || !viewport || !image || !markerCell) {
+      revealedKeyRef.current = revealKey;
+      return;
+    }
+    // The size-mode switch lands in this same commit, before `imageBox` is measured again, so the
+    // box is read from the layout now; an image still without a size is retried on its next measure.
+    const box = readImageBox(image);
+    if (box.width === 0 || box.height === 0) return;
+    revealedKeyRef.current = revealKey;
+    const bounds = markerBounds(markerCell, box);
+    const left = scrollToReveal(
+      viewport.scrollLeft,
+      viewport.clientWidth,
+      bounds.left,
+      bounds.right,
+    );
+    const top = scrollToReveal(
+      viewport.scrollTop,
+      viewport.clientHeight,
+      bounds.top,
+      bounds.bottom,
+    );
+    if (left !== null) viewport.scrollLeft = left;
+    if (top !== null) viewport.scrollTop = top;
+  }, [revealKey, fullSize, markerCell, imageBox]);
 
   const unsurePaths = useMemo(() => (review ? getMainLineUnsurePaths(root) : []), [review, root]);
   const onMainLine = position.length > 0 && position.every((index) => index === 0);
@@ -263,11 +401,38 @@ function ScoresheetPhotoPanel() {
               data-scoresheet-photo-size={fullSize ? "full" : "fit"}
             >
               <img
+                ref={imageRef}
                 src={currentPhotoUrl}
                 alt={t("Scoresheet.PhotoAlt", { number: safePage + 1 })}
                 className={fullSize ? classes.imageFull : classes.imageFit}
-                onLoad={measureScrollbarInsets}
+                onLoad={(event) => {
+                  setLoadedPhotoUrl(event.currentTarget.getAttribute("src"));
+                  measureScrollbarInsets();
+                  measureImageBox();
+                }}
               />
+              {markerCell && (
+                <svg
+                  className={classes.cellMarker}
+                  style={
+                    imageBox
+                      ? {
+                          left: imageBox.left,
+                          top: imageBox.top,
+                          width: imageBox.width,
+                          height: imageBox.height,
+                        }
+                      : undefined
+                  }
+                  viewBox={`0 0 ${SCORESHEET_LAYOUT_SCALE} ${SCORESHEET_LAYOUT_SCALE}`}
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                  focusable="false"
+                  data-scoresheet-cell-marker
+                >
+                  <polygon points={markerCell.quad.map(([x, y]) => `${x},${y}`).join(" ")} />
+                </svg>
+              )}
             </div>
             <div className={classes.enlargeOverlay} data-scoresheet-enlarge-overlay>
               <IconAction

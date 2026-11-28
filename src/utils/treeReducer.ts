@@ -1,7 +1,7 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Move } from "chessops";
 import { INITIAL_FEN, makeCastlingFen, parseFen } from "chessops/fen";
-import type { NoveltyOutcome, Outcome, Score } from "@/bindings";
+import type { NoveltyOutcome, Outcome, ScoresheetLayoutBlock, Score } from "@/bindings";
 import type { CoachSession } from "@/state/coachSession";
 import type { BoundedGoMode } from "@/utils/engines";
 import type { ReviewFact } from "@/utils/gameReview";
@@ -17,8 +17,16 @@ export interface ScoresheetReviewStop {
     clocks?: (number | null)[];
 }
 
+/** Where the move table sits on the photos a review was read from. */
+export interface ScoresheetReviewLayout {
+    /** Ids of the photos the layout belongs to; `null` when the photos could not be stored. */
+    photoIds: string[] | null;
+    blocks: ScoresheetLayoutBlock[];
+}
+
 export interface ScoresheetReview {
     stopped?: ScoresheetReviewStop;
+    layout?: ScoresheetReviewLayout;
 }
 
 export interface TreeState {

@@ -195,6 +195,8 @@ export interface TreeStoreState extends TreeState {
     clearShapes: () => void;
     /** Clears the scoresheet unsure mark on the current node. Not undoable, leaves `dirty` unchanged. */
     clearUnsureMark: () => void;
+    /** Drops the scoresheet review's photo layout only. Not undoable, leaves `dirty` unchanged. */
+    clearScoresheetLayout: () => void;
     /** Clears the repertoire import review mark on the node at `path`. One undo step. */
     clearReviewMark: (path: number[]) => void;
     /**
@@ -535,6 +537,7 @@ type TreeMarkupActions = Pick<
     | "setReportOperationId"
     | "clearShapes"
     | "clearUnsureMark"
+    | "clearScoresheetLayout"
     | "clearReviewMark"
 >;
 
@@ -1203,6 +1206,13 @@ function treeMarkupActions(set: TreeSet, get: TreeGet, tabId?: string): TreeMark
                 }),
             ),
 
+        clearScoresheetLayout: () =>
+            set(
+                produce((state) => {
+                    if (state.scoresheetReview?.layout) delete state.scoresheetReview.layout;
+                }),
+            ),
+
         clearReviewMark: (path) =>
             set(
                 produce((state) => {
@@ -1263,6 +1273,7 @@ const NOT_UNDOABLE = [
     "setReportInProgress",
     "setReportOperationId",
     "clearUnsureMark",
+    "clearScoresheetLayout",
 ] as const;
 
 type UndoableEdit = (typeof UNDOABLE_EDITS)[number];

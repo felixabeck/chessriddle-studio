@@ -7,11 +7,13 @@ import {
     countMainPly,
     createNode,
     deriveScoresheetRemaining,
+    getBoardState,
     getNodeAtPath,
     getResolvedPathLength,
     type GameHeaders,
     type ScoresheetRemaining,
     type ScoresheetReview,
+    type ScoresheetReviewLayout,
     type TreeNode,
     type TreeState,
 } from "@/utils/treeReducer";
@@ -22,6 +24,17 @@ const PHOTO_ID_HEX_LEN = 64;
 const MAX_SCORESHEET_PHOTOS_TAG_LEN =
     MAX_SCORESHEET_PHOTOS * PHOTO_ID_HEX_LEN + (MAX_SCORESHEET_PHOTOS - 1);
 const PHOTO_ID_RE = /^[0-9a-f]{64}$/;
+
+/** Upper end of the normalised layout coordinates (0..=1000 of a photo's width or height). */
+export const SCORESHEET_LAYOUT_SCALE = 1000;
+/** Bounds the native reading enforces on a layout (`src-tauri/src/coach/scoresheet.rs`). */
+export const MAX_SCORESHEET_LAYOUT_BLOCKS = 16;
+export const MAX_SCORESHEET_LAYOUT_BLOCK_ROWS = 100;
+export const MAX_SCORESHEET_MOVE_NUMBER = 300;
+/** How far the marker reaches past its cell: a fraction of a row above and below. */
+const MARKER_ROW_MARGIN = 0.2;
+/** How far the marker reaches past its cell: a fraction of the block's width left and right. */
+const MARKER_COLUMN_MARGIN = 0.03;
 
 /**
  * Strictly parses an untrusted `ScoresheetPhotos` PGN tag value into 1–4 lowercase 64-hex ids.
@@ -123,7 +136,8 @@ export function scoresheetGameToPgn(game: ScoresheetGame): string {
  * - attaches validated `photoIds` onto `tree.headers` when supplied
  * - verifies that the parsed main line has the exact number of returned moves
  * - removes any game-end marker when the reading stopped early (completely read games keep the default)
- * - marks unsure main-line nodes, sets `scoresheetReview`, and marks the tree `dirty`.
+ * - marks unsure main-line nodes, sets `scoresheetReview` (with the reading's layout bound to the
+ *   attached photo ids), and marks the tree `dirty`.
  */
 export async function buildScoresheetTree(
     game: ScoresheetGame,
@@ -160,15 +174,25 @@ export async function buildScoresheetTree(
         }
     }
 
-    tree.scoresheetReview = game.stopped
-        ? {
-              stopped: {
-                  ply: game.stopped.ply,
-                  tokens: [...game.stopped.tokens],
-                  ...(game.stopped.clocks != null ? { clocks: [...game.stopped.clocks] } : {}),
-              },
-          }
-        : {};
+    const layout: ScoresheetReviewLayout | undefined =
+        game.layout && game.layout.length > 0
+            ? {
+                  photoIds: getScoresheetPhotoIds(tree.headers),
+                  blocks: game.layout.map((block) => structuredClone(block)),
+              }
+            : undefined;
+    tree.scoresheetReview = {
+        ...(game.stopped
+            ? {
+                  stopped: {
+                      ply: game.stopped.ply,
+                      tokens: [...game.stopped.tokens],
+                      ...(game.stopped.clocks != null ? { clocks: [...game.stopped.clocks] } : {}),
+                  },
+              }
+            : {}),
+        ...(layout ? { layout } : {}),
+    };
     tree.dirty = true;
     return tree;
 }
@@ -343,4 +367,72 @@ export function replayScoresheetMoves(
         replayed += 1;
     }
     return replayed;
+}
+
+/** A point in normalised photo coordinates (0..=1000 of the width and height). */
+export type ScoresheetPoint = readonly [x: number, y: number];
+
+/** Where the marker of one move goes: the photo page and the marker's four corners. */
+export interface ScoresheetCell {
+    page: number;
+    /** Top-left, top-right, bottom-right, bottom-left, in normalised photo coordinates. */
+    quad: readonly [ScoresheetPoint, ScoresheetPoint, ScoresheetPoint, ScoresheetPoint];
+}
+
+function lerpPoint(a: ScoresheetPoint, b: ScoresheetPoint, t: number): ScoresheetPoint {
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+/**
+ * Finds the scoresheet cell of the move at `position`: its photo page and the marker quad, the
+ * cell interpolated between the block's four corners and widened by a small margin so it reads as
+ * an approximate region. The sheet ply is the node's `halfMoves`, so this applies to main-line and
+ * variation moves alike. Returns `null` without a layout, at the start position, for a tree that does
+ * not start at the standard position, for an unresolvable path, and for a move no block covers.
+ */
+export function findScoresheetCell(
+    layout: ScoresheetReviewLayout | undefined,
+    root: TreeNode,
+    position: readonly number[],
+): ScoresheetCell | null {
+    if (!layout || position.length === 0) return null;
+    if (root.halfMoves !== 0 || getBoardState(root.fen) !== getBoardState(INITIAL_FEN)) return null;
+    if (getResolvedPathLength(root, position) !== position.length) return null;
+    const ply = getNodeAtPath(root, [...position]).halfMoves;
+    if (ply < 1) return null;
+    const moveNumber = Math.ceil(ply / 2);
+    const white = ply % 2 === 1;
+    const block = layout.blocks.find(
+        (candidate) =>
+            moveNumber >= candidate.firstMove && moveNumber < candidate.firstMove + candidate.rows,
+    );
+    if (!block) return null;
+
+    const row = moveNumber - block.firstMove;
+    const top = (row - MARKER_ROW_MARGIN) / block.rows;
+    const bottom = (row + 1 + MARKER_ROW_MARGIN) / block.rows;
+    const left = (white ? 0 : 0.5) - MARKER_COLUMN_MARGIN;
+    const right = (white ? 0.5 : 1) + MARKER_COLUMN_MARGIN;
+    const at = (u: number, v: number): ScoresheetPoint =>
+        lerpPoint(
+            lerpPoint(block.topLeft, block.topRight, u),
+            lerpPoint(block.bottomLeft, block.bottomRight, u),
+            v,
+        );
+    return {
+        page: block.page,
+        quad: [at(left, top), at(right, top), at(right, bottom), at(left, bottom)],
+    };
+}
+
+/** Whether `layout` belongs to the photos named by `photoIds` (`null` = no stored photos). */
+export function scoresheetLayoutMatchesPhotos(
+    layout: ScoresheetReviewLayout,
+    photoIds: readonly string[] | null,
+): boolean {
+    if (layout.photoIds === null || photoIds === null) return layout.photoIds === photoIds;
+    return (
+        layout.photoIds.length === photoIds.length &&
+        layout.photoIds.every((id, index) => id === photoIds[index])
+    );
 }

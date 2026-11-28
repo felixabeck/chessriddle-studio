@@ -460,3 +460,182 @@ test("multi-page missing photo keeps page overlay anchored inside the empty box"
         insideHorizontally: true,
     });
 });
+
+test("selecting a move turns to its photo page and marks its cell in fit and full-size mode", async ({
+    page,
+    mockScenario,
+}) => {
+    // Move 1 on the first photo, moves 2–21 on the second, lower right so full size has to scroll.
+    const layout = [
+        {
+            page: 0,
+            firstMove: 1,
+            rows: 1,
+            topLeft: [100, 100] as [number, number],
+            topRight: [500, 100] as [number, number],
+            bottomLeft: [100, 300] as [number, number],
+            bottomRight: [500, 300] as [number, number],
+        },
+        {
+            page: 1,
+            firstMove: 2,
+            rows: 20,
+            topLeft: [500, 600] as [number, number],
+            topRight: [900, 600] as [number, number],
+            bottomLeft: [500, 980] as [number, number],
+            bottomRight: [900, 980] as [number, number],
+        },
+    ];
+    await mockScenario({
+        commands: {
+            ...scoresheetPhotoCommands(),
+            scoresheet_read: { result: { ...stubScoresheetGame, layout } },
+        },
+    });
+    await page.goto("/");
+
+    // Two large portrait photos with the printed blocks drawn on them.
+    await page.evaluate((blocks) => {
+        const internals = (
+            window as unknown as {
+                __TAURI_INTERNALS__: {
+                    invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+                };
+            }
+        ).__TAURI_INTERNALS__;
+        const origInvoke = internals.invoke.bind(internals);
+        const makeSheet = (pageIndex: number) => {
+            const canvas = document.createElement("canvas");
+            // Different sizes per page, so a size read before the next photo loads would misplace it.
+            canvas.width = pageIndex === 0 ? 1200 : 1500;
+            canvas.height = pageIndex === 0 ? 1600 : 1900;
+            const ctx = canvas.getContext("2d")!;
+            ctx.fillStyle = "#f5f0e6";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#555555";
+            ctx.lineWidth = 3;
+            for (const block of blocks.filter((b) => b.page === pageIndex)) {
+                const x = (block.topLeft[0] / 1000) * canvas.width;
+                const y = (block.topLeft[1] / 1000) * canvas.height;
+                const w = ((block.topRight[0] - block.topLeft[0]) / 1000) * canvas.width;
+                const h = ((block.bottomLeft[1] - block.topLeft[1]) / 1000) * canvas.height;
+                ctx.strokeRect(x, y, w, h);
+                ctx.beginPath();
+                ctx.moveTo(x + w / 2, y);
+                ctx.lineTo(x + w / 2, y + h);
+                for (let row = 1; row < block.rows; row += 1) {
+                    ctx.moveTo(x, y + (h * row) / block.rows);
+                    ctx.lineTo(x + w, y + (h * row) / block.rows);
+                }
+                ctx.stroke();
+            }
+            return canvas.toDataURL("image/jpeg", 0.6);
+        };
+        const sheets = [makeSheet(0), makeSheet(1)];
+        internals.invoke = async (cmd: string, args?: unknown) => {
+            if (cmd === "scoresheet_pick_photos") {
+                return {
+                    photos: sheets.map((dataUrl) => ({ dataUrl })),
+                    skipped: 0,
+                    failed: 0,
+                };
+            }
+            return origInvoke(cmd, args);
+        };
+    }, layout);
+
+    await importFromPhoto(page, { expectedPhotoCount: 2 });
+
+    const notation = page.locator("[data-notation-rows]").first();
+    const viewport = page.locator("[data-scoresheet-photo-size]");
+    const pageLabel = page.locator("[data-scoresheet-page]");
+    const marker = page.locator("[data-scoresheet-cell-marker] polygon");
+
+    /** Marker bounds as fractions of the drawn image, and whether it lies inside the viewport. */
+    const markerGeometry = () =>
+        page.evaluate(() => {
+            const image = document.querySelector<HTMLImageElement>(
+                "[data-scoresheet-photo-size] img",
+            )!;
+            const polygon = document.querySelector("[data-scoresheet-cell-marker] polygon")!;
+            const vp = document.querySelector<HTMLElement>("[data-scoresheet-photo-size]")!;
+            const img = image.getBoundingClientRect();
+            const box = polygon.getBoundingClientRect();
+            const view = vp.getBoundingClientRect();
+            const round = (value: number) => Math.round(value * 1000) / 1000;
+            return {
+                left: round((box.left - img.left) / img.width),
+                right: round((box.right - img.left) / img.width),
+                top: round((box.top - img.top) / img.height),
+                bottom: round((box.bottom - img.top) / img.height),
+                inView:
+                    box.left >= view.left &&
+                    box.right <= view.left + vp.clientWidth &&
+                    box.top >= view.top &&
+                    box.bottom <= view.top + vp.clientHeight,
+            };
+        });
+    const expectNear = (actual: number, expected: number) =>
+        expect(Math.abs(actual - expected)).toBeLessThan(0.012);
+
+    // Fit mode, move 1 White: first photo, the left half of the only row, widened by the margin.
+    await notation.getByRole("button", { name: "e4", exact: true }).click();
+    await expect(pageLabel).toHaveText("Page 1 of 2");
+    await expect(marker).toBeVisible();
+    let geometry = await markerGeometry();
+    expectNear(geometry.left, 0.088);
+    expectNear(geometry.right, 0.312);
+    expectNear(geometry.top, 0.06);
+    expectNear(geometry.bottom, 0.34);
+    expect(geometry.inView).toBe(true);
+    await waitForTransitionsSettled(page);
+    await expect(page.locator("[data-scoresheet-photo-size]")).toHaveScreenshot(
+        "import-photo-cell-marker-fit.png",
+    );
+
+    // Move 2 White lives on the second photo: the page turns with the selection.
+    await notation.getByRole("button", { name: /f3$/ }).click();
+    await expect(pageLabel).toHaveText("Page 2 of 2");
+    geometry = await markerGeometry();
+    expectNear(geometry.left, 0.488);
+    expectNear(geometry.right, 0.712);
+    expectNear(geometry.top, 0.5962);
+    expectNear(geometry.bottom, 0.6228);
+
+    // Full size: the marker stays on the same image region and is scrolled into view.
+    await page.getByRole("button", { name: "Full size", exact: true }).click();
+    await expect(viewport).toHaveAttribute("data-scoresheet-photo-size", "full");
+    await expect
+        .poll(async () =>
+            viewport.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0),
+        )
+        .toBe(true);
+    geometry = await markerGeometry();
+    expectNear(geometry.left, 0.488);
+    expectNear(geometry.top, 0.5962);
+    expect(geometry.inView).toBe(true);
+
+    // Scrolled away, the next selection brings its cell back into view.
+    await viewport.evaluate((el) => {
+        el.scrollTop = 0;
+        el.scrollLeft = 0;
+    });
+    await notation.getByRole("button", { name: /c6$/ }).click();
+    await expect.poll(async () => (await markerGeometry()).inView).toBe(true);
+    geometry = await markerGeometry();
+    expectNear(geometry.left, 0.688);
+    expectNear(geometry.right, 0.912);
+
+    // Turning to the other page and back, scrolled away, brings the same cell into view again once
+    // its photo has loaded.
+    await page.getByRole("button", { name: "Previous page", exact: true }).click();
+    await expect(pageLabel).toHaveText("Page 1 of 2");
+    await expect(marker).toHaveCount(0);
+    await viewport.evaluate((el) => {
+        el.scrollTop = 0;
+        el.scrollLeft = 0;
+    });
+    await page.getByRole("button", { name: "Next page", exact: true }).click();
+    await expect(pageLabel).toHaveText("Page 2 of 2");
+    await expect.poll(async () => (await markerGeometry()).inView).toBe(true);
+});

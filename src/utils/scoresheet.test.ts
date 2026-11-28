@@ -6,6 +6,7 @@ import { headersToPGN } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import {
     buildScoresheetTree,
+    findScoresheetCell,
     formatScoresheetPhotosTag,
     getScoresheetPhotoIds,
     hasScoresheetPhotoPanel,
@@ -15,6 +16,8 @@ import {
     replayScoresheetMoves,
     SCORESHEET_PHOTOS_TAG,
     scoresheetGameToPgn,
+    scoresheetLayoutMatchesPhotos,
+    type ScoresheetCell,
     withScoresheetPhotoIds,
 } from "./scoresheet";
 
@@ -30,7 +33,13 @@ vi.mock("@/utils/chess", async (importOriginal) => {
     };
 });
 
-import { createNode, defaultTree, type TreeNode, type TreeState } from "./treeReducer";
+import {
+    createNode,
+    defaultTree,
+    type ScoresheetReviewLayout,
+    type TreeNode,
+    type TreeState,
+} from "./treeReducer";
 
 function makeParsedTree(sans: string[], result: "1-0" | "0-1" | "1/2-1/2" | "*"): TreeState {
     const tree = defaultTree();
@@ -497,5 +506,173 @@ describe("ScoresheetPhotos PGN tag helpers", () => {
         expect(formatScoresheetPhotosTag([id1, id2])).toBe(`${id1},${id2}`);
         expect(formatScoresheetPhotosTag([])).toBeNull();
         expect(formatScoresheetPhotosTag(["not-hex"])).toBeNull();
+    });
+});
+
+const LAYOUT_ID_1 = "a".repeat(64);
+const LAYOUT_ID_2 = "b".repeat(64);
+
+function twoPageLayout(
+    photoIds: string[] | null = [LAYOUT_ID_1, LAYOUT_ID_2],
+): ScoresheetReviewLayout {
+    return {
+        photoIds,
+        blocks: [
+            {
+                page: 0,
+                firstMove: 1,
+                rows: 20,
+                topLeft: [100, 200],
+                topRight: [300, 200],
+                bottomLeft: [100, 800],
+                bottomRight: [300, 800],
+            },
+            {
+                page: 1,
+                firstMove: 21,
+                rows: 20,
+                topLeft: [400, 100],
+                topRight: [600, 100],
+                bottomLeft: [400, 900],
+                bottomRight: [600, 900],
+            },
+        ],
+    };
+}
+
+function expectCell(cell: ScoresheetCell | null, page: number, quad: [number, number][]): void {
+    expect(cell).not.toBeNull();
+    expect(cell!.page).toBe(page);
+    cell!.quad.forEach(([x, y], index) => {
+        expect(x).toBeCloseTo(quad[index][0], 6);
+        expect(y).toBeCloseTo(quad[index][1], 6);
+    });
+}
+
+function mainLinePath(plies: number): number[] {
+    return Array.from({ length: plies }, () => 0);
+}
+
+describe("scoresheet layout cells", () => {
+    const tree = makeParsedTree(
+        Array.from({ length: 41 }, (_, index) => `m${index + 1}`),
+        "*",
+    );
+    const layout = twoPageLayout();
+
+    test("maps White and Black of a move to the left and right half of its block row, widened by the marker margin", () => {
+        // Move 1: row 0 of 20 → v from -0.01 to 0.06; White u from -0.03 to 0.53, Black 0.47 to 1.03.
+        expectCell(findScoresheetCell(layout, tree.root, mainLinePath(1)), 0, [
+            [94, 194],
+            [206, 194],
+            [206, 236],
+            [94, 236],
+        ]);
+        expectCell(findScoresheetCell(layout, tree.root, mainLinePath(2)), 0, [
+            [194, 194],
+            [306, 194],
+            [306, 236],
+            [194, 236],
+        ]);
+        // Move 20 Black: the block's last row.
+        expectCell(findScoresheetCell(layout, tree.root, mainLinePath(40)), 0, [
+            [194, 764],
+            [306, 764],
+            [306, 806],
+            [194, 806],
+        ]);
+        // Move 21 White: the first row of the second block, on the second photo.
+        expectCell(findScoresheetCell(layout, tree.root, mainLinePath(41)), 1, [
+            [394, 92],
+            [506, 92],
+            [506, 148],
+            [394, 148],
+        ]);
+    });
+
+    test("interpolates between all four corners of a tilted, perspective-distorted block", () => {
+        const corners = {
+            topLeft: [100, 100] as [number, number],
+            topRight: [300, 120] as [number, number],
+            bottomLeft: [120, 500] as [number, number],
+            bottomRight: [340, 560] as [number, number],
+        };
+        const tilted: ScoresheetReviewLayout = {
+            photoIds: null,
+            blocks: [{ page: 0, firstMove: 1, rows: 2, ...corners }],
+        };
+        const bilinear = (u: number, v: number): [number, number] => {
+            const top = [
+                corners.topLeft[0] + (corners.topRight[0] - corners.topLeft[0]) * u,
+                corners.topLeft[1] + (corners.topRight[1] - corners.topLeft[1]) * u,
+            ];
+            const bottom = [
+                corners.bottomLeft[0] + (corners.bottomRight[0] - corners.bottomLeft[0]) * u,
+                corners.bottomLeft[1] + (corners.bottomRight[1] - corners.bottomLeft[1]) * u,
+            ];
+            return [top[0] + (bottom[0] - top[0]) * v, top[1] + (bottom[1] - top[1]) * v];
+        };
+        // Move 2 Black: the bottom-right cell, u from 0.47 to 1.03, v from 0.4 to 1.1.
+        expectCell(findScoresheetCell(tilted, tree.root, mainLinePath(4)), 0, [
+            bilinear(0.47, 0.4),
+            bilinear(1.03, 0.4),
+            bilinear(1.03, 1.1),
+            bilinear(0.47, 1.1),
+        ]);
+    });
+
+    test("a variation move takes the cell of its ply", () => {
+        const withVariation = makeParsedTree(["e4", "e5", "Nf3"], "*");
+        const e4 = withVariation.root.children[0];
+        e4.children.push({ ...e4.children[0], san: "c5", children: [], halfMoves: 2 });
+        expect(findScoresheetCell(layout, withVariation.root, [0, 1])).toEqual(
+            findScoresheetCell(layout, withVariation.root, [0, 0]),
+        );
+    });
+
+    test("returns no cell without a layout, at the start, for an uncovered move, an unresolvable path or a non-standard start", () => {
+        expect(findScoresheetCell(undefined, tree.root, mainLinePath(1))).toBeNull();
+        expect(findScoresheetCell(layout, tree.root, [])).toBeNull();
+        expect(findScoresheetCell(layout, tree.root, [0, 5])).toBeNull();
+        const firstBlockOnly: ScoresheetReviewLayout = { ...layout, blocks: [layout.blocks[0]] };
+        expect(findScoresheetCell(firstBlockOnly, tree.root, mainLinePath(41))).toBeNull();
+
+        const fromPosition = makeParsedTree(["e4"], "*");
+        fromPosition.root.fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        expect(findScoresheetCell(layout, fromPosition.root, [0])).toBeNull();
+        const shifted = makeParsedTree(["e4"], "*");
+        shifted.root.halfMoves = 1;
+        expect(findScoresheetCell(layout, shifted.root, [0])).toBeNull();
+    });
+
+    test("a layout matches only the photos it was read from", () => {
+        expect(scoresheetLayoutMatchesPhotos(layout, [LAYOUT_ID_1, LAYOUT_ID_2])).toBe(true);
+        expect(scoresheetLayoutMatchesPhotos(layout, [LAYOUT_ID_2, LAYOUT_ID_1])).toBe(false);
+        expect(scoresheetLayoutMatchesPhotos(layout, [LAYOUT_ID_1])).toBe(false);
+        expect(scoresheetLayoutMatchesPhotos(layout, null)).toBe(false);
+        expect(scoresheetLayoutMatchesPhotos(twoPageLayout(null), null)).toBe(true);
+        expect(scoresheetLayoutMatchesPhotos(twoPageLayout(null), [LAYOUT_ID_1])).toBe(false);
+    });
+
+    test("buildScoresheetTree keeps the reading's layout bound to the attached photo ids, or to none", async () => {
+        const blocks = twoPageLayout().blocks;
+        mocks.parsePGN.mockResolvedValueOnce(makeParsedTree(["e4", "e5", "Nf3"], "1-0"));
+        const stored = await buildScoresheetTree(
+            sampleGame({ layout: blocks, stopped: { ply: 3, tokens: ["?"] } }),
+            { photoIds: [LAYOUT_ID_1, LAYOUT_ID_2] },
+        );
+        expect(stored.scoresheetReview).toEqual({
+            stopped: { ply: 3, tokens: ["?"] },
+            layout: { photoIds: [LAYOUT_ID_1, LAYOUT_ID_2], blocks },
+        });
+        expect(stored.scoresheetReview!.layout!.blocks[0]).not.toBe(blocks[0]);
+
+        mocks.parsePGN.mockResolvedValueOnce(makeParsedTree(["e4", "e5", "Nf3"], "1-0"));
+        const unsaved = await buildScoresheetTree(sampleGame({ layout: blocks }));
+        expect(unsaved.scoresheetReview).toEqual({ layout: { photoIds: null, blocks } });
+
+        mocks.parsePGN.mockResolvedValueOnce(makeParsedTree(["e4", "e5", "Nf3"], "1-0"));
+        const none = await buildScoresheetTree(sampleGame({ layout: [] }));
+        expect(none.scoresheetReview).toEqual({});
     });
 });

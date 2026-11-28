@@ -1,3 +1,4 @@
+import type { ScoresheetLayoutBlock } from "@/bindings";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { parseUci } from "chessops";
@@ -3370,6 +3371,77 @@ test("scoresheetReview and unsure marks round-trip through tab storage when a re
     expect(readClocks.scoresheetReview).toEqual({
         stopped: { ply: 2, tokens: ["Nf3", "Nc6", "Bb5", "a6"], clocks: [null, 5160, 0, 36_000] },
     });
+});
+
+test("a scoresheet review layout round-trips, and a malformed one is dropped alone while the review and tree survive", () => {
+    const id1 = "a".repeat(64);
+    const id2 = "b".repeat(64);
+    const block: ScoresheetLayoutBlock = {
+        page: 1,
+        firstMove: 21,
+        rows: 20,
+        topLeft: [400, 100],
+        topRight: [600, 100],
+        bottomLeft: [400, 900],
+        bottomRight: [600, 900],
+    };
+    const layout = { photoIds: [id1, id2], blocks: [block] };
+    const stopped = { ply: 2, tokens: ["Nf3"] };
+
+    const tree = treeWithPaths({});
+    tree.scoresheetReview = { stopped, layout };
+    storage.seed("scoresheet-layout-roundtrip", tree);
+    const read = storage.read("scoresheet-layout-roundtrip")?.state as ReturnType<
+        typeof defaultTree
+    >;
+    expect(read.scoresheetReview).toEqual({ stopped, layout });
+
+    // Unsaved photos: no ids, pages bounded by the photo limit.
+    const unsaved = treeWithPaths({});
+    unsaved.scoresheetReview = {
+        layout: { photoIds: null, blocks: [{ ...block, page: 3 }] },
+    };
+    storage.seed("scoresheet-layout-unsaved", unsaved);
+    const readUnsaved = storage.read("scoresheet-layout-unsaved")!.state as ReturnType<
+        typeof defaultTree
+    >;
+    expect(readUnsaved.scoresheetReview).toEqual({
+        layout: { photoIds: null, blocks: [{ ...block, page: 3 }] },
+    });
+
+    const malformedLayouts: unknown[] = [
+        "bad",
+        { photoIds: [id1], blocks: [] },
+        { photoIds: [], blocks: [block] },
+        { photoIds: ["not-hex"], blocks: [block] },
+        { photoIds: [id1, id1, id1, id1, id1], blocks: [block] },
+        { photoIds: [id1], blocks: [block] }, // page 1 but one photo
+        { photoIds: null, blocks: [{ ...block, page: 4 }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, topLeft: [1001, 100] }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, topLeft: [400.5, 100] }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, topLeft: [400] }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, rows: 0 }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, rows: 101 }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, firstMove: 0 }] },
+        { photoIds: [id1, id2], blocks: [{ ...block, firstMove: 290 }] },
+        { photoIds: [id1, id2], blocks: Array(17).fill(block) },
+    ];
+    for (const [index, badLayout] of malformedLayouts.entries()) {
+        const bad = treeWithPaths({}) as unknown as Record<string, unknown>;
+        bad.scoresheetReview = { stopped, layout: badLayout };
+        sessionStorage.setItem(`bad-layout-${index}`, JSON.stringify(bad));
+        const readBad = storage.read(`bad-layout-${index}`)?.state as ReturnType<
+            typeof defaultTree
+        >;
+        expect({ index, review: readBad?.scoresheetReview }).toEqual({
+            index,
+            review: { stopped },
+        });
+        expect({ index, hasLayout: Object.hasOwn(readBad.scoresheetReview!, "layout") }).toEqual({
+            index,
+            hasLayout: false,
+        });
+    }
 });
 
 test("malformed or oversized scoresheetReview.stopped.clocks is dropped while keeping the review readable", () => {
