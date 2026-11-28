@@ -30612,7 +30612,7 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 ## 2026-11-28 — filed through the inbox spool
 
 ### Remote CI repair: Test
-* **ID:** f-20261128-09 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **ID:** f-20261128-09 · **Status:** handled · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
 * **Filed from:** beb0293d-d7d6-4374-a200-e2fbfd09a3ea
 
 * **Impact class:** tooling
@@ -30623,3 +30623,5 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Proof:** `gh run view 46137791487 --log-failed`
 * **CI run:** 46137791487
 * **Repair owner:** e5eee374-f8d8-4556-824c-654ffbb1be75 on tuxedo-atlas, 2026-11-28T11:22:07Z
+* **Handled 2026-11-28 (drain e5eee374):** both red jobs were test assumptions, not product defects. `e2e` — the Train reachability fixture chapter had no `[Orientation]`, so the ChapterColorNotice from 35659adec (d-20261128-08, intended) rendered above Start Practice; the fixture is now White by default and a new uncoloured-chapter test proves the notice shows and Start Practice stays reachable by wheel, focus and click at 800×500. `rust-windows-test` — `download_payload_network_bounds_game_count_emissions_within_250ms` assumed 50 chunks finish within 250 ms of wall clock (Windows took 470 ms → `[1, 21, 50]`); renamed `..._throttles_game_count_emissions_to_the_interval`, it now bounds running updates by elapsed time, with the exact interval still pinned by `progress::tests::count_progress_throttle_bounds_running_emissions_within_250ms`. Commit def1a783f. Proof: affected Rust tests pass locally; all three Train/practice e2e tests pass in the container. Lenses: review-root-cause/correctness APPROVE, review-tests REVISE (notice layout unmeasured) → adopted → APPROVE. Rejected: injecting a clock into `download_payload_network` (extra parameter on a production signature only to restate the unit-tested throttle); `download_payload_network_emits_live_intermediate_count_while_stream_in_flight` left as is — chunk 2 is released inside the count-1 callback, so a 250 ms gap is unobserved.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"90068d03f46567c43304f911bef1c3f6ed76b20f7064b5a7e148e174a6ce490e","header_sha256":"3b479ae8471f78e5ff6715dc9721b7754af5bd3376829564880b5ba640a44c1b","header_status":"handled","input_sha256":"e6123e3a343cc1755c5b51e8f7eee92cf9c9d3cfb7d5ccb2a95c03f71c9e22dc","kind":"mutation-receipt","operation":"634051e0f046964d78c93d4ed45aad4fc0b478224314683a60d5e6326ddb41b4","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-09"],"target":"f-20261128-09","v":1} -->
