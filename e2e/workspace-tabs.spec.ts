@@ -866,13 +866,19 @@ for (const surface of [
     });
 }
 
-function practiceFeedbackSetup(now: Date) {
+/**
+ * A one-chapter repertoire file. The chapter is White by default, which keeps the "Train as White /
+ * Black" notice for uncolored chapters out of the Train layout; `colored: false` leaves the
+ * chapter, and so the whole file, without a color, which shows that notice.
+ */
+function practiceFeedbackSetup(now: Date, { colored = true }: { colored?: boolean } = {}) {
     const repertoireFile = {
         ...filesWorkspaceFixture.pgnFile,
         metadata: { type: "repertoire" as const, tags: [] },
     };
-    const pgn =
-        '[Event "Practice feedback"]\n[White "Weiss"]\n[Black "Schwarz"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 *';
+    const pgn = `[Event "Practice feedback"]\n[White "Weiss"]\n[Black "Schwarz"]\n[Result "*"]\n${
+        colored ? '[Orientation "white"]\n' : ""
+    }\n1. e4 e5 2. Nf3 *`;
     const game = {
         pgn,
         stamp: "c".repeat(64),
@@ -891,6 +897,9 @@ function practiceFeedbackSetup(now: Date) {
                 { type: "Header", value: { tag: "White", value: "Weiss" } },
                 { type: "Header", value: { tag: "Black", value: "Schwarz" } },
                 { type: "Header", value: { tag: "Result", value: "*" } },
+                ...(colored
+                    ? [{ type: "Header", value: { tag: "Orientation", value: "white" } }]
+                    : []),
                 { type: "San", value: "e4" },
                 { type: "San", value: "e5" },
                 { type: "San", value: "Nf3" },
@@ -1072,6 +1081,69 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
         1,
     );
     await assertNoHorizontalOverflow();
+});
+
+test("workspace-tabs: an uncolored chapter's color notice keeps Start Practice reachable at 800×500", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    const now = new Date("2026-10-21T12:00:00Z");
+    await page.clock.install({ time: now });
+    await page.setViewportSize({ width: 800, height: 500 });
+    await seedBoardLayouts(page);
+    await page.addInitScript(() => localStorage.setItem("auto-save", "false"));
+    const { repertoireFile, commands } = practiceFeedbackSetup(now, { colored: false });
+    await mockScenario({ commands });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await selectFilesTreeRow(page, repertoireFile.name);
+    await page.getByRole("button", { name: "Open game", exact: true }).click();
+    await page.getByRole("tab", { name: "Practice", exact: true }).click();
+    const train = page.getByRole("tabpanel", { name: "Train", exact: true });
+    await expect(train.getByRole("button", { name: "Train as White", exact: true })).toBeVisible();
+    await expect(train.getByRole("button", { name: "Train as Black", exact: true })).toBeVisible();
+    const start = train.getByRole("button", { name: /Start Practice/ });
+    await expect(start).toBeEnabled();
+    const startInside = () =>
+        start.evaluate((button) => {
+            const panel = button.closest<HTMLElement>('[role="tabpanel"]')!;
+            const top = panel.getBoundingClientRect().top + panel.clientTop;
+            const box = button.getBoundingClientRect();
+            return box.top >= top && box.bottom <= top + panel.clientHeight;
+        });
+    expect(await startInside(), "the notice must push Start Practice below Train").toBe(false);
+
+    const box = (await train.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect
+        .poll(
+            async () => {
+                if (await startInside()) return true;
+                await page.mouse.wheel(0, 40);
+                return false;
+            },
+            { message: "wheel must reveal all of Start Practice" },
+        )
+        .toBe(true);
+
+    await train.evaluate((panel) => {
+        panel.scrollTop = 0;
+    });
+    await page.getByRole("tab", { name: "Train", exact: true }).focus();
+    for (let tabs = 0; tabs < 30; tabs++) {
+        await page.keyboard.press("Tab");
+        if (await start.evaluate((button) => button === document.activeElement)) break;
+    }
+    await expect(start).toBeFocused();
+    await expect
+        .poll(startInside, { message: "keyboard focus must reveal all of Start Practice" })
+        .toBe(true);
+    await assertNothingClipped(start, { mode: "reachable" });
+    await assertNoHorizontalOverflow();
+
+    await start.click();
+    await expect(train.getByText("Make your move on the board...", { exact: true })).toBeVisible();
 });
 
 test("workspace-tabs: incorrect practice reveals the existing answer and its review log names the completed move", async ({

@@ -13485,7 +13485,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn download_payload_network_bounds_game_count_emissions_within_250ms() {
+    async fn download_payload_network_throttles_game_count_emissions_to_the_interval() {
         let mut file = tempfile::tempfile().unwrap();
         let chunks: Vec<_> = (0..50)
             .map(|index| {
@@ -13508,6 +13508,7 @@ pub(crate) mod tests {
             reported.push(count);
             Ok(())
         };
+        let started = std::time::Instant::now();
         let counted = download_payload_network(
             OpClass::Lichess,
             reqwest::Url::parse("https://lichess.org/api/games/user/player").unwrap(),
@@ -13525,11 +13526,25 @@ pub(crate) mod tests {
         )
         .await
         .unwrap();
+        let elapsed = started.elapsed();
         assert_eq!(counted, 50);
-        assert_eq!(
-            reported,
-            vec![1, 50],
-            "50 chunks within 250 ms must emit one live running update plus final: {reported:?}"
+        // The throttle reads the wall clock, so a slow runner may legitimately see a second running
+        // update (Windows CI took 470 ms, f-20261128-09). Bound the running updates by the elapsed
+        // time instead: one at the first game, then at most one per COUNT_EMIT_INTERVAL. The exact
+        // interval boundaries are pinned with an injected clock in
+        // progress::tests::count_progress_throttle_bounds_running_emissions_within_250ms.
+        assert_eq!(reported.first(), Some(&1), "{reported:?}");
+        assert_eq!(reported.last(), Some(&50), "{reported:?}");
+        assert!(
+            reported.windows(2).all(|pair| pair[0] < pair[1]),
+            "counts must rise: {reported:?}"
+        );
+        let running = reported.len() - 1;
+        let allowed =
+            1 + (elapsed.as_millis() / crate::progress::COUNT_EMIT_INTERVAL.as_millis()) as usize;
+        assert!(
+            running <= allowed,
+            "50 chunks in {elapsed:?} allow {allowed} running updates plus the final one: {reported:?}"
         );
     }
 
