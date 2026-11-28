@@ -38,6 +38,14 @@ const MAX_STOPPED_TOKENS: usize = 600;
 const MAX_CLOCK_SECONDS: u32 = 36_000;
 const MAX_PLAUSIBLE_CLOCK_RISE_SECONDS: u32 = 60;
 const UNREADABLE_TOKEN: &str = "?";
+/// Most column blocks a layout may describe (four photos of up to four blocks each).
+const MAX_LAYOUT_BLOCKS: usize = 16;
+/// Most move rows one printed column block may have.
+const MAX_LAYOUT_BLOCK_ROWS: usize = 100;
+/// Upper end of the normalised layout coordinates (0..=1000 of the photo's width or height).
+const LAYOUT_SCALE: f64 = 1000.0;
+/// Smallest width and height of a block, in normalised units, below which the block is degenerate.
+const MIN_LAYOUT_BLOCK_EXTENT: u16 = 20;
 
 const SYSTEM_PROMPT: &str = "\
 You transcribe handwritten chess scoresheets from photographs.\n\
@@ -56,13 +64,17 @@ Rules:\n\
   },\n\
   \"moves\": [\n\
     { \"n\": 1, \"white\": \"e4\", \"black\": \"e5\", \"whiteClock\": \"\", \"blackClock\": \"\", \"unsure\": [] }\n\
+  ],\n\
+  \"layout\": [\n\
+    { \"page\": 1, \"firstMove\": 1, \"rows\": 20, \"topLeft\": [0, 0], \"topRight\": [0, 0], \"bottomLeft\": [0, 0], \"bottomRight\": [0, 0] }\n\
   ]\n\
 }\n\
 - Use status \"no_image\" if you cannot see any attached image.\n\
 - Use status \"not_a_scoresheet\" if the photos are not a chess scoresheet.\n\
 - Leave absent header fields as empty strings.\n\
 - In each row, \"n\" is the 1-based move number, \"white\" and \"black\" are the SAN moves, \"whiteClock\" and \"blackClock\" are optional remaining clock times written next to the move, exactly as written (e.g. \"86\" or \"1:26\"; empty if none), and \"unsure\" lists any of \"white\" or \"black\" that you could not read with confidence.\n\
-- Put \"?\" for any cell on the sheet that is unreadable.";
+- Put \"?\" for any cell on the sheet that is unreadable.\n\
+- \"layout\" says where the move table is printed: one entry per column block of moves on each photo. A block has a move-number column, a White column and a Black column; the next block continues the numbering. \"page\" is the 1-based photo number, \"firstMove\" the move number printed on the block's first row, \"rows\" its number of move rows. The four corners outline the block's White and Black columns together, without the move-number column, from the top of its first row to the bottom of its last row, as [x, y] from 0 to 1000 of the photo's width and height, origin top-left. Include empty blocks. Leave \"layout\" out if you cannot locate the move table.";
 
 const INITIAL_USER_PROMPT: &str = "Transcribe this chess scoresheet into the required JSON object.";
 
@@ -115,12 +127,35 @@ pub(crate) struct ScoresheetStop {
     pub clocks: Option<Vec<Option<u32>>>,
 }
 
+/// One printed column block of the move table, located on one photo. Corners are `[x, y]` in
+/// 0..=1000 of that photo's width and height, origin top-left, and outline the block's White
+/// (left half) and Black (right half) columns from the top of its first row to the bottom of its
+/// last row.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScoresheetLayoutBlock {
+    /// 0-based index into the submitted photos.
+    pub page: u32,
+    /// Move number printed on the block's first row (1-based).
+    pub first_move: u32,
+    pub rows: u32,
+    pub top_left: [u16; 2],
+    pub top_right: [u16; 2],
+    pub bottom_left: [u16; 2],
+    pub bottom_right: [u16; 2],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ScoresheetGame {
     pub headers: ScoresheetHeaders,
     pub moves: Vec<ScoresheetMove>,
     pub stopped: Option<ScoresheetStop>,
+    /// Where the move table sits on the photos, from the initial reply; absent when the model gave
+    /// none or any part of it was implausible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub layout: Option<Vec<ScoresheetLayoutBlock>>,
 }
 
 impl ScoresheetReadInput {
@@ -165,6 +200,8 @@ struct ParsedReply {
     status: ReplyStatus,
     headers: ScoresheetHeaders,
     rows: Vec<ParsedRow>,
+    /// Structurally valid layout with 0-based pages, not yet checked against the photo count.
+    layout: Option<Vec<ScoresheetLayoutBlock>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -392,6 +429,92 @@ fn parse_cell(value: Option<&Value>) -> Option<Option<String>> {
     }
 }
 
+/// Parses one `[x, y]` corner: two finite JSON numbers within 0..=1000, rounded to whole units.
+fn parse_layout_corner(value: Option<&Value>) -> Option<[u16; 2]> {
+    let pair = value?.as_array()?;
+    let [x, y] = pair.as_slice() else {
+        return None;
+    };
+    let coordinate = |value: &Value| -> Option<u16> {
+        let number = value.as_f64()?;
+        if !number.is_finite() || !(0.0..=LAYOUT_SCALE).contains(&number) {
+            return None;
+        }
+        u16::try_from(number.round() as i64).ok()
+    };
+    Some([coordinate(x)?, coordinate(y)?])
+}
+
+fn parse_layout_count(value: Option<&Value>) -> Option<u32> {
+    u32::try_from(value?.as_u64()?).ok()
+}
+
+/// Parses one block of the reply's `layout`, converting the prompt's 1-based `page` to 0-based.
+fn parse_layout_block(value: &Value) -> Option<ScoresheetLayoutBlock> {
+    let block = value.as_object()?;
+    let page = parse_layout_count(block.get("page"))?.checked_sub(1)?;
+    let first_move = parse_layout_count(block.get("firstMove"))?;
+    let rows = parse_layout_count(block.get("rows"))?;
+    let top_left = parse_layout_corner(block.get("topLeft"))?;
+    let top_right = parse_layout_corner(block.get("topRight"))?;
+    let bottom_left = parse_layout_corner(block.get("bottomLeft"))?;
+    let bottom_right = parse_layout_corner(block.get("bottomRight"))?;
+
+    let row_count = usize::try_from(rows).ok()?;
+    if first_move == 0 || !(1..=MAX_LAYOUT_BLOCK_ROWS).contains(&row_count) {
+        return None;
+    }
+    let last_move = usize::try_from(first_move)
+        .ok()?
+        .checked_add(row_count - 1)?;
+    let below = |lower: [u16; 2], upper: [u16; 2]| lower[1] >= upper[1] + MIN_LAYOUT_BLOCK_EXTENT;
+    let right_of = |right: [u16; 2], left: [u16; 2]| right[0] >= left[0] + MIN_LAYOUT_BLOCK_EXTENT;
+    let shape_ok = below(bottom_left, top_left)
+        && below(bottom_right, top_right)
+        && right_of(top_right, top_left)
+        && right_of(bottom_right, bottom_left);
+    (last_move <= MAX_ROWS && shape_ok).then_some(ScoresheetLayoutBlock {
+        page,
+        first_move,
+        rows,
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+    })
+}
+
+/// Parses the reply's optional `layout`. All or nothing: any malformed or implausible block, more
+/// than `MAX_LAYOUT_BLOCKS` blocks, or two blocks covering the same move number drop the whole
+/// layout. Never fails the reply itself.
+fn parse_layout(value: Option<&Value>) -> Option<Vec<ScoresheetLayoutBlock>> {
+    let entries = value?.as_array()?;
+    if entries.is_empty() || entries.len() > MAX_LAYOUT_BLOCKS {
+        return None;
+    }
+    let mut blocks = entries
+        .iter()
+        .map(parse_layout_block)
+        .collect::<Option<Vec<_>>>()?;
+    blocks.sort_by_key(|block| block.first_move);
+    let disjoint = blocks
+        .windows(2)
+        .all(|pair| pair[0].first_move + pair[0].rows <= pair[1].first_move);
+    disjoint.then_some(blocks)
+}
+
+/// Keeps a layout only when every block points at one of the `photo_count` submitted photos.
+fn layout_for_photos(
+    layout: Option<Vec<ScoresheetLayoutBlock>>,
+    photo_count: usize,
+) -> Option<Vec<ScoresheetLayoutBlock>> {
+    layout.filter(|blocks| {
+        blocks
+            .iter()
+            .all(|block| usize::try_from(block.page).is_ok_and(|page| page < photo_count))
+    })
+}
+
 fn parse_reply(text: &str, require_status: bool) -> Option<ParsedReply> {
     let json_text = extract_first_json_object(text)?;
     let root: Value = serde_json::from_str(json_text).ok()?;
@@ -463,6 +586,7 @@ fn parse_reply(text: &str, require_status: bool) -> Option<ParsedReply> {
         status,
         headers,
         rows,
+        layout: parse_layout(obj.get("layout")),
     })
 }
 
@@ -665,14 +789,16 @@ async fn run_scoresheet_rounds(
         tools: &[],
         cancellation,
     };
+    let photo_count = photos.len();
     let mut messages = vec![Message::UserWithImages {
         text: INITIAL_USER_PROMPT.into(),
         images: photos,
     }];
     let mut rounds_used = 0usize;
 
-    // Initial reading (retrying malformed/out-of-bound replies within the 4-round budget).
-    let (headers, mut cells) = loop {
+    // Initial reading (retrying malformed/out-of-bound replies within the 4-round budget). Only this
+    // reply's layout is used; correction replies never change it.
+    let (headers, mut cells, layout) = loop {
         rounds_used += 1;
         let reply_text = ask_round(&rounds, &messages).await?;
         messages.push(Message::Assistant {
@@ -684,7 +810,13 @@ async fn run_scoresheet_rounds(
             Some(parsed) => match parsed.status {
                 ReplyStatus::NoImage => return Err(CoachError::ImagesUnsupported),
                 ReplyStatus::NotAScoresheet => return Err(CoachError::ScoresheetUnreadable),
-                ReplyStatus::Ok => break (parsed.headers, rows_to_initial_cells(&parsed.rows)),
+                ReplyStatus::Ok => {
+                    break (
+                        parsed.headers,
+                        rows_to_initial_cells(&parsed.rows),
+                        layout_for_photos(parsed.layout, photo_count),
+                    )
+                }
             },
             None => {
                 if rounds_used >= MAX_READ_ROUNDS {
@@ -707,6 +839,7 @@ async fn run_scoresheet_rounds(
                 headers,
                 moves: replay.moves,
                 stopped: None,
+                layout,
             });
         };
 
@@ -740,6 +873,7 @@ async fn run_scoresheet_rounds(
                     tokens: remaining,
                     clocks,
                 }),
+                layout: layout.clone(),
             })
         };
 
@@ -1815,5 +1949,220 @@ mod tests {
         assert!(game.moves[2].unsure);
         assert_eq!(game.moves[2].clock, Some(4920));
         assert!(!game.moves[3].unsure);
+    }
+
+    fn layout_block_json(page: u64, first_move: u64, rows: u64) -> serde_json::Value {
+        json!({
+            "page": page, "firstMove": first_move, "rows": rows,
+            "topLeft": [143, 220], "topRight": [349.4, 218],
+            "bottomLeft": [147, 958], "bottomRight": [359, 958.6]
+        })
+    }
+
+    fn expected_block(page: u32, first_move: u32, rows: u32) -> ScoresheetLayoutBlock {
+        ScoresheetLayoutBlock {
+            page,
+            first_move,
+            rows,
+            top_left: [143, 220],
+            top_right: [349, 218],
+            bottom_left: [147, 958],
+            bottom_right: [359, 959],
+        }
+    }
+
+    fn reply_with_layout(layout: serde_json::Value) -> String {
+        json!({
+            "status": "ok",
+            "moves": [{ "n": 1, "white": "e4", "black": "e5" }],
+            "layout": layout
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn prompt_asks_for_the_layout_beside_the_moves() {
+        assert!(SYSTEM_PROMPT.contains("\"layout\": ["));
+        assert!(SYSTEM_PROMPT.contains("\"page\" is the 1-based photo number"));
+    }
+
+    #[test]
+    fn valid_layout_is_parsed_with_zero_based_pages_rounded_corners_and_sorted_blocks() {
+        let reply = reply_with_layout(json!([
+            layout_block_json(2, 21, 20),
+            layout_block_json(1, 1, 20)
+        ]));
+        let parsed = parse_reply(&reply, true).expect("valid reply");
+        assert_eq!(
+            parsed.layout,
+            Some(vec![expected_block(0, 1, 20), expected_block(1, 21, 20)])
+        );
+    }
+
+    #[test]
+    fn implausible_layouts_drop_only_the_layout_and_keep_the_moves() {
+        let with_corner = |corner: &str, value: serde_json::Value| {
+            let mut block = layout_block_json(1, 1, 20);
+            block[corner] = value;
+            json!([block])
+        };
+        let cases = [
+            ("not an array", json!({ "page": 1 })),
+            ("empty", json!([])),
+            ("page 0", json!([layout_block_json(0, 1, 20)])),
+            ("first move 0", json!([layout_block_json(1, 0, 20)])),
+            ("no rows", json!([layout_block_json(1, 1, 0)])),
+            ("too many rows", json!([layout_block_json(1, 1, 101)])),
+            ("past move 300", json!([layout_block_json(1, 290, 20)])),
+            (
+                "coordinate above 1000",
+                with_corner("topLeft", json!([1001, 220])),
+            ),
+            (
+                "negative coordinate",
+                with_corner("topLeft", json!([-1, 220])),
+            ),
+            (
+                "string coordinate",
+                with_corner("topLeft", json!(["143", 220])),
+            ),
+            (
+                "three numbers",
+                with_corner("topLeft", json!([143, 220, 5])),
+            ),
+            ("missing corner", with_corner("bottomRight", json!(null))),
+            (
+                "bottom above top",
+                with_corner("bottomLeft", json!([147, 100])),
+            ),
+            ("too narrow", with_corner("topRight", json!([150, 218]))),
+            (
+                "bottom right above top right",
+                with_corner("bottomRight", json!([359, 100])),
+            ),
+            (
+                "too narrow at the bottom",
+                with_corner("bottomRight", json!([160, 958])),
+            ),
+            // 19 units tall on the left edge, one below the minimum extent of 20.
+            ("too short", with_corner("bottomLeft", json!([147, 239]))),
+            (
+                "one bad block beside a good one",
+                json!([layout_block_json(1, 1, 20), layout_block_json(1, 21, 0)]),
+            ),
+            (
+                "overlapping blocks",
+                json!([layout_block_json(1, 1, 20), layout_block_json(1, 20, 20)]),
+            ),
+            (
+                "too many blocks",
+                serde_json::Value::Array(
+                    (0..17u64)
+                        .map(|i| layout_block_json(1, 1 + i * 10, 10))
+                        .collect(),
+                ),
+            ),
+        ];
+        for (label, layout) in cases {
+            let parsed = parse_reply(&reply_with_layout(layout), true)
+                .unwrap_or_else(|| panic!("{label}: the reply itself must still parse"));
+            assert_eq!(parsed.layout, None, "{label}");
+            assert_eq!(rows_to_initial_cells(&parsed.rows).len(), 2, "{label}");
+        }
+        // No layout at all reads exactly as before.
+        let plain = parse_reply(
+            r#"{"status":"ok","moves":[{"n":1,"white":"e4","black":"e5"}]}"#,
+            true,
+        )
+        .expect("valid reply");
+        assert_eq!(plain.layout, None);
+
+        // Exactly the minimum extent is still a block.
+        let mut shortest = layout_block_json(1, 1, 20);
+        shortest["bottomLeft"] = json!([147, 240]);
+        let parsed = parse_reply(&reply_with_layout(json!([shortest])), true).expect("valid reply");
+        assert!(parsed.layout.is_some());
+    }
+
+    #[test]
+    fn game_without_layout_serializes_without_the_layout_key() {
+        let mut game = ScoresheetGame {
+            headers: ScoresheetHeaders::default(),
+            moves: Vec::new(),
+            stopped: None,
+            layout: None,
+        };
+        let value = serde_json::to_value(&game).expect("serializable");
+        assert!(value.get("layout").is_none());
+
+        game.layout = Some(vec![expected_block(0, 1, 20)]);
+        let value = serde_json::to_value(&game).expect("serializable");
+        assert_eq!(value["layout"][0]["firstMove"], 1);
+        assert_eq!(value["layout"][0]["topLeft"], json!([143, 220]));
+    }
+
+    #[test]
+    fn layout_pointing_past_the_submitted_photos_is_dropped() {
+        let blocks = vec![expected_block(0, 1, 20), expected_block(1, 21, 20)];
+        assert_eq!(
+            layout_for_photos(Some(blocks.clone()), 2),
+            Some(blocks.clone())
+        );
+        assert_eq!(layout_for_photos(Some(blocks), 1), None);
+        assert_eq!(layout_for_photos(None, 4), None);
+    }
+
+    async fn read_scripted(replies: &[String], photos: usize) -> ScoresheetGame {
+        let backend = ScriptedBackend::new(replies.iter().map(|reply| text(reply)).collect());
+        run_scoresheet_read(
+            &backend,
+            "vision-model",
+            None,
+            vec![valid_jpeg_data_url(); photos],
+            &CancellationToken::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .expect("game")
+    }
+
+    #[tokio::test]
+    async fn complete_read_returns_the_initial_layout_and_drops_one_for_a_missing_photo() {
+        let reply = reply_with_layout(json!([layout_block_json(1, 1, 20)]));
+        let game = read_scripted(&[reply], 1).await;
+        assert!(game.stopped.is_none());
+        assert_eq!(game.layout, Some(vec![expected_block(0, 1, 20)]));
+
+        let second_page = reply_with_layout(json!([layout_block_json(2, 1, 20)]));
+        let game = read_scripted(&[second_page], 1).await;
+        assert_eq!(game.layout, None);
+        assert_eq!(game.moves.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn correction_reply_layout_is_ignored_and_a_stopped_read_keeps_the_initial_layout() {
+        let round1 = json!({
+            "status": "ok",
+            "moves": [
+                { "n": 1, "white": "e4", "black": "e5" },
+                { "n": 2, "white": "Ke3", "black": "Nc6" }
+            ],
+            "layout": [layout_block_json(1, 1, 20)]
+        })
+        .to_string();
+        let repaired = json!({
+            "status": "ok",
+            "moves": [{ "n": 2, "white": "Nf3", "black": "Nc6" }],
+            "layout": [layout_block_json(2, 1, 30)]
+        })
+        .to_string();
+        let game = read_scripted(&[round1.clone(), repaired], 2).await;
+        assert!(game.stopped.is_none());
+        assert_eq!(game.layout, Some(vec![expected_block(0, 1, 20)]));
+
+        // The same illegal move returned again stops the reading; the layout survives.
+        let game = read_scripted(&[round1.clone(), round1], 2).await;
+        assert!(game.stopped.is_some());
+        assert_eq!(game.layout, Some(vec![expected_block(0, 1, 20)]));
     }
 }

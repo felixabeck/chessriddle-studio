@@ -2578,8 +2578,28 @@ export type ScoreValue =
  * Mate coming up in this many moves. Negative value means the engine is getting mated.
  */
 { type: "mate"; value: number }
-export type ScoresheetGame = { headers: ScoresheetHeaders; moves: ScoresheetMove[]; stopped: ScoresheetStop | null }
+export type ScoresheetGame = { headers: ScoresheetHeaders; moves: ScoresheetMove[]; stopped: ScoresheetStop | null; 
+/**
+ * Where the move table sits on the photos, from the initial reply; absent when the model gave
+ * none or any part of it was implausible.
+ */
+layout?: ScoresheetLayoutBlock[] | null }
 export type ScoresheetHeaders = { white: string; black: string; event: string; site: string; date: string; round: string; result: string; whiteElo: string; blackElo: string }
+/**
+ * One printed column block of the move table, located on one photo. Corners are `[x, y]` in
+ * 0..=1000 of that photo's width and height, origin top-left, and outline the block's White
+ * (left half) and Black (right half) columns from the top of its first row to the bottom of its
+ * last row.
+ */
+export type ScoresheetLayoutBlock = { 
+/**
+ * 0-based index into the submitted photos.
+ */
+page: number; 
+/**
+ * Move number printed on the block's first row (1-based).
+ */
+firstMove: number; rows: number; topLeft: [number, number]; topRight: [number, number]; bottomLeft: [number, number]; bottomRight: [number, number] }
 export type ScoresheetMove = { san: string; unsure: boolean; clock?: number | null }
 export type ScoresheetPhoto = { dataUrl: string }
 export type ScoresheetPhotoBatch = { photos: ScoresheetPhoto[]; skipped: number; failed: number }
