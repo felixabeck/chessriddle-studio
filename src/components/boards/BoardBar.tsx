@@ -44,20 +44,28 @@ export function BoardBar({
       align={towardBoard}
       gap="xs"
     >
-      <Group gap={6} align="baseline" wrap="nowrap" style={{ minWidth: 0, flex: "1 1 auto" }}>
+      <Group
+        gap={6}
+        align="baseline"
+        wrap="nowrap"
+        // Basis 0 so the name takes leftover after actions. `1 1 auto` demands the
+        // full name width, then both clusters shrink and overflow the bar (f-20261128-04).
+        // Overflow stays visible so bar.scrollWidth still detects unshrinkable clip.
+        style={{ minWidth: 0, flex: "1 1 0%" }}
+      >
         {(hasPlayerName || (placeholder && onNameClick)) &&
           (onNameClick ? (
             <UnstyledButton
               type="button"
               onClick={onNameClick}
-              style={{ minWidth: 0, maxWidth: "100%" }}
+              style={{ minWidth: 0, flex: "0 1 auto", maxWidth: "100%" }}
             >
               <Text fw="bold" size="md" truncate c={hasPlayerName ? undefined : "dimmed"}>
                 {hasPlayerName ? name : placeholder}
               </Text>
             </UnstyledButton>
           ) : (
-            <Text fw="bold" size="md" truncate>
+            <Text fw="bold" size="md" truncate style={{ minWidth: 0, flex: "0 1 auto" }}>
               {name}
             </Text>
           ))}

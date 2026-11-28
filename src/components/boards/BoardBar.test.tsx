@@ -46,8 +46,10 @@ test("a player with onNameClick renders a button that invokes it", async () => {
       </MantineProvider>,
     ),
   );
-  const button = host.querySelector("button");
+  const button = host.querySelector<HTMLElement>("button");
   expect(button?.textContent).toBe("White Player");
+  expect(button?.style.minWidth).toBe("0px");
+  expect(button?.style.flex).toBe("0 1 auto");
   await act(async () => button?.click());
   expect(onNameClick).toHaveBeenCalledOnce();
 });
@@ -151,11 +153,15 @@ test("renders actions at the right end after children and keeps the name truncat
   const rightGroup = bar.lastElementChild as HTMLElement;
   const nameText = leftGroup.querySelector<HTMLElement>("p")!;
   expect(leftGroup.style.minWidth).toBe("0px");
-  expect(leftGroup.style.flex).toBe("1 1 auto");
+  expect(leftGroup.style.flex).toBe("1 1 0%");
+  expect(leftGroup.style.overflow).toBe("");
   expect(nameText.dataset.truncate).toBe("end");
+  expect(nameText.style.minWidth).toBe("0px");
+  expect(nameText.style.flex).toBe("0 1 auto");
   expect(rightGroup.style.flexGrow).toBe("0");
   expect(rightGroup.style.flexShrink).toBe("1");
   expect(rightGroup.style.minWidth).toBe("0px");
+  expect(rightGroup.style.overflow).toBe("");
   expect(bar.style.minWidth).toBe("0rem");
   expect(bar.style.width).toBe("100%");
   expect(bar.style.paddingLeft).toBe("var(--board-bar-inset, 2.5rem)");
