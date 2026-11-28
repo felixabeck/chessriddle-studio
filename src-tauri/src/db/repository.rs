@@ -1439,14 +1439,28 @@ impl DatabaseRepository {
 
     /// Keep the production pool exhausted for command acquisition regression tests.
     /// Remove with the shared acquisition contention harness if it is superseded.
+    ///
+    /// Retries pool timeouts: the caller's `with_pool_connection_timeout` is the
+    /// export-contention budget (often 100 ms), not the budget to open
+    /// `MAX_CONNECTIONS_PER_DATABASE` SQLite connections under `cargo test --bins`.
     #[cfg(test)]
     pub(crate) fn hold_all_connections_for_test(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,
     ) -> Result<Vec<DatabaseConnection>, Error> {
-        (0..MAX_CONNECTIONS_PER_DATABASE)
-            .map(|_| self.initialization_connection(target, None))
-            .collect()
+        const HOLD_DEADLINE: Duration = Duration::from_secs(10);
+        let deadline = Instant::now() + HOLD_DEADLINE;
+        let mut held = Vec::with_capacity(MAX_CONNECTIONS_PER_DATABASE as usize);
+        while held.len() < MAX_CONNECTIONS_PER_DATABASE as usize {
+            match self.initialization_connection(target, None) {
+                Ok(connection) => held.push(connection),
+                Err(error) if error.is_database_busy() && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(held)
     }
 
     /// Test-fixture helper for creating non-game SQLite schemas. Production
