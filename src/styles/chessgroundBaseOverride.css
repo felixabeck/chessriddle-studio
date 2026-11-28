@@ -10,6 +10,8 @@ cg-container {
   height: 100%;
   display: block;
   top: 0;
+  /* The coordinates size themselves against the board's width (cqi). */
+  container-type: inline-size;
 }
 
 cg-board {
@@ -136,7 +138,9 @@ piece.fading {
   pointer-events: none;
   opacity: 1;
   font-family: sans-serif;
-  font-size: 1rem;
+  /* Scales with the board, at most the text size. 7cqi keeps every label inside the board in
+     WebKit; the largest clean ratio measured was 7.5, and 8.5 already reaches past an edge. */
+  font-size: min(1rem, 7cqi);
   font-weight: bold;
 }
 
@@ -145,7 +149,7 @@ piece.fading {
   left: 0;
   text-align: right;
   flex-flow: column-reverse;
-  font-size: 0.9rem;
+  font-size: min(0.9rem, 6.3cqi);
   height: 100%;
   width: 12.5%;
 }
@@ -195,7 +199,7 @@ piece.fading {
   top: -4%;
   flex-flow: column-reverse;
   height: 100%;
-  width: 1rem;
+  width: 1em;
 }
 
 .cg-wrap coords.ranks.black {
@@ -212,7 +216,9 @@ piece.fading {
   left: 4.5%;
   flex-flow: row;
   width: 100%;
-  height: 1rem;
+  height: 1em;
+  /* A line as tall as the strip, so the tails of g and f stay inside the board. */
+  line-height: 1;
   text-align: center;
 }
 
