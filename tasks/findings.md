@@ -30403,7 +30403,7 @@ Closed. Commits `24d025367` (chooseBoardMoreAction re-opens More after a dirty r
 
 ### Hosted game-report Generate-report dialog snapshots differ after Save-to
 
-* **ID:** f-20261128-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
 * **Impact class:** tooling
 * **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change `e2e/game-report.spec.ts` or the Generate report dialog.
@@ -30424,6 +30424,9 @@ Took over repair: published filing had no Repair owner line. Same e2e streak as 
 * **CI run:** 46085092838
 * **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"be01042964ed9e401690c3bb66fa2a43fd1946802d2e9d96785926fe8dca0505","input_sha256":"d0b0a3e7f2a830267df95cff2f5ada8b1a3c7d7fd64dae4cbad0ce0b13821810","kind":"mutation-receipt","operation":"ae4333412f420d2e955e448ba9f15786fa11f743b02a7a1f4f154440b15ff715","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-02"],"target":"f-20261128-02","v":1} -->
+
+Closed. Commit `b9b832514`. Re-recorded the four Generate-report dialog snapshots in the container after inspecting *-diff.png (18 px base, 3 px narrow, ratio 0.01). Rejected: re-recording natively. Proof: container `--project=game-report --project=game-report-narrow --grep "an empty Report tab offers|the dialog without an engine"` passed after the re-record.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"e318f69957ab14e476e6278967e24cab08f42ec2af78e03af5d3e7b7ae04d957","header_sha256":"a93da38dc10468d2e88b6e1c3850ef79805afb5fc0656956e45f7f582b658b8a","header_status":"handled","input_sha256":"8aad785123cb100e0f58b2478ce15035281215a5ad5364c3889bc6656705c3cb","kind":"mutation-receipt","operation":"18d2ad0fef7e366f131e2b13db9c61ae98ddb06265c13f2db4b22e3c3a309994","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-02"],"target":"f-20261128-02","v":1} -->
 
 ---
 
