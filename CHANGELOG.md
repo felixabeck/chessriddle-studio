@@ -2,6 +2,12 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
+## Unreleased
+
+### Improved
+
+- Opponent preparation: the Moves and Uncovered move columns show move numbers ("1. e4 c6 2. d4 d5", "3... g6"), counted from where each chapter starts, with piece letters or symbols as set for the notation. A gap at the starting position is labelled "Start position" instead of a chapter that happens to contain it.
+
 ## 1.5.0
 
 ### New

@@ -97,6 +97,42 @@ export function formatMoveNumber(halfMoves: number): string {
     return `${Math.ceil(halfMoves / 2)}${halfMoves % 2 === 1 ? "." : "..."}`;
 }
 
+/** One move of a numbered SAN line; `moveNumber` is present where the line prints a number. */
+export type NumberedMove = {
+    moveNumber?: string;
+    san: string;
+};
+
+/**
+ * Numbers consecutive SAN moves whose first move completes ply `startHalfMoves + 1`: the first move
+ * and every White move carry a number ("1.", "11..."), as in "1. e4 c6 2. d4".
+ */
+export function numberMoves(sans: readonly string[], startHalfMoves: number): NumberedMove[] {
+    return sans.map((san, index) => {
+        const halfMoves = startHalfMoves + index + 1;
+        return index === 0 || halfMoves % 2 === 1
+            ? { moveNumber: formatMoveNumber(halfMoves), san }
+            : { san };
+    });
+}
+
+/** No-break space: a wrapping line never separates a move number from its move. */
+export const MOVE_NUMBER_NO_BREAK = "\u00a0";
+
+/**
+ * Text of one numbered move, `formatSan` applying the reader's piece notation and `separator`
+ * standing between number and move.
+ */
+export function formatNumberedMove(
+    move: NumberedMove,
+    formatSan: (san: string) => string = (san) => san,
+    separator = " ",
+): string {
+    return move.moveNumber
+        ? `${move.moveNumber}${separator}${formatSan(move.san)}`
+        : formatSan(move.san);
+}
+
 export function capitalize(str: string) {
     return `${str.charAt(0).toUpperCase()}${str.slice(1)}`;
 }

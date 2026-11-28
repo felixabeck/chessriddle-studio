@@ -22,6 +22,7 @@ import { isAbortError } from "@/components/panels/practice/prepareTimedRun";
 import TrainMinutesControl from "@/components/panels/practice/TrainMinutesControl";
 import {
   activeTabAtom,
+  moveNotationTypeAtom,
   opponentPreparationAtom,
   practiceTrainMinutesAtom,
   tabPreparationViewFamily,
@@ -29,10 +30,18 @@ import {
   timedRunLaunchAtom,
 } from "@/state/atoms";
 import { OPPONENT_PERIODS, type OpponentPeriod } from "@/state/opponentLinks";
+import { addPieceSymbol } from "@/utils/annotation";
 import { databaseHandleKey } from "@/utils/db";
+import {
+  formatMoveNumber,
+  formatNumberedMove,
+  MOVE_NUMBER_NO_BREAK,
+  numberMoves,
+} from "@/utils/format";
 import type { LineTitle } from "@/utils/lineTitle";
 import { openFile } from "@/utils/openFile";
 import {
+  INITIAL_BOARD_STATE,
   PREPARATION_MIN_GAMES_OPTIONS,
   type PreparationColor,
   type PreparationGap,
@@ -98,6 +107,18 @@ export default function PlayerPreparation({
   const setTabs = useSetAtom(tabsAtom);
   const stored = useAtomValue(opponentPreparationAtom);
   const minutes = useAtomValue(practiceTrainMinutesAtom);
+  const moveNotationType = useAtomValue(moveNotationTypeAtom);
+  const formatSan = useCallback(
+    (san: string) => (moveNotationType === "symbols" ? addPieceSymbol(san) : san),
+    [moveNotationType],
+  );
+  const numberedLine = useCallback(
+    (moves: readonly string[], startHalfMoves: number) =>
+      numberMoves(moves, startHalfMoves)
+        .map((move) => formatNumberedMove(move, formatSan, MOVE_NUMBER_NO_BREAK))
+        .join(" "),
+    [formatSan],
+  );
   const cardDatabaseKey = databaseHandleKey(file);
 
   const shortName =
@@ -603,7 +624,7 @@ export default function PlayerPreparation({
                 })}
                 renderMoves={(line) =>
                   line.moves.length > 0
-                    ? line.moves.join(" ")
+                    ? numberedLine(line.moves, line.startHalfMoves)
                     : t("Databases.OpeningTree.Start", {
                         defaultValue: "Start position",
                       })
@@ -638,10 +659,26 @@ export default function PlayerPreparation({
                 })}
                 renderMoves={(gap) => (
                   <>
-                    {gap.moves.length > 0 ? `${gap.moves.join(" ")} ` : ""}
-                    <span className={classes.gapMove}>{gap.move}</span>
+                    {gap.moves.length > 0 ? `${numberedLine(gap.moves, gap.startHalfMoves)} ` : ""}
+                    <span className={classes.gapMove}>
+                      {formatNumberedMove(
+                        {
+                          moveNumber: formatMoveNumber(gap.startHalfMoves + gap.moves.length + 1),
+                          san: gap.move,
+                        },
+                        formatSan,
+                        MOVE_NUMBER_NO_BREAK,
+                      )}
+                    </span>
                   </>
                 )}
+                chapterLabelOf={(gap) =>
+                  gap.boardState === INITIAL_BOARD_STATE
+                    ? t("Databases.OpeningTree.Start", {
+                        defaultValue: "Start position",
+                      })
+                    : null
+                }
                 emptyText={
                   minGames > 1
                     ? t("Databases.Preparation.GapsBelowMinimum", {
@@ -731,6 +768,7 @@ function PreparationList<Row extends PreparationRow>({
   onOpen,
   moveColumnHeader,
   renderMoves,
+  chapterLabelOf,
   emptyText,
   rowKey,
   listAttr,
@@ -746,6 +784,8 @@ function PreparationList<Row extends PreparationRow>({
   onOpen: (row: Row) => void;
   moveColumnHeader: string;
   renderMoves: (row: Row) => ReactNode;
+  /** Replaces the chapter title under the file name; `null` keeps the title. */
+  chapterLabelOf?: (row: Row) => string | null;
   emptyText: string;
   rowKey: (row: Row) => string;
   listAttr: "data-preparation-lines" | "data-preparation-gaps";
@@ -784,13 +824,15 @@ function PreparationList<Row extends PreparationRow>({
             </thead>
             <tbody>
               {visible.map((row) => {
-                const chapterLabel = formatChapterLabel(
-                  row.chapterTitle,
-                  t("Databases.Preparation.ChapterFallback", {
-                    defaultValue: "Chapter {{number}}",
-                    number: row.chapter + 1,
-                  }),
-                );
+                const chapterLabel =
+                  chapterLabelOf?.(row) ??
+                  formatChapterLabel(
+                    row.chapterTitle,
+                    t("Databases.Preparation.ChapterFallback", {
+                      defaultValue: "Chapter {{number}}",
+                      number: row.chapter + 1,
+                    }),
+                  );
                 return (
                   <tr
                     key={rowKey(row)}

@@ -4,12 +4,15 @@ import {
     formatBytes,
     formatDecimal,
     formatMoveNumber,
+    formatNumberedMove,
+    MOVE_NUMBER_NO_BREAK,
     formatNodes,
     formatRelativeTime,
     formatReviewInterval,
     formatThemeLabel,
     formatTime,
     getInitials,
+    numberMoves,
     roundKeepSum,
 } from "./format";
 
@@ -201,5 +204,39 @@ describe("capitalize and getInitials", () => {
         expect(getInitials("stockfish")).toBe("S");
         expect(getInitials("magnus carlsen")).toBe("MC");
         expect(getInitials("Jan-Krzysztof duda")).toBe("JD");
+    });
+});
+
+describe("numberMoves", () => {
+    test("numbers the first move and every White move", () => {
+        expect(numberMoves(["e4", "c6", "d4", "d5"], 0).map((m) => formatNumberedMove(m))).toEqual([
+            "1. e4",
+            "c6",
+            "2. d4",
+            "d5",
+        ]);
+    });
+
+    test("a line starting with Black's move opens with the ellipsis number", () => {
+        expect(numberMoves(["Bd7", "Nc3"], 21).map((m) => formatNumberedMove(m))).toEqual([
+            "11... Bd7",
+            "12. Nc3",
+        ]);
+    });
+
+    test("formatNumberedMove applies the piece notation to the move only", () => {
+        expect(formatNumberedMove({ moveNumber: "3.", san: "Nf3" }, (san) => `[${san}]`)).toBe(
+            "3. [Nf3]",
+        );
+    });
+
+    test("formatNumberedMove applies the piece notation to a move without a number", () => {
+        expect(formatNumberedMove({ san: "Nc6" }, (san) => `[${san}]`)).toBe("[Nc6]");
+    });
+
+    test("a no-break separator keeps the number on the move's line", () => {
+        expect(
+            formatNumberedMove({ moveNumber: "3.", san: "Bb5+" }, undefined, MOVE_NUMBER_NO_BREAK),
+        ).toBe("3.\u00a0Bb5+");
     });
 });

@@ -3,15 +3,12 @@ import { parsePgn } from "chessops/pgn";
 import { makeSanAndPlay, parseSan } from "chessops/san";
 import type { NormalizedGame } from "@/bindings";
 import { positionFromFen } from "@/utils/chessops";
-import { formatMoveNumber } from "@/utils/format";
+import { type NumberedMove, numberMoves } from "@/utils/format";
 import { getBoardState, normalizeFen, rootHalfMoves } from "@/utils/treeReducer";
 
 const PREVIEW_MAX_PLIES = 8;
 
-export type GameNotationPart = {
-    moveNumber?: string;
-    san: string;
-};
+export type GameNotationPart = NumberedMove;
 
 export type GameNotationPreview = {
     preview: GameNotationPart[];
@@ -24,19 +21,6 @@ const EMPTY_NOTATION: GameNotationPreview = {
     full: [],
     hasMore: false,
 };
-
-type ReplayedMove = {
-    san: string;
-    halfMoves: number;
-};
-
-function formatContinuation(moves: readonly ReplayedMove[]): GameNotationPart[] {
-    return moves.map((move, index) =>
-        index === 0 || move.halfMoves % 2 === 1
-            ? { moveNumber: formatMoveNumber(move.halfMoves), san: move.san }
-            : { san: move.san },
-    );
-}
 
 /**
  * Extracts the mainline continuation of `game` from `targetFen` (or from `game.fen` when
@@ -67,13 +51,13 @@ export function gameNotationPreview(
 
     let anchorIndex =
         targetBoardState !== undefined && getBoardState(startFen) === targetBoardState ? 0 : -1;
-    const moves: ReplayedMove[] = [];
+    const moves: string[] = [];
 
     for (const node of parsed.moves.mainline()) {
         const move = parseSan(pos, node.san);
         if (!move) break;
         const san = makeSanAndPlay(pos, move);
-        moves.push({ san, halfMoves: startHalfMoves + moves.length + 1 });
+        moves.push(san);
         if (
             targetBoardState !== undefined &&
             anchorIndex === -1 &&
@@ -89,7 +73,7 @@ export function gameNotationPreview(
     const continuation = moves.slice(startIndex);
     if (continuation.length === 0) return EMPTY_NOTATION;
 
-    const full = formatContinuation(continuation);
+    const full = numberMoves(continuation, startHalfMoves + startIndex);
     const preview = full.slice(0, PREVIEW_MAX_PLIES);
     return {
         preview,

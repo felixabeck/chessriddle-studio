@@ -42,6 +42,8 @@ export type PreparationLine = {
     boardState: string;
     /** SAN sequence from the chapter root to this node (empty at root). */
     moves: readonly string[];
+    /** Half-move count of the chapter root, so `moves[0]` completes ply `startHalfMoves + 1`. */
+    startHalfMoves: number;
     games: number;
     lastPlayed: string | null;
 };
@@ -55,6 +57,8 @@ export type PreparationGap = {
     boardState: string;
     /** SAN sequence from the chapter root to this position (empty at root). */
     moves: readonly string[];
+    /** Half-move count of the chapter root, so `moves[0]` completes ply `startHalfMoves + 1`. */
+    startHalfMoves: number;
     /** Opponent's SAN move that no indexed chapter of the user's colour covers. */
     move: string;
     games: number;
@@ -189,16 +193,20 @@ type NodeOccurrence = {
     chapterOrder: number;
 };
 
-function movesToNode(nodes: readonly RepertoireChapterNode[], nodeIndex: number): string[] {
+type MovesFromRoot = { moves: string[]; startHalfMoves: number };
+
+function movesToNode(nodes: readonly RepertoireChapterNode[], nodeIndex: number): MovesFromRoot {
     const reversed: string[] = [];
     let current = nodeIndex;
+    let startHalfMoves = nodes[nodeIndex].halfMoves;
     while (current >= 0) {
         const node = nodes[current];
         if (node.san !== null) reversed.push(node.san);
+        startHalfMoves = node.halfMoves;
         current = node.parent;
     }
     reversed.reverse();
-    return reversed;
+    return { moves: reversed, startHalfMoves };
 }
 
 type SortKey = {
@@ -306,7 +314,7 @@ export function computePreparationView(
         const games = positionGames.get(boardState);
         if (games === undefined) continue;
         const node = occ.nodes[occ.nodeIndex];
-        let cachedMoves: string[] | null = null;
+        let cachedMoves: MovesFromRoot | null = null;
         const getMoves = () => (cachedMoves ??= movesToNode(occ.nodes, occ.nodeIndex));
 
         if (!positionsWithPlayedChild.has(boardState)) {
@@ -317,7 +325,7 @@ export function computePreparationView(
                 chapterTitle: occ.chapterTitle,
                 path: node.path,
                 boardState,
-                moves: getMoves(),
+                ...getMoves(),
                 games,
                 lastPlayed: positionLastPlayed.get(boardState) ?? null,
                 fileOrder: occ.fileOrder,
@@ -340,7 +348,7 @@ export function computePreparationView(
                     chapterTitle: occ.chapterTitle,
                     path: node.path,
                     boardState,
-                    moves: getMoves(),
+                    ...getMoves(),
                     move: row.move,
                     games: moveGames,
                     lastPlayed: row.last_played,

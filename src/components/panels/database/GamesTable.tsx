@@ -9,6 +9,7 @@ import { dateColumn, tableScrollAreaProps } from "@/components/databases/databas
 import PlayerRatingCell from "@/components/databases/PlayerRatingCell";
 import { moveNotationTypeAtom } from "@/state/atoms";
 import { addPieceSymbol } from "@/utils/annotation";
+import { formatNumberedMove } from "@/utils/format";
 import { type GameNotationPart, gameNotationPreview } from "./gameNotation";
 import classes from "./GamesTable.module.css";
 
@@ -82,8 +83,7 @@ function GamesTable({
             if (!notation || notation.preview.length === 0) return null;
             const formatSan = (san: string) =>
               moveNotationType === "symbols" ? addPieceSymbol(san) : san;
-            const formatPart = (part: GameNotationPart) =>
-              part.moveNumber ? `${part.moveNumber} ${formatSan(part.san)}` : formatSan(part.san);
+            const formatPart = (part: GameNotationPart) => formatNumberedMove(part, formatSan);
             const fullText = notation.full.map(formatPart).join(" ");
             const [first, ...rest] = notation.preview;
             const restText = rest.map(formatPart).join(" ");

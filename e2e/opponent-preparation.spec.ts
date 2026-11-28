@@ -45,8 +45,8 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     await expect(prep.locator("[data-preparation-summary]")).toContainText("26 games");
     await expect(prep.locator("[data-preparation-lines]")).toContainText("Sicilian Najdorf");
     await expect(prep.locator("[data-preparation-lines]")).toContainText("6 of 26 games");
-    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Bb5+");
-    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Nc3");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("♗b5+");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("♘c3");
 
     await assertNoHorizontalOverflow();
     await waitForFontsSettled(page);
@@ -68,12 +68,12 @@ test("opponent-preparation: lists lines and gaps and opens a line at its positio
     expect(fit.gap).toBeGreaterThanOrEqual(0);
     expect(fit.overflow).toBeLessThanOrEqual(0.5);
     await page.getByRole("option", { name: "5", exact: true }).click();
-    await expect(prep.locator("[data-preparation-gaps]")).not.toContainText("Nc3");
-    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Bb5+");
+    await expect(prep.locator("[data-preparation-gaps]")).not.toContainText("♘c3");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("♗b5+");
     await expect(prep.locator("[data-preparation-lines]")).toContainText("6 of 26 games");
     await minGames.click();
     await page.getByRole("option", { name: "1", exact: true }).click();
-    await expect(prep.locator("[data-preparation-gaps]")).toContainText("Nc3");
+    await expect(prep.locator("[data-preparation-gaps]")).toContainText("♘c3");
 
     // Activating a line opens the repertoire chapter at the matched position (2...d6).
     await prep.locator("[data-preparation-line-row]").first().click();

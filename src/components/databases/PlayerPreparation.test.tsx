@@ -9,6 +9,7 @@ import { INITIAL_FEN } from "chessops/fen";
 import {
   activeTabAtom,
   fileWorkspaceAtom,
+  moveNotationTypeAtom,
   opponentPreparationAtom,
   pinnedExplorerComparisonFamily,
   pinnedExplorerDatabaseFamily,
@@ -202,6 +203,8 @@ describe("PlayerPreparation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store = createStore();
+    // Persisted in localStorage, so a test that switches to letters would leak into the next.
+    store.set(moveNotationTypeAtom, "symbols");
     store.set(fileWorkspaceAtom, workspace);
     store.set(opponentPreparationAtom, null);
     store.set(tabsAtom, []);
@@ -831,16 +834,100 @@ describe("PlayerPreparation", () => {
       '[data-preparation-source] input[value="online"]',
     )!;
     await act(async () => onlineRadio.click());
-    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("Nc3");
-    expect(container.querySelector("[data-preparation-gaps]")?.textContent).not.toContain("Nf3");
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("♘c3");
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).not.toContain("♘f3");
 
     const bothRadio = container.querySelector<HTMLInputElement>(
       '[data-preparation-source] input[value="both"]',
     )!;
     await act(async () => bothRadio.click());
-    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("Nc3");
-    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("Nf3");
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("♘c3");
+    expect(container.querySelector("[data-preparation-gaps]")?.textContent).toContain("♘f3");
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2);
+  });
+
+  test("numbers moves from a custom chapter root, numbers a Black gap move and follows letter notation", async () => {
+    store.set(moveNotationTypeAtom, "letters");
+    const afterE4E5 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -";
+    const afterE4E5Nf3 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -";
+    // A White chapter that starts after 1.e4 (Black to move, half-move 1).
+    const whiteFile: FileMetadata = { ...repFile, name: "White after e4" };
+    mocks.readRepertoireIndex.mockReturnValue(
+      makeSnapshot({
+        files: [
+          {
+            workspaceKey: fileWorkspaceKey(whiteFile.handle),
+            file: whiteFile,
+            partial: false,
+            chapters: [
+              {
+                chapter: 0,
+                headers: { orientation: "white", white: "Open games", black: "", event: "?" },
+                nodes: [
+                  {
+                    boardState: AFTER_E4,
+                    parent: -1,
+                    san: null,
+                    path: [],
+                    halfMoves: 1,
+                    hasContinuation: true,
+                  },
+                  {
+                    boardState: afterE4E5,
+                    parent: 0,
+                    san: "e5",
+                    path: [0],
+                    halfMoves: 2,
+                    hasContinuation: true,
+                  },
+                  {
+                    boardState: afterE4E5Nf3,
+                    parent: 1,
+                    san: "Nf3",
+                    path: [0, 0],
+                    halfMoves: 3,
+                    hasContinuation: false,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    mocks.fetchBatchStatistics.mockResolvedValue(
+      new Map([
+        [INITIAL_BOARD_STATE, [statRow("e4", 10)]],
+        [AFTER_E4, [statRow("e5", 6), statRow("Nc6", 4)]],
+        [afterE4E5, [statRow("Nf3", 6)]],
+        [afterE4E5Nf3, [statRow("*", 6)]],
+      ]),
+    );
+
+    await renderTab();
+    const blackRadio = container.querySelector<HTMLInputElement>(
+      '[data-preparation-toolbar] input[value="black"]',
+    )!;
+    await act(async () => blackRadio.click());
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-gap-row]")).not.toBeNull();
+    });
+
+    expect(
+      container.querySelector("[data-preparation-line-row] td:nth-child(2)")?.textContent?.trim(),
+    ).toBe("1...\u00a0e5 2.\u00a0Nf3");
+    const gapRow = container.querySelector("[data-preparation-gap-row]")!;
+    expect(gapRow.querySelector("td:nth-child(2)")?.textContent?.trim()).toBe("1...\u00a0Nc6");
+    // The chapter's own root is not the starting position, so its title stays.
+    expect(gapRow.querySelector("td:first-child > div:last-child")?.textContent?.trim()).toBe(
+      "Open games",
+    );
+
+    // Symbol notation reaches the moves leading to a row too, not only the bold gap move.
+    await act(async () => store.set(moveNotationTypeAtom, "symbols"));
+    expect(
+      container.querySelector("[data-preparation-line-row] td:nth-child(2)")?.textContent?.trim(),
+    ).toBe("1...\u00a0e5 2.\u00a0♘f3");
   });
 
   test("raising the minimum games filters lines and gaps without a new search and carries into the next run", async () => {
@@ -852,7 +939,15 @@ describe("PlayerPreparation", () => {
       Array.from(container.querySelectorAll("[data-preparation-gap-row] td:nth-child(2)")).map(
         (cell) => cell.textContent?.trim(),
       );
-    expect(gapMoves()).toEqual(["e4 c5 Nf3", "d4"]);
+    expect(gapMoves()).toEqual(["1.\u00a0e4 c5 2.\u00a0♘f3", "1.\u00a0d4"]);
+    const gapLabels = Array.from(
+      container.querySelectorAll("[data-preparation-gap-row] td:first-child > div:last-child"),
+    ).map((cell) => cell.textContent?.trim());
+    // A gap at the starting position belongs to no chapter, so it names the position instead.
+    expect(gapLabels).toEqual(["Sicilian — Mainline", "Databases.OpeningTree.Start"]);
+    expect(
+      container.querySelector("[data-preparation-line-row] td:nth-child(2)")?.textContent?.trim(),
+    ).toBe("1.\u00a0e4 c5");
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
 
     expect(minGamesInput().closest(".mantine-Select-root")).not.toBeNull();
@@ -865,7 +960,7 @@ describe("PlayerPreparation", () => {
     const preparationId = store.get(opponentPreparationAtom)?.id;
     await chooseSelectOption(minGamesInput(), "5");
 
-    expect(gapMoves()).toEqual(["e4 c5 Nf3"]);
+    expect(gapMoves()).toEqual(["1.\u00a0e4 c5 2.\u00a0♘f3"]);
     expect(container.querySelectorAll("[data-preparation-line-row]")).toHaveLength(1);
     expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
     const stored = store.get(opponentPreparationAtom)!;

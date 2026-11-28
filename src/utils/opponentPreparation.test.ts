@@ -944,3 +944,51 @@ describe("minimum games", () => {
         expect(parsePreparationMinGames("")).toBe(1);
     });
 });
+
+describe("move numbering anchor", () => {
+    test("lines and gaps from a custom root FEN carry the root's half-move count", () => {
+        const afterE4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
+        const ch = buildChapter({
+            fen: afterE4,
+            headers: { orientation: "black" },
+            moves: [{ san: "c5", children: [{ san: "Nf3", children: [{ san: "Nc6" }] }] }],
+        });
+        const stats = new Map<string, PositionStats[]>([
+            [getBoardState(afterE4), [statRow("c5", { white: 5 })]],
+            [
+                boardAfter(["c5"], afterE4),
+                [statRow("Nf3", { white: 3 }), statRow("d4", { white: 2 })],
+            ],
+            [boardAfter(["c5", "Nf3"], afterE4), [statRow("Nc6", { white: 3 })]],
+            [boardAfter(["c5", "Nf3", "Nc6"], afterE4), [statRow("*", { white: 3 })]],
+        ]);
+
+        const view = computePreparationView(
+            [makeFile("Sicilian", [ch.chapter])],
+            "white",
+            stats,
+            1,
+        );
+
+        expect(view.lines.map((l) => ({ moves: l.moves, start: l.startHalfMoves }))).toEqual([
+            { moves: ["c5", "Nf3", "Nc6"], start: 1 },
+        ]);
+        expect(
+            view.gaps.map((g) => ({ moves: g.moves, move: g.move, start: g.startHalfMoves })),
+        ).toEqual([{ moves: ["c5"], move: "d4", start: 1 }]);
+    });
+
+    test("a standard chapter starts at half-move 0", () => {
+        const ch = buildChapter({ headers: { orientation: "black" }, moves: [{ san: "e4" }] });
+        const stats = new Map<string, PositionStats[]>([
+            [INITIAL_BOARD_STATE, [statRow("e4", { white: 4 }), statRow("c4", { white: 2 })]],
+            [boardAfter(["e4"]), [statRow("*", { white: 4 })]],
+        ]);
+
+        const view = computePreparationView([makeFile("Dutch", [ch.chapter])], "white", stats, 1);
+
+        expect(
+            view.gaps.map((g) => ({ moves: g.moves, move: g.move, start: g.startHalfMoves })),
+        ).toEqual([{ moves: [], move: "c4", start: 0 }]);
+    });
+});

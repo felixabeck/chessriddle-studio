@@ -25,7 +25,7 @@ import {
   useResolvedScoresheetPhotos,
 } from "@/state/scoresheetPhotos";
 import { useOwnerTabId } from "@/state/tabScope";
-import { formatMoveNumber } from "@/utils/format";
+import { formatNumberedMove, numberMoves } from "@/utils/format";
 import {
   getScoresheetPhotoIds,
   planScoresheetContinuation,
@@ -45,17 +45,9 @@ export function formatScoresheetRemainingTokens(
   tokens: readonly string[],
   initialHalfMoves = 0,
 ): string {
-  const parts: string[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const halfMoves = initialHalfMoves + nextPly + i + 1;
-    const isWhite = halfMoves % 2 === 1;
-    if (isWhite || i === 0) {
-      parts.push(`${formatMoveNumber(halfMoves)} ${tokens[i]}`);
-    } else {
-      parts.push(tokens[i]);
-    }
-  }
-  return parts.join(" ");
+  return numberMoves(tokens, initialHalfMoves + nextPly)
+    .map((move) => formatNumberedMove(move))
+    .join(" ");
 }
 
 /**
