@@ -30361,3 +30361,25 @@ Closed (CI repair). Commit `122384924`. Re-recorded the remaining Library/file C
 
 Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverage (`Board.Practice.Build.YourCoverage`), PracticePanel learned `Progress.Section` (`Board.Practice.LearnedProgress`), DatabaseLoader (`label`), Databases processing games (`Home.Databases.ProcessingGames`), ProgressButton (`label`). Engine Progress already named via `engine.name`. Rejected: renaming ResultBar again (handled in f-20261127-20). Proof: unit tests assert `aria-label` on each bar. Same commit as f-20261127-21. Lenses r3 APPROVED.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"61bb89e6437438f03e195602066915260f7d73ecf408aff512e4b0d8aa9639d7","header_sha256":"3385bb49a5fbca054d342bc32eee35b915ae9480e84b1ad48a00fe7e47fc7140","header_status":"handled","input_sha256":"c8f5d6808c1e8db40d56603d86b3701afc5d701ebacb66a0b9f3fe13543e10ea","kind":"mutation-receipt","operation":"2b68fa09038e82e9549995771b3fa9dfd70854808f336d32e21d8b160bd5000f","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-26"],"target":"f-20261127-26","v":1} -->
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Hosted e2e after Save-to copy rename: compact-menu snapshot and Save a copy click fail
+
+* **ID:** f-20261128-01 · **Status:** open · **Area:** e2e-gate · **Root:** save-to-copy-menu · **Entry:** inline · **Blocked:** none
+* **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
+* **Impact class:** tooling
+* **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change the application menu, `Board.Database.Save`, or `e2e/new-game-to-file.spec.ts`.
+* **CI run:** 46084548911
+* **First red:** Test run 46076853831 on `e0edb6b50165f4131a84a6da261fb2312c4ebac9` (docs(findings): close f-20261127-26) is the first red of this e2e *job* streak; these two tests first fail on 46084548911, head `ff4ce6f39` (docs(product): record Save-to copy and in-place origin update).
+* **Failure scenario:** Test run 46084548911 job `e2e` 140790946531 (7 failed / 602 passed):
+  * `[async-errors] › e2e/async-errors.spec.ts:690` compact title-bar German popup: `toHaveScreenshot("compact-menu-root.png")` 987 pixels (ratio 0.01).
+  * `[new-game-to-file] › e2e/new-game-to-file.spec.ts:209` Save a copy targeting the tab's own file: `chooseBoardMoreAction` times out at 45 s; `getByRole('menu').getByRole('menuitem', { name: /^Save a copy…/ })` resolved then "element was detached from the DOM, retrying" (`e2e/fixtures.ts` `chooseBoardMoreAction` click).
+* **Where:** `e2e/async-errors.spec.ts:690` (`compact-menu-root.png`); `e2e/new-game-to-file.spec.ts:209` via `chooseBoardMoreAction` in `e2e/fixtures.ts`; `src/translation/en-US.json` `Board.Database.Save` = "Save a copy…".
+* **Defect:** Save-to renamed the Save-to action to "Save a copy…" (`1189d269f` / `4b5a9e532`) and added an in-place-update e2e. The committed compact application-menu snapshot still shows the pre-rename row, and the new board More-actions click races a menuitem that unmounts before Playwright clicks it.
+* **Fix:** re-record only `compact-menu-root-async-errors.png` in `pnpm test:e2e:container`; make `chooseBoardMoreAction` wait for a stable attached menuitem (or click it before the menu remounts). Do not re-record natively. Do not treat this as f-20261127-25 (download-count passed on this run) or f-20261127-23 (follow-scroll WebKit passed on this run).
+* **Proof:** `pnpm test:e2e:container --project=async-errors --project=new-game-to-file --grep "compact title-bar: mouse actions|Save a copy targeting"` fails on those two assertions before the fix and passes after it.
+* **Related:** f-20261124-19 (handled; same compact-menu-root snapshot after the Handbuch row); f-20261127-25 (download-count, open, passed on 46084548911); f-20261127-23 (follow-scroll WebKit, handled, passed on 46084548911).
+* **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
