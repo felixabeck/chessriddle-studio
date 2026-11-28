@@ -30373,7 +30373,7 @@ Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverag
 
 ### Hosted e2e after Save-to copy rename: compact-menu snapshot and Save a copy click fail
 
-* **ID:** f-20261128-01 · **Status:** open · **Area:** e2e-gate · **Root:** save-to-copy-menu · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-01 · **Status:** handled · **Area:** e2e-gate · **Root:** save-to-copy-menu · **Entry:** inline · **Blocked:** none
 * **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
 * **Impact class:** tooling
 * **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change the application menu, `Board.Database.Save`, or `e2e/new-game-to-file.spec.ts`.
@@ -30393,6 +30393,9 @@ Took over repair: published filing had no Repair owner line, and this drain's pu
 * **CI run:** 46085092838
 * **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"3e47ae6e009bf830c4ba7967d0d6f89f960f50243cde98d481aac736c4a65deb","input_sha256":"b33d2431ce8f50ce4897a4fed5c978bd03a3d171a2ca5c520683d3a2a2f97981","kind":"mutation-receipt","operation":"80c039a263edcefacde7b4481a0d8cebf6e8f0ada2ba6f2857b560c51a5763a1","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-01"],"target":"f-20261128-01","v":1} -->
+
+Closed. Commits `24d025367` (chooseBoardMoreAction re-opens More after a dirty remount; in-place Save-to answers read_game's `e2e-pgn-revision` until write) and `b9b832514` (container re-record of `compact-menu-root-async-errors.png`, 987 px / ratio 0.01 glyph edges, inspected *-diff.png). Rejected: re-recording natively; dropping the menu retry. Proof: container `--project=async-errors --project=new-game-to-file --grep "compact title-bar: mouse actions|Save a copy targeting"` passed after the fix (7/7 with the rest of the repair set). Lenses r1+closure: remaining flexShrink finding skipped (Saved is the shrinkable label; flexShrink 0 reintroduced 329>270).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"cf7243c2a483b4a728716a954bac6547385d85fed97af401051102a7707d79d7","header_sha256":"45d2f4773bdb07fb80c646b1710595f75e886361ce0bbc4707b93fb58fd9998e","header_status":"handled","input_sha256":"5ff057a6c35208329bc5b109dc5936af59d031733db37033620680dfa06484d7","kind":"mutation-receipt","operation":"c817509b16a8d7d8d6318f3ca3a07d4805104e9ad59dbee85ab9714f1ccc2f49","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-01"],"target":"f-20261128-01","v":1} -->
 
 ---
 
