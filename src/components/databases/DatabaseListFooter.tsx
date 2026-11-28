@@ -132,7 +132,7 @@ export function DatabaseListFooter({
               return (
                 <Menu.Item
                   key={String(option)}
-                  // src/styles/Menu.module.css keeps this active disabled item at full opacity and primary highlight.
+                  // src/styles/Menu.module.css keeps this active disabled item at full opacity with a gold ring.
                   className={
                     active
                       ? `${classes.pageSizeItem} mantine-datatable-page-size-selector-active`

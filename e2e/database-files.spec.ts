@@ -3619,18 +3619,29 @@ test("database-files: the sidebar resumes the active database view", async ({
     await expect(databasesLink).toHaveAttribute("aria-current", "page");
 });
 
-for (const scheme of ["dark", "light"] as const) {
-    test(`database-files: the current records-per-page size stays legible in ${scheme} mode`, async ({
+for (const appearance of [
+    { name: "dark", colorScheme: "dark", variant: null },
+    { name: "light", colorScheme: "light", variant: null },
+    { name: "dim", colorScheme: "dark", variant: "dim" },
+] as const) {
+    test(`database-files: the current records-per-page size stays legible in ${appearance.name} mode`, async ({
         page,
         mockScenario,
     }) => {
-        await page.addInitScript((value) => {
-            localStorage.setItem("mantine-color-scheme", value);
-        }, scheme);
+        await page.addInitScript(({ colorScheme, variant }) => {
+            localStorage.setItem("mantine-color-scheme", colorScheme);
+            if (variant) localStorage.setItem("theme-variant", JSON.stringify(variant));
+        }, appearance);
         await page.setViewportSize({ width: 1440, height: 900 });
         await mockScenario({ commands: databaseLayoutCommands });
         await page.goto(`/databases/${gameOpeningFixture.databaseId}`);
-        await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", scheme);
+        await expect(page.locator("html")).toHaveAttribute(
+            "data-mantine-color-scheme",
+            appearance.colorScheme,
+        );
+        if (appearance.variant === "dim") {
+            await expect(page.locator("html")).toHaveAttribute("data-cf-theme-variant", "dim");
+        }
         await page.getByRole("tab", { name: "Events", exact: true }).click();
         const events = page.getByRole("tabpanel", { name: "Events", exact: true });
         await events.getByRole("button", { name: "25", exact: true }).click();
@@ -3644,7 +3655,7 @@ for (const scheme of ["dark", "light"] as const) {
             "current page size contrast",
         ).toBeGreaterThanOrEqual(4.5);
         await expect(page.locator(".mantine-Menu-dropdown")).toHaveScreenshot(
-            `records-per-page-menu-${scheme}.png`,
+            `records-per-page-menu-${appearance.name}.png`,
         );
     });
 }

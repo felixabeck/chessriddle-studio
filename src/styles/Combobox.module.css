@@ -31,7 +31,9 @@
 
 .option[data-combobox-active],
 .option[aria-selected="true"] {
-  color: var(--cf-primary);
+  /* Gold text on the 10% gold pill in Dim is below 4.5:1. The tinted fill and ring keep the
+     selected cue; the label uses foreground so it stays at 4.5:1 in light, dark and Dim. */
+  color: var(--cf-foreground);
   background: color-mix(in srgb, var(--cf-primary) 10%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cf-primary) 20%, transparent);
 }

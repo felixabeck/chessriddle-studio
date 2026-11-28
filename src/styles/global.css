@@ -104,7 +104,7 @@ cg-board square.oc.move-dest:hover {
   --cf-focus-ring-width: 3px;
   --cf-focus-ring-offset: 3px;
   /* Gold hover tint for menu items, options and the application-menu button. A selected
-     item stays distinct through its ring and gold text, not through a stronger fill. */
+     item stays distinct through its ring; the label stays foreground so it reads at 4.5:1. */
   --cf-primary-hover: color-mix(in srgb, var(--cf-primary) 12%, transparent);
   /* Table rows span the whole width, so their hover takes a lighter gold. mantine-datatable
      reads one variable per scheme; --cf-primary already follows the active scheme. A

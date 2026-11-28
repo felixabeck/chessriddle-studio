@@ -23,6 +23,37 @@ function resolvedScheme(theme: ReturnType<typeof mergeMantineTheme>, scheme: Che
     return appCssVariablesResolver(theme)[scheme];
 }
 
+const fileSystemModule = "node:fs";
+const readCss = await (
+    import(fileSystemModule) as Promise<{
+        readFileSync(path: string, encoding: "utf8"): string;
+    }>
+).then((fs) => (path: string) => fs.readFileSync(path, "utf8"));
+
+function cssRuleBody(css: string, selector: string): string {
+    const start = css.indexOf(selector);
+    if (start < 0) {
+        throw new Error(`missing selector ${selector}`);
+    }
+    const brace = css.indexOf("{", start);
+    if (brace < 0) {
+        throw new Error(`missing block for ${selector}`);
+    }
+    let depth = 0;
+    for (let index = brace; index < css.length; index++) {
+        const character = css[index];
+        if (character === "{") {
+            depth += 1;
+        } else if (character === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                return css.slice(brace + 1, index);
+            }
+        }
+    }
+    throw new Error(`unclosed block for ${selector}`);
+}
+
 describe("scaled theme breakpoints", () => {
     test("preserves Mantine's default breakpoints at 100%", () => {
         expect(createAppTheme({ spellCheck: false, fontSize: 100 }).breakpoints).toEqual(
@@ -301,15 +332,38 @@ describe("notation mark colours", () => {
     );
 
     test.each(["light", "dark", "dim"] as const)(
-        "the active tab label reaches 4.5:1 on the tinted inset pill in %s",
+        "selected 10% gold-pill labels reach 4.5:1 on card, popover, interactive and inset in %s",
         (scheme) => {
             const tokens = chessRiddleTokens[scheme];
-            // Tabs.module.css: foreground on --cf-primary at 10% over --cf-surface-inset.
+            // Accordion / Combobox / Menu sit on card or popover; TrainingSettings chips on
+            // interactive; Tabs on inset. All keep --cf-foreground on --cf-primary at 10%.
             const text = hsl(tokens.foreground);
-            const background = mix(hsl(tokens.primary), hsl(tokens["surface-inset"]), 0.1);
-            expect(contrast(text, background)).toBeGreaterThanOrEqual(4.5);
+            const primary = hsl(tokens.primary);
+            const surfaces = {
+                card: tokens.card,
+                popover: tokens.popover,
+                interactive: tokens.interactive,
+                inset: tokens["surface-inset"],
+            };
+            const below: string[] = [];
+            for (const [name, surface] of Object.entries(surfaces)) {
+                const ratio = contrast(text, mix(primary, hsl(surface), 0.1));
+                if (ratio < 4.5) below.push(`${name}: ${ratio.toFixed(2)}`);
+            }
+            expect(below).toEqual([]);
         },
     );
+
+    test.each([
+        ["src/styles/Accordion.module.css", ".control[data-active]"],
+        ["src/styles/Combobox.module.css", ".option[data-combobox-active]"],
+        ["src/styles/Menu.module.css", '.item[aria-selected="true"]'],
+        ["src/components/chessriddle/TrainingSettings.module.css", "&[data-checked]"],
+    ] as const)("selected pill in %s sets color to --cf-foreground", (file, selector) => {
+        const body = cssRuleBody(readCss(file), selector);
+        expect(body).toMatch(/^\s*color:\s*var\(--cf-foreground\);/m);
+        expect(body).not.toMatch(/^\s*color:\s*var\(--cf-primary\);/m);
+    });
 
     test.each(["light", "dark", "dim"] as const)(
         "board clock digits reach 4.5:1 on their papers in %s",
