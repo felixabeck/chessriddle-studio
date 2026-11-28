@@ -30330,7 +30330,7 @@ Closed (CI repair). Commit `122384924`. Re-recorded the remaining Library/file C
 
 ### Hosted e2e download-count dialog snapshot is 53px shorter than the committed PNG
 
-* **ID:** f-20261127-25 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-25 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 9ad74528-5b1f-469f-8d37-d61946986fb6
 * **Impact class:** tooling
 * **Spotted outside diff:** hosted Test e2e after the f-20261126-16 snapshot repair. Job-level owner check classified the e2e streak as inherited (first red run 46045214092 on `f15964a6b`). Not f-20261127-18 (clock-times board snapshots, now handled) and not f-20261127-23 (follow-scroll WebKit timeout, now handled).
@@ -30354,6 +30354,9 @@ Download-count snapshots failed again on newest completed red Test 46093395135 (
 * **CI run:** 46098656027
 * **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T02:57:28Z
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"4cb22ac558c887af157587caffd96504600f7f71173f19e835af31286696063d","input_sha256":"107dc871e357d50478d983daf890c4c530f899feb0e892c6593a9fde722f2aa0","kind":"mutation-receipt","operation":"3fea883be8716ebfd2ba9a53353affb7c06edd0aad8ce3e8265b20afb989a1d4","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
+
+Closed. Commit `29d9fef35`. Replaced `delay: 8000` with `hold: true` plus `__E2E_TAURI__.release("import_opponent_games")` after both download-count screenshots, so ImportProgress stays mounted until the snapshot is taken. Rejected: native re-record (d-20260829-01); bumping delay to 60s (forces `test.setTimeout` and wastes wall time). Proof: `pnpm test:e2e:container --project=online-opponent --project=online-opponent-narrow --grep "imports an online-only opponent"` 2 passed (~21s); revert-proof with `delay: 8000` makes `release()` return false. Lenses r1 APPROVED (correctness, root-cause, tests, code-quality, minimalism). Skipped: Map overwrite on a second concurrent hold (this spec invokes once); extra Progress visibility assertion (documents the hold is still in effect).
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"5736c43fee6851fe96ba53466340d42fe4bb561db275b231f9bf7c790e326a25","header_sha256":"b2806bf3393547066825927b6c868fd0375343d588791ca869f907c122649b43","header_status":"handled","input_sha256":"9888636576b01c29e769fd5acf5eef66e9d0886f713cfd32699a943873f64846","kind":"mutation-receipt","operation":"960c5e3919ad3096fa4fe6273544b05c047a5de7d5245fd07779ca44f7d9b126","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
 
 ---
 
