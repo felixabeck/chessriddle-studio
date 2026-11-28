@@ -22,7 +22,7 @@ On each account card on [[page:accounts]]:
 To study an opponent's online openings from a database:
 1. Open a database in [[page:library]] and switch to the {{label:Databases.Card.Players}} tab.
 2. Select a player to open their player card.
-3. Click {{label:Databases.Opponent.Add}} to link one or more Lichess or Chess.com usernames to that player.
+3. Click {{label:Databases.Opponent.AddShort}} beside the player's name to link one or more Lichess or Chess.com usernames to that player.
 4. Click {{label:Databases.Opponent.Manage}} to filter by {{label:Databases.OpeningTree.Since}} and {{label:Databases.Opponent.TimeControls}}, or to {{label:Databases.Opponent.RemoveGames}} or {{label:Databases.Opponent.Unlink}}.
 5. Click {{label:Databases.Opponent.Download}} (or {{label:Databases.Opponent.Update}}) to fetch their online games.
-6. Click {{label:Databases.OpeningTree.Prepare}} from the player card's tabs ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}}, or {{label:Home.Personal.Openings}}) to open an analysis board with the opponent's games pinned in the explorer; open {{label:Home.Personal.Openings}} first to browse their over-the-board and online opening tree, filter by color and {{label:Databases.OpeningTree.Since}}, and choose a specific line.
+6. Click {{label:Databases.OpeningTree.Prepare}} from the player card's tabs ({{label:Home.Personal.Preparation}} or {{label:Home.Personal.Openings}}) to open an analysis board with the opponent's games pinned in the explorer; open {{label:Home.Personal.Openings}} first to browse their over-the-board and online opening tree, filter by color and {{label:Databases.OpeningTree.Since}}, and choose a specific line.

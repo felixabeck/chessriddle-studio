@@ -2,7 +2,7 @@
 id: databases
 title: Database, esploratore, ricerca di posizione, giocatori e tornei
 summary: Aggiungi o scarica database di partite, scegli un database di riferimento, cerca posizioni nell’esploratore e sfoglia partite, giocatori e tornei.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 I database si trovano in [[page:library]] ({{label:SideBar.Library}}) insieme ai tuoi file PGN e sono archiviati in [[setting:databases-directory]].
@@ -20,7 +20,7 @@ Seleziona un database in [[page:library]] per gestirlo:
 
 All’interno della vista tabellare del database, passa tra {{label:Common.Games}}, {{label:Databases.Card.Players}} e {{label:Databases.Settings.Events}} (tornei):
 - Cerca e ordina le partite, visualizza un’anteprima (l’anteprima può nascondere le mosse con il pulsante a forma di occhio, [[setting:hide-preview-moves]]) o apri una partita sulla scacchiera di analisi.
-- In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}. Usa {{label:Databases.OpeningTree.Prepare}} in {{label:Home.Personal.Overview}} e {{label:Home.Personal.Ratings}} per aprire la posizione iniziale con il Bianco e tutte le partite, oppure in {{label:Home.Personal.Openings}} per mantenere la variante, il colore e il periodo {{label:Databases.OpeningTree.Since}} selezionati.
+- In {{label:Databases.Card.Players}}, seleziona un giocatore per consultare {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} e {{label:Home.Personal.Openings}} (un albero delle aperture interattivo), oltre alle informazioni FIDE tramite {{label:Databases.FIDE.Info}}. Usa {{label:Databases.OpeningTree.Prepare}} in {{label:Home.Personal.Openings}} per mantenere la variante, il colore e il periodo {{label:Databases.OpeningTree.Since}} selezionati.
 - In {{label:Databases.Settings.Events}}, cerca i tornei per nome e ordina per data, giocatori, partite o Elo medio.
 
 Nella scheda di un giocatore, apri {{label:Home.Personal.Preparation}} per confrontare le sue partite con i tuoi file di repertorio:

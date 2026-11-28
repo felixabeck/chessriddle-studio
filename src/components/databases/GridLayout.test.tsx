@@ -11,11 +11,6 @@ import {
 } from "@/state/databaseLayout";
 import GridLayout from "./GridLayout";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (_key: string, options: { defaultValue: string }) => options.defaultValue,
-  }),
-}));
 installMatchMediaStub();
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -82,7 +77,7 @@ test.each(["compact reflow", "unmount"])(
   },
 );
 
-test("shared mounted tiles observe keyboard commits, clamp without storage writes and retain preview ownership on compact reflow", async () => {
+test("shared mounted tiles observe commits, clamp without storage writes and retain preview ownership on compact reflow", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -139,15 +134,26 @@ test("shared mounted tiles observe keyboard commits, clamp without storage write
       "25",
     );
     expect(writes).not.toHaveBeenCalled();
-    const action = host.querySelector('[aria-label="Enlarge preview"]') as HTMLButtonElement;
-    await act(async () => action.click());
+    // A completed drag on the first layout's divider commits the clamped split for all three.
+    const divider = host.querySelector(".mosaic-split")!;
+    const measurement = vi
+      .spyOn(divider.parentElement!, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 1000, 600));
+    await act(async () => {
+      divider.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 100 }));
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: 100 }));
+    });
+    measurement.mockRestore();
     expect(store.get(databaseSplitAtoms.preferred)).toBe(20);
     expect(writes).toHaveBeenCalledOnce();
     expect(
-      [...host.querySelectorAll('[aria-label="Enlarge preview"]')].every(
-        (element) => (element as HTMLButtonElement).disabled,
+      [...host.querySelectorAll("[data-database-layout]")].map((element) =>
+        element.getAttribute("data-percentage"),
       ),
-    ).toBe(true);
+    ).toEqual(["20", "20", "20"]);
+    // The divider is the only way to resize: no layout renders a resize button.
+    expect(host.querySelectorAll("[data-database-layout] button")).toHaveLength(0);
     expect(mounted).toHaveBeenCalledTimes(3);
     expect(unmounted).not.toHaveBeenCalled();
   } finally {

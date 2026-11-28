@@ -2,7 +2,7 @@
 id: databases
 title: Veritabanları, gezgin, konum arama, oyuncular ve turnuvalar
 summary: Oyun veritabanları ekleme veya indirme, referans veritabanı seçme, gezginde konum arama ve oyunları, oyuncuları ve turnuvaları inceleme.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Veritabanları PGN dosyalarınızla birlikte [[page:library]] ({{label:SideBar.Library}}) içinde yer alır ve [[setting:databases-directory]] konumunda saklanır.
@@ -20,7 +20,7 @@ Yönetmek için [[page:library]] içinde bir veritabanı seçin:
 
 Veritabanı tablo görünümünde {{label:Common.Games}}, {{label:Databases.Card.Players}} ve {{label:Databases.Settings.Events}} (turnuvalar) arasında geçiş yapın:
 - Oyunları arayın ve sıralayın, bir oyunu önizleyin (önizleme, göz düğmesiyle hamleleri gizleyebilir, [[setting:hide-preview-moves]]) veya analiz tahtasında açın.
-- {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} (etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin. {{label:Home.Personal.Overview}} ve {{label:Home.Personal.Ratings}} sekmelerindeki {{label:Databases.OpeningTree.Prepare}} düğmesi tüm oyunlarla Beyaz olarak başlangıç konumunu açar; {{label:Home.Personal.Openings}} sekmesinde ise seçilen hattı, rengi ve {{label:Databases.OpeningTree.Since}} dönemini aktarır.
+- {{label:Databases.Card.Players}} bölümünde bir oyuncu seçerek {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} ve {{label:Home.Personal.Openings}} (etkileşimli açılış ağacı) sekmelerini ve ayrıca {{label:Databases.FIDE.Info}} üzerinden FIDE bilgilerini görüntüleyin. {{label:Home.Personal.Openings}} sekmesindeki {{label:Databases.OpeningTree.Prepare}} düğmesi seçilen hattı, rengi ve {{label:Databases.OpeningTree.Since}} dönemini aktarır.
 - {{label:Databases.Settings.Events}} bölümünde turnuvaları ada göre arayın ve tarihe, oyuncu sayısına, oyun sayısına veya ortalama ELO'ya göre sıralayın.
 
 Bir oyuncunun kartında oyunlarını repertuvar dosyalarınızla karşılaştırmak için {{label:Home.Personal.Preparation}} sekmesini açın:

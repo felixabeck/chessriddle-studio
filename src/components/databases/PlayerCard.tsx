@@ -1,11 +1,11 @@
 import { Center, Loader, Paper, Stack, Text } from "@mantine/core";
 import { useTranslation } from "react-i18next";
-import type { DatabaseHandle, Player } from "@/bindings";
+import type { DatabaseHandle, Player, PlayerGameInfo } from "@/bindings";
 import { inlineFailureMessage } from "@/components/files/notifyError";
 import { failureUnlessCancelled } from "@/platform/errors";
 import { databaseHandleKey } from "@/utils/db";
 import PersonalPlayerCard, { type OnlineStatistics } from "../home/PersonalCard";
-import OpponentAccounts from "./OpponentAccounts";
+import OpponentAccounts, { OpponentAccountAdd, useOpponentAccounts } from "./OpponentAccounts";
 import { type OnlineGames, useOnlineGames } from "./useOnlineGames";
 import { type PlayerGameInfoState, usePlayerGameInfo } from "./usePlayerGameInfo";
 
@@ -25,6 +25,32 @@ function onlineStatistics(online: OnlineGames, state: PlayerGameInfoState): Onli
   }
   if (state.unavailable || failureUnlessCancelled(state.error)) return { kind: "unavailable" };
   return { kind: "pending" };
+}
+
+/** The shared personal card for one database player, with that player's online accounts. */
+function DatabasePlayerCard({
+  player,
+  file,
+  info,
+  online,
+}: {
+  player: Player;
+  file: DatabaseHandle;
+  info: PlayerGameInfo;
+  online: OnlineStatistics | undefined;
+}) {
+  const accounts = useOpponentAccounts(player.name!);
+  return (
+    <PersonalPlayerCard
+      name={player.name!}
+      info={info}
+      isDatabase
+      headerAction={<OpponentAccountAdd accounts={accounts} />}
+      notice={<OpponentAccounts accounts={accounts} />}
+      databasePlayer={{ player, file }}
+      online={online}
+    />
+  );
 }
 
 function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) {
@@ -62,14 +88,13 @@ function PlayerCard({ player, file }: { player: Player; file: DatabaseHandle }) 
         </Paper>
       )}
       {info && (
-        <PersonalPlayerCard
-          // A new player starts on the over-the-board games again.
+        <DatabasePlayerCard
+          // A new player or database starts on the over-the-board games again, with the
+          // online-account strip closed and no dialog open.
           key={`${databaseHandleKey(file)}:${player.id}`}
-          name={player.name!}
+          player={player}
+          file={file}
           info={info}
-          isDatabase
-          notice={<OpponentAccounts playerName={player.name!} />}
-          databasePlayer={{ player, file }}
           online={online && onlineStatistics(online, onlineState)}
         />
       )}

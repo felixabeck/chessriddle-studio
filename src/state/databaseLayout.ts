@@ -6,7 +6,6 @@ import { createZodStorage } from "./utils";
 import { needsTwoPaneStack, PANE_FLOOR_REM, MOSAIC_DIVIDER_ALLOWANCE_PX } from "./paneLayout";
 
 export const DATABASE_SPLIT_KEY = "database-table-percentage";
-export const DATABASE_SPLIT_STEP_PERCENT = 5;
 const DATABASE_SPLIT_MIN_PERCENT = 20;
 const PREVIEW_NOTATION_WIDTH_REM = 12;
 const PREVIEW_NOTATION_HEIGHT_REM = 8;

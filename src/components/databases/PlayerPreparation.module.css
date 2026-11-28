@@ -11,7 +11,12 @@
   composes: since from "./PlayerCardTab.module.css";
 }
 
-.prepare {
+/* Refresh and Prepare on board sit together at the toolbar's right edge, Prepare last; they wrap
+   as one group, so Prepare never lands alone on the next row. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
   margin-left: auto;
 }
 

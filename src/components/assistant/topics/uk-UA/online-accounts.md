@@ -2,7 +2,7 @@
 id: online-accounts
 title: Онлайн-облікові записи та підготовка до суперника
 summary: Додавання облікових записів Lichess і Chess.com, завантаження ваших партій і прив’язка онлайн-акаунтів до гравців бази для вивчення дебютів суперника.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Керуйте своїми обліковими записами Lichess і Chess.com на сторінці [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ source: 5288fb0320fbe939
 Щоб вивчити онлайн-дебюти суперника з бази даних:
 1. Відкрийте базу даних у [[page:library]] та перейдіть на вкладку {{label:Databases.Card.Players}}.
 2. Виберіть гравця, щоб відкрити його картку.
-3. Натисніть {{label:Databases.Opponent.Add}}, щоб прив’язати одне або кілька імен користувачів Lichess чи Chess.com до цього гравця.
+3. Натисніть {{label:Databases.Opponent.AddShort}} поруч з іменем гравця, щоб прив’язати одне або кілька імен користувачів Lichess чи Chess.com до цього гравця.
 4. Натисніть {{label:Databases.Opponent.Manage}}, щоб відфільтрувати за {{label:Databases.OpeningTree.Since}} і {{label:Databases.Opponent.TimeControls}}, або виконати {{label:Databases.Opponent.RemoveGames}} чи {{label:Databases.Opponent.Unlink}}.
 5. Натисніть {{label:Databases.Opponent.Download}} (або {{label:Databases.Opponent.Update}}), щоб завантажити його онлайн-партії.
-6. Натисніть {{label:Databases.OpeningTree.Prepare}} на вкладках картки гравця ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), щоб відкрити дошку аналізу із закріпленими партіями суперника в оглядачі; відкрийте спершу {{label:Home.Personal.Openings}}, щоб переглянути його дерево очних та онлайн-дебютів, відфільтрувати за кольором і періодом {{label:Databases.OpeningTree.Since}} та вибрати певний варіант.
+6. Натисніть {{label:Databases.OpeningTree.Prepare}} на вкладках картки гравця ({{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), щоб відкрити дошку аналізу із закріпленими партіями суперника в оглядачі; відкрийте спершу {{label:Home.Personal.Openings}}, щоб переглянути його дерево очних та онлайн-дебютів, відфільтрувати за кольором і періодом {{label:Databases.OpeningTree.Since}} та вибрати певний варіант.

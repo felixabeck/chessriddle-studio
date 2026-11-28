@@ -2,7 +2,7 @@
 id: online-accounts
 title: 線上帳戶與對手備戰
 summary: 新增 Lichess 與 Chess.com 帳戶、下載您的對局，並將線上帳戶連結至資料庫棋手以研究對手開局。
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 在 [[page:accounts]] ({{label:SideBar.Accounts}}) 上管理您的 Lichess 與 Chess.com 帳戶。
@@ -23,7 +23,7 @@ source: 5288fb0320fbe939
 若要從資料庫研究對手的線上開局：
 1. 在 [[page:library]] 中開啟資料庫，並切換至 {{label:Databases.Card.Players}} 分頁。
 2. 選取一位棋手開啟其棋手卡片。
-3. 點擊 {{label:Databases.Opponent.Add}}，將一個或多個 Lichess 或 Chess.com 使用者名稱連結至該棋手。
+3. 點擊棋手姓名旁的 {{label:Databases.Opponent.AddShort}}，將一個或多個 Lichess 或 Chess.com 使用者名稱連結至該棋手。
 4. 點擊 {{label:Databases.Opponent.Manage}} 依 {{label:Databases.OpeningTree.Since}} 與 {{label:Databases.Opponent.TimeControls}} 篩選，或執行 {{label:Databases.Opponent.RemoveGames}} 與 {{label:Databases.Opponent.Unlink}}。
 5. 點擊 {{label:Databases.Opponent.Download}}（或 {{label:Databases.Opponent.Update}}）擷取對手的線上對局。
-6. 在棋手卡片的分頁（{{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}}、{{label:Home.Personal.Preparation}} 或 {{label:Home.Personal.Openings}}）中點擊 {{label:Databases.OpeningTree.Prepare}}，即可開啟分析棋盤並將對手的對局釘選於探索器中；若要瀏覽其線下與線上開局樹、依棋色與 {{label:Databases.OpeningTree.Since}} 篩選並先選取特定變化，請先開啟 {{label:Home.Personal.Openings}}。
+6. 在棋手卡片的分頁（{{label:Home.Personal.Preparation}} 或 {{label:Home.Personal.Openings}}）中點擊 {{label:Databases.OpeningTree.Prepare}}，即可開啟分析棋盤並將對手的對局釘選於探索器中；若要瀏覽其線下與線上開局樹、依棋色與 {{label:Databases.OpeningTree.Since}} 篩選並先選取特定變化，請先開啟 {{label:Home.Personal.Openings}}。

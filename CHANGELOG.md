@@ -7,6 +7,7 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 ### Improved
 
 - Opponent preparation: the Moves and Uncovered move columns show move numbers ("1. e4 c6 2. d4 d5", "3... g6"), counted from where each chapter starts, with piece letters or symbols as set for the notation. A gap at the starting position is labelled "Start position" instead of a chapter that happens to contain it.
+- Player cards: "Prepare on board" now sits only on Openings and Preparation, always as the last button on the right; Preparation's Refresh is an icon beside it. The "Online accounts" row is gone: a small "+ Online account" button sits beside the player's name, and linked accounts show as chips under it. The database view's Enlarge table and Enlarge preview arrows are gone; drag the divider to resize.
 
 ## 1.5.0
 

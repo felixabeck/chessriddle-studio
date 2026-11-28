@@ -7,21 +7,9 @@ import { installMatchMediaStub } from "@/tests/matchMedia";
 import { installResizeObserverStub } from "@/tests/resizeObserver";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import type { PlayerGameInfo } from "@/bindings";
-import type { OnlineGames } from "../databases/useOnlineGames";
 import PersonalPlayerCard, { type OnlineStatistics } from "./PersonalCard";
 
-const prepareMocks = vi.hoisted(() => ({
-  prepare: vi.fn(),
-  useOnlineGames: vi.fn(),
-}));
-
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../databases/prepareOpponentOnBoard", () => ({
-  usePrepareOpponentOnBoard: () => ({ preparing: false, prepare: prepareMocks.prepare }),
-}));
-vi.mock("../databases/useOnlineGames", () => ({
-  useOnlineGames: prepareMocks.useOnlineGames,
-}));
 vi.mock("../common/FideInfo", () => ({ default: () => null }));
 vi.mock("./PersonalCardPanels/OpeningsPanel", () => ({
   default: () => <div data-accounts-openings />,
@@ -176,9 +164,6 @@ async function withCard(
   const root = createRoot(container);
   panels.overview.mockClear();
   panels.ratings.mockClear();
-  prepareMocks.prepare.mockClear();
-  prepareMocks.useOnlineGames.mockReset();
-  prepareMocks.useOnlineGames.mockReturnValue(undefined);
   try {
     await run(container, root);
   } finally {
@@ -205,6 +190,37 @@ test("a player without downloaded online games has no source switch", async () =
       info: boardInfo,
       databasePlayer,
     });
+  });
+});
+
+test("a header action shares the name line with the info button; without one the line is unchanged", async () => {
+  await withCard(async (container, root) => {
+    activeDatabaseViewStore.getState().setPlayersActiveTab("overview");
+    await act(async () =>
+      root.render(
+        <MantineProvider>
+          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
+            <PersonalPlayerCard
+              name="Bergmann, Thomas"
+              info={boardInfo}
+              isDatabase
+              databasePlayer={databasePlayer}
+              headerAction={<button data-header-action>add</button>}
+            />
+          </DatabaseViewStateContext.Provider>
+        </MantineProvider>,
+      ),
+    );
+    const line = container.querySelector("[data-card-name-line]")!;
+    expect(line.textContent).toContain("Bergmann, Thomas");
+    const actions = [...line.querySelectorAll("button")];
+    // The action comes first, the info button last.
+    expect(actions[0].hasAttribute("data-header-action")).toBe(true);
+    expect(actions.at(-1)?.getAttribute("aria-label")).toBe("Databases.FIDE.Info");
+
+    await renderCard(root, "overview");
+    expect(container.querySelector("[data-card-name-line]")).toBeNull();
+    expect(container.querySelector('[aria-label="Databases.FIDE.Info"]')).not.toBeNull();
   });
 });
 
@@ -396,12 +412,7 @@ test("database player card renders Preparation tab while account card falls back
   });
 });
 
-test("database cards offer Prepare on board on Overview and Ratings (not Openings or Accounts) and pin the card's OTB player", async () => {
-  const onlineGames: OnlineGames = {
-    file: onlineFile,
-    accounts: [{ provider: "lichess", username: "Thomzilla" }],
-    lookup: { kind: "found", player: 9 },
-  };
+test("database cards offer no Prepare on board on Overview or Ratings", async () => {
   const onlineStats: OnlineStatistics = {
     kind: "ready",
     info: onlineInfo,
@@ -409,91 +420,13 @@ test("database cards offer Prepare on board on Overview and Ratings (not Opening
   };
 
   await withCard(async (container, root) => {
-    prepareMocks.useOnlineGames.mockReturnValue(onlineGames);
-
-    // Overview shows Prepare; switching to Online view still pins the card's OTB databasePlayer.
-    await renderCard(root, "overview", onlineStats);
-    const overviewBtn = container.querySelector<HTMLButtonElement>(
-      '[role="tabpanel"] [data-prepare-on-board]',
-    );
-    expect(overviewBtn?.textContent).toBe("Databases.OpeningTree.Prepare");
-    expect(prepareMocks.useOnlineGames).toHaveBeenCalledWith(
-      databasePlayer.player,
-      databasePlayer.file,
-    );
-    await choose(container, "online");
-    await act(async () => overviewBtn!.click());
-    expect(prepareMocks.prepare).toHaveBeenLastCalledWith({
-      pin: {
-        file: databasePlayer.file,
-        player: databasePlayer.player.id,
-        color: "white",
-      },
-      online: onlineGames,
-      includeReference: true,
-      tabName: "Bergmann, Thomas",
-    });
-
-    // Ratings also shows Prepare and pins the card's OTB databasePlayer even on Online view.
-    await renderCard(root, "ratings", onlineStats);
-    const ratingsBtn = container.querySelector<HTMLButtonElement>(
-      '[role="tabpanel"] [data-prepare-on-board]',
-    );
-    expect(ratingsBtn?.textContent).toBe("Databases.OpeningTree.Prepare");
-    await act(async () => ratingsBtn!.click());
-    expect(prepareMocks.prepare).toHaveBeenCalledTimes(2);
-    expect(prepareMocks.prepare).toHaveBeenLastCalledWith({
-      pin: {
-        file: databasePlayer.file,
-        player: databasePlayer.player.id,
-        color: "white",
-      },
-      online: onlineGames,
-      includeReference: true,
-      tabName: "Bergmann, Thomas",
-    });
-
-    // Openings tab does not render the panel-top Prepare button (OpeningTree owns its own toolbar).
-    activeDatabaseViewStore.getState().setPlayersActiveTab("openings");
-    await act(async () =>
-      root.render(
-        <MantineProvider>
-          <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
-            <PersonalPlayerCard
-              name="Bergmann, Thomas"
-              info={boardInfo}
-              isDatabase
-              databasePlayer={databasePlayer}
-              online={onlineStats}
-            />
-          </DatabaseViewStateContext.Provider>
-        </MantineProvider>,
-      ),
-    );
-    expect(
-      container.querySelector<HTMLButtonElement>('[role="tabpanel"] [data-prepare-on-board]'),
-    ).toBeNull();
-
-    // Accounts card never shows the database Prepare button on Overview or Ratings.
+    // Prepare on board lives on Openings and Preparation only (Felix 2026-11-28): neither
+    // statistics tab offers it, with the over-the-board or the online source shown.
     for (const tab of ["overview", "ratings"] as const) {
-      activeDatabaseViewStore.getState().setPlayersActiveTab(tab);
-      await act(async () =>
-        root.render(
-          <MantineProvider>
-            <DatabaseViewStateContext.Provider value={activeDatabaseViewStore}>
-              <PersonalPlayerCard
-                name="Account Player"
-                playerKey="lichess:account"
-                setPlayerKey={vi.fn()}
-                info={boardInfo}
-              />
-            </DatabaseViewStateContext.Provider>
-          </MantineProvider>,
-        ),
-      );
-      expect(
-        container.querySelector<HTMLButtonElement>('[role="tabpanel"] [data-prepare-on-board]'),
-      ).toBeNull();
+      await renderCard(root, tab, onlineStats);
+      expect(container.querySelector('[role="tabpanel"] [data-prepare-on-board]')).toBeNull();
+      await choose(container, "online");
+      expect(container.querySelector('[role="tabpanel"] [data-prepare-on-board]')).toBeNull();
     }
   });
 });

@@ -2,7 +2,7 @@
 id: online-accounts
 title: Account online e preparazione sugli avversari
 summary: Aggiungi account Lichess e Chess.com, scarica le tue partite e collega account online ai giocatori del database per studiare le aperture di un avversario.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Gestisci i tuoi account Lichess e Chess.com su [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ Su ciascuna scheda account in [[page:accounts]]:
 Per studiare le aperture online di un avversario da un database:
 1. Apri un database in [[page:library]] e passa alla scheda {{label:Databases.Card.Players}}.
 2. Seleziona un giocatore per aprire la sua scheda.
-3. Fai clic su {{label:Databases.Opponent.Add}} per collegare uno o più nomi utente Lichess o Chess.com a quel giocatore.
+3. Fai clic su {{label:Databases.Opponent.AddShort}} accanto al nome del giocatore per collegare uno o più nomi utente Lichess o Chess.com a quel giocatore.
 4. Fai clic su {{label:Databases.Opponent.Manage}} per filtrare per {{label:Databases.OpeningTree.Since}} e {{label:Databases.Opponent.TimeControls}}, oppure per usare {{label:Databases.Opponent.RemoveGames}} o {{label:Databases.Opponent.Unlink}}.
 5. Fai clic su {{label:Databases.Opponent.Download}} (o {{label:Databases.Opponent.Update}}) per scaricare le sue partite online.
-6. Fai clic su {{label:Databases.OpeningTree.Prepare}} dalle schede della scheda del giocatore ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} o {{label:Home.Personal.Openings}}) per aprire una scacchiera di analisi con le partite dell’avversario fissate nell’esploratore; apri prima {{label:Home.Personal.Openings}} per esplorare il suo albero delle aperture da torneo e online, filtrare per colore e {{label:Databases.OpeningTree.Since}} e scegliere una variante specifica.
+6. Fai clic su {{label:Databases.OpeningTree.Prepare}} dalle schede della scheda del giocatore ({{label:Home.Personal.Preparation}} o {{label:Home.Personal.Openings}}) per aprire una scacchiera di analisi con le partite dell’avversario fissate nell’esploratore; apri prima {{label:Home.Personal.Openings}} per esplorare il suo albero delle aperture da torneo e online, filtrare per colore e {{label:Databases.OpeningTree.Since}} e scegliere una variante specifica.

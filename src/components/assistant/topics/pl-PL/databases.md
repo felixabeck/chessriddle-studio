@@ -2,7 +2,7 @@
 id: databases
 title: Bazy danych, eksplorator, wyszukiwanie pozycji, gracze i turnieje
 summary: Dodawaj lub pobieraj bazy partii, wybieraj bazę odniesienia, wyszukuj pozycje w eksploratorze i przeglądaj partie, graczy oraz turnieje.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Bazy danych znajdują się w [[page:library]] ({{label:SideBar.Library}}) obok plików PGN i są przechowywane w [[setting:databases-directory]].
@@ -20,7 +20,7 @@ Wybierz bazę danych w [[page:library]], aby nią zarządzać:
 
 W widoku tabeli bazy danych przełączaj się między {{label:Common.Games}}, {{label:Databases.Card.Players}} i {{label:Databases.Settings.Events}} (turnieje):
 - Wyszukuj i sortuj partie, podejrzyj partię (podgląd może ukryć ruchy przyciskiem oka, [[setting:hide-preview-moves]]) lub otwórz ją na tablicy analizy.
-- W {{label:Databases.Card.Players}} wybierz gracza, aby zobaczyć {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} i {{label:Home.Personal.Openings}} (interaktywne drzewo debiutowe), a także informacje FIDE poprzez {{label:Databases.FIDE.Info}}. Przycisk {{label:Databases.OpeningTree.Prepare}} w {{label:Home.Personal.Overview}} i {{label:Home.Personal.Ratings}} otwiera pozycję początkową jako białe ze wszystkimi partiami, a w {{label:Home.Personal.Openings}} przenosi wybrany wariant, kolor oraz okres {{label:Databases.OpeningTree.Since}}.
+- W {{label:Databases.Card.Players}} wybierz gracza, aby zobaczyć {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} i {{label:Home.Personal.Openings}} (interaktywne drzewo debiutowe), a także informacje FIDE poprzez {{label:Databases.FIDE.Info}}. Przycisk {{label:Databases.OpeningTree.Prepare}} w {{label:Home.Personal.Openings}} przenosi wybrany wariant, kolor oraz okres {{label:Databases.OpeningTree.Since}}.
 - W {{label:Databases.Settings.Events}} wyszukuj turnieje po nazwie i sortuj według daty, graczy, partii lub średniego Elo.
 
 Na karcie gracza otwórz kartę {{label:Home.Personal.Preparation}}, aby porównać jego partie z twoimi plikami repertuaru:

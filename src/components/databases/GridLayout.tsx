@@ -1,14 +1,10 @@
-import { Box, Group } from "@mantine/core";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { Box } from "@mantine/core";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useContext, useEffect, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
 import { Mosaic, type MosaicNode } from "react-mosaic-component";
-import { IconAction } from "@/components/common/IconAction";
 import {
   clampDatabasePercentage,
   databaseSplitAtoms,
-  DATABASE_SPLIT_STEP_PERCENT,
   DatabaseLayoutContext,
 } from "@/state/databaseLayout";
 import "react-mosaic-component/react-mosaic-component.css";
@@ -26,7 +22,6 @@ function GridLayout({
   table: ReactNode;
   preview: ReactNode;
 }) {
-  const { t } = useTranslation();
   const { compact, minimum } = useContext(DatabaseLayoutContext);
   const ratio = useAtomValue(databaseSplitAtoms.displayed);
   const setTransient = useSetAtom(databaseSplitAtoms.transient);
@@ -52,30 +47,6 @@ function GridLayout({
       data-compact={compact || undefined}
       data-percentage={effective}
     >
-      {!compact && (
-        <Group justify="end" gap="xs" className={classes.splitControls}>
-          <IconAction
-            label={t("Databases.Layout.EnlargeTable", { defaultValue: "Enlarge table" })}
-            variant="default"
-            disabled={effective >= 100 - minimum}
-            onClick={() =>
-              commit(clampDatabasePercentage(effective + DATABASE_SPLIT_STEP_PERCENT, minimum))
-            }
-          >
-            <ArrowRight size="1rem" />
-          </IconAction>
-          <IconAction
-            label={t("Databases.Layout.EnlargePreview", { defaultValue: "Enlarge preview" })}
-            variant="default"
-            disabled={effective <= minimum}
-            onClick={() =>
-              commit(clampDatabasePercentage(effective - DATABASE_SPLIT_STEP_PERCENT, minimum))
-            }
-          >
-            <ArrowLeft size="1rem" />
-          </IconAction>
-        </Group>
-      )}
       <Box className={classes.mosaicFrame}>
         <Mosaic<Tile>
           value={{

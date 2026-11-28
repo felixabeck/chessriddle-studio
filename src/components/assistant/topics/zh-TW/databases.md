@@ -2,7 +2,7 @@
 id: databases
 title: 資料庫、開局探索器、局面搜尋、棋手與賽事
 summary: 新增或下載棋局資料庫、選取參考資料庫、在探索器中搜尋局面，以及瀏覽對局、棋手與賽事。
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 資料庫與您的 PGN 檔案一同位在 [[page:library]] ({{label:SideBar.Library}}) 中，並儲存於 [[setting:databases-directory]]。
@@ -20,7 +20,7 @@ source: 9d4f20d7213a7cbb
 
 在資料庫表格檢視中，可在 {{label:Common.Games}}、{{label:Databases.Card.Players}} 與 {{label:Databases.Settings.Events}}（賽事）之間切換：
 - 搜尋與排序對局、預覽對局（預覽可用眼睛按鈕隱藏著法，[[setting:hide-preview-moves]]），或在分析棋盤上開啟。
-- 在 {{label:Databases.Card.Players}} 中選取一位棋手，可檢視 {{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}} 與 {{label:Home.Personal.Openings}}（互動式開局樹），以及透過 {{label:Databases.FIDE.Info}} 查看國際棋總（FIDE）資訊。在 {{label:Home.Personal.Overview}} 與 {{label:Home.Personal.Ratings}} 分頁中使用 {{label:Databases.OpeningTree.Prepare}} 會以白方和全部對局開啟起始局面，在 {{label:Home.Personal.Openings}} 分頁中使用則會帶入所選變化、棋色與 {{label:Databases.OpeningTree.Since}} 期間。
+- 在 {{label:Databases.Card.Players}} 中選取一位棋手，可檢視 {{label:Home.Personal.Overview}}、{{label:Home.Personal.Ratings}} 與 {{label:Home.Personal.Openings}}（互動式開局樹），以及透過 {{label:Databases.FIDE.Info}} 查看國際棋總（FIDE）資訊。在 {{label:Home.Personal.Openings}} 分頁中使用 {{label:Databases.OpeningTree.Prepare}} 會帶入所選變化、棋色與 {{label:Databases.OpeningTree.Since}} 期間。
 - 在 {{label:Databases.Settings.Events}} 中依名稱搜尋賽事，並依日期、棋手數、對局數或平均 Elo 排序。
 
 在棋手卡片中開啟 {{label:Home.Personal.Preparation}} 分頁，將對手的對局與您的開局庫檔案進行比較：

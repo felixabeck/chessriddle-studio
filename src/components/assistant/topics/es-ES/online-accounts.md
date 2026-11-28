@@ -2,7 +2,7 @@
 id: online-accounts
 title: Cuentas en línea y preparación contra rivales
 summary: Añade cuentas de Lichess y Chess.com, descarga tus partidas y vincula cuentas en línea a jugadores de una base de datos para estudiar las aperturas de un rival.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Gestiona tus cuentas de Lichess y Chess.com en [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ En cada tarjeta de cuenta de [[page:accounts]]:
 Para estudiar las aperturas en línea de un rival desde una base de datos:
 1. Abre una base de datos en [[page:library]] y cambia a la pestaña {{label:Databases.Card.Players}}.
 2. Selecciona un jugador para abrir su tarjeta de jugador.
-3. Haz clic en {{label:Databases.Opponent.Add}} para vincular uno o más nombres de usuario de Lichess o Chess.com a ese jugador.
+3. Haz clic en {{label:Databases.Opponent.AddShort}} junto al nombre del jugador para vincular uno o más nombres de usuario de Lichess o Chess.com a ese jugador.
 4. Haz clic en {{label:Databases.Opponent.Manage}} para filtrar por {{label:Databases.OpeningTree.Since}} y {{label:Databases.Opponent.TimeControls}}, o para usar {{label:Databases.Opponent.RemoveGames}} o {{label:Databases.Opponent.Unlink}}.
 5. Haz clic en {{label:Databases.Opponent.Download}} (o {{label:Databases.Opponent.Update}}) para obtener sus partidas en línea.
-6. Haz clic en {{label:Databases.OpeningTree.Prepare}} desde las pestañas de la tarjeta del jugador ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} o {{label:Home.Personal.Openings}}) para abrir un tablero de análisis con las partidas del rival fijadas en el explorador; abre primero {{label:Home.Personal.Openings}} para explorar su árbol de aperturas presencial y en línea, filtrar por color y {{label:Databases.OpeningTree.Since}}, y elegir una línea concreta.
+6. Haz clic en {{label:Databases.OpeningTree.Prepare}} desde las pestañas de la tarjeta del jugador ({{label:Home.Personal.Preparation}} o {{label:Home.Personal.Openings}}) para abrir un tablero de análisis con las partidas del rival fijadas en el explorador; abre primero {{label:Home.Personal.Openings}} para explorar su árbol de aperturas presencial y en línea, filtrar por color y {{label:Databases.OpeningTree.Since}}, y elegir una línea concreta.

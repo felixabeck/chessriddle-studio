@@ -1529,7 +1529,11 @@ describe("PlayerPreparation", () => {
       const refreshBtn = container.querySelector<HTMLButtonElement>("[data-preparation-refresh]")!;
       expect(prepareBtn).not.toBeNull();
       expect(prepareBtn.textContent).toBe("Databases.OpeningTree.Prepare");
-      expect(toolbarButtons.indexOf(refreshBtn)).toBe(toolbarButtons.indexOf(prepareBtn) + 1);
+      // The gold Prepare on board is the toolbar's last button; Refresh is an icon right before it.
+      expect(toolbarButtons.at(-1)).toBe(prepareBtn);
+      expect(toolbarButtons.indexOf(refreshBtn)).toBe(toolbarButtons.indexOf(prepareBtn) - 1);
+      expect(refreshBtn.getAttribute("aria-label")).toBe("Databases.Preparation.Refresh");
+      expect(refreshBtn.textContent).toBe("");
 
       // Select Black and 1 year.
       const blackRadio = container.querySelector<HTMLInputElement>(

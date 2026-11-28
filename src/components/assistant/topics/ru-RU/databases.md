@@ -2,7 +2,7 @@
 id: databases
 title: Базы данных, обозреватель, поиск позиций, игроки и турниры
 summary: Добавление и загрузка баз партий, выбор справочной базы, поиск позиций в обозревателе, а также просмотр партий, игроков и турниров.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Базы данных находятся в [[page:library]] ({{label:SideBar.Library}}) рядом с вашими PGN-файлами и хранятся в каталоге [[setting:databases-directory]].
@@ -20,7 +20,7 @@ source: 9d4f20d7213a7cbb
 
 В табличном просмотре базы данных переключайтесь между разделами {{label:Common.Games}}, {{label:Databases.Card.Players}} и {{label:Databases.Settings.Events}} (турниры):
 - Ищите и сортируйте партии, просматривайте партию в предпросмотре (предпросмотр может скрыть ходы кнопкой-глазом, [[setting:hide-preview-moves]]) или открывайте её на доске анализа.
-- В разделе {{label:Databases.Card.Players}} выберите игрока, чтобы увидеть вкладки {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} и {{label:Home.Personal.Openings}} (интерактивное дерево дебютов), а также данные ФИДЕ через {{label:Databases.FIDE.Info}}. Кнопка {{label:Databases.OpeningTree.Prepare}} на вкладках {{label:Home.Personal.Overview}} и {{label:Home.Personal.Ratings}} открывает начальную позицию за белых со всеми партиями, а в {{label:Home.Personal.Openings}} переносит выбранный вариант, цвет и период {{label:Databases.OpeningTree.Since}}.
+- В разделе {{label:Databases.Card.Players}} выберите игрока, чтобы увидеть вкладки {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} и {{label:Home.Personal.Openings}} (интерактивное дерево дебютов), а также данные ФИДЕ через {{label:Databases.FIDE.Info}}. Кнопка {{label:Databases.OpeningTree.Prepare}} во вкладке {{label:Home.Personal.Openings}} переносит выбранный вариант, цвет и период {{label:Databases.OpeningTree.Since}}.
 - В разделе {{label:Databases.Settings.Events}} ищите турниры по названию и сортируйте по дате, числу игроков, количеству партий или среднему рейтингу Эло.
 
 На карточке игрока откройте вкладку {{label:Home.Personal.Preparation}}, чтобы сравнить его партии с вашими файлами репертуара:

@@ -2,7 +2,7 @@
 id: online-accounts
 title: Comptes en ligne et préparation contre un adversaire
 summary: Ajoutez des comptes Lichess et Chess.com, téléchargez vos parties et associez des comptes en ligne aux joueurs d’une base de données pour étudier les ouvertures d’un adversaire.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Gérez vos comptes Lichess et Chess.com sur [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ Sur chaque carte de compte de [[page:accounts]] :
 Pour étudier les ouvertures en ligne d’un adversaire depuis une base de données :
 1. Ouvrez une base de données dans [[page:library]] et passez à l’onglet {{label:Databases.Card.Players}}.
 2. Sélectionnez un joueur pour ouvrir sa fiche.
-3. Cliquez sur {{label:Databases.Opponent.Add}} pour associer un ou plusieurs noms d’utilisateur Lichess ou Chess.com à ce joueur.
+3. Cliquez sur {{label:Databases.Opponent.AddShort}} à côté du nom du joueur pour associer un ou plusieurs noms d’utilisateur Lichess ou Chess.com à ce joueur.
 4. Cliquez sur {{label:Databases.Opponent.Manage}} pour filtrer par {{label:Databases.OpeningTree.Since}} et {{label:Databases.Opponent.TimeControls}}, ou pour utiliser {{label:Databases.Opponent.RemoveGames}} ou {{label:Databases.Opponent.Unlink}}.
 5. Cliquez sur {{label:Databases.Opponent.Download}} (ou {{label:Databases.Opponent.Update}}) pour récupérer ses parties en ligne.
-6. Cliquez sur {{label:Databases.OpeningTree.Prepare}} depuis les onglets de la fiche du joueur ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} ou {{label:Home.Personal.Openings}}) pour ouvrir un échiquier d’analyse avec les parties de l’adversaire épinglées dans l’explorateur ; ouvrez d’abord {{label:Home.Personal.Openings}} pour parcourir son arbre d’ouvertures de tournoi et en ligne, filtrer par couleur et {{label:Databases.OpeningTree.Since}}, et choisir une ligne précise.
+6. Cliquez sur {{label:Databases.OpeningTree.Prepare}} depuis les onglets de la fiche du joueur ({{label:Home.Personal.Preparation}} ou {{label:Home.Personal.Openings}}) pour ouvrir un échiquier d’analyse avec les parties de l’adversaire épinglées dans l’explorateur ; ouvrez d’abord {{label:Home.Personal.Openings}} pour parcourir son arbre d’ouvertures de tournoi et en ligne, filtrer par couleur et {{label:Databases.OpeningTree.Since}}, et choisir une ligne précise.

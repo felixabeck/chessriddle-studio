@@ -16,6 +16,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from "react-i18next";
 import type { DatabaseHandle, Player } from "@/bindings";
 import { fitSelectProps } from "@/components/common/fitSelectProps";
+import { IconAction } from "@/components/common/IconAction";
 import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
 import { isAbortError } from "@/components/panels/practice/prepareTimedRun";
@@ -426,36 +427,36 @@ export default function PlayerPreparation({
           {...fitSelectProps(minGamesOptions)}
           data-preparation-min-games
         />
-        <Button
-          size="xs"
-          className={`wrap-button ${classes.prepare}`}
-          loading={preparing}
-          data-prepare-on-board
-          onClick={() =>
-            void prepareOnBoard({
-              pin: {
-                file,
-                player: player.id,
-                color: opponentColor,
-                startDate: preparationStartDate(period),
-              },
-              online,
-              includeReference: true,
-              tabName: player.name ?? "",
-            })
-          }
-        >
-          {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
-        </Button>
-        <Button
-          size="xs"
-          variant="default"
-          leftSection={<RefreshCw size={14} />}
-          onClick={restart}
-          data-preparation-refresh
-        >
-          {t("Databases.Preparation.Refresh", { defaultValue: "Refresh" })}
-        </Button>
+        <div className={classes.actions}>
+          <IconAction
+            label={t("Databases.Preparation.Refresh", { defaultValue: "Refresh" })}
+            onClick={restart}
+            data-preparation-refresh
+          >
+            <RefreshCw size={16} />
+          </IconAction>
+          <Button
+            size="xs"
+            className="wrap-button"
+            loading={preparing}
+            data-prepare-on-board
+            onClick={() =>
+              void prepareOnBoard({
+                pin: {
+                  file,
+                  player: player.id,
+                  color: opponentColor,
+                  startDate: preparationStartDate(period),
+                },
+                online,
+                includeReference: true,
+                tabName: player.name ?? "",
+              })
+            }
+          >
+            {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
+          </Button>
+        </div>
       </div>
 
       {online && (

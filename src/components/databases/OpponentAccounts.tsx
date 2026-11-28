@@ -1,4 +1,4 @@
-import { Button, Checkbox, Group, Paper, Select, Stack, Text } from "@mantine/core";
+import { Button, Checkbox, Group, Paper, Select, Stack, Text, Tooltip } from "@mantine/core";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
 import { Plus, Settings, X } from "lucide-react";
@@ -48,6 +48,7 @@ import {
 } from "./opponentImport";
 import { reportOpponentImport, reportOpponentLeftover } from "./opponentImportNotice";
 import { useOpponentPlayers } from "./useOpponentPlayers";
+import classes from "./OpponentAccounts.module.css";
 
 /** What the database listing says about the link's downloaded games. */
 export type OpponentGames =
@@ -94,31 +95,15 @@ function isOnlineOnlyLink(link: OpponentLink): boolean {
 }
 
 /**
- * The online accounts of the player shown on a database player card: which accounts are linked,
- * how many online games are downloaded, and the actions on them.
+ * The online-account state of one database player card, shared by the header button and the
+ * strip under the name. The caller keys its component by player and database, so a switch to
+ * another player starts closed with no dialog open.
  */
-function OpponentAccounts({ playerName }: { playerName: string }) {
-  const { t } = useTranslation();
-  const store = useStore();
-  const router = useRouter();
-  const navigate = useNavigate();
-  const { mutate: mutateCache } = useSWRConfig();
-  const deps = useMemo(() => ({ store, mutateCache }), [store, mutateCache]);
+export function useOpponentAccounts(playerName: string) {
   const [links, setLinks] = useAtom(opponentLinksAtom);
-  const imports = useAtomValue(opponentImportsAtom);
-  const { data: listing, error: listingError } = useDatabaseList();
   const [expanded, setExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [confirming, setConfirming] = useState<"games" | "unlink" | null>(null);
-
   const link = findOpponentLink(links, playerName);
-  const games = opponentGames(link, listing, listingError);
-  const inFlight = link !== undefined && imports.has(link.id);
-  const periodOptions = opponentPeriodOptions(OPPONENT_PERIODS, t);
-  const ticket = link ? (imports.get(link.id) ?? null) : null;
-  const gamesFile = games.kind === "games" ? games.file : null;
-  // Usernames that met each other stay separate players; the board then follows the first one.
-  const { data: players } = useOpponentPlayers(link, gamesFile);
 
   function linkAccount(account: OpponentAccount) {
     setLinks((current) => {
@@ -130,34 +115,82 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
       }
       return withOpponentAccount(current, playerName, account, crypto.randomUUID());
     });
+    // A new link opens on its settings.
     setExpanded(true);
   }
 
-  // A name that cannot be stored cannot carry a link, so there is nothing to offer.
-  if (!link && !isOpponentPlayerName(playerName)) return null;
-  if (!link) {
-    return (
-      <Group justify="space-between" wrap="wrap" gap="xs" mt="xs" data-opponent-accounts>
-        <Text size="sm" c="dimmed">
-          {t("Databases.Opponent.Title", { defaultValue: "Online accounts" })}
-        </Text>
-        <Button
-          size="xs"
-          variant="light"
-          leftSection={<Plus size="1rem" />}
-          onClick={() => setAdding(true)}
-        >
-          {t("Databases.Opponent.Add", { defaultValue: "Add online account" })}
-        </Button>
-        <AddOpponentAccount
-          opened={adding}
-          onClose={() => setAdding(false)}
-          linked={[]}
-          onLink={linkAccount}
-        />
-      </Group>
-    );
-  }
+  return {
+    link,
+    setLinks,
+    // A name that cannot be stored cannot carry a link, so there is nothing to offer.
+    offered: link !== undefined || isOpponentPlayerName(playerName),
+    expanded,
+    setExpanded,
+    adding,
+    setAdding,
+    linkAccount,
+  };
+}
+
+export type OpponentAccountsState = ReturnType<typeof useOpponentAccounts>;
+
+/** The quiet button in the card's name line that links a first online account. */
+export function OpponentAccountAdd({ accounts }: { accounts: OpponentAccountsState }) {
+  const { t } = useTranslation();
+  if (accounts.link || !accounts.offered) return null;
+  const label = t("Databases.Opponent.Add", { defaultValue: "Add online account" });
+  return (
+    <Tooltip label={label}>
+      <Button
+        size="xs"
+        variant="subtle"
+        color="gray"
+        leftSection={<Plus size="0.9rem" />}
+        aria-label={label}
+        onClick={() => accounts.setAdding(true)}
+        data-opponent-add
+      >
+        {t("Databases.Opponent.AddShort", { defaultValue: "Online account" })}
+      </Button>
+    </Tooltip>
+  );
+}
+
+/**
+ * The linked online accounts of the player shown on a database player card, under the name: the
+ * accounts as chips, how many online games are downloaded, and the actions on them. It also owns
+ * the Add dialog, so the dialog stays mounted while a first link turns the header button into
+ * this strip.
+ */
+function OpponentAccounts({ accounts }: { accounts: OpponentAccountsState }) {
+  const { t } = useTranslation();
+  const store = useStore();
+  const router = useRouter();
+  const navigate = useNavigate();
+  const { mutate: mutateCache } = useSWRConfig();
+  const deps = useMemo(() => ({ store, mutateCache }), [store, mutateCache]);
+  const imports = useAtomValue(opponentImportsAtom);
+  const { data: listing, error: listingError } = useDatabaseList();
+  const [confirming, setConfirming] = useState<"games" | "unlink" | null>(null);
+  const { link, setLinks, expanded, setExpanded, adding, setAdding, linkAccount } = accounts;
+
+  const games = opponentGames(link, listing, listingError);
+  const inFlight = link !== undefined && imports.has(link.id);
+  const periodOptions = opponentPeriodOptions(OPPONENT_PERIODS, t);
+  const ticket = link ? (imports.get(link.id) ?? null) : null;
+  const gamesFile = games.kind === "games" ? games.file : null;
+  // Usernames that met each other stay separate players; the board then follows the first one.
+  const { data: players } = useOpponentPlayers(link, gamesFile);
+
+  const dialog = (
+    <AddOpponentAccount
+      opened={adding}
+      onClose={() => setAdding(false)}
+      linked={link?.accounts ?? []}
+      onLink={linkAccount}
+    />
+  );
+  if (!link) return accounts.offered ? dialog : null;
 
   const downloading = t("Databases.Opponent.Downloading", {
     defaultValue: "Downloading online games",
@@ -189,8 +222,10 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
               gap={4}
               wrap="nowrap"
               miw={0}
+              className={classes.chip}
+              data-opponent-chip
             >
-              <SiteLogo site={account.provider} size={18} />
+              <SiteLogo site={account.provider} size={16} />
               <Text size="sm" fw={500} className="wrap-anywhere">
                 {account.username}
               </Text>
@@ -202,7 +237,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
                   })}
                   variant="subtle"
                   color="gray"
-                  size="sm"
+                  size="xs"
                   disabled={inFlight}
                   onClick={() =>
                     link.accounts.length === 1
@@ -215,6 +250,18 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
               )}
             </Group>
           ))}
+          {link.accounts.length < MAX_OPPONENT_ACCOUNTS && (
+            <IconAction
+              label={t("Databases.Opponent.Add", { defaultValue: "Add online account" })}
+              variant="subtle"
+              color="gray"
+              size="sm"
+              disabled={inFlight}
+              onClick={() => setAdding(true)}
+            >
+              <Plus size="0.9rem" />
+            </IconAction>
+          )}
           <Text
             size="sm"
             c={problem ? "danger" : "dimmed"}
@@ -295,18 +342,6 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
       )}
       {expanded && (
         <Stack gap="xs" mt="xs" data-opponent-details>
-          {link.accounts.length < MAX_OPPONENT_ACCOUNTS && (
-            <Group>
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<Plus size="1rem" />}
-                onClick={() => setAdding(true)}
-              >
-                {t("Databases.Opponent.Add", { defaultValue: "Add online account" })}
-              </Button>
-            </Group>
-          )}
           <Group gap="md" align="flex-start" wrap="wrap">
             <Select
               size="xs"
@@ -385,12 +420,7 @@ function OpponentAccounts({ playerName }: { playerName: string }) {
           </Group>
         </Stack>
       )}
-      <AddOpponentAccount
-        opened={adding}
-        onClose={() => setAdding(false)}
-        linked={link.accounts}
-        onLink={linkAccount}
-      />
+      {dialog}
       <ConfirmModal
         title={t("Databases.Opponent.RemoveGames", { defaultValue: "Remove online games" })}
         description={t("Databases.Opponent.RemoveGames.Confirm", {

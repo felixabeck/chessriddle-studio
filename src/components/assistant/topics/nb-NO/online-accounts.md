@@ -2,7 +2,7 @@
 id: online-accounts
 title: Nettkontoer og motstanderforberedelse
 summary: Legg til kontoer for Lichess og Chess.com, last ned partiene dine og koble nettkontoer til spillere i en database for å studere motstanderens åpninger.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Administrer kontoene dine på Lichess og Chess.com under [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ På hvert kontokort på [[page:accounts]]:
 Slik studerer du en motstanders nettåpninger fra en database:
 1. Åpne en database i [[page:library]] og bytt til fanen {{label:Databases.Card.Players}}.
 2. Velg en spiller for å åpne spillerkortet.
-3. Klikk {{label:Databases.Opponent.Add}} for å koble ett eller flere brukernavn fra Lichess eller Chess.com til den spilleren.
+3. Klikk {{label:Databases.Opponent.AddShort}} ved siden av spillerens navn for å koble ett eller flere brukernavn fra Lichess eller Chess.com til den spilleren.
 4. Klikk {{label:Databases.Opponent.Manage}} for å filtrere etter {{label:Databases.OpeningTree.Since}} og {{label:Databases.Opponent.TimeControls}}, eller for å bruke {{label:Databases.Opponent.RemoveGames}} eller {{label:Databases.Opponent.Unlink}}.
 5. Klikk {{label:Databases.Opponent.Download}} (eller {{label:Databases.Opponent.Update}}) for å hente nettpartiene deres.
-6. Klikk {{label:Databases.OpeningTree.Prepare}} fra fanene på spillerkortet ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} eller {{label:Home.Personal.Openings}}) for å åpne et analysebrett med motstanderens partier festet i utforskeren; åpne {{label:Home.Personal.Openings}} først for å bla gjennom deres nærsjakk- og nettbaserte åpningstre, filtrere etter farge og {{label:Databases.OpeningTree.Since}} og velge en bestemt linje.
+6. Klikk {{label:Databases.OpeningTree.Prepare}} fra fanene på spillerkortet ({{label:Home.Personal.Preparation}} eller {{label:Home.Personal.Openings}}) for å åpne et analysebrett med motstanderens partier festet i utforskeren; åpne {{label:Home.Personal.Openings}} først for å bla gjennom deres nærsjakk- og nettbaserte åpningstre, filtrere etter farge og {{label:Databases.OpeningTree.Since}} og velge en bestemt linje.

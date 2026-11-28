@@ -2,7 +2,7 @@
 id: databases
 title: Бази даних, оглядач, пошук позицій, гравці та турніри
 summary: Додавання або завантаження баз партій, вибір довідкової бази, пошук позицій в оглядачі та перегляд партій, гравців і турнірів.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Бази даних містяться в [[page:library]] ({{label:SideBar.Library}}) поряд із вашими файлами PGN і зберігаються в [[setting:databases-directory]].
@@ -20,7 +20,7 @@ source: 9d4f20d7213a7cbb
 
 У табличному перегляді бази даних перемикайтеся між {{label:Common.Games}}, {{label:Databases.Card.Players}} та {{label:Databases.Settings.Events}} (турнірами):
 - Шукайте та сортуйте партії, переглядайте партію (попередній перегляд може приховати ходи кнопкою-оком, [[setting:hide-preview-moves]]) чи відкривайте її на дошці аналізу.
-- У розділі {{label:Databases.Card.Players}} виберіть гравця, щоб переглянути {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} та {{label:Home.Personal.Openings}} (інтерактивне дерево дебютів), а також інформацію ФІДЕ через {{label:Databases.FIDE.Info}}. Кнопка {{label:Databases.OpeningTree.Prepare}} на вкладках {{label:Home.Personal.Overview}} і {{label:Home.Personal.Ratings}} відкриває початкову позицію за білих з усіма партіями, а в {{label:Home.Personal.Openings}} переносить вибраний варіант, колір і період {{label:Databases.OpeningTree.Since}}.
+- У розділі {{label:Databases.Card.Players}} виберіть гравця, щоб переглянути {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} та {{label:Home.Personal.Openings}} (інтерактивне дерево дебютів), а також інформацію ФІДЕ через {{label:Databases.FIDE.Info}}. Кнопка {{label:Databases.OpeningTree.Prepare}} у вкладці {{label:Home.Personal.Openings}} переносить вибраний варіант, колір і період {{label:Databases.OpeningTree.Since}}.
 - У розділі {{label:Databases.Settings.Events}} шукайте турніри за назвою та сортуйте за датою, кількістю гравців, партій або середнім рейтингом Ело.
 
 На картці гравця відкрийте вкладку {{label:Home.Personal.Preparation}}, щоб порівняти його партії з вашими файлами репертуару:

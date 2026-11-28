@@ -2,7 +2,7 @@
 id: online-accounts
 title: Konta online i przygotowanie pod przeciwnika
 summary: Dodawaj konta Lichess i Chess.com, pobieraj swoje partie oraz łącz konta online z graczami z bazy danych, aby badać debiuty przeciwnika.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Zarządzaj swoimi kontami Lichess i Chess.com w [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ Na każdej karcie konta w [[page:accounts]]:
 Aby zbadać internetowe debiuty przeciwnika z bazy danych:
 1. Otwórz bazę danych w [[page:library]] i przejdź do karty {{label:Databases.Card.Players}}.
 2. Wybierz gracza, aby otworzyć jego kartę gracza.
-3. Kliknij {{label:Databases.Opponent.Add}}, aby powiązać z tym graczem jedną lub więcej nazw użytkownika z Lichess albo Chess.com.
+3. Kliknij {{label:Databases.Opponent.AddShort}} obok nazwiska gracza, aby powiązać z tym graczem jedną lub więcej nazw użytkownika z Lichess albo Chess.com.
 4. Kliknij {{label:Databases.Opponent.Manage}}, aby filtrować według {{label:Databases.OpeningTree.Since}} i {{label:Databases.Opponent.TimeControls}}, albo użyć {{label:Databases.Opponent.RemoveGames}} lub {{label:Databases.Opponent.Unlink}}.
 5. Kliknij {{label:Databases.Opponent.Download}} (lub {{label:Databases.Opponent.Update}}), aby pobrać jego partie online.
-6. Kliknij {{label:Databases.OpeningTree.Prepare}} na kartach na karcie gracza ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} lub {{label:Home.Personal.Openings}}), aby otworzyć tablicę analizy z partiami przeciwnika przypiętymi w eksploratorze; otwórz najpierw {{label:Home.Personal.Openings}}, aby przeglądać jego turniejowe i internetowe drzewo debiutów, filtrować według koloru i {{label:Databases.OpeningTree.Since}} oraz wybrać konkretną linię.
+6. Kliknij {{label:Databases.OpeningTree.Prepare}} na kartach na karcie gracza ({{label:Home.Personal.Preparation}} lub {{label:Home.Personal.Openings}}), aby otworzyć tablicę analizy z partiami przeciwnika przypiętymi w eksploratorze; otwórz najpierw {{label:Home.Personal.Openings}}, aby przeglądać jego turniejowe i internetowe drzewo debiutów, filtrować według koloru i {{label:Databases.OpeningTree.Since}} oraz wybrać konkretną linię.

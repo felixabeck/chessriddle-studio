@@ -1,9 +1,7 @@
 import {
   Box,
-  Button,
   Center,
   Flex,
-  Group,
   Loader,
   Paper,
   SegmentedControl,
@@ -31,8 +29,6 @@ import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
 import { PlayerSelect } from "./PlayerSelect";
 import PlayerOpeningTree from "../databases/PlayerOpeningTree";
 import PlayerPreparation from "../databases/PlayerPreparation";
-import { usePrepareOpponentOnBoard } from "../databases/prepareOpponentOnBoard";
-import { useOnlineGames } from "../databases/useOnlineGames";
 import { databaseHandleKey } from "@/utils/db";
 import type { DatabaseHandle, Player } from "@/bindings";
 
@@ -67,6 +63,7 @@ function PersonalPlayerCard({
   setPlayerKey,
   info,
   isDatabase,
+  headerAction,
   notice,
   databasePlayer,
   openingSources,
@@ -81,6 +78,9 @@ function PersonalPlayerCard({
   setPlayerKey?: (playerKey: string) => void;
   info: PlayerGameInfo;
   isDatabase?: boolean;
+  /** A small action in the name line, left of the info button. */
+  headerAction?: ReactNode;
+  /** Shown under the name line. */
   notice?: ReactNode;
   databasePlayer?: { player: Player; file: DatabaseHandle };
   /** The account player's databases for the opening tree; absent leaves the Openings tab a list. */
@@ -126,31 +126,47 @@ function PersonalPlayerCard({
       style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}
     >
       <FideInfo key={name} opened={opened} setOpened={setOpened} name={name} />
-      <Box pos="relative">
-        {name !== "Stats" && (
-          <IconAction
-            label={t("Databases.FIDE.Info")}
-            pos="absolute"
-            right={0}
-            onClick={() => setOpened(true)}
-          >
-            <Info />
-          </IconAction>
-        )}
-        {playerKey !== undefined && setPlayerKey ? (
-          <Flex justify="center">
-            <PlayerSelect
-              ariaLabel={t("Home.Accounts.PlayerName")}
-              value={playerKey}
-              onChange={setPlayerKey}
-            />
-          </Flex>
-        ) : (
-          <Text fz="lg" fw={500} ta="center" className="wrap-anywhere">
+      {headerAction ? (
+        // The name takes the free space; the action and the info button wrap beneath it when the
+        // card is too narrow for both, so neither is clipped and the name never runs under them.
+        <Flex align="center" justify="flex-end" gap="xs" wrap="wrap" data-card-name-line>
+          <Text fz="lg" fw={500} ta="center" className="wrap-anywhere" flex="1 1 10rem" miw={0}>
             {name}
           </Text>
-        )}
-      </Box>
+          <Flex align="center" gap="xs" wrap="nowrap">
+            {headerAction}
+            <IconAction label={t("Databases.FIDE.Info")} onClick={() => setOpened(true)}>
+              <Info />
+            </IconAction>
+          </Flex>
+        </Flex>
+      ) : (
+        <Box pos="relative">
+          {name !== "Stats" && (
+            <IconAction
+              label={t("Databases.FIDE.Info")}
+              pos="absolute"
+              right={0}
+              onClick={() => setOpened(true)}
+            >
+              <Info />
+            </IconAction>
+          )}
+          {playerKey !== undefined && setPlayerKey ? (
+            <Flex justify="center">
+              <PlayerSelect
+                ariaLabel={t("Home.Accounts.PlayerName")}
+                value={playerKey}
+                onChange={setPlayerKey}
+              />
+            </Flex>
+          ) : (
+            <Text fz="lg" fw={500} ta="center" className="wrap-anywhere">
+              {name}
+            </Text>
+          )}
+        </Box>
+      )}
       {notice}
       <Tabs
         mt="xs"
@@ -176,12 +192,6 @@ function PersonalPlayerCard({
           )}
         </Tabs.List>
         <Tabs.Panel value="overview" style={SCROLLING_PANEL_STYLE}>
-          {hasPreparation && databasePlayer && (
-            <StartPositionPrepare
-              databasePlayer={databasePlayer}
-              hasSourceSwitch={Boolean(sourceSwitch)}
-            />
-          )}
           {sourceSwitch}
           {showOnline ? (
             <OnlinePanel online={online}>
@@ -221,12 +231,6 @@ function PersonalPlayerCard({
           )}
         </Tabs.Panel>
         <Tabs.Panel value="ratings" style={SCROLLING_PANEL_STYLE}>
-          {hasPreparation && databasePlayer && (
-            <StartPositionPrepare
-              databasePlayer={databasePlayer}
-              hasSourceSwitch={Boolean(sourceSwitch)}
-            />
-          )}
           {sourceSwitch}
           {showOnline ? (
             <OnlinePanel online={online}>
@@ -253,44 +257,6 @@ function PersonalPlayerCard({
         )}
       </Tabs>
     </Paper>
-  );
-}
-
-/** Opens an analysis board from the start position for the card's over-the-board player as White. */
-function StartPositionPrepare({
-  databasePlayer,
-  hasSourceSwitch,
-}: {
-  databasePlayer: { player: Player; file: DatabaseHandle };
-  hasSourceSwitch: boolean;
-}) {
-  const { t } = useTranslation();
-  const online = useOnlineGames(databasePlayer.player, databasePlayer.file);
-  const { preparing, prepare } = usePrepareOpponentOnBoard();
-
-  return (
-    <Group mt="sm" mb={hasSourceSwitch ? undefined : "sm"}>
-      <Button
-        size="xs"
-        className="wrap-button"
-        loading={preparing}
-        data-prepare-on-board
-        onClick={() =>
-          void prepare({
-            pin: {
-              file: databasePlayer.file,
-              player: databasePlayer.player.id,
-              color: "white",
-            },
-            online,
-            includeReference: true,
-            tabName: databasePlayer.player.name ?? "",
-          })
-        }
-      >
-        {t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
-      </Button>
-    </Group>
   );
 }
 

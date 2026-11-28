@@ -2,7 +2,7 @@
 id: databases
 title: Databaser, utforsker, stillingssøk, spillere og turneringer
 summary: Legg til eller last ned partidatabaser, velg en referansedatabase, søk etter stillinger i utforskeren og bla gjennom partier, spillere og turneringer.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Databaser ligger i [[page:library]] ({{label:SideBar.Library}}) sammen med PGN-filene dine, og lagres i [[setting:databases-directory]].
@@ -20,7 +20,7 @@ Velg en database i [[page:library]] for å administrere den:
 
 Inne i tabellvisningen av databasen bytter du mellom {{label:Common.Games}}, {{label:Databases.Card.Players}} og {{label:Databases.Settings.Events}} (turneringer):
 - Søk og sorter partier, forhåndsvis et parti (forhåndsvisningen kan skjule trekkene med øyeknappen, [[setting:hide-preview-moves]]) eller åpne det på analysebrettet.
-- Under {{label:Databases.Card.Players}} velger du en spiller for å se {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} og {{label:Home.Personal.Openings}} (et interaktivt åpningstre), pluss FIDE-info via {{label:Databases.FIDE.Info}}. Bruk {{label:Databases.OpeningTree.Prepare}} på {{label:Home.Personal.Overview}} og {{label:Home.Personal.Ratings}} for å åpne utgangsstillingen som hvit med alle partier, eller på {{label:Home.Personal.Openings}} for å ta med valgt linje, farge og {{label:Databases.OpeningTree.Since}}-periode.
+- Under {{label:Databases.Card.Players}} velger du en spiller for å se {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} og {{label:Home.Personal.Openings}} (et interaktivt åpningstre), pluss FIDE-info via {{label:Databases.FIDE.Info}}. Bruk {{label:Databases.OpeningTree.Prepare}} på {{label:Home.Personal.Openings}} for å ta med valgt linje, farge og {{label:Databases.OpeningTree.Since}}-periode.
 - Under {{label:Databases.Settings.Events}} kan du søke etter turneringer på navn og sortere etter dato, spillere, partier eller gjennomsnittsrating.
 
 På spillerkortet åpner du fanen {{label:Home.Personal.Preparation}} for å sammenligne partiene med repertoarfilene dine:

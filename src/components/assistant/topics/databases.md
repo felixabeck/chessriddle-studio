@@ -19,7 +19,7 @@ Select a database in [[page:library]] to manage it:
 
 Inside the database table view, switch between {{label:Common.Games}}, {{label:Databases.Card.Players}}, and {{label:Databases.Settings.Events}} (tournaments):
 - Search and sort games, preview a game (the preview can hide its moves with the eye button, [[setting:hide-preview-moves]]), or open it on the analysis board.
-- In {{label:Databases.Card.Players}}, select a player to view {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, and {{label:Home.Personal.Openings}} (an interactive opening tree), plus FIDE info via {{label:Databases.FIDE.Info}}. Use {{label:Databases.OpeningTree.Prepare}} on {{label:Home.Personal.Overview}} and {{label:Home.Personal.Ratings}} to open the start position as White with all games, or on {{label:Home.Personal.Openings}} to carry over the selected line, color, and {{label:Databases.OpeningTree.Since}} period.
+- In {{label:Databases.Card.Players}}, select a player to view {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, and {{label:Home.Personal.Openings}} (an interactive opening tree), plus FIDE info via {{label:Databases.FIDE.Info}}. Use {{label:Databases.OpeningTree.Prepare}} on {{label:Home.Personal.Openings}} to carry over the selected line, color, and {{label:Databases.OpeningTree.Since}} period.
 - In {{label:Databases.Settings.Events}}, search tournaments by name and sort by date, players, games, or average ELO.
 
 In a player's {{label:Home.Personal.Preparation}} tab, compare their games with your repertoire files:

@@ -2,7 +2,7 @@
 id: online-accounts
 title: 온라인 계정과 상대 분석 준비
 summary: Lichess 및 Chess.com 계정 추가, 내 대국 다운로드, 데이터베이스 선수와 온라인 계정을 연결해 상대의 오프닝 연구하기.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 [[page:accounts]] ({{label:SideBar.Accounts}}) 페이지에서 Lichess 및 Chess.com 계정을 관리하세요.
@@ -23,7 +23,7 @@ source: 5288fb0320fbe939
 데이터베이스에서 상대의 온라인 오프닝을 연구하려면:
 1. [[page:library]]에서 데이터베이스를 열고 {{label:Databases.Card.Players}} 탭으로 전환합니다.
 2. 선수를 선택해 선수 카드를 엽니다.
-3. {{label:Databases.Opponent.Add}}을(를) 클릭해 해당 선수에게 하나 이상의 Lichess 또는 Chess.com 사용자 이름을 연결합니다.
+3. 선수 이름 옆의 {{label:Databases.Opponent.AddShort}}을(를) 클릭해 해당 선수에게 하나 이상의 Lichess 또는 Chess.com 사용자 이름을 연결합니다.
 4. {{label:Databases.OpeningTree.Since}} 및 {{label:Databases.Opponent.TimeControls}}로 필터링하거나 {{label:Databases.Opponent.RemoveGames}} 또는 {{label:Databases.Opponent.Unlink}}을(를) 실행하려면 {{label:Databases.Opponent.Manage}}을(를) 클릭합니다.
 5. 온라인 대국을 가져오려면 {{label:Databases.Opponent.Download}}(또는 {{label:Databases.Opponent.Update}})을(를) 클릭합니다.
-6. 선수 카드의 탭({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} 또는 {{label:Home.Personal.Openings}})에서 {{label:Databases.OpeningTree.Prepare}}을(를) 클릭하면 탐색기에 상대의 대국이 고정된 분석 보드가 열립니다. 오프라인 및 온라인 오프닝 트리를 살펴보고 색상과 {{label:Databases.OpeningTree.Since}}별로 필터링하며 특정 수순을 먼저 고르려면 {{label:Home.Personal.Openings}} 탭을 여세요.
+6. 선수 카드의 탭({{label:Home.Personal.Preparation}} 또는 {{label:Home.Personal.Openings}})에서 {{label:Databases.OpeningTree.Prepare}}을(를) 클릭하면 탐색기에 상대의 대국이 고정된 분석 보드가 열립니다. 오프라인 및 온라인 오프닝 트리를 살펴보고 색상과 {{label:Databases.OpeningTree.Since}}별로 필터링하며 특정 수순을 먼저 고르려면 {{label:Home.Personal.Openings}} 탭을 여세요.

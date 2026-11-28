@@ -2,7 +2,7 @@
 id: databases
 title: Bases de données, explorateur, recherche de position, joueurs et tournois
 summary: Ajoutez ou téléchargez des bases de parties, choisissez une base de référence, recherchez des positions dans l’explorateur et parcourez parties, joueurs et tournois.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Les bases de données se trouvent dans [[page:library]] ({{label:SideBar.Library}}) aux côtés de vos fichiers PGN et sont stockées dans [[setting:databases-directory]].
@@ -20,7 +20,7 @@ Sélectionnez une base de données dans [[page:library]] pour la gérer :
 
 Dans la vue tabulaire de la base de données, passez de {{label:Common.Games}} à {{label:Databases.Card.Players}} et {{label:Databases.Settings.Events}} (tournois) :
 - Recherchez et triez les parties, prévisualisez une partie (l’aperçu peut masquer les coups avec le bouton œil, [[setting:hide-preview-moves]]) ou ouvrez-la sur l’échiquier d’analyse.
-- Dans {{label:Databases.Card.Players}}, sélectionnez un joueur pour consulter {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} et {{label:Home.Personal.Openings}} (un arbre d’ouvertures interactif), ainsi que les informations FIDE via {{label:Databases.FIDE.Info}}. Utilisez {{label:Databases.OpeningTree.Prepare}} depuis {{label:Home.Personal.Overview}} et {{label:Home.Personal.Ratings}} pour ouvrir la position de départ avec les Blancs et toutes les parties, ou depuis {{label:Home.Personal.Openings}} pour reprendre la ligne, la couleur et la période {{label:Databases.OpeningTree.Since}} choisies.
+- Dans {{label:Databases.Card.Players}}, sélectionnez un joueur pour consulter {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} et {{label:Home.Personal.Openings}} (un arbre d’ouvertures interactif), ainsi que les informations FIDE via {{label:Databases.FIDE.Info}}. Utilisez {{label:Databases.OpeningTree.Prepare}} depuis {{label:Home.Personal.Openings}} pour reprendre la ligne, la couleur et la période {{label:Databases.OpeningTree.Since}} choisies.
 - Dans {{label:Databases.Settings.Events}}, recherchez les tournois par nom et triez par date, joueurs, parties ou Elo moyen.
 
 Sur la fiche d’un joueur, ouvrez l’onglet {{label:Home.Personal.Preparation}} pour comparer ses parties avec vos fichiers de répertoire :

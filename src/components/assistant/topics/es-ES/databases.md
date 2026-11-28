@@ -2,7 +2,7 @@
 id: databases
 title: Bases de datos, explorador, búsqueda de posición, jugadores y torneos
 summary: Añade o descarga bases de datos de partidas, elige una base de referencia, busca posiciones en el explorador y consulta partidas, jugadores y torneos.
-source: 9d4f20d7213a7cbb
+source: 79c93eb50f572f36
 ---
 
 Las bases de datos viven en [[page:library]] ({{label:SideBar.Library}}) junto a tus archivos PGN y se guardan en [[setting:databases-directory]].
@@ -20,7 +20,7 @@ Selecciona una base de datos en [[page:library]] para gestionarla:
 
 Dentro de la vista de tabla de la base de datos, cambia entre {{label:Common.Games}}, {{label:Databases.Card.Players}} y {{label:Databases.Settings.Events}} (torneos):
 - Busca y ordena partidas, previsualiza una partida (la vista previa puede ocultar las jugadas con el botón del ojo, [[setting:hide-preview-moves]]) o ábrela en el tablero de análisis.
-- En {{label:Databases.Card.Players}}, selecciona un jugador para ver {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} y {{label:Home.Personal.Openings}} (un árbol de aperturas interactivo), además de datos de la FIDE mediante {{label:Databases.FIDE.Info}}. Usa {{label:Databases.OpeningTree.Prepare}} en {{label:Home.Personal.Overview}} y {{label:Home.Personal.Ratings}} para abrir la posición inicial con blancas y todas las partidas, o en {{label:Home.Personal.Openings}} para conservar la línea, el color y el periodo {{label:Databases.OpeningTree.Since}} seleccionados.
+- En {{label:Databases.Card.Players}}, selecciona un jugador para ver {{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}} y {{label:Home.Personal.Openings}} (un árbol de aperturas interactivo), además de datos de la FIDE mediante {{label:Databases.FIDE.Info}}. Usa {{label:Databases.OpeningTree.Prepare}} en {{label:Home.Personal.Openings}} para conservar la línea, el color y el periodo {{label:Databases.OpeningTree.Since}} seleccionados.
 - En {{label:Databases.Settings.Events}}, busca torneos por nombre y ordénalos por fecha, jugadores, partidas o Elo medio.
 
 En la ficha de un jugador, abre la pestaña {{label:Home.Personal.Preparation}} para comparar sus partidas con tus archivos de repertorio:

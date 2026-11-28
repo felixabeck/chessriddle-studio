@@ -2,7 +2,7 @@
 id: online-accounts
 title: Анлайн-акаўнты і падрыхтоўка да саперніка
 summary: Даданне акаўнтаў Lichess і Chess.com, спампоўка вашых партый і прывязка анлайн-акаўнтаў да гульцоў базы для вывучэння дэбютаў саперніка.
-source: 5288fb0320fbe939
+source: fb725d488406a0b7
 ---
 
 Кіруйце сваімі акаўнтамі Lichess і Chess.com на старонцы [[page:accounts]] ({{label:SideBar.Accounts}}).
@@ -23,7 +23,7 @@ source: 5288fb0320fbe939
 Каб вывучыць анлайн-дэбюты саперніка з базы дадзеных:
 1. Адкрыйце базу дадзеных у [[page:library]] і перайдзіце на ўкладку {{label:Databases.Card.Players}}.
 2. Выберыце гульца, каб адкрыць яго картку.
-3. Націсніце {{label:Databases.Opponent.Add}}, каб прывязаць адно або некалькі імён карыстальнікаў Lichess ці Chess.com да гэтага гульца.
+3. Націсніце {{label:Databases.Opponent.AddShort}} побач з імем гульца, каб прывязаць адно або некалькі імён карыстальнікаў Lichess ці Chess.com да гэтага гульца.
 4. Націсніце {{label:Databases.Opponent.Manage}}, каб адфільтраваць па {{label:Databases.OpeningTree.Since}} і {{label:Databases.Opponent.TimeControls}}, або выканаць {{label:Databases.Opponent.RemoveGames}} ці {{label:Databases.Opponent.Unlink}}.
 5. Націсніце {{label:Databases.Opponent.Download}} (або {{label:Databases.Opponent.Update}}), каб спампаваць яго анлайн-партыі.
-6. Націсніце {{label:Databases.OpeningTree.Prepare}} на ўкладках карткі гульца ({{label:Home.Personal.Overview}}, {{label:Home.Personal.Ratings}}, {{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), каб адкрыць дошку аналізу з замацаванымі партыямі саперніка ў аглядальніку; адкрыйце спачатку {{label:Home.Personal.Openings}}, каб праглядзець яго дрэва вочных і анлайн-дэбютаў, адфільтраваць па колеры і перыядзе {{label:Databases.OpeningTree.Since}} ды выбраць пэўны варыянт.
+6. Націсніце {{label:Databases.OpeningTree.Prepare}} на ўкладках карткі гульца ({{label:Home.Personal.Preparation}} або {{label:Home.Personal.Openings}}), каб адкрыць дошку аналізу з замацаванымі партыямі саперніка ў аглядальніку; адкрыйце спачатку {{label:Home.Personal.Openings}}, каб праглядзець яго дрэва вочных і анлайн-дэбютаў, адфільтраваць па колеры і перыядзе {{label:Databases.OpeningTree.Since}} ды выбраць пэўны варыянт.

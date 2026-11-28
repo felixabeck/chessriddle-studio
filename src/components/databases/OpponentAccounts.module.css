@@ -1,0 +1,7 @@
+/* One linked online account: a small pill with the site logo and the username. */
+.chip {
+  border: 1px solid var(--cf-border-strong);
+  border-radius: var(--cf-radius-full);
+  background: var(--cf-card);
+  padding: 1px 8px 1px 6px;
+}

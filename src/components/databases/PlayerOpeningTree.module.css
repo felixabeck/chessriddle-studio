@@ -17,8 +17,16 @@
   composes: since from "./PlayerCardTab.module.css";
 }
 
-.prepare {
+/* The line controls and Prepare on board sit together at the toolbar's right edge, Prepare last;
+   they wrap as one group, like the Preparation tab's Refresh and Prepare. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
   margin-left: auto;
+}
+
+.prepare {
   height: auto;
   min-height: var(--button-height);
 }

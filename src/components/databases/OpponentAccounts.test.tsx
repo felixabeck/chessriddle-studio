@@ -96,7 +96,11 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import OpponentAccounts, { opponentGames } from "./OpponentAccounts";
+import OpponentAccounts, {
+  OpponentAccountAdd,
+  opponentGames,
+  useOpponentAccounts,
+} from "./OpponentAccounts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 installMatchMediaStub({ matches: () => false });
@@ -131,6 +135,19 @@ function listed(type: "success" | "error", gameCount = 0) {
   };
 }
 
+/** Both pieces as the player card places them: the header button and the strip under the name. */
+function PlayerAccounts({ playerName }: { playerName: string }) {
+  const accounts = useOpponentAccounts(playerName);
+  return (
+    <>
+      <div data-test-name-line>
+        <OpponentAccountAdd accounts={accounts} />
+      </div>
+      <OpponentAccounts accounts={accounts} />
+    </>
+  );
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let store: ReturnType<typeof createStore>;
@@ -141,7 +158,7 @@ async function render(playerName = NAME) {
       <MantineProvider env="test">
         <Provider store={store}>
           <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
-            <OpponentAccounts playerName={playerName} />
+            <PlayerAccounts playerName={playerName} />
           </SWRConfig>
         </Provider>
       </MantineProvider>,
@@ -281,11 +298,15 @@ describe("opponentGames", () => {
 });
 
 describe("a player without online accounts", () => {
-  test("offers to add one and shows nothing else", async () => {
+  test("offers one quiet button in the name line and no strip", async () => {
     await render();
 
-    expect(document.body.textContent).toContain("Online accounts");
-    expect(buttons("Add online account")).toHaveLength(1);
+    const add = document.body.querySelector<HTMLButtonElement>("[data-test-name-line] button")!;
+    expect(add.textContent).toBe("Online account");
+    expect(add.getAttribute("aria-label")).toBe("Add online account");
+    expect(buttons("Add online account")).toEqual([add]);
+    expect(document.body.textContent).not.toContain("Online accounts");
+    expect(document.body.querySelector("[data-opponent-accounts]")).toBeNull();
     expect(document.body.querySelector("[data-opponent-status]")).toBeNull();
     expect(document.body.querySelector("[data-opponent-details]")).toBeNull();
   });
@@ -306,6 +327,10 @@ describe("a player without online accounts", () => {
     await click("Look up");
     await click("Link account");
 
+    // The header button gives way to the strip, which opens on the new link's settings.
+    expect(document.body.querySelector("[data-test-name-line] button")).toBeNull();
+    expect(document.body.querySelector("[data-opponent-accounts]")).not.toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     const [created] = store.get(opponentLinksAtom);
     expect(created).toMatchObject({
       playerName: NAME,
@@ -448,6 +473,7 @@ describe("downloading", () => {
     expect(button("Remove online games").disabled).toBe(true);
     expect(button("Unlink accounts").disabled).toBe(true);
     expect(button("Remove DrNykterstein").disabled).toBe(true);
+    expect(button("Add online account").disabled).toBe(true);
     expect(sinceInput().disabled).toBe(true);
     expect(checkbox("Blitz").disabled).toBe(true);
 
@@ -614,7 +640,17 @@ describe("managing a link", () => {
 
   test("the settings stay closed until asked for", async () => {
     await render();
+    // The accounts are chips with an add action at the end; the name line offers nothing.
+    const chips = [...document.body.querySelectorAll("[data-opponent-chip]")];
+    expect(chips).toHaveLength(2);
+    expect(chips[0].textContent).toContain("DrNykterstein");
+    expect(chips[1].textContent).toContain("MagnusCarlsen");
+    const add = button("Add online account");
+    expect(add.closest("[data-opponent-accounts]")).not.toBeNull();
+    expect(add.textContent).toBe("");
+    expect(document.body.querySelector("[data-test-name-line] button")).toBeNull();
     expect(document.body.querySelector("[data-opponent-details]")).toBeNull();
+    expect(buttons("Remove DrNykterstein")).toHaveLength(0);
     expect(button("Manage online accounts").getAttribute("aria-pressed")).toBe("false");
 
     await click("Manage online accounts");
@@ -744,6 +780,14 @@ describe("managing a link", () => {
 
     expect(button("Remove online games").disabled).toBe(true);
     expect(button("Unlink accounts").disabled).toBe(false);
+  });
+
+  test("the add action at the end of the chips opens the dialog", async () => {
+    await render();
+    await click("Add online account");
+    expect(
+      document.body.querySelector('[role="dialog"]')?.textContent?.includes("Add online account"),
+    ).toBe(true);
   });
 
   test("a full link offers no further account", async () => {

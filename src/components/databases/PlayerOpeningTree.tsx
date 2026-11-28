@@ -329,30 +329,32 @@ function OpeningTree({
         <Text size="sm" className={classes.notation} data-opening-sequence>
           {line.notation || t("Databases.OpeningTree.Start", { defaultValue: "Start position" })}
         </Text>
-        <IconAction
-          label={t("Common.MoveControls.Previous")}
-          disabled={!moves.length}
-          onClick={() => changeMoves(moves.slice(0, -1))}
-        >
-          <ChevronLeft size={16} />
-        </IconAction>
-        <IconAction
-          label={t("Databases.OpeningTree.Reset", { defaultValue: "Reset to start" })}
-          disabled={!moves.length}
-          onClick={() => changeMoves([])}
-        >
-          <RotateCcw size={16} />
-        </IconAction>
-        <Button
-          size="xs"
-          className={classes.prepare}
-          loading={preparing}
-          onClick={() => void prepare()}
-        >
-          {variant === "account"
-            ? t("Databases.OpeningTree.Analyse", { defaultValue: "Analyze on board" })
-            : t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
-        </Button>
+        <div className={classes.actions}>
+          <IconAction
+            label={t("Common.MoveControls.Previous")}
+            disabled={!moves.length}
+            onClick={() => changeMoves(moves.slice(0, -1))}
+          >
+            <ChevronLeft size={16} />
+          </IconAction>
+          <IconAction
+            label={t("Databases.OpeningTree.Reset", { defaultValue: "Reset to start" })}
+            disabled={!moves.length}
+            onClick={() => changeMoves([])}
+          >
+            <RotateCcw size={16} />
+          </IconAction>
+          <Button
+            size="xs"
+            className={classes.prepare}
+            loading={preparing}
+            onClick={() => void prepare()}
+          >
+            {variant === "account"
+              ? t("Databases.OpeningTree.Analyse", { defaultValue: "Analyze on board" })
+              : t("Databases.OpeningTree.Prepare", { defaultValue: "Prepare on board" })}
+          </Button>
+        </div>
       </div>
       <Text size="sm" c="dimmed" className="wrap-anywhere">
         {variant === "account"

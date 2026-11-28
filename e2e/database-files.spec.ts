@@ -374,7 +374,7 @@ test("database-files: player opening recency fits narrow and font-scaled Opening
     await expect(page).toHaveScreenshot("player-openings-recency.png", { fullPage: true });
 });
 
-for (const width of [1920, 320]) {
+for (const width of [1920, 1440, 320]) {
     test(`database-files: player opening tree previews and prepares two moves at ${width}px`, async ({
         page,
         mockScenario,
@@ -506,6 +506,25 @@ for (const width of [1920, 320]) {
         expect(clearance.rightEdges).toHaveLength(4);
         for (const right of clearance.rightEdges)
             expect(right).toBeLessThanOrEqual(clearance.contentRight + 1);
+        // The line controls and Prepare on board wrap as one group: one row, Prepare last.
+        const actions = await tree.evaluate((element) =>
+            [...element.querySelectorAll("[data-opening-toolbar] button")]
+                .slice(-3)
+                .map((button) => {
+                    const box = button.getBoundingClientRect();
+                    return {
+                        middle: box.top + box.height / 2,
+                        left: box.left,
+                        text: button.textContent,
+                    };
+                }),
+        );
+        expect(actions.at(-1)?.text).toBe("Prepare on board");
+        for (const action of actions)
+            expect(Math.abs(action.middle - actions[0].middle)).toBeLessThan(2);
+        expect(actions.map((action) => action.left)).toEqual(
+            [...actions.map((action) => action.left)].sort((x, y) => x - y),
+        );
         expect(Math.abs(layout.board.width - layout.board.height)).toBeLessThan(1);
         if (width === 320) expect(layout.table.y).toBeGreaterThanOrEqual(layout.board.bottom);
         if (layout.width >= 576) expect(layout.table.x).toBeGreaterThan(layout.board.x);
@@ -2442,7 +2461,7 @@ test("database-files: database view load failure stays reachable at 320px and 20
     expect(await page.evaluate(() => Date.now())).toBe(failedAt + 2000);
 });
 
-test("database-files: bounded drag and keyboard steps share a preference across tabs, compact reflow and reload", async ({
+test("database-files: bounded drags share a preference across tabs, compact reflow and reload", async ({
     page,
     mockScenario,
     assertNoHorizontalOverflow,
@@ -2497,7 +2516,9 @@ test("database-files: bounded drag and keyboard steps share a preference across 
     await page.mouse.up();
     await expect(layout).toHaveAttribute("data-percentage", "20");
     expect(Number(await saved())).toBe(20);
-    await expect(page.getByRole("button", { name: "Enlarge preview", exact: true })).toBeDisabled();
+    for (const name of ["Enlarge table", "Enlarge preview"]) {
+        await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
+    }
     await expect.poll(async () => (await board.boundingBox())!.width).toBeGreaterThan(500);
     expect((await board.boundingBox())!.width).toBeGreaterThan(initial);
     await expect(page.locator("[data-preview-arrangement]")).toHaveAttribute(
@@ -2519,14 +2540,11 @@ test("database-files: bounded drag and keyboard steps share a preference across 
         .toHaveScreenshot("database-adaptive-wide.png", { stylePath: scrollbarFreeScreenshot });
     await dragMosaicDivider(page, { root, split, percentage: 95, direction: "row" });
     await expect(layout).toHaveAttribute("data-percentage", "80");
-    await expect(page.getByRole("button", { name: "Enlarge table", exact: true })).toBeDisabled();
-    const enlargePreview = page.getByRole("button", { name: "Enlarge preview", exact: true });
-    await page.getByRole("tab", { name: "Games", exact: true }).first().focus();
-    await page.keyboard.press("Tab");
-    await expect(enlargePreview).toBeFocused();
-    await enlargePreview.press("Enter");
-    await expect(layout).toHaveAttribute("data-percentage", "75");
-    expect(await saved()).toBe("75");
+    await dragMosaicDivider(page, { root, split, percentage: 75, direction: "row" });
+    // A drag lands on the pointer's sub-pixel position, so the committed value is near 75.
+    const dragged = (await layout.getAttribute("data-percentage"))!;
+    expect(Math.round(Number(dragged))).toBe(75);
+    expect(await saved()).toBe(dragged);
     await expect(page.locator("[data-preview-arrangement]")).toHaveAttribute(
         "data-preview-arrangement",
         "below",
@@ -2542,27 +2560,27 @@ test("database-files: bounded drag and keyboard steps share a preference across 
         await page.getByRole("tab", { name, exact: true }).first().click();
         await expect(page.locator("[data-database-layout]:visible")).toHaveAttribute(
             "data-percentage",
-            "75",
+            dragged,
         );
     }
     await page.setViewportSize({ width: 900, height: 900 });
     await expect
         .poll(async () => Number(await layout.getAttribute("data-percentage")))
-        .toBeLessThan(75);
-    expect(await saved()).toBe("75");
+        .toBeLessThan(Number(dragged));
+    expect(await saved()).toBe(dragged);
     expect(
         (await gamesPanel.locator('[data-database-pane="preview"]').boundingBox())!.width,
     ).toBeGreaterThanOrEqual(320);
     await page.setViewportSize({ width: 320, height: 900 });
     await expect(split).toHaveCount(0);
-    expect(await saved()).toBe("75");
+    expect(await saved()).toBe(dragged);
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
     await page.setViewportSize({ width: 2000, height: 1280 });
-    await expect(layout).toHaveAttribute("data-percentage", "75");
+    await expect(layout).toHaveAttribute("data-percentage", dragged);
     await expect.poll(() => whitePawnSquares(board)).toEqual(selected);
     await preserveStorageForReload(page);
-    await expect(layout).toHaveAttribute("data-percentage", "75");
-    expect(await saved()).toBe("75");
+    await expect(layout).toHaveAttribute("data-percentage", dragged);
+    expect(await saved()).toBe(dragged);
     await assertNoHorizontalOverflow();
 });
 
@@ -4460,11 +4478,16 @@ for (const surface of [
         });
         const preview = await openFirstWhiteCard(page);
         const strip = preview.locator("[data-opponent-accounts]");
-        await expect(strip).toContainText("Online accounts");
+        // No row is reserved for online accounts: one quiet button sits in the name line.
+        const nameLine = preview.locator("[data-card-name-line]");
+        const add = nameLine.getByRole("button", { name: "Add online account", exact: true });
+        await expect(add).toHaveText("Online account");
+        await expect(strip).toHaveCount(0);
+        await expect(preview).not.toContainText("Online accounts");
         // Below the split breakpoint the card keeps a minimum width inside its scrolling pane.
-        await assertNothingClipped(strip, { mode: "reachable" });
+        await assertNothingClipped(nameLine, { mode: "reachable" });
 
-        await strip.getByRole("button", { name: "Add online account", exact: true }).click();
+        await add.click();
         const dialog = page.getByRole("dialog", { name: "Add online account", exact: true });
         await dialog.getByRole("textbox", { name: "Username" }).fill("firstwhite");
         await dialog.getByRole("button", { name: "Look up", exact: true }).click();
@@ -4488,7 +4511,12 @@ for (const surface of [
 
         await dialog.getByRole("button", { name: "Link account", exact: true }).click();
         await expect(dialog).toBeHidden();
-        await expect(strip).toContainText("FirstWhite");
+        await expect(add).toHaveCount(0);
+        await expect(strip.locator("[data-opponent-chip]")).toHaveCount(1);
+        await expect(strip.locator("[data-opponent-chip]")).toContainText("FirstWhite");
+        await expect(
+            strip.getByRole("button", { name: "Add online account", exact: true }),
+        ).toBeVisible();
         await expect(strip.locator("[data-opponent-status]")).toHaveText("No games downloaded");
         // A new link opens on its settings: the last three years, every time control but bullet.
         await expect(strip.locator("[data-opponent-details]")).toBeVisible();
@@ -4511,6 +4539,7 @@ for (const surface of [
             },
         ]);
         await assertNothingClipped(strip, { mode: "reachable" });
+        await assertNothingClipped(nameLine, { mode: "reachable" });
         await assertNoHorizontalOverflow();
         await page.mouse.move(0, 0);
         await strip.evaluate((node) => node.scrollIntoView({ block: "start", inline: "start" }));
@@ -4945,29 +4974,19 @@ async function prepareFirstWhiteOnBoard(
     return { tree, preview };
 }
 
-test("database-files: Overview Prepare on board opens the start position with all three explorer columns", async ({
+test("database-files: Overview and Ratings offer no Prepare on board; Openings and Preparation do", async ({
     page,
     mockScenario,
-    assertNoHorizontalOverflow,
 }) => {
     const preview = await openPreparedFirstWhiteCard(page, mockScenario);
-    const overview = preview.getByRole("tabpanel", { name: "Overview", exact: true });
-    await overview.getByRole("button", { name: "Prepare on board", exact: true }).click();
-    await expect(page).toHaveURL("/");
-
-    const sources = page.locator("[data-explorer-source]");
-    await expect(sources).toHaveCount(3);
-    await expect(sources.nth(0).getByRole("textbox")).toHaveValue(gameOpeningFixture.databaseTitle);
-    await expect(sources.nth(1)).toContainText("First White (online)");
-    await expect(sources.nth(2)).toContainText("Mega Reference");
-    await expect(page.getByRole("cell", { name: "e4", exact: true })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "b3", exact: true })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "c4", exact: true })).toBeVisible();
-    await expect(
-        page.locator("#bottomRight").getByRole("button", { name: "e4", exact: true }),
-    ).toHaveCount(0);
-    await assertNoHorizontalOverflow();
-    await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
+    for (const tab of ["Overview", "Ratings", "Openings", "Preparation"]) {
+        await preview.getByRole("tab", { name: tab, exact: true }).click();
+        const panel = preview.getByRole("tabpanel", { name: tab, exact: true });
+        await expect(panel).toBeVisible();
+        await expect(
+            panel.getByRole("button", { name: "Prepare on board", exact: true }),
+        ).toHaveCount(tab === "Overview" || tab === "Ratings" ? 0 : 1);
+    }
 });
 
 test("database-files: Prepare on board shows a linked opponent's over-the-board, online, and reference databases side by side", async ({
@@ -5097,7 +5116,10 @@ test("database-files: Prepare on board shows a linked opponent's over-the-board,
     // The filter button keeps the focus the closed popover returned to it.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.mouse.move(0, 0);
-    await expect(page).toHaveScreenshot("opponent-board-columns.png");
+    // Mantine's hover scrollbars fade on a timer, so the image leaves them out.
+    await expect(page).toHaveScreenshot("opponent-board-columns.png", {
+        stylePath: scrollbarFreeScreenshot,
+    });
 
     // Also fits without horizontal overflow at 800 x 720.
     await page.setViewportSize({ width: 800, height: 720 });
@@ -5146,8 +5168,10 @@ test("database-files: Prepare on board replaces the reference column with Liches
     await waitForFontsSettled(page);
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.mouse.move(0, 0);
+    // Mantine's hover scrollbars fade on a timer, so the image leaves them out.
     await expect(page.getByRole("tabpanel", { name: "Database", exact: true })).toHaveScreenshot(
         "opponent-board-lichess-column.png",
+        { stylePath: scrollbarFreeScreenshot },
     );
     await expect(page.getByText(/Unexpected Tauri IPC command:/)).toHaveCount(0);
 });

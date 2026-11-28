@@ -43,12 +43,17 @@ vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock("../home/PersonalCard", async () => {
   const { useEffect } = await import("react");
   return {
-    default: (props: { notice?: React.ReactNode }) => {
+    default: (props: { headerAction?: React.ReactNode; notice?: React.ReactNode }) => {
       mocks.personalCard(props);
       useEffect(() => {
         mocks.cardMounts += 1;
       }, []);
-      return <div>player-card{props.notice}</div>;
+      return (
+        <div>
+          player-card{props.headerAction}
+          {props.notice}
+        </div>
+      );
     },
   };
 });
@@ -56,9 +61,29 @@ vi.mock("@/platform/errors", async (original) => ({
   ...(await original<typeof import("@/platform/errors")>()),
   warnSafely: mocks.warn,
 }));
-vi.mock("./OpponentAccounts", () => ({
-  default: ({ playerName }: { playerName: string }) => <div>online accounts of {playerName}</div>,
-}));
+// The real owner hook, so a test sees whether its state survives a switch to another player; the
+// two pieces only show and change that state.
+vi.mock("./OpponentAccounts", async (original) => {
+  const { useOpponentAccounts } = await original<typeof import("./OpponentAccounts")>();
+  type Accounts = ReturnType<typeof useOpponentAccounts>;
+  return {
+    useOpponentAccounts,
+    OpponentAccountAdd: ({ accounts }: { accounts: Accounts }) => (
+      <button data-test-add onClick={() => accounts.setAdding(true)}>
+        add
+      </button>
+    ),
+    default: ({ accounts }: { accounts: Accounts }) => (
+      <div data-test-strip>
+        <button data-test-manage onClick={() => accounts.setExpanded(true)}>
+          manage
+        </button>
+        {accounts.expanded && <span data-test-details />}
+        {accounts.adding && <span data-test-dialog />}
+      </div>
+    ),
+  };
+});
 vi.mock("./useOnlineGames", () => ({ useOnlineGames: () => mocks.online }));
 vi.mock("@mantine/core", () => ({
   Center: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -127,12 +152,14 @@ test("the database caller passes its own player and database to the shared perso
     name: player.name,
     info,
     isDatabase: true,
+    headerAction: expect.anything(),
     notice: expect.anything(),
     databasePlayer: { player, file },
     online: undefined,
   });
-  // The player's online accounts sit on the card, looked up by the player's name.
-  expect(container.textContent).toContain("online accounts of Magnus");
+  // The online-account button sits in the name line and the strip under it.
+  expect(container.querySelector("[data-test-add]")).not.toBeNull();
+  expect(container.querySelector("[data-test-strip]")).not.toBeNull();
 });
 
 test("a linked collection generation change refetches game info and a pending lookup does not fetch", async () => {
@@ -352,4 +379,25 @@ test("another player gets a freshly mounted card", async () => {
     );
   });
   await vi.waitFor(() => expect(mocks.cardMounts).toBe(2));
+});
+
+test("another player starts with the online-account strip closed and no dialog open", async () => {
+  mocks.getPlayersGameInfo.mockResolvedValue(boardInfo);
+  await renderPlayerCard();
+  await vi.waitFor(() => expect(container.querySelector("[data-test-strip]")).not.toBeNull());
+  await act(async () => container.querySelector<HTMLButtonElement>("[data-test-manage]")!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>("[data-test-add]")!.click());
+  expect(container.querySelector("[data-test-details]")).not.toBeNull();
+  expect(container.querySelector("[data-test-dialog]")).not.toBeNull();
+
+  await act(async () => {
+    root.render(
+      <SWRConfig value={{ provider: () => new Map(), shouldRetryOnError: false }}>
+        <PlayerCard player={{ ...player, id: 8, name: "Hikaru" }} file={file} />
+      </SWRConfig>,
+    );
+  });
+  await vi.waitFor(() => expect(mocks.cardMounts).toBe(2));
+  expect(container.querySelector("[data-test-details]")).toBeNull();
+  expect(container.querySelector("[data-test-dialog]")).toBeNull();
 });
