@@ -193,3 +193,58 @@ test("opponent-preparation: narrow card stacks Since and Minimum games controls 
 
     await assertNoHorizontalOverflow();
 });
+
+test("opponent-preparation: names a repertoire without a color and opens its color choice", async ({
+    page,
+    mockScenario,
+    assertNoHorizontalOverflow,
+}) => {
+    await seedBoardLayouts(page);
+    await page.addInitScript(() => {
+        localStorage.setItem("mantine-color-scheme", "light");
+        localStorage.setItem("font-size", "100");
+        localStorage.setItem("auto-save", "false");
+    });
+    await page.clock.setFixedTime(new Date("2026-11-08T12:00:00Z"));
+
+    await mockScenario({
+        commands: preparationCommands("e2e-opponent-prep-rev-1", { uncolored: true }),
+    });
+
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Choose folder", exact: true }).click();
+    await expect(page.getByText("Black vs e4")).toBeVisible();
+
+    await gotoPreservingStorage(page, `/databases/${gameOpeningFixture.databaseId}`);
+    await page.getByRole("tab", { name: "Players", exact: true }).click();
+    const players = page.getByRole("tabpanel", { name: "Players", exact: true });
+    await players
+        .locator('[data-database-pane="table"] tbody tr')
+        .filter({ hasText: "First White" })
+        .click();
+    const preview = players.locator('[data-database-pane="preview"]');
+    await preview.getByRole("tab", { name: "Preparation", exact: true }).click();
+
+    // The only Black chapter has no color, so it counts as White: no Black chapters, and the
+    // file is named with a way to set its color.
+    const prep = preview.locator("[data-player-preparation]");
+    await expect(
+        prep.locator('[data-preparation-empty-repertoire="no-color-chapters"]'),
+    ).toBeVisible();
+    const notice = prep.locator("[data-repertoire-color-notice]");
+    await expect(notice).toContainText(
+        "1 chapter in Black vs e4 has no color and counts as White.",
+    );
+
+    await assertNoHorizontalOverflow();
+    await waitForFontsSettled(page);
+    await page.mouse.move(0, 0);
+    await expect(preview).toHaveScreenshot("opponent-preparation-color-notice.png");
+
+    await notice.getByRole("button", { name: "Set color…", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Set the color of Black vs e4" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: /^white$/i })).toBeChecked();
+    await waitForFontsSettled(page);
+    await expect(dialog).toHaveScreenshot("opponent-preparation-color-dialog.png");
+});

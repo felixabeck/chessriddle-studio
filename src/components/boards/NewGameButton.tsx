@@ -5,10 +5,25 @@ import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { tabsAtom } from "@/state/atoms";
 import type { GameOrigin } from "@/state/workspaceTypes";
+import { isRepertoireFile, repertoireFileColor } from "@/components/files/repertoireColor";
 import { createTab, runTabCreation } from "@/utils/tabs";
+import { defaultTree, type TreeState } from "@/utils/treeReducer";
 import { notifyUnlessCancelled } from "@/components/files/notifyError";
 import { libraryButtonProps } from "@/components/library/presentation";
 import ExplainedAction from "@/components/library/ExplainedAction";
+
+/**
+ * A new chapter of a repertoire starts from the repertoire's side, so it is saved — and trained —
+ * as that color. Other drafts start from an empty tree.
+ */
+async function draftTreeFor(origin: NewGameDraftOrigin): Promise<TreeState | undefined> {
+  if (origin.kind !== "fileDraft" || !isRepertoireFile(origin.file)) return undefined;
+  const color = await repertoireFileColor(origin.file);
+  if (!color) return undefined;
+  const tree = defaultTree();
+  tree.headers.orientation = color;
+  return tree;
+}
 
 export type NewGameDraftOrigin = Extract<GameOrigin, { kind: "databaseDraft" | "fileDraft" }>;
 
@@ -40,13 +55,14 @@ export default function NewGameButton({
         onClick={() =>
           origin &&
           void runTabCreation({
-            create: () =>
+            create: async () =>
               createTab({
                 tab: {
                   name: t("Databases.NewGame", { defaultValue: "New game" }),
                   type: "analysis",
                 },
                 gameOrigin: origin,
+                initialTree: await draftTreeFor(origin),
                 setTabs,
               }),
             onSuccess: () => navigate({ to: "/" }),

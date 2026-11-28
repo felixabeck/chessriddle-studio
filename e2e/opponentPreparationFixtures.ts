@@ -44,6 +44,12 @@ export const chapter0Tokens: Token[] = [
     { type: "Outcome", value: "*" },
 ];
 
+/** The same chapter saved without a color, so it counts as White. */
+export const uncoloredChapter0Pgn = chapter0Pgn.replace('[Orientation "black"]\n', "");
+export const uncoloredChapter0Tokens: Token[] = chapter0Tokens.filter(
+    (token) => !(token.type === "Header" && token.value.tag === "Orientation"),
+);
+
 export const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";
 export const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -";
 export const AFTER_E4_C5 = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -";
@@ -71,8 +77,10 @@ export function stat(
 
 export function preparationCommands(
     revision = "e2e-opponent-prep-rev-1",
+    { uncolored = false }: { uncolored?: boolean } = {},
 ): NonNullable<MockScenario["commands"]> {
-    const chapters = [{ pgn: chapter0Pgn, stamp: "a".repeat(64), revision, present: true }];
+    const pgn = uncolored ? uncoloredChapter0Pgn : chapter0Pgn;
+    const chapters = [{ pgn, stamp: "a".repeat(64), revision, present: true }];
     return {
         ...databaseLayoutCommands,
         ...filesWorkspaceCommands([[repertoireFile]], {
@@ -83,7 +91,7 @@ export function preparationCommands(
             file_revision: { result: revision },
             lex_pgn: {
                 pgnTokens: {
-                    [chapter0Pgn]: chapter0Tokens,
+                    [pgn]: uncolored ? uncoloredChapter0Tokens : chapter0Tokens,
                 },
             },
         }),

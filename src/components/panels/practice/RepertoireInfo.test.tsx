@@ -13,11 +13,13 @@ import { activeTabAtom, coverageMinGamesAtom, referenceDbAtom, tabsAtom } from "
 import { createNode, defaultTree, getBoardState, getNodeAtPath } from "@/utils/treeReducer";
 import { parseUci } from "chessops";
 import { installMatchMediaStub } from "@/tests/matchMedia";
+import type { Tab } from "@/utils/tabs";
 import RepertoireInfo from "./RepertoireInfo";
 import { PracticeStatisticsContext, type PracticeStatistics } from "./usePracticeStatistics";
 import { startFileRevisionPoll } from "@/state/fileFreshness";
 
 const mocks = vi.hoisted(() => ({
+  repertoireFileColor: vi.fn(async (): Promise<"white" | "black" | null> => null),
   computeTreeCoverage: vi.fn(),
   fetchPositionMoves: vi.fn(),
   searchPosition: vi.fn(),
@@ -30,6 +32,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock("@/components/files/repertoireColor", () => ({
+  repertoireFileColor: mocks.repertoireFileColor,
+}));
 vi.mock("@/utils/db", () => ({ searchPosition: mocks.searchPosition }));
 vi.mock("@/utils/sound", () => ({ playSound: mocks.playSound }));
 vi.mock("@/platform/tauri", async (original) => {
@@ -129,6 +134,7 @@ async function renderRepertoireInfo(
   id = "repertoire-info-test",
   onStore?: (store: TreeStore) => void,
   onCommit?: () => void,
+  gameOrigin: Tab["gameOrigin"] = { kind: "none" },
 ) {
   const store = createStore();
   store.set(tabsAtom, [
@@ -136,7 +142,7 @@ async function renderRepertoireInfo(
       name: "Repertoire",
       value: "tab",
       type: "analysis",
-      gameOrigin: { kind: "none" },
+      gameOrigin,
     },
   ]);
   store.set(activeTabAtom, "tab");
@@ -1794,3 +1800,37 @@ test("rare opponent move row dims its SAN via Mantine dimmed colour instead of b
   )!;
   expect(relevantSan.style.color).toBe("");
 });
+
+const blackRepertoireChapter: Tab["gameOrigin"] = {
+  kind: "file",
+  gameNumber: 1,
+  file: {
+    type: "file",
+    handle: { id: { id: "black-rep" }, kind: "fileWorkspace" },
+    name: "Black.pgn",
+    numGames: 2,
+    metadata: { type: "repertoire", tags: [] },
+    lastModified: 1,
+  },
+};
+
+test.each([true, false])(
+  "Build names an uncolored chapter of a Black repertoire, reference database %s",
+  async (withReference) => {
+    mocks.repertoireFileColor.mockResolvedValue("black");
+    const store = await renderRepertoireInfo(
+      defaultTree(),
+      `uncolored-${withReference}`,
+      undefined,
+      undefined,
+      blackRepertoireChapter,
+    );
+    if (!withReference) await act(async () => store.set(referenceDbAtom, null));
+    await vi.waitFor(() =>
+      expect(host.querySelector("[data-chapter-color-notice]")?.textContent).toContain(
+        "Repertoire.Color.ChapterMissing",
+      ),
+    );
+    mocks.repertoireFileColor.mockReset().mockResolvedValue(null);
+  },
+);

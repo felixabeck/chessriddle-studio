@@ -42,6 +42,8 @@ import {
   usePracticeStatisticsContext,
   type CoverageStatus,
 } from "./usePracticeStatistics";
+import { getTabDestinationFile } from "@/utils/tabs";
+import { ChapterColorNotice } from "./ChapterColorNotice";
 import { ImportIntoRepertoireModal } from "./ImportIntoRepertoireModal";
 import classes from "./RepertoireInfo.module.css";
 import paneClasses from "@/components/common/PaneTabs.module.css";
@@ -272,10 +274,13 @@ function RepertoireInfoView() {
     </Button>
   );
 
+  const colorNotice = <ChapterColorNotice store={store} file={getTabDestinationFile(currentTab)} />;
+
   return (
     <>
       {!referenceDb ? (
         <Stack h="100%" p="sm" className={`${paneClasses.root} ${paneClasses.content}`}>
+          {colorNotice}
           <TreeStatsBar store={store} />
           <Alert icon={<Info />} color={selectedReference ? "warning" : undefined}>
             {selectedReference
@@ -289,6 +294,7 @@ function RepertoireInfoView() {
         </Stack>
       ) : (
         <Stack h="100%" p="sm" gap={0} className={`${paneClasses.root} ${paneClasses.content}`}>
+          {colorNotice}
           {isBeforeStart && (
             <Paper p="sm" my="sm" withBorder>
               <Stack gap="xs">

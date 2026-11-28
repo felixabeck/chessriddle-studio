@@ -18,6 +18,10 @@ import type { DatabaseHandle, Player } from "@/bindings";
 import { fitSelectProps } from "@/components/common/fitSelectProps";
 import { IconAction } from "@/components/common/IconAction";
 import { inlineFailureMessage, notifyUnlessCancelled } from "@/components/files/notifyError";
+import {
+  RepertoireColorNotice,
+  uncoloredRepertoires,
+} from "@/components/files/RepertoireColorNotice";
 import DatabaseLoader from "@/components/panels/database/DatabaseLoader";
 import { isAbortError } from "@/components/panels/practice/prepareTimedRun";
 import TrainMinutesControl from "@/components/panels/practice/TrainMinutesControl";
@@ -255,6 +259,12 @@ export default function PlayerPreparation({
   const readyViews = state.kind === "ready" ? state.preparation.views : null;
   const preparationId = state.kind === "ready" ? state.preparation.id : null;
   const preparationFiles = state.kind === "ready" ? state.preparation.files : undefined;
+  const emptyFiles = state.kind === "empty-repertoire" ? state.files : undefined;
+  const indexedFiles = preparationFiles ?? emptyFiles;
+  const uncolored = useMemo(
+    () => (indexedFiles ? uncoloredRepertoires(indexedFiles) : []),
+    [indexedFiles],
+  );
   const activeView: PreparationView | null = readyViews
     ? preparationViewForSource(readyViews, effectiveSource)
     : null;
@@ -555,6 +565,11 @@ export default function PlayerPreparation({
                     color: userColorName,
                   })}
           </Text>
+          {state.reason === "no-color-chapters" && uncolored.length > 0 && (
+            <Stack mt="xs">
+              <RepertoireColorNotice repertoires={uncolored} onColored={restart} />
+            </Stack>
+          )}
         </div>
       )}
 
@@ -583,6 +598,8 @@ export default function PlayerPreparation({
               </Text>
             </Alert>
           )}
+
+          <RepertoireColorNotice repertoires={uncolored} onColored={restart} />
 
           <Text size="sm" c="dimmed" className="wrap-anywhere" data-preparation-summary>
             {t("Databases.Preparation.Summary", {

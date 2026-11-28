@@ -20,9 +20,8 @@ import {
     tabsAtom,
     updateRecentFilesAtom,
 } from "@/state/atoms";
-import { fileGameHasBlockingOpenTab } from "@/utils/fileGameWrite";
+import { firstBlockedFileGame, writeGamesOrientation } from "@/utils/fileGameWrite";
 import { patchFileTabsSidecar } from "@/utils/tabs";
-import { readFileGame, setFileGameOrientation } from "@/utils/files";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import { durabilityUncertainMessage } from "../common/ConfirmModal";
 import type { Entry, UsableEntry, FileType } from "./file";
@@ -474,12 +473,11 @@ export function useFileWorkspace(
             setName("");
             return;
         }
+        const allGames = source ? Array.from({ length: source.numGames }, (_, index) => index) : [];
         if (needsOrientationWrite && source) {
-            for (let index = 0; index < source.numGames; index += 1) {
-                if (fileGameHasBlockingOpenTab(tabs, source.handle, index)) {
-                    setActionError(t("Files.LineSection.UnsavedTab"));
-                    return;
-                }
+            if (firstBlockedFileGame(tabs, source.handle, allGames) !== null) {
+                setActionError(t("Files.LineSection.UnsavedTab"));
+                return;
             }
         }
         await runMutation(
@@ -500,24 +498,7 @@ export function useFileWorkspace(
                     await tauri.createWorkspaceDirectory(owner.workspace, parent, name);
                 if (editing && source) {
                     if (needsOrientationWrite) {
-                        for (let index = 0; index < source.numGames; index += 1) {
-                            let game: Awaited<ReturnType<typeof readFileGame>>;
-                            try {
-                                game = await readFileGame(source.handle, index);
-                            } catch (cause) {
-                                if (normalizeError(cause).backendCategory === "resource-limit")
-                                    continue;
-                                throw cause;
-                            }
-                            if (!game.present || game.omission) continue;
-                            await setFileGameOrientation(
-                                source.handle,
-                                index,
-                                repertoireColor,
-                                game.stamp,
-                                game.revision,
-                            );
-                        }
+                        await writeGamesOrientation(source.handle, allGames, repertoireColor);
                     }
                     if (!nameUnchanged || !typeUnchanged) {
                         const metadata = {

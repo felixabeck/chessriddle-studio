@@ -9,7 +9,11 @@ import {
     type StoredOpponentPreparation,
 } from "@/state/atoms";
 import type { OpponentPeriod } from "@/state/opponentLinks";
-import { readRepertoireIndex, refreshRepertoireIndex } from "@/state/repertoireIndex";
+import {
+    type IndexedRepertoireFile,
+    readRepertoireIndex,
+    refreshRepertoireIndex,
+} from "@/state/repertoireIndex";
 import { databaseHandleKey } from "@/utils/db";
 import {
     chapterOrientation,
@@ -29,7 +33,12 @@ export type EmptyRepertoireReason = "no-workspace" | "no-files" | "no-color-chap
 
 export type PreparationJobState =
     | { kind: "loading"; stage: "repertoire" | "searching"; progressId: string }
-    | { kind: "empty-repertoire"; reason: EmptyRepertoireReason }
+    | {
+          kind: "empty-repertoire";
+          reason: EmptyRepertoireReason;
+          /** The indexed repertoire files, so chapters without a color can still be named. */
+          files?: readonly IndexedRepertoireFile[];
+      }
     | { kind: "repertoire-failed" }
     | { kind: "search-failed"; error: unknown }
     | { kind: "ready"; preparation: StoredOpponentPreparation };
@@ -225,7 +234,11 @@ export function useOpponentPreparation({
             }
 
             if (!hasMatchingChapter) {
-                setInternalState({ kind: "empty-repertoire", reason: "no-color-chapters" });
+                setInternalState({
+                    kind: "empty-repertoire",
+                    reason: "no-color-chapters",
+                    files: snapshot.files,
+                });
                 return;
             }
 

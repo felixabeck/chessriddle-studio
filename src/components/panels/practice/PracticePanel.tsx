@@ -28,7 +28,8 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { IconAction } from "@/components/common/IconAction";
 import { buildFromTree, getStats } from "@/components/files/opening";
 import { practiceRunSummaryFamily, practiceTabFamily, timedRunAtom } from "@/state/atoms";
-import { getTabFile, getTabGameNumber } from "@/utils/tabs";
+import { getTabDestinationFile, getTabFile, getTabGameNumber } from "@/utils/tabs";
+import { ChapterColorNotice } from "./ChapterColorNotice";
 import { fileWorkspaceKey } from "@/utils/pathCapabilities";
 import RepertoireInfo from "./RepertoireInfo";
 import { LogsModal, PositionsModal } from "./PracticeModals";
@@ -186,6 +187,7 @@ function PracticePanel() {
             style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}
           >
             <Stack p="sm" gap="md">
+              <ChapterColorNotice store={store} file={getTabDestinationFile(currentTab)} />
               {timedRun?.phase === "running" && (
                 <Text fz="sm" fw={500} style={{ fontVariantNumeric: "tabular-nums" }}>
                   {t("Board.Practice.RunCountdown", { time: formatRunClock(remainingMs) })}

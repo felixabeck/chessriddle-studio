@@ -33,6 +33,12 @@ import {
 import { defaultPGN, getPGN, parsePGN, parsePGNWithLossReport } from "./chess";
 import { getFileGameName, pickPgnFile, readFileGame, writeFileGame } from "./files";
 import { findMainlinePath, type GameHeaders, type TreeState } from "./treeReducer";
+import {
+    fillRepertoireColor,
+    isRepertoireFile,
+    needsRepertoireColor,
+    repertoireFileColor,
+} from "@/components/files/repertoireColor";
 import { fileWorkspaceKey } from "./pathCapabilities";
 import type {
     CollectionDescriptor,
@@ -361,9 +367,14 @@ export async function appendBlankGame({
         }
     };
     try {
-        const pgn = defaultPGN();
-        const newGame = await parsePGN(pgn);
+        const newGame = await parsePGN(defaultPGN());
         if (!owns()) return;
+        // A blank game added to a repertoire takes the file's color, or it would count as White.
+        const file = (getTab(ownerId) as FileBackedTab).gameOrigin.file;
+        const color = isRepertoireFile(file) ? await repertoireFileColor(file) : null;
+        if (!owns()) return;
+        if (color) newGame.headers.orientation = color;
+        const pgn = color ? serializeTree(newGame) : defaultPGN();
         const latest = getTab(ownerId)! as FileBackedTab;
         const origin = latest.gameOrigin;
         const gameNumber = origin.file.numGames;
@@ -850,7 +861,10 @@ export type SaveResult =
     | { status: "failed"; error: AppError };
 
 export function serializeStoreTree(store: StoreApi<TreeStoreState>): string {
-    const state = store.getState();
+    return serializeTree(store.getState());
+}
+
+function serializeTree(state: Pick<TreeState, "root" | "headers">): string {
     return `${getPGN(state.root, {
         headers: state.headers,
         comments: true,
@@ -1391,6 +1405,16 @@ export async function appendStoreGame({
     storeAttempt?: { clear: () => void };
 }): Promise<"saved" | "edited" | "superseded" | "uncertain" | "refused"> {
     if (!isCurrent()) return "superseded";
+    // A game added to a repertoire takes the file's color, or it would count as White.
+    if (needsRepertoireColor(store, selected)) {
+        const color = await repertoireFileColor(selected);
+        if (!isCurrent()) {
+            // Nothing was written: a store attempt must not stay marked as possibly added.
+            storeAttempt?.clear();
+            return "superseded";
+        }
+        if (fillRepertoireColor(store, color)) pgn = serializeStoreTree(store);
+    }
     if (!storeAttempt) {
         if (store.getState().appendAttempted) return "uncertain";
         store.getState().setAppendAttempted(true);
@@ -1537,6 +1561,17 @@ async function saveToFileNow({
         const databaseOrigin = currentOrigin?.kind === "database" ? currentOrigin : undefined;
         const isTempFile = currentOrigin?.kind === "temp_file";
         const sourceStamp = store.getState().sourceStamp;
+        // An edited chapter of a repertoire that has no color yet takes the file's color.
+        // Save As from a temporary file writes elsewhere, so its origin's color does not apply.
+        if (
+            fileOrigin &&
+            !(isTempFile && isUserSave) &&
+            needsRepertoireColor(store, fileOrigin.file)
+        ) {
+            const color = await repertoireFileColor(fileOrigin.file);
+            if (!owns()) return "superseded";
+            fillRepertoireColor(store, color);
+        }
         const pgn = serializeStoreTree(store);
         if (currentOrigin.kind === "none") {
             const uncertain = () =>

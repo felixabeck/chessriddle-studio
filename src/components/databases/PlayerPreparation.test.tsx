@@ -43,6 +43,12 @@ const mocks = vi.hoisted(() => ({
   openFile: vi.fn(),
   navigate: vi.fn(),
   notifyUnlessCancelled: vi.fn(),
+  writeGamesOrientation: vi.fn(async (): Promise<void> => undefined),
+}));
+
+vi.mock("@/utils/fileGameWrite", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/fileGameWrite")>()),
+  writeGamesOrientation: mocks.writeGamesOrientation,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -340,6 +346,86 @@ describe("PlayerPreparation", () => {
       ).not.toBeNull();
     });
     expect(mocks.fetchBatchStatistics).not.toHaveBeenCalled();
+    // White chapters only: nothing is missing a colour, so no colour notice.
+    expect(container.querySelector("[data-repertoire-color-notice]")).toBeNull();
+
+    // 4. A Black file whose chapters have no colour counts as White and is named, so the
+    // player can set its colour from here.
+    mocks.readRepertoireIndex.mockReturnValue(
+      makeSnapshot({
+        files: [
+          {
+            ...makeSnapshot().files[0],
+            chapters: [
+              {
+                ...makeSnapshot().files[0].chapters[0],
+                headers: { white: "Sicilian", black: "Mainline", event: "?" },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    await act(async () => refreshBtn.click());
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-repertoire-color-notice]")).not.toBeNull();
+    });
+    expect(
+      container.querySelector('[data-preparation-empty-repertoire="no-color-chapters"]'),
+    ).not.toBeNull();
+    expect(container.querySelectorAll("[data-repertoire-color-file]")).toHaveLength(1);
+  });
+
+  test("an uncolored repertoire beside the results is named, and setting its color reruns", async () => {
+    const uncoloredFile: FileMetadata = {
+      ...repFile,
+      name: "Dutch",
+      handle: { id: { id: "file-dutch" }, kind: "fileWorkspace" },
+    };
+    const base = makeSnapshot();
+    mocks.readRepertoireIndex.mockReturnValue(
+      makeSnapshot({
+        files: [
+          ...base.files,
+          {
+            workspaceKey: fileWorkspaceKey(uncoloredFile.handle),
+            file: uncoloredFile,
+            partial: false,
+            chapters: [
+              {
+                ...base.files[0].chapters[0],
+                headers: { orientation: "black", white: "Dutch", black: "Main", event: "?" },
+              },
+              {
+                ...base.files[0].chapters[0],
+                chapter: 1,
+                headers: { white: "Dutch", black: "1.c4", event: "?" },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    await renderTab();
+    await vi.waitFor(() => {
+      expect(container.querySelector("[data-preparation-lines]")).not.toBeNull();
+    });
+    const notice = container.querySelector("[data-repertoire-color-notice]");
+    expect(notice?.querySelectorAll("[data-repertoire-color-file]")).toHaveLength(1);
+    expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-repertoire-color-file] button")!.click(),
+    );
+    const save = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLButtonElement>("[data-repertoire-color-save]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await act(async () => save.click());
+
+    expect(mocks.writeGamesOrientation).toHaveBeenCalledWith(uncoloredFile.handle, [1], "black");
+    await vi.waitFor(() => expect(mocks.fetchBatchStatistics).toHaveBeenCalledTimes(2));
   });
 
   test("partial repertoire with chapters shows results alongside a partial notice", async () => {

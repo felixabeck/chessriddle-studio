@@ -8,6 +8,8 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 - Opponent preparation: the Moves and Uncovered move columns show move numbers ("1. e4 c6 2. d4 d5", "3... g6"), counted from where each chapter starts, with piece letters or symbols as set for the notation. A gap at the starting position is labelled "Start position" instead of a chapter that happens to contain it.
 - Player cards: "Prepare on board" now sits only on Openings and Preparation, always as the last button on the right; Preparation's Refresh is an icon beside it. The "Online accounts" row is gone: a small "+ Online account" button sits beside the player's name, and linked accounts show as chips under it. The database view's Enlarge table and Enlarge preview arrows are gone; drag the divider to resize.
+- Repertoire colour: a game added to a repertoire, with "+ New game" or by saving into the file, takes the colour the file's chapters share, so new chapters of a Black repertoire are trained and prepared as Black. "+ New game" opens the board from that side.
+- Chapters without a colour: Preparation names each repertoire file whose chapters have no colour (they count as White) with a "Set color…" button, and Practice offers "Train as White" or "Train as Black" for such a chapter.
 
 ## 1.5.0
 

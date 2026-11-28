@@ -53,6 +53,9 @@ const fixtures = vi.hoisted(() => ({
   })),
   updateCardPerformance: vi.fn(),
   loadPracticeReviews: vi.fn(),
+  repertoireFileColor: vi.fn(async (): Promise<"white" | "black" | null> => null),
+  tabFile: undefined as unknown,
+  destinationFile: undefined as unknown,
   node: { halfMoves: 0, san: "e4" },
   tree: {
     currentNode: () => ({ fen: "root" }),
@@ -133,6 +136,9 @@ vi.mock("jotai", () => ({
 vi.mock("./retainedPositions", () => ({
   collectRetainedPracticePositions: fixtures.collectRetainedPracticePositions,
 }));
+vi.mock("@/components/files/repertoireColor", () => ({
+  repertoireFileColor: fixtures.repertoireFileColor,
+}));
 vi.mock("zustand", () => ({
   useStore: (_store: unknown, selector: (value: typeof fixtures.tree) => unknown) =>
     selector(fixtures.tree),
@@ -153,8 +159,9 @@ vi.mock("@/components/files/opening", async (importOriginal) => ({
 vi.mock("@/utils/tabs", () => ({
   useTabActions: () => ({ getTab: () => fixtures.currentTab }),
   sameTabOwner: (current: unknown, captured: unknown) => current === captured,
-  getTabFile: () => ({ handle: { id: { id: "file-a" } }, name: "opening.pgn" }),
+  getTabFile: () => fixtures.tabFile,
   getTabGameNumber: () => 0,
+  getTabDestinationFile: () => fixtures.destinationFile,
 }));
 vi.mock("@/utils/pathCapabilities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/utils/pathCapabilities")>()),
@@ -357,6 +364,12 @@ function deck(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const practiceFile = {
+  handle: { id: { id: "file-a" } },
+  name: "opening.pgn",
+  metadata: { type: "repertoire", tags: [] },
+};
+
 function renderPanel() {
   const container = document.createElement("div");
   document.body.append(container);
@@ -389,6 +402,8 @@ beforeEach(() => {
     .mockReset()
     .mockReturnValue({ added: 0, positions: [], removed: 0, updated: 0, reordered: false });
   fixtures.tree.headers = { orientation: "white", start: [] };
+  fixtures.tabFile = practiceFile;
+  fixtures.destinationFile = practiceFile;
   fixtures.tree.root = {};
   fixtures.practiceState = { phase: "idle" };
   fixtures.timedRun = null;
@@ -417,6 +432,22 @@ afterEach(async () => {
   container?.remove();
   root = undefined;
   container = undefined;
+});
+
+test("Train names an uncolored chapter of a Black repertoire, a new chapter included", async () => {
+  fixtures.repertoireFileColor.mockResolvedValueOnce("black");
+  // A new chapter not yet saved belongs to its repertoire only as a destination.
+  fixtures.tabFile = undefined;
+  fixtures.tree.headers = { start: [] } as unknown as typeof fixtures.tree.headers;
+  // The fake tree store does not notify, so mount afresh on the uncolored chapter.
+  await act(async () => root?.unmount());
+  container?.remove();
+  ({ root, container } = renderPanel());
+  await vi.waitFor(() =>
+    expect(container?.querySelector("[data-chapter-color-notice]")?.textContent).toContain(
+      "Repertoire.Color.ChapterMissing",
+    ),
+  );
 });
 
 test("the full-repertoire badge shows the in-scope total from getStats", async () => {
