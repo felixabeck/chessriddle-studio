@@ -2,11 +2,38 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
-## Unreleased
+## 1.5.0
 
 ### New
 
-- Library sync: standalone game databases now appear alongside your PGN files in "Sync with ChessRiddle". Selected databases within the limits (up to 5,000 games and 5 MB) sync to your private Library on chessriddle.com automatically; oversized or empty databases stay unselected by default and local. Downloaded game histories remain local.
+- Game review: the Report panel is now a guided review with one scoreboard and explained numbers, a one-sentence summary, key moments you can step through with board arrows, kinds of mistake, time usage and time-trouble tags, opening, novelty and repertoire notes, and an optional Coach Explain button that is hidden without an AI connection.
+- Library sync: game databases now appear beside your PGN files in "Sync with ChessRiddle". Selected databases within the limits (up to 5,000 games and 5 MB) sync to your private Library on chessriddle.com automatically; larger or empty databases stay unselected and local. Downloaded game histories stay local.
+- Edit game data: the pencil on a database game's card, or F2, opens a dialog to change White, Black, both Elo, Event, Site, Round, Date, Result and Time control. Games from linked online accounts stay read-only. The shortcut can be changed under Settings → Shortcuts.
+- Clock times: the Annotate panel has a Clock field for the current move. A plain number is minutes (86 means 1:26:00), h:mm and h:mm:ss work too, and Enter or Tab saves and moves on to the next move. The board shows clocks whenever moves carry clock times.
+- Time control: the Info panel has a Time control row with None, four club presets and a Custom form, and shows the control in plain words. The board clocks show it as a tooltip.
+- Scoresheet import reads the clock times written next to the moves and keeps them with the game.
+- New analysis: the first item in the board bar's More menu, Ctrl/Cmd+N or File → New Analysis Board turns the current analysis board into an empty one in the same place. Database sources and engine settings carry over.
+- Database panel: move statistics now sit above the matching games, with a draggable divider between them, instead of a switch between Statistics and Games. A collapse button hides the games. The games table has a Notation column with the next eight half-moves from the board position.
+- Database lists: the games and tournament lists have a sortable Round column.
+- Close a tab with a middle click.
+
+### Improved
+
+- Notation: stepping through moves no longer re-centres the list on every move. The list stays still and turns the page when the current move comes within three rows of the edge.
+- Online downloads: the account card, the opponent download dialog and the player card show "1,234 of 5,678 games loaded" while games load.
+- Player cards: "Prepare on board" is now available on Overview, Ratings and Preparation as well. Overview and Ratings open the start position as White with all games, Preparation uses that tab's colour and Since.
+- Saving: "Save a copy…" adds the game as a new one. Saving an open game to the file or database it came from updates it in place ("Update this game") instead of adding a duplicate. Autosave shows a quiet "Saved" mark in the board bar.
+- Converting a Library file to a repertoire asks for the colour you train.
+- Settings keeps its category, search and scroll position while the Settings tab stays open.
+- Readability: dimmed text is no longer faded with transparency, the Dim theme's active tabs, clocks and selected items are easier to read, and the current move and open variations are easier to find in the dark notation.
+- Coach: a provider that takes too long now gets its own message instead of "The service gave an unexpected answer", and a ChatGPT sign-in refused because of account eligibility or limits now says so.
+
+### Fixed
+
+- The database preview board no longer jumps up and down while you step through the moves.
+- After a Library file's type or name changes, open tabs and Recent files pick up the change immediately.
+- "Train these lines" no longer leaves an empty New Tab behind.
+- Long player names no longer push the board bar's buttons out of view.
 
 ## 1.4.0
 
@@ -25,14 +52,12 @@ What changed in each ChessRiddle Studio release. The release workflow copies a v
 
 ### Improved
 
-- Game review: redesigned the Report panel into a guided review with one scoreboard and explained numbers, a one-sentence summary, key moments you can step through with board arrows, kinds of mistake, time usage and time-trouble tags, opening, novelty and repertoire notes, and an optional Coach Explain button hidden without an AI connection.
 - Board bar: the button column beside the notation is gone. The bar above the board shows Play from here (Analyze game on a game tab, Take back in a live game), Flip Board, Save when there is something to save, and a More menu with "Save to file or database…", "Take Snapshot" and "Edit position". Edit position (E), Take Snapshot (Ctrl/Cmd+Shift+S) and Save to database (Ctrl/Cmd+Shift+D) have their own shortcuts, and Clear drawings now also works on the game screen. The notation has the same header as the other panels, with the eye button to hide moves and "View options" for table view, comments, diagrams and variations.
 - Clocks: the board clocks are smaller and no longer show a progress bar. Beside the clock of the side that just moved, a muted figure shows how long that move took.
 - Chess.com: a live game opened from a Chess.com link (browser extension or pasted URL) now carries each move's clock time.
 - Explorer: every source shows White's score per move (wins plus half the draws) in a Score column beside Total.
 - Explorer: a "Prepare on board" tab keeps its player, comparison columns and Lichess source after a restart.
 - Player cards: the board on the Openings tab takes moves like a table row, starts larger and can be resized by dragging its edge; Studio remembers the size.
-- Player cards: "Prepare on board" is now available on Overview, Ratings and Preparation as well — Overview and Ratings open the start position as White with all games, while Preparation uses that tab's colour and Since.
 - Coach and Assistant: the question field spans the full width and starts at two lines, with the model button, new conversation and Send on one line below it. A model list that failed to load now offers Retry.
 - Scoresheet import: add PDF scans as well as photos. Each PDF page counts as one of the four images, and Studio reads the pages on your computer before anything is sent. While the AI reads the sheet, a full-width progress button with a spinner shows that it is working, with Cancel right below.
 - Dialogs: content no longer touches the line under a dialog's title, and the Import Game cards keep the same height (the photo card is now called "Photo").
