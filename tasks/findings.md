@@ -30661,3 +30661,20 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Proof:** `cargo test --bins -- fs::tests::download_payload_network_bounds` passes; replacing the throttle with one emission per chunk still fails the bound.
 * **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
 * **Repair owner:** 6c2fb393-fed1-4c29-a42b-3fd3e461839e on tuxedo-atlas, 2026-11-28T11:54:54Z
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Game-link handoff retry test is flaky on Windows CI: only one attempt before the deadline
+
+* **ID:** f-20261128-12 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 46139578453
+* **First red:** Test run 46139578453 on `35b0a08ae`, job `rust-windows-test`.
+* **Failure scenario:** `infra::game_link_handoff::tests::a_missing_endpoint_or_a_closed_port_is_retried_until_the_deadline` panicked at `src\infra\game_link_handoff.rs:796`: `assertion failed: attempts.load(Ordering::SeqCst) > 1`. The test targets port 1; on a Windows runner a single connect to port 1 can take most of the deadline (refusal arrives slowly or the 100 ms connect timeout plus scheduling), so the retry loop makes one attempt only. The same test passed in the run before.
+* **Spotted outside diff:** yes, by the repertoire-colour session while reading CI after its push (2026-11-28); not worked there.
+* **Where:** `src-tauri/src/infra/game_link_handoff.rs` test near line 796 (port 1 probe from f-20261125 loopback work, see the handled entry citing `a_missing_endpoint_or_a_closed_port_is_retried_until_the_deadline`).
+* **Fix direction:** prove retries without wall-clock luck, e.g. an injectable connector that fails fast and counts attempts, or a deadline long enough relative to the per-attempt timeout that two attempts always fit.
+* **Proof:** the test passes repeatedly on the Windows runner (or under an injected slow connector locally) and still fails when the retry loop is removed.
+* **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
