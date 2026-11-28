@@ -139,8 +139,19 @@ const FOLLOW_MARGIN_PX = 96;
 const FOLLOW_MARGIN_PANEL_DIVISOR = 4;
 const LAYOUT_TOLERANCE_PX = 2;
 // Frames to wait after a step: with reduced motion the turn lands at once and GameNotation's
-// settle check needs at most its three stable checks.
+// settle check needs at most its three stable checks. Each frame prefers rAF (matching
+// followNotationMove) and falls back after SETTLE_FRAME_CAP_MS so a stalled rAF cannot sit
+// through the 135 s slow-test budget (f-20261128-05).
 const SETTLE_FRAMES = 3;
+const SETTLE_FRAME_CAP_MS = 100;
+// One evaluate of the whole 120-ply walk still exceeded the 135 s slow-test budget on hosted
+// WebKit: rAF inside a long evaluate can stall, so the walk returns to Playwright every chunk
+// and each step's change-wait is a wall-clock deadline instead of a frame count.
+const WALK_CHUNK_PLIES = 20;
+// Original 120-frame wait at 60 Hz. A frame-count wait grew with throttled rAF.
+const STEP_CHANGE_MS = 2_000;
+// Change-wait poll cadence when rAF is slower than a frame; settle waits use SETTLE_FRAME_CAP_MS.
+const CHANGE_TICK_MS = 16;
 
 const tokens: Token[] = [
     { type: "Header", value: { tag: "Event", value: "Follow scroll" } },
@@ -170,24 +181,36 @@ async function openLongGame(page: Page, mockScenario: (scenario: MockScenario) =
 
 /** Waits a few frames for the follow scroll to settle, then reads the list and current cell. */
 async function followState(page: Page, frames = SETTLE_FRAMES): Promise<FollowState | null> {
-    return page.evaluate(async (frames) => {
-        for (let i = 0; i < frames; i += 1) {
-            await new Promise((resolve) => requestAnimationFrame(resolve));
-        }
-        const viewport = [
-            ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
-        ].find((element) => element.querySelector("[data-index]"));
-        const cell = viewport?.querySelector<HTMLElement>('[data-notation-current="true"]');
-        if (!viewport || !cell) return null;
-        const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
-        const bounds = cell.getBoundingClientRect();
-        return {
-            top: viewport.scrollTop,
-            height: viewport.clientHeight,
-            cellTop: bounds.top - viewportTop,
-            cellBottom: bounds.bottom - viewportTop,
-        };
-    }, frames);
+    return page.evaluate(
+        async ({ frames, settleFrameCapMs }) => {
+            for (let i = 0; i < frames; i += 1) {
+                await new Promise<void>((resolve) => {
+                    let done = false;
+                    const finish = () => {
+                        if (done) return;
+                        done = true;
+                        resolve();
+                    };
+                    requestAnimationFrame(finish);
+                    setTimeout(finish, settleFrameCapMs);
+                });
+            }
+            const viewport = [
+                ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
+            ].find((element) => element.querySelector("[data-index]"));
+            const cell = viewport?.querySelector<HTMLElement>('[data-notation-current="true"]');
+            if (!viewport || !cell) return null;
+            const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+            const bounds = cell.getBoundingClientRect();
+            return {
+                top: viewport.scrollTop,
+                height: viewport.clientHeight,
+                cellTop: bounds.top - viewportTop,
+                cellBottom: bounds.bottom - viewportTop,
+            };
+        },
+        { frames, settleFrameCapMs: SETTLE_FRAME_CAP_MS },
+    );
 }
 
 async function followTop(page: Page) {
@@ -224,63 +247,103 @@ type WalkStep = FollowState & { text: string; scrollHeight: number };
 /**
  * Steps through the moves inside the page: each step dispatches the navigation key to the
  * document (where the app's hotkeys listen), waits for the current move to change, lets the
- * follow scroll settle and reads the geometry. One round trip for the whole walk keeps it at a
- * few seconds even in WebKit on the CI runner, where a round trip per step took minutes
- * (f-20261127-23).
+ * follow scroll settle and reads the geometry. Keys stay in-page (a Playwright round trip per
+ * ply took minutes on hosted WebKit, f-20261127-23); the walk is chunked so one evaluate cannot
+ * sit past the 135 s slow-test budget when rAF stalls (f-20261128-05).
  */
 async function walk(page: Page, key: "ArrowRight" | "ArrowLeft", steps: number) {
-    return page.evaluate(
-        async ({ key, steps, settleFrames }) => {
-            const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-            const viewport = [
-                ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
-            ].find((element) => element.querySelector("[data-index]"))!;
-            const current = () =>
-                viewport.querySelector<HTMLElement>('[data-notation-current="true"]');
-            const result: WalkStep[] = [];
-            for (let step = 0; step < steps; step += 1) {
-                const before = current();
-                const beforeText = before?.textContent ?? null;
-                const target = document.activeElement ?? document.body;
-                for (const type of ["keydown", "keyup"]) {
-                    target.dispatchEvent(
-                        new KeyboardEvent(type, {
-                            key,
-                            code: key,
-                            bubbles: true,
-                            cancelable: true,
-                        }),
-                    );
+    const result: WalkStep[] = [];
+    for (let offset = 0; offset < steps; offset += WALK_CHUNK_PLIES) {
+        const chunkPlies = Math.min(WALK_CHUNK_PLIES, steps - offset);
+        const chunk = await page.evaluate(
+            async ({
+                key,
+                chunkPlies,
+                settleFrames,
+                stepChangeMs,
+                changeTickMs,
+                settleFrameCapMs,
+                stepOffset,
+            }) => {
+                const cappedFrame = (capMs: number) =>
+                    new Promise<void>((resolve) => {
+                        let done = false;
+                        const finish = () => {
+                            if (done) return;
+                            done = true;
+                            resolve();
+                        };
+                        requestAnimationFrame(finish);
+                        setTimeout(finish, capMs);
+                    });
+                const changeTick = () => cappedFrame(changeTickMs);
+                const settleFrame = () => cappedFrame(settleFrameCapMs);
+                const viewport = [
+                    ...document.querySelectorAll<HTMLElement>(".mantine-ScrollArea-viewport"),
+                ].find((element) => element.querySelector("[data-index]"))!;
+                const current = () =>
+                    viewport.querySelector<HTMLElement>('[data-notation-current="true"]');
+                const chunkResult: WalkStep[] = [];
+                for (let step = 0; step < chunkPlies; step += 1) {
+                    const before = current();
+                    const beforeText = before?.textContent ?? null;
+                    const target = document.activeElement ?? document.body;
+                    for (const type of ["keydown", "keyup"]) {
+                        target.dispatchEvent(
+                            new KeyboardEvent(type, {
+                                key,
+                                code: key,
+                                bubbles: true,
+                                cancelable: true,
+                            }),
+                        );
+                    }
+                    // Wait for a rendered current move that differs from the one before the key (at
+                    // the start position there was none). Wall-clock deadline: a frame-count wait
+                    // grew with throttled rAF and ate the whole test timeout. Settle waits prefer
+                    // rAF so GameNotation can retarget after late row measurements, with a 100 ms
+                    // cap so a stalled rAF cannot hold the evaluate until the test timeout.
+                    const changed = () => {
+                        const now = current();
+                        return now !== null && (now !== before || now.textContent !== beforeText);
+                    };
+                    const deadline = performance.now() + stepChangeMs;
+                    while (!changed()) {
+                        if (performance.now() >= deadline) {
+                            throw new Error(
+                                `step ${stepOffset + step + 1}: the current move did not change`,
+                            );
+                        }
+                        await changeTick();
+                    }
+                    for (let i = 0; i < settleFrames; i += 1) await settleFrame();
+                    const cell = current()!;
+                    const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
+                    const bounds = cell.getBoundingClientRect();
+                    chunkResult.push({
+                        text: cell.textContent ?? "",
+                        top: viewport.scrollTop,
+                        height: viewport.clientHeight,
+                        cellTop: bounds.top - viewportTop,
+                        cellBottom: bounds.bottom - viewportTop,
+                        scrollHeight: viewport.scrollHeight,
+                    });
                 }
-                let waited = 0;
-                // Wait for a rendered current move that differs from the one before the key (at the
-                // start position there was none).
-                const changed = () => {
-                    const now = current();
-                    return now !== null && (now !== before || now.textContent !== beforeText);
-                };
-                while (!changed()) {
-                    if (++waited > 120)
-                        throw new Error(`step ${step + 1}: the current move did not change`);
-                    await frame();
-                }
-                for (let i = 0; i < settleFrames; i += 1) await frame();
-                const cell = current()!;
-                const viewportTop = viewport.getBoundingClientRect().top + viewport.clientTop;
-                const bounds = cell.getBoundingClientRect();
-                result.push({
-                    text: cell.textContent ?? "",
-                    top: viewport.scrollTop,
-                    height: viewport.clientHeight,
-                    cellTop: bounds.top - viewportTop,
-                    cellBottom: bounds.bottom - viewportTop,
-                    scrollHeight: viewport.scrollHeight,
-                });
-            }
-            return result;
-        },
-        { key, steps, settleFrames: SETTLE_FRAMES },
-    );
+                return chunkResult;
+            },
+            {
+                key,
+                chunkPlies,
+                settleFrames: SETTLE_FRAMES,
+                stepChangeMs: STEP_CHANGE_MS,
+                changeTickMs: CHANGE_TICK_MS,
+                settleFrameCapMs: SETTLE_FRAME_CAP_MS,
+                stepOffset: offset,
+            },
+        );
+        result.push(...chunk);
+    }
+    return result;
 }
 
 for (const view of ["table", "inline"] as const) {
@@ -288,8 +351,8 @@ for (const view of ["table", "inline"] as const) {
         page,
         mockScenario,
     }) => {
-        // 160 steps of four to five frames each: ~22 s locally in WebKit, about three times that on
-        // the CI runner, so the walk gets the slow-test limit (f-20261127-23).
+        // 120 forward plies plus 40 back: the walk is chunked and time-bounded (f-20261128-05);
+        // slow() stays as cushion for open-game setup on a loaded CI runner.
         test.slow();
         await page.emulateMedia({ reducedMotion: "reduce" });
         await openLongGame(page, mockScenario);
