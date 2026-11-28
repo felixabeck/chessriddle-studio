@@ -30347,6 +30347,10 @@ Download-count snapshots failed again on newest completed red Test 46085092838 (
 * **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
 <!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"2a484940c5faa70b9595c60500c2762fab7493e6f7b86dbb3ec89b85f5e05d94","input_sha256":"d6176e4f13bded2eb0496c0ee8178396c27c859704928b40e198610f2645382e","kind":"mutation-receipt","operation":"7fd0d97ead340a6e3251eb60cd582eff183167bfb5d6124ae34d6e503428d057","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
 
+Download-count snapshots failed again on newest completed red Test 46093395135 (head 05f70acc07a856e08adf5ee201b1e2076af7d682; both online-opponent projects; timeout 8000ms on `toHaveScreenshot("online-opponent-download-count.png")`). Open finding already named this defect; adding the streak's newest run so it owns this red. Local container passed these two screenshots without re-record. Do not install 05f70acc0 (inherited e2e red; BoardBar 1024x700 overflow is a separate follow-up of f-20261128-03).
+* **CI run:** 46093395135
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"62f179a954278b17e0864d748eb49fa30b5306cb44cb5d0b32bc3d16386c4f8a","input_sha256":"9ccd083598fbaa75e95c2b9c85e0aa4b9128cea17666be66f437171118b95940","kind":"mutation-receipt","operation":"96d59b1f0e3c20da5e7e7a20fe3cfeec01d521ac0866448732ae95a8bdaeff39","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
+
 ---
 
 ## 2026-11-27 — filed through the inbox spool
