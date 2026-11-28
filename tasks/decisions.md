@@ -15741,3 +15741,13 @@ Former private decision identifier: d-20261029-14
 * **Reason:** The website already accepts `kind=games` and privacy already says Studio sends the selected PGN files. The stale product line that game databases do not sync is a website-docs follow-up, not a Studio blocker. Reversal path: amend `p-20261124-01` and privacy in chess-tactics-app in a separate run.
 * **Decided by:** Grok full auto, library-sync-databases build · **Superseded-by:** -
 <!-- ledger-meta {"command":"record-decision","effect_lines":35,"effect_sha256":"64b070f91e5f3f0a2e4908c7a2100676c2118aecb41fe87c2e52f378baa6e638","input_sha256":"b28d15a885094f4daace40f7f92295db081385e984f72595107eca6fdd4e4833","kind":"mutation-receipt","operation":"1f169ed457d1a5ca9bf3b20f196540c60269b0e0558ec8afbfdaba83104834f2","options":{"section":null},"request_id_sha256":null,"results":["d-20261128-01","d-20261128-02","d-20261128-03","d-20261128-04"],"target":"decisions-ledger","v":1} -->
+
+### d-20261128-07 — Where does a scoresheet reading's photo layout live?
+
+* **Question:** The vision model now reports where the move table is printed on the photos, so the Photo panel can mark the selected move's cell. Should the layout be kept with the review only, or saved with the game?
+* **Governs:** -
+* **Chosen:** Only in the active review (`scoresheetReview.layout` in the tab state, bound to the photo ids it was read from); a saved game reopened later and photos replaced through "Load photo again" show no marker.
+* **Rejected:** A new PGN tag or a sidecar beside the content-addressed photo: a new saved format for a case outside the user's wish, which is about confirming and correcting moves during the review.
+* **Reason:** Build plan 2026-11-28-scoresheet-cell-highlight, Decisions and trade-offs. Reversal path: store the layout beside the content-addressed photo in `scoresheet-photos/` and read it when the Photo tab opens.
+* **Decided by:** Claude Code (Opus 5.5) build session of 2026-11-28 for scoresheet-cell-highlight (full auto), reviewed by Antigravity plan lenses · **Superseded-by:** -
+<!-- ledger-meta {"command":"record-decision","effect_lines":8,"effect_sha256":"6ce899d3395a1005ada9a6e5e1788ea5e8f519d4aaa8e2f38bc21a4d6805f68c","input_sha256":"df6d5f7ecc7e8b524c92e69974ae0543f67407bb0382599eca456612dcf65d40","kind":"mutation-receipt","operation":"3f751cfb10d16241b42bc95e8a6b8a59878fd0438bf78ec58ffa202390010d37","options":{"section":null},"request_id_sha256":null,"results":["d-20261128-07"],"target":"decisions-ledger","v":1} -->
