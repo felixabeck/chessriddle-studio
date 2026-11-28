@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dosyalar ve Kütüphane
 summary: Çalışma alanı klasörü belirleme, PGN dosyaları oluşturup düzenleme, oyun açıp kaydetme ve çöp kutusunu yönetme.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) sayfası çalışma alanı PGN dosyalarınızı (oyunlar, repertuvarlar, turnuvalar, bulmacalar ve diğer dosyalar) ve oyun veritabanlarınızı bir araya getirir.
@@ -21,4 +21,4 @@ Bir dosyayı analiz tahtasında düzenlerken:
 
 Bir dosyayı {{label:Files.Trash}} bölümüne taşımak onu hemen kalıcı olarak silmez. Bildirimdeki {{label:Common.Undo}} düğmesine hemen tıklayabilir veya bir dosyayı {{label:Files.Restore}}, {{label:Files.DeletePermanently}} ya da {{label:Files.EmptyTrash}} işlemleriyle yönetmek için [[page:library]] içindeki {{label:Files.Trash}} bölümüne kaydırabilirsiniz.
 
-ChessRiddle hesabınız bağlıyken seçili PGN dosyalarını ChessRiddle üzerindeki özel Kütüphanenize senkronize etmek için [[page:library]] sayfasında {{label:Library.Sync.Action}} düğmesine tıklayın (en fazla 100 dosya, dosya başına 5 MB ve 40.000 hamle). Düzenlemeler, ad değişiklikleri, seçim kaldırmalar ve silmeler otomatik olarak güncellenir; indirilen oyun geçmişleri ve oyun veritabanları yerel olarak kalır. Senkronizasyonu kapatırken ChessRiddle üzerindeki senkronize dosyaları tutabilir veya kaldırabilirsiniz.
+ChessRiddle hesabınız bağlıyken seçili PGN dosyalarını ve oyun veritabanlarını ChessRiddle üzerindeki özel Kütüphanenize senkronize etmek için [[page:library]] sayfasında {{label:Library.Sync.Action}} düğmesine tıklayın (en fazla 100 dosya, dosya başına 5 MB, 40.000 hamle ve 5.000 oyun). Düzenlemeler, ad değişiklikleri, seçim kaldırmalar ve silmeler otomatik olarak güncellenir; indirilen oyun geçmişleri yerel olarak kalır. Senkronizasyonu kapatırken ChessRiddle üzerindeki senkronize dosyaları tutabilir veya kaldırabilirsiniz.

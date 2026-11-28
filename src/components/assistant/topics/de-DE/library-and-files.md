@@ -2,7 +2,7 @@
 id: library-and-files
 title: Dateien und die Bibliothek
 summary: Workspace-Ordner einrichten, PGN-Dateien erstellen und ordnen, Partien öffnen und speichern sowie den Papierkorb verwalten.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) führt deine Workspace-PGN-Dateien (Partien, Repertoires, Turniere, Puzzles und sonstige Dateien) mit deinen Partiedatenbanken zusammen.
@@ -21,4 +21,4 @@ Während du eine Datei auf dem Analysebrett bearbeitest:
 
 Das Verschieben einer Datei in {{label:Files.Trash}} löscht sie nicht sofort endgültig. Du kannst im Hinweis direkt auf {{label:Common.Undo}} klicken oder in [[page:library]] zum Bereich {{label:Files.Trash}} scrollen, um eine Datei mit {{label:Files.Restore}} wiederherzustellen, sie mit {{label:Files.DeletePermanently}} zu entfernen oder {{label:Files.EmptyTrash}} auszuführen.
 
-Wenn dein ChessRiddle-Konto verbunden ist, klicke in [[page:library]] auf {{label:Library.Sync.Action}}, um ausgewählte PGN-Dateien in deine private Bibliothek auf ChessRiddle zu synchronisieren (bis zu 100 Dateien, 5 MB und 40.000 Züge pro Datei). Änderungen, Umbenennungen, Abwahlen und Löschungen werden automatisch übernommen; heruntergeladene Partieverläufe und Partiedatenbanken bleiben lokal. Beim Ausschalten kannst du entscheiden, ob die synchronisierten Dateien auf ChessRiddle behalten oder entfernt werden.
+Wenn dein ChessRiddle-Konto verbunden ist, klicke in [[page:library]] auf {{label:Library.Sync.Action}}, um ausgewählte PGN-Dateien und Partiedatenbanken in deine private Bibliothek auf ChessRiddle zu synchronisieren (bis zu 100 Dateien, 5 MB, 40.000 Züge und 5.000 Partien pro Datei). Änderungen, Umbenennungen, Abwahlen und Löschungen werden automatisch übernommen; heruntergeladene Partieverläufe bleiben lokal. Beim Ausschalten kannst du entscheiden, ob die synchronisierten Dateien auf ChessRiddle behalten oder entfernt werden.

@@ -1,6 +1,4 @@
 //! Cheap read-only metadata probe and bounded deterministic PGN export for sync callers.
-// Temporary until Phase 2 wires `library_sync` callers to these helpers.
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::io::Write;
 

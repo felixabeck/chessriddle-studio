@@ -1,6 +1,7 @@
 import type {
     FileWorkspaceHandle,
     LibrarySyncError,
+    LibrarySyncHandle,
     LibrarySyncSnapshot,
     LibrarySyncTurnOffMode,
 } from "@/bindings";
@@ -8,7 +9,7 @@ import { LibrarySyncCommandError } from "@/platform/chessriddle";
 import { safeFailureContext, warnSafely } from "@/platform/errors";
 import { createNativeListenerLifecycle } from "@/platform/listenerLifecycle";
 import { tauri, tauriSubscriptions } from "@/platform/tauri";
-import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { capabilityKey } from "@/utils/pathCapabilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export const LIBRARY_SYNC_RETRY_BACKOFF_MS = [2_000, 10_000, 30_000] as const;
@@ -17,9 +18,9 @@ export type UseLibrarySyncResult = {
     snapshot: LibrarySyncSnapshot | null;
     busy: boolean;
     error: LibrarySyncError | null;
-    turnOn: (deselected: FileWorkspaceHandle[]) => Promise<void>;
+    turnOn: (deselected: LibrarySyncHandle[]) => Promise<void>;
     turnOff: (mode: LibrarySyncTurnOffMode) => Promise<void>;
-    setFileSelected: (file: FileWorkspaceHandle, selected: boolean) => Promise<void>;
+    setFileSelected: (file: LibrarySyncHandle, selected: boolean) => Promise<void>;
     syncNow: () => Promise<void>;
 };
 
@@ -32,7 +33,7 @@ function toSyncError(error: unknown): LibrarySyncError {
  * Owns the snapshot, event subscription, and the five commands; persists nothing in the renderer.
  */
 export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrarySyncResult {
-    const workspaceKey = workspace ? fileWorkspaceKey(workspace) : null;
+    const workspaceKey = workspace ? capabilityKey(workspace) : null;
     const workspaceRef = useRef<FileWorkspaceHandle | null>(workspace);
     workspaceRef.current = workspace;
 
@@ -74,7 +75,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
 
     const applySnapshot = useCallback(
         (incoming: LibrarySyncSnapshot, session: symbol, targetKey: string, seq: number) => {
-            if (fileWorkspaceKey(incoming.workspace) !== targetKey) return;
+            if (capabilityKey(incoming.workspace) !== targetKey) return;
             if (incoming.revision < revisionWatermarkRef.current) return;
             if (!claimSettlement(session, targetKey, seq)) return;
             revisionWatermarkRef.current = incoming.revision;
@@ -116,8 +117,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
                                 return;
                             }
                             const latestTarget = workspaceRef.current;
-                            if (!latestTarget || fileWorkspaceKey(latestTarget) !== targetKey)
-                                return;
+                            if (!latestTarget || capabilityKey(latestTarget) !== targetKey) return;
                             void fetchSnapshot(session, latestTarget, targetKey);
                         }, LIBRARY_SYNC_RETRY_BACKOFF_MS[attempt]);
                     }
@@ -154,7 +154,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
             if (sessionRef.current !== session || activeWorkspaceKeyRef.current !== workspaceKey)
                 return;
             const latestTarget = workspaceRef.current;
-            if (!latestTarget || fileWorkspaceKey(latestTarget) !== workspaceKey) return;
+            if (!latestTarget || capabilityKey(latestTarget) !== workspaceKey) return;
             void fetchSnapshot(session, latestTarget, workspaceKey);
         };
 
@@ -232,7 +232,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
     );
 
     const turnOn = useCallback(
-        (deselected: FileWorkspaceHandle[]) =>
+        (deselected: LibrarySyncHandle[]) =>
             runAction((target) => tauri.librarySyncTurnOn(target, deselected)),
         [runAction],
     );
@@ -244,7 +244,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
     );
 
     const setFileSelected = useCallback(
-        (file: FileWorkspaceHandle, selected: boolean) =>
+        (file: LibrarySyncHandle, selected: boolean) =>
             runAction((target) => tauri.librarySyncSetFileSelected(target, file, selected)),
         [runAction],
     );
@@ -257,7 +257,7 @@ export function useLibrarySync(workspace: FileWorkspaceHandle | null): UseLibrar
     const matchesWorkspace =
         snapshot !== null &&
         workspaceKey !== null &&
-        fileWorkspaceKey(snapshot.workspace) === workspaceKey;
+        capabilityKey(snapshot.workspace) === workspaceKey;
 
     return {
         snapshot: matchesWorkspace ? snapshot : null,

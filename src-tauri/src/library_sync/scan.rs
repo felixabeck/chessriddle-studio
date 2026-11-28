@@ -1,13 +1,26 @@
 //! Workspace scanning, revision-gated hashing, name normalisation and 5-pass identity matching (S-3).
 
 use crate::{
+    db::{
+        resolve_database,
+        sync_export::{
+            export_database_pgn_bounded, is_deferred_database_error, read_cheap_database_info,
+            BoundedDatabaseExport, CheapDatabaseInfo,
+        },
+        DatabaseIdentity, DatabaseRepository,
+    },
     error::Error,
     file_workspace::{WorkspaceEntry, WorkspaceEntryKind, WorkspaceFileType},
-    infra::path_authority::{FileWorkspaceHandle, PathOperation, SharedPathAuthority},
+    infra::path_authority::{
+        DatabaseHandle, FileWorkspaceHandle, PathAvailability, PathOperation, SharedPathAuthority,
+    },
     library_sync::{
-        state::{SyncEntry, SyncState, MAX_STATE_ENTRIES},
-        wire::{is_valid_studio_file_id, LibraryFileKind, StudioLibraryFile, LIBRARY_MAX_BYTES},
-        ABSENCE_DELETE_THRESHOLD,
+        state::{SyncEntry, SyncSource, SyncState, MAX_STATE_ENTRIES},
+        wire::{
+            is_valid_studio_file_id, LibraryFileKind, StudioLibraryFile, LIBRARY_MAX_BYTES,
+            LIBRARY_MAX_GAMES,
+        },
+        LibrarySyncHandle, ABSENCE_DELETE_THRESHOLD,
     },
 };
 use sha2::{Digest, Sha256};
@@ -56,17 +69,23 @@ pub(crate) fn kind_for_file_type(file_type: Option<&WorkspaceFileType>) -> Libra
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CandidateFingerprint {
+    pub source: SyncSource,
     pub locator: Vec<OsString>,
     pub name: String,
     pub kind: LibraryFileKind,
     pub revision: Option<String>,
     pub oversized: bool,
     pub unreadable: bool,
+    pub too_many_games: bool,
+    pub empty: bool,
+    pub invalid_pgn: bool,
+    pub deferred: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ScannedCandidate {
-    pub handle: FileWorkspaceHandle,
+    pub source: SyncSource,
+    pub handle: LibrarySyncHandle,
     pub locator: Vec<OsString>,
     pub name: String,
     pub normalized_name: String,
@@ -76,35 +95,123 @@ pub(crate) struct ScannedCandidate {
     pub content_sha256: Option<String>,
     pub oversized: bool,
     pub unreadable: bool,
+    pub too_many_games: bool,
+    pub empty: bool,
+    pub invalid_pgn: bool,
+    pub deferred: bool,
 }
 
 impl ScannedCandidate {
     pub(crate) fn fingerprint(&self) -> CandidateFingerprint {
         CandidateFingerprint {
+            source: self.source,
             locator: self.locator.clone(),
             name: self.name.clone(),
             kind: self.kind,
             revision: self.revision.clone(),
             oversized: self.oversized,
             unreadable: self.unreadable,
+            too_many_games: self.too_many_games,
+            empty: self.empty,
+            invalid_pgn: self.invalid_pgn,
+            deferred: self.deferred,
         }
+    }
+
+    /// Databases that fail the cheap size/game-count/empty gate default to unselected so huge
+    /// reference databases (e.g. Mega Database) do not raise Attention on every launch.
+    pub(crate) fn fails_cheap_gate(&self) -> bool {
+        self.source == SyncSource::Database && (self.too_many_games || self.oversized || self.empty)
+    }
+
+    pub(crate) fn default_selected(&self) -> bool {
+        !self.fails_cheap_gate()
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ScanResult {
     pub candidates: Vec<ScannedCandidate>,
-    pub complete: bool,
-    pub updated_hash_cache: HashMap<Vec<OsString>, (String, String)>,
+    pub files_complete: bool,
+    pub databases_complete: bool,
+    pub updated_hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
 }
 
 impl ScanResult {
+    pub(crate) fn complete(&self) -> bool {
+        self.files_complete && self.databases_complete
+    }
+
     pub(crate) fn fingerprints(&self) -> Vec<CandidateFingerprint> {
         self.candidates
             .iter()
             .map(ScannedCandidate::fingerprint)
             .collect()
     }
+}
+
+/// Controls whether `scan_workspace_blocking` exports eligible databases to PGN for hashing.
+pub(crate) enum DatabaseExportPolicy<'a> {
+    /// Off-mode snapshot / turn-on preview: cheap Info only, never export databases.
+    CheapInfoOnly,
+    /// On-mode scan: export an eligible database only when it is selected or will default-select.
+    SelectedOrDefault {
+        entries: &'a BTreeMap<String, SyncEntry>,
+        pending_deselected_handles: &'a HashSet<LibrarySyncHandle>,
+        pending_deselected_locators: &'a HashSet<Vec<OsString>>,
+    },
+}
+
+impl DatabaseExportPolicy<'_> {
+    fn should_export(&self, handle: &LibrarySyncHandle, locator: &[OsString]) -> bool {
+        match self {
+            Self::CheapInfoOnly => false,
+            Self::SelectedOrDefault {
+                entries,
+                pending_deselected_handles,
+                pending_deselected_locators,
+            } => {
+                if let Some((_, entry)) = entries.iter().find(|(_, entry)| {
+                    entry.source == SyncSource::Database && entry.handle.as_ref() == Some(handle)
+                }) {
+                    return entry.selected;
+                }
+                if let Some((_, entry)) = entries.iter().find(|(_, entry)| {
+                    entry.source == SyncSource::Database && entry.locator.as_slice() == locator
+                }) {
+                    return entry.selected;
+                }
+                !pending_deselected_handles.contains(handle)
+                    && !pending_deselected_locators.contains(locator)
+            }
+        }
+    }
+}
+
+/// Result of reading/exporting a candidate's PGN bytes for upload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CandidateReadOutcome {
+    Bytes { bytes: Vec<u8>, sha256: String },
+    Empty,
+    TooManyGames,
+    TooLarge,
+    InvalidPgn,
+    Deferred,
+    Unreadable,
+}
+
+fn database_revision_string(identity: &DatabaseIdentity) -> String {
+    let modified = match identity.modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => format!("{}:{}", d.as_secs(), d.subsec_nanos()),
+        Err(e) => {
+            let d = e.duration();
+            format!("-{}:{}", d.as_secs(), d.subsec_nanos())
+        }
+    };
+    format!(
+        "db:{}:{}:{}:{}:{}",
+        identity.object.0, identity.object.1, identity.length, modified, identity.data_revision
+    )
 }
 
 struct WalkedFile {
@@ -197,12 +304,21 @@ fn hash_file_bounded(
 }
 
 /// Walks the Library folder under `workspace_mutation`, excludes account-linked collection
-/// histories, and hashes files outside the lock only when their revision changed.
+/// histories, hashes files outside the lock only when their revision changed, and lists standalone
+/// game databases from the active Databases root.
+///
+/// A PGN walk error still fails the whole scan (yielding `FolderUnavailable`). A database-root
+/// listing error or failed migration wait omits database candidates and marks `databases_complete`
+/// false without failing the PGN side.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scan_workspace_blocking(
     authority: &SharedPathAuthority,
     workspace_mutation: &Mutex<()>,
     workspace: &FileWorkspaceHandle,
-    hash_cache: &HashMap<Vec<OsString>, (String, String)>,
+    database_repository: &DatabaseRepository,
+    db_migration_ready: bool,
+    db_export_policy: DatabaseExportPolicy<'_>,
+    hash_cache: &HashMap<(SyncSource, Vec<OsString>), (String, String)>,
     token: &CancellationToken,
 ) -> Result<ScanResult, Error> {
     let listing = {
@@ -232,7 +348,7 @@ pub(crate) fn scan_workspace_blocking(
     };
     collect_walked_files(&listing.entries, &mut ctx);
 
-    let complete = listing.unread.is_empty() && !ctx.incomplete;
+    let files_complete = listing.unread.is_empty() && !ctx.incomplete;
     let mut candidates = Vec::with_capacity(ctx.out.len());
     let mut updated_hash_cache = HashMap::with_capacity(ctx.out.len());
 
@@ -248,6 +364,7 @@ pub(crate) fn scan_workspace_blocking(
             .map(|leaf| leaf.to_string_lossy())
             .unwrap_or(Cow::Borrowed(&item.name));
         let normalized_name = normalize_library_name(&raw_leaf);
+        let cache_key = (SyncSource::File, item.locator.clone());
 
         let (revision, content_sha256, oversized, unreadable) = if item.read_error {
             (None, None, false, true)
@@ -270,19 +387,17 @@ pub(crate) fn scan_workspace_blocking(
                     if snapshot.revision.size > LIBRARY_MAX_BYTES {
                         (Some(revision), None, true, false)
                     } else if let Some((_, cached_hash)) = hash_cache
-                        .get(&item.locator)
+                        .get(&cache_key)
                         .filter(|(cached_rev, _)| cached_rev == &revision)
                     {
-                        updated_hash_cache.insert(
-                            item.locator.clone(),
-                            (revision.clone(), cached_hash.clone()),
-                        );
+                        updated_hash_cache
+                            .insert(cache_key, (revision.clone(), cached_hash.clone()));
                         (Some(revision), Some(cached_hash.clone()), false, false)
                     } else {
                         match hash_file_bounded(&mut snapshot.file, token) {
                             Ok(Some(sha)) => {
                                 updated_hash_cache
-                                    .insert(item.locator.clone(), (revision.clone(), sha.clone()));
+                                    .insert(cache_key, (revision.clone(), sha.clone()));
                                 (Some(revision), Some(sha), false, false)
                             }
                             Ok(None) => (Some(revision), None, true, false),
@@ -295,7 +410,8 @@ pub(crate) fn scan_workspace_blocking(
         };
 
         candidates.push(ScannedCandidate {
-            handle: item.handle,
+            source: SyncSource::File,
+            handle: LibrarySyncHandle::File(item.handle),
             locator: item.locator,
             name: item.name,
             normalized_name,
@@ -305,51 +421,310 @@ pub(crate) fn scan_workspace_blocking(
             content_sha256,
             oversized,
             unreadable,
+            too_many_games: false,
+            empty: false,
+            invalid_pgn: false,
+            deferred: false,
         });
     }
 
+    let databases_complete = scan_databases_into(
+        authority,
+        database_repository,
+        db_migration_ready,
+        &db_export_policy,
+        hash_cache,
+        &mut updated_hash_cache,
+        &mut candidates,
+        token,
+    )?;
+
     Ok(ScanResult {
         candidates,
-        complete,
+        files_complete,
+        databases_complete,
         updated_hash_cache,
     })
 }
 
-/// Reads the exact bytes of one candidate file for upload, bounded to `LIBRARY_MAX_BYTES`.
-pub(crate) fn read_candidate_bytes_blocking(
+#[allow(clippy::too_many_arguments)]
+fn scan_databases_into(
     authority: &SharedPathAuthority,
-    handle: &FileWorkspaceHandle,
+    database_repository: &DatabaseRepository,
+    db_migration_ready: bool,
+    db_export_policy: &DatabaseExportPolicy<'_>,
+    hash_cache: &HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    updated_hash_cache: &mut HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    candidates: &mut Vec<ScannedCandidate>,
     token: &CancellationToken,
-) -> Result<Option<(Vec<u8>, String)>, Error> {
-    let mut snapshot = authority.with_mut(|auth| {
-        auth.ensure_pgn_not_trashed(handle)?;
-        auth.resolve(handle.path_ref(), PathOperation::ReadPgn, &[])?
-            .pgn_snapshot()
-    })??;
-    if snapshot.revision.size > LIBRARY_MAX_BYTES {
-        return Ok(None);
+) -> Result<bool, Error> {
+    if !db_migration_ready {
+        return Ok(false);
     }
-    let mut bytes = Vec::with_capacity(snapshot.revision.size.min(LIBRARY_MAX_BYTES) as usize);
-    let mut buf = [0u8; HASH_CHUNK_BYTES];
-    loop {
+    if token.is_cancelled() {
+        return Err(Error::Cancellation);
+    }
+
+    let active_root = match authority.with_mut(|auth| auth.active_database_root()) {
+        Ok(Ok(Some(root))) => root,
+        Ok(Ok(None)) => return Ok(true),
+        Ok(Err(error)) => {
+            log::warn!("library sync active database root lookup failed: {error}");
+            return Ok(false);
+        }
+        Err(error) => {
+            log::warn!("library sync path authority unavailable for databases: {error:?}");
+            return Ok(false);
+        }
+    };
+
+    let db_listing = match crate::workspace_commands::list_workspace_databases_blocking(
+        authority,
+        active_root,
+        token,
+    ) {
+        Ok(listing) => listing,
+        Err(Error::Cancellation) => return Err(Error::Cancellation),
+        Err(error) => {
+            log::warn!("library sync database root listing failed: {error}");
+            return Ok(false);
+        }
+    };
+
+    let mut databases_complete = db_listing.unread.is_empty();
+
+    for descriptor in db_listing.entries {
         if token.is_cancelled() {
             return Err(Error::Cancellation);
         }
-        let n = snapshot.file.read(&mut buf)?;
-        if n == 0 {
-            break;
+        let target =
+            match resolve_database(authority, &descriptor.handle, PathOperation::DatabaseRead) {
+                Ok(target) => target,
+                Err(Error::Cancellation) => return Err(Error::Cancellation),
+                Err(error) => {
+                    log::warn!(
+                        "library sync could not resolve database {}: {error}",
+                        descriptor.filename
+                    );
+                    databases_complete = false;
+                    continue;
+                }
+            };
+
+        let locator = vec![target.leaf().to_os_string()];
+        let handle = LibrarySyncHandle::Database(descriptor.handle.clone());
+
+        if descriptor.availability != PathAvailability::Available {
+            let display_name = descriptor.filename;
+            let normalized_name = normalize_library_name(&display_name);
+            candidates.push(ScannedCandidate {
+                source: SyncSource::Database,
+                handle,
+                locator,
+                name: display_name,
+                normalized_name,
+                folder_label: String::new(),
+                kind: LibraryFileKind::Games,
+                revision: None,
+                content_sha256: None,
+                oversized: false,
+                unreadable: true,
+                too_many_games: false,
+                empty: false,
+                invalid_pgn: false,
+                deferred: false,
+            });
+            continue;
         }
-        if bytes.len().saturating_add(n) as u64 > LIBRARY_MAX_BYTES {
-            return Ok(None);
+
+        let cheap_info =
+            read_cheap_database_info(database_repository, &target, LIBRARY_MAX_GAMES, token)?;
+
+        let mut display_name = descriptor.filename;
+        let mut revision: Option<String> = None;
+        let mut content_sha256: Option<String> = None;
+        let mut oversized = false;
+        let mut unreadable = false;
+        let mut too_many_games = false;
+        let mut empty = false;
+        let mut invalid_pgn = false;
+        let mut deferred = false;
+
+        match cheap_info {
+            CheapDatabaseInfo::Eligible {
+                identity, title, ..
+            } => {
+                if let Some(title) = title {
+                    display_name = title;
+                }
+                let rev = database_revision_string(&identity);
+                revision = Some(rev.clone());
+                if db_export_policy.should_export(&handle, &locator) {
+                    let cache_key = (SyncSource::Database, locator.clone());
+                    if let Some((_, cached_hash)) = hash_cache
+                        .get(&cache_key)
+                        .filter(|(cached_rev, _)| cached_rev == &rev)
+                    {
+                        updated_hash_cache.insert(cache_key, (rev, cached_hash.clone()));
+                        content_sha256 = Some(cached_hash.clone());
+                    } else {
+                        match export_resolved_database_bounded(
+                            authority,
+                            database_repository,
+                            &descriptor.handle,
+                            token,
+                        )? {
+                            BoundedDatabaseExport::Exported { sha256, .. } => {
+                                updated_hash_cache.insert(cache_key, (rev, sha256.clone()));
+                                content_sha256 = Some(sha256);
+                            }
+                            BoundedDatabaseExport::Empty => empty = true,
+                            BoundedDatabaseExport::TooManyGames => too_many_games = true,
+                            BoundedDatabaseExport::TooLarge => oversized = true,
+                            BoundedDatabaseExport::InvalidPgn => invalid_pgn = true,
+                            BoundedDatabaseExport::Deferred => deferred = true,
+                            BoundedDatabaseExport::Unreadable => unreadable = true,
+                        }
+                    }
+                }
+            }
+            CheapDatabaseInfo::Empty { identity, title } => {
+                if let Some(title) = title {
+                    display_name = title;
+                }
+                revision = Some(database_revision_string(&identity));
+                empty = true;
+            }
+            CheapDatabaseInfo::TooManyGames {
+                identity, title, ..
+            } => {
+                if let Some(title) = title {
+                    display_name = title;
+                }
+                revision = Some(database_revision_string(&identity));
+                too_many_games = true;
+            }
+            CheapDatabaseInfo::Deferred => {
+                deferred = true;
+            }
+            CheapDatabaseInfo::Unreadable => {
+                unreadable = true;
+            }
         }
-        bytes.extend_from_slice(&buf[..n]);
+
+        let normalized_name = normalize_library_name(&display_name);
+        candidates.push(ScannedCandidate {
+            source: SyncSource::Database,
+            handle,
+            locator,
+            name: display_name,
+            normalized_name,
+            folder_label: String::new(),
+            kind: LibraryFileKind::Games,
+            revision,
+            content_sha256,
+            oversized,
+            unreadable,
+            too_many_games,
+            empty,
+            invalid_pgn,
+            deferred,
+        });
     }
-    let sha = format!("{:x}", Sha256::digest(&bytes));
-    Ok(Some((bytes, sha)))
+
+    Ok(databases_complete)
+}
+
+fn export_resolved_database_bounded(
+    authority: &SharedPathAuthority,
+    database_repository: &DatabaseRepository,
+    db_handle: &DatabaseHandle,
+    token: &CancellationToken,
+) -> Result<BoundedDatabaseExport, Error> {
+    let target = match resolve_database(authority, db_handle, PathOperation::DatabaseExport) {
+        Ok(target) => target,
+        Err(Error::Cancellation) => return Err(Error::Cancellation),
+        Err(error) if is_deferred_database_error(&error) => {
+            return Ok(BoundedDatabaseExport::Deferred);
+        }
+        Err(error) => {
+            log::warn!(
+                "library sync could not resolve database {} for export: {error}",
+                db_handle.path_ref().id
+            );
+            return Ok(BoundedDatabaseExport::Unreadable);
+        }
+    };
+    export_database_pgn_bounded(
+        database_repository,
+        &target,
+        LIBRARY_MAX_GAMES,
+        LIBRARY_MAX_BYTES,
+        token,
+    )
+}
+
+/// Reads or exports the exact PGN bytes of one candidate for upload, bounded to `LIBRARY_MAX_BYTES`
+/// (and `LIBRARY_MAX_GAMES` for databases).
+pub(crate) fn read_candidate_bytes_blocking(
+    authority: &SharedPathAuthority,
+    database_repository: &DatabaseRepository,
+    handle: &LibrarySyncHandle,
+    token: &CancellationToken,
+) -> Result<CandidateReadOutcome, Error> {
+    match handle {
+        LibrarySyncHandle::File(file_handle) => {
+            let mut snapshot = authority.with_mut(|auth| {
+                auth.ensure_pgn_not_trashed(file_handle)?;
+                auth.resolve(file_handle.path_ref(), PathOperation::ReadPgn, &[])?
+                    .pgn_snapshot()
+            })??;
+            if snapshot.revision.size > LIBRARY_MAX_BYTES {
+                return Ok(CandidateReadOutcome::TooLarge);
+            }
+            let mut bytes =
+                Vec::with_capacity(snapshot.revision.size.min(LIBRARY_MAX_BYTES) as usize);
+            let mut buf = [0u8; HASH_CHUNK_BYTES];
+            loop {
+                if token.is_cancelled() {
+                    return Err(Error::Cancellation);
+                }
+                let n = snapshot.file.read(&mut buf)?;
+                if n == 0 {
+                    break;
+                }
+                if bytes.len().saturating_add(n) as u64 > LIBRARY_MAX_BYTES {
+                    return Ok(CandidateReadOutcome::TooLarge);
+                }
+                bytes.extend_from_slice(&buf[..n]);
+            }
+            let sha256 = format!("{:x}", Sha256::digest(&bytes));
+            Ok(CandidateReadOutcome::Bytes { bytes, sha256 })
+        }
+        LibrarySyncHandle::Database(db_handle) => {
+            match export_resolved_database_bounded(
+                authority,
+                database_repository,
+                db_handle,
+                token,
+            )? {
+                BoundedDatabaseExport::Exported { bytes, sha256 } => {
+                    Ok(CandidateReadOutcome::Bytes { bytes, sha256 })
+                }
+                BoundedDatabaseExport::Empty => Ok(CandidateReadOutcome::Empty),
+                BoundedDatabaseExport::TooManyGames => Ok(CandidateReadOutcome::TooManyGames),
+                BoundedDatabaseExport::TooLarge => Ok(CandidateReadOutcome::TooLarge),
+                BoundedDatabaseExport::InvalidPgn => Ok(CandidateReadOutcome::InvalidPgn),
+                BoundedDatabaseExport::Deferred => Ok(CandidateReadOutcome::Deferred),
+                BoundedDatabaseExport::Unreadable => Ok(CandidateReadOutcome::Unreadable),
+            }
+        }
+    }
 }
 
 /// Pure read-only identity passes 1 to 3 (handle, locator, content hash) over existing state
-/// entries. Returns per-candidate matched entry ids and the set of claimed entry ids.
+/// entries of the same `source`. Returns per-candidate matched entry ids and the set of claimed
+/// entry ids.
 fn match_existing_entries(
     candidates: &[ScannedCandidate],
     entries: &BTreeMap<String, SyncEntry>,
@@ -357,10 +732,12 @@ fn match_existing_entries(
     let mut matched_ids: Vec<Option<String>> = vec![None; candidates.len()];
     let mut claimed_entries: HashSet<String> = HashSet::new();
 
-    // Pass 1: handle match.
+    // Pass 1: handle match (same source).
     for (idx, candidate) in candidates.iter().enumerate() {
         if let Some((id, _)) = entries.iter().find(|(id, entry)| {
-            !claimed_entries.contains(*id) && entry.handle.as_ref() == Some(&candidate.handle)
+            !claimed_entries.contains(*id)
+                && entry.source == candidate.source
+                && entry.handle.as_ref() == Some(&candidate.handle)
         }) {
             let id = id.clone();
             claimed_entries.insert(id.clone());
@@ -368,13 +745,15 @@ fn match_existing_entries(
         }
     }
 
-    // Pass 2: locator match.
+    // Pass 2: locator match (same source).
     for (idx, candidate) in candidates.iter().enumerate() {
         if matched_ids[idx].is_some() {
             continue;
         }
         if let Some((id, _)) = entries.iter().find(|(id, entry)| {
-            !claimed_entries.contains(*id) && entry.locator == candidate.locator
+            !claimed_entries.contains(*id)
+                && entry.source == candidate.source
+                && entry.locator == candidate.locator
         }) {
             let id = id.clone();
             claimed_entries.insert(id.clone());
@@ -382,7 +761,7 @@ fn match_existing_entries(
         }
     }
 
-    // Pass 3: content hash match against unmatched entries.
+    // Pass 3: content hash match against unmatched entries of the same source.
     for (idx, candidate) in candidates.iter().enumerate() {
         if matched_ids[idx].is_some() {
             continue;
@@ -391,7 +770,9 @@ fn match_existing_entries(
             continue;
         };
         if let Some((id, _)) = entries.iter().find(|(id, entry)| {
-            !claimed_entries.contains(*id) && entry.last_content_sha256.as_deref() == Some(sha)
+            !claimed_entries.contains(*id)
+                && entry.source == candidate.source
+                && entry.last_content_sha256.as_deref() == Some(sha)
         }) {
             let id = id.clone();
             claimed_entries.insert(id.clone());
@@ -402,31 +783,49 @@ fn match_existing_entries(
     (matched_ids, claimed_entries)
 }
 
-/// Pure predicate reporting whether any entry in `state.entries` is left unmatched by
-/// `candidates` under identity passes 1 to 3.
-pub(crate) fn has_unmatched_entries(candidates: &[ScannedCandidate], state: &SyncState) -> bool {
+/// Pure predicate reporting whether any entry in `state.entries` belonging to a completely scanned
+/// source is left unmatched by `candidates` under identity passes 1 to 3.
+pub(crate) fn has_unmatched_entries(
+    candidates: &[ScannedCandidate],
+    state: &SyncState,
+    files_complete: bool,
+    databases_complete: bool,
+) -> bool {
     let (_, claimed_entries) = match_existing_entries(candidates, &state.entries);
-    claimed_entries.len() < state.entries.len()
+    state.entries.iter().any(|(id, entry)| {
+        let source_complete = match entry.source {
+            SyncSource::File => files_complete,
+            SyncSource::Database => databases_complete,
+        };
+        source_complete && !claimed_entries.contains(id)
+    })
 }
 
 /// Five-pass identity matcher (S-3). Returns the matched `studio_file_id` for each candidate in
 /// `candidates` (same index order), mutating `state.entries` in place.
 ///
-/// Passes run in path order, each only over candidates and entries still unmatched:
+/// Passes run in path order, each only over candidates and entries of the same source still
+/// unmatched:
 /// 1. handle match (in-session rename or move inside Studio)
 /// 2. locator match (after restart)
 /// 3. last content hash match (rename or move outside Studio / while closed)
 /// 4. server file with same `content_sha256` whose id no entry holds (adoption)
-/// 5. new entry with a new UUID v4, selected (unless in `initial_deselected_handles` or
-///    `initial_deselected_locators`)
+/// 5. new entry with a new UUID v4: gate-failing databases default to `selected: false` unless
+///    present in `initial_selected_*`; other candidates default to `selected: true` unless in
+///    `initial_deselected_*`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn match_candidates_to_entries(
     candidates: &[ScannedCandidate],
     state: &mut SyncState,
     server_files: Option<&[StudioLibraryFile]>,
-    complete_scan: bool,
-    can_increment_missed: bool,
-    initial_deselected_handles: &HashSet<FileWorkspaceHandle>,
+    files_complete: bool,
+    databases_complete: bool,
+    can_increment_file_missed: bool,
+    can_increment_db_missed: bool,
+    initial_deselected_handles: &HashSet<LibrarySyncHandle>,
     initial_deselected_locators: &HashSet<Vec<OsString>>,
+    initial_selected_handles: &HashSet<LibrarySyncHandle>,
+    initial_selected_locators: &HashSet<Vec<OsString>>,
 ) -> Vec<Option<String>> {
     let (mut matched_ids, mut claimed_entries) = match_existing_entries(candidates, &state.entries);
 
@@ -448,6 +847,10 @@ pub(crate) fn match_candidates_to_entries(
         initial_deselected_handles.contains(&candidate.handle)
             || initial_deselected_locators.contains(&candidate.locator)
     };
+    let is_initially_selected = |candidate: &ScannedCandidate| {
+        initial_selected_handles.contains(&candidate.handle)
+            || initial_selected_locators.contains(&candidate.locator)
+    };
 
     // Pass 4: adopt a server file with matching `content_sha256` whose id no entry holds.
     if let Some(server_files) = server_files {
@@ -468,6 +871,7 @@ pub(crate) fn match_candidates_to_entries(
                 state.entries.insert(
                     id.clone(),
                     SyncEntry {
+                        source: candidate.source,
                         locator: candidate.locator.clone(),
                         handle: Some(candidate.handle.clone()),
                         selected,
@@ -488,10 +892,15 @@ pub(crate) fn match_candidates_to_entries(
             continue;
         }
         let id = uuid::Uuid::new_v4().hyphenated().to_string();
-        let selected = !is_initially_deselected(candidate);
+        let selected = if candidate.fails_cheap_gate() {
+            is_initially_selected(candidate)
+        } else {
+            !is_initially_deselected(candidate)
+        };
         state.entries.insert(
             id.clone(),
             SyncEntry {
+                source: candidate.source,
                 locator: candidate.locator.clone(),
                 handle: Some(candidate.handle.clone()),
                 selected,
@@ -504,26 +913,34 @@ pub(crate) fn match_candidates_to_entries(
         matched_ids[idx] = Some(id);
     }
 
-    // Missed-scan accounting and pruning for unmatched entries.
-    if complete_scan {
-        if can_increment_missed {
-            for (id, entry) in &mut state.entries {
-                if !claimed_entries.contains(id) {
-                    entry.missed_scans = entry.missed_scans.saturating_add(1);
-                }
-            }
+    // Missed-scan accounting and pruning for unmatched entries, gated per source.
+    for (id, entry) in &mut state.entries {
+        if claimed_entries.contains(id) {
+            continue;
         }
-        if let Some(server_files) = server_files {
-            let server_ids: HashSet<&str> = server_files
-                .iter()
-                .map(|sf| sf.studio_file_id.as_str())
-                .collect();
-            state.entries.retain(|id, entry| {
-                claimed_entries.contains(id)
-                    || entry.missed_scans < ABSENCE_DELETE_THRESHOLD
-                    || server_ids.contains(id.as_str())
-            });
+        let (source_complete, can_inc) = match entry.source {
+            SyncSource::File => (files_complete, can_increment_file_missed),
+            SyncSource::Database => (databases_complete, can_increment_db_missed),
+        };
+        if source_complete && can_inc {
+            entry.missed_scans = entry.missed_scans.saturating_add(1);
         }
+    }
+    if let Some(server_files) = server_files {
+        let server_ids: HashSet<&str> = server_files
+            .iter()
+            .map(|sf| sf.studio_file_id.as_str())
+            .collect();
+        state.entries.retain(|id, entry| {
+            let source_complete = match entry.source {
+                SyncSource::File => files_complete,
+                SyncSource::Database => databases_complete,
+            };
+            !source_complete
+                || claimed_entries.contains(id)
+                || entry.missed_scans < ABSENCE_DELETE_THRESHOLD
+                || server_ids.contains(id.as_str())
+        });
     }
 
     matched_ids
@@ -537,9 +954,10 @@ mod tests {
 
     fn cand(handle: &str, locator: &str, sha: Option<&str>) -> ScannedCandidate {
         ScannedCandidate {
-            handle: FileWorkspaceHandle::new(PathRef {
+            source: SyncSource::File,
+            handle: LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
                 id: handle.to_owned(),
-            }),
+            })),
             locator: vec![OsString::from(locator)],
             name: locator.to_owned(),
             normalized_name: normalize_library_name(locator),
@@ -549,6 +967,10 @@ mod tests {
             content_sha256: sha.map(str::to_owned),
             oversized: false,
             unreadable: false,
+            too_many_games: false,
+            empty: false,
+            invalid_pgn: false,
+            deferred: false,
         }
     }
 
@@ -611,15 +1033,19 @@ mod tests {
         let (_temp, authority, workspace) =
             setup_workspace(&[("foo.pgn.pgn", b"1. e4 e5 *\n"), (" .pgn", b"1. d4 d5 *\n")]);
         let mutation = Mutex::new(());
+        let db_repo = DatabaseRepository::default();
         let result = scan_workspace_blocking(
             &authority,
             &mutation,
             &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
             &HashMap::new(),
             &CancellationToken::new(),
         )
         .unwrap();
-        assert!(result.complete);
+        assert!(result.complete());
         let names: HashMap<String, String> = result
             .candidates
             .iter()
@@ -643,15 +1069,19 @@ mod tests {
         let (_temp, authority, workspace) =
             setup_workspace(&[("big.pgn", &oversized), ("small.pgn", b"1. e4 *\n")]);
         let mutation = Mutex::new(());
+        let db_repo = DatabaseRepository::default();
         let result = scan_workspace_blocking(
             &authority,
             &mutation,
             &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
             &HashMap::new(),
             &CancellationToken::new(),
         )
         .unwrap();
-        assert!(result.complete);
+        assert!(result.complete());
         let big = result
             .candidates
             .iter()
@@ -660,10 +1090,14 @@ mod tests {
         assert!(big.oversized);
         assert!(!big.unreadable);
         assert!(big.content_sha256.is_none());
-        let read =
-            read_candidate_bytes_blocking(&authority, &big.handle, &CancellationToken::new())
-                .unwrap();
-        assert!(read.is_none());
+        let read = read_candidate_bytes_blocking(
+            &authority,
+            &db_repo,
+            &big.handle,
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert_eq!(read, CandidateReadOutcome::TooLarge);
     }
 
     #[test]
@@ -703,10 +1137,14 @@ mod tests {
         let (_temp, authority, workspace) =
             setup_workspace(&[("mine.pgn", b"1. e4 *\n"), ("history.pgn", b"1. d4 *\n")]);
         let mutation = Mutex::new(());
+        let db_repo = DatabaseRepository::default();
         let result = scan_workspace_blocking(
             &authority,
             &mutation,
             &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
             &HashMap::new(),
             &CancellationToken::new(),
         )
@@ -771,15 +1209,19 @@ mod tests {
             .unwrap();
         authority.install_collections(service).unwrap();
 
+        let db_repo = DatabaseRepository::default();
         let result = scan_workspace_blocking(
             &authority,
             &workspace_mutation,
             &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
             &HashMap::new(),
             &token,
         )
         .unwrap();
-        assert!(result.complete);
+        assert!(result.complete());
         let names: Vec<&str> = result
             .candidates
             .iter()
@@ -795,6 +1237,7 @@ mod tests {
         state.entries.insert(
             id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("repertoire.pgn")],
                 handle: None,
                 selected: true,
@@ -814,6 +1257,10 @@ mod tests {
             Some(&[]),
             true,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -827,12 +1274,13 @@ mod tests {
     #[test]
     fn rename_inside_studio_with_new_file_at_old_name_keeps_original_entry() {
         let mut state = SyncState::off();
-        let old_handle = FileWorkspaceHandle::new(PathRef {
+        let old_handle = LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
             id: "h-1".to_owned(),
-        });
+        }));
         state.entries.insert(
             "11111111-1111-4111-8111-111111111111".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("a.pgn")],
                 handle: Some(old_handle),
                 selected: false,
@@ -851,6 +1299,10 @@ mod tests {
             Some(&[]),
             true,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -877,6 +1329,7 @@ mod tests {
         state.entries.insert(
             id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("old.pgn")],
                 handle: None,
                 selected: false,
@@ -892,6 +1345,10 @@ mod tests {
             Some(&[]),
             true,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -925,6 +1382,10 @@ mod tests {
             Some(&server),
             true,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -941,6 +1402,7 @@ mod tests {
         state.entries.insert(
             id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("missing.pgn")],
                 handle: None,
                 selected: false,
@@ -955,6 +1417,10 @@ mod tests {
             Some(&[]),
             false,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -970,6 +1436,7 @@ mod tests {
         state.entries.insert(
             gone_id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("a.pgn")],
                 handle: None,
                 selected: true,
@@ -981,6 +1448,7 @@ mod tests {
         state.entries.insert(
             server_id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("b.pgn")],
                 handle: None,
                 selected: true,
@@ -1002,6 +1470,10 @@ mod tests {
             Some(&server),
             true,
             true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
         );
@@ -1016,6 +1488,7 @@ mod tests {
         state.entries.insert(
             "11111111-1111-4111-8111-111111111111".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("old.pgn")],
                 handle: None,
                 selected: true,
@@ -1026,9 +1499,258 @@ mod tests {
         );
 
         let renamed_same_hash = cand("handle-renamed", "renamed.pgn", Some("sha-alpha"));
-        assert!(!has_unmatched_entries(&[renamed_same_hash], &state));
+        assert!(!has_unmatched_entries(
+            &[renamed_same_hash],
+            &state,
+            true,
+            true
+        ));
 
         let unrelated_new_file = cand("handle-new", "new.pgn", Some("sha-beta"));
-        assert!(has_unmatched_entries(&[unrelated_new_file], &state));
+        assert!(has_unmatched_entries(
+            &[unrelated_new_file],
+            &state,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn untagged_handle_serializes_as_underlying_capability_object() {
+        use crate::infra::path_authority::DatabaseHandle;
+
+        let file = LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
+            id: "file-1".to_owned(),
+        }));
+        let file_json = serde_json::to_value(&file).unwrap();
+        assert_eq!(
+            file_json,
+            serde_json::json!({ "id": { "id": "file-1" }, "kind": "fileWorkspace" })
+        );
+        assert_eq!(
+            serde_json::from_value::<LibrarySyncHandle>(file_json).unwrap(),
+            file
+        );
+
+        let db = LibrarySyncHandle::Database(DatabaseHandle::new(PathRef {
+            id: "db-1".to_owned(),
+        }));
+        let db_json = serde_json::to_value(&db).unwrap();
+        assert_eq!(
+            db_json,
+            serde_json::json!({ "id": { "id": "db-1" }, "kind": "database" })
+        );
+        assert_eq!(
+            serde_json::from_value::<LibrarySyncHandle>(db_json).unwrap(),
+            db
+        );
+    }
+
+    #[test]
+    fn candidate_fingerprint_distinguishes_deferred_at_same_revision() {
+        let mut active = cand("db-1", "busy.db3", Some("sha-1"));
+        active.source = SyncSource::Database;
+        active.handle = LibrarySyncHandle::Database(DatabaseHandle::new(PathRef {
+            id: "db-1".to_owned(),
+        }));
+        active.name = "Busy DB".to_owned();
+        active.normalized_name = normalize_library_name("Busy DB");
+        active.revision = Some("db:1:2:4096:1700000000:0:1".to_owned());
+        active.deferred = false;
+
+        let mut deferred = active.clone();
+        deferred.deferred = true;
+
+        assert_ne!(active.fingerprint(), deferred.fingerprint());
+        deferred.deferred = false;
+        assert_eq!(active.fingerprint(), deferred.fingerprint());
+    }
+
+    #[test]
+    fn match_existing_entries_never_matches_across_sync_source() {
+        let mut entries = BTreeMap::new();
+        // Entry for Pass 2 (same locator as Database candidate).
+        entries.insert(
+            "11111111-1111-4111-8111-111111111111".to_owned(),
+            SyncEntry {
+                source: SyncSource::File,
+                locator: vec![OsString::from("personal.db3")],
+                handle: Some(LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
+                    id: "file-handle-1".to_owned(),
+                }))),
+                selected: true,
+                last_content_sha256: Some("sha-file-only".to_owned()),
+                missed_scans: 0,
+                last_rejection: None,
+            },
+        );
+        // Entry for Pass 3 (same content_sha256 as Database candidate).
+        entries.insert(
+            "22222222-2222-4222-8222-222222222222".to_owned(),
+            SyncEntry {
+                source: SyncSource::File,
+                locator: vec![OsString::from("other.pgn")],
+                handle: Some(LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
+                    id: "file-handle-2".to_owned(),
+                }))),
+                selected: true,
+                last_content_sha256: Some("sha-shared".to_owned()),
+                missed_scans: 0,
+                last_rejection: None,
+            },
+        );
+
+        let mut db_same_locator = cand("db-handle-1", "personal.db3", Some("sha-db-1"));
+        db_same_locator.source = SyncSource::Database;
+        db_same_locator.handle = LibrarySyncHandle::Database(DatabaseHandle::new(PathRef {
+            id: "db-handle-1".to_owned(),
+        }));
+
+        let mut db_same_hash = cand("db-handle-2", "different.db3", Some("sha-shared"));
+        db_same_hash.source = SyncSource::Database;
+        db_same_hash.handle = LibrarySyncHandle::Database(DatabaseHandle::new(PathRef {
+            id: "db-handle-2".to_owned(),
+        }));
+
+        let (matched, claimed) = match_existing_entries(&[db_same_locator, db_same_hash], &entries);
+        assert_eq!(matched, vec![None, None]);
+        assert!(claimed.is_empty());
+    }
+
+    #[test]
+    fn scan_lists_active_database_root_only_and_skips_collection_root_indexes() {
+        use crate::{
+            db::linked_collections::CollectionService,
+            infra::path_authority::{
+                ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, DatabaseRootHandle,
+            },
+            pgn::PgnRepository,
+            SearchCache,
+        };
+        use diesel::{
+            connection::SimpleConnection, sql_query, Connection, RunQueryDsl, SqliteConnection,
+        };
+        use std::sync::Arc;
+
+        let (temp, authority, workspace) = setup_workspace(&[(
+            "mine.pgn",
+            b"[Event \"Club\"]\n[Result \"*\"]\n\n1. e4 e5 *\n",
+        )]);
+        let app_data = AppDataDir::for_test(temp.path());
+        let collections_root =
+            ensure_app_owned_default_dir(&app_data, AppOwnedDefaultRoot::Collections).unwrap();
+        let db_dir = temp.path().join("databases");
+        std::fs::create_dir_all(&db_dir).unwrap();
+
+        // Seed one standalone database in the active Databases root with a blank title (must fall
+        // back to listing filename).
+        let db_path = db_dir.join("personal.db3");
+        {
+            let mut conn = SqliteConnection::establish(db_path.to_str().unwrap()).unwrap();
+            conn.batch_execute(include_str!("../db/create.sql"))
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Version', '2.4.0')")
+                .execute(&mut conn)
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Title', '   ')")
+                .execute(&mut conn)
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('GameCount', '1')")
+                .execute(&mut conn)
+                .unwrap();
+        }
+        // Seed a second database inside Collections (must NOT be listed).
+        let collection_db_path = collections_root.path().join("collection_index.db3");
+        {
+            let mut conn =
+                SqliteConnection::establish(collection_db_path.to_str().unwrap()).unwrap();
+            conn.batch_execute(include_str!("../db/create.sql"))
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Version', '2.4.0')")
+                .execute(&mut conn)
+                .unwrap();
+            sql_query(
+                "INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Title', 'Collection Index')",
+            )
+            .execute(&mut conn)
+            .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('GameCount', '5')")
+                .execute(&mut conn)
+                .unwrap();
+        }
+
+        authority
+            .with_mut(|pa| {
+                let grant = pa
+                    .grant_dialog_operations(
+                        &db_dir,
+                        "Databases",
+                        PathClass::BoundedDialogGrant,
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                        Duration::from_secs(60),
+                        1,
+                    )
+                    .unwrap();
+                let committed = pa
+                    .promote_dialog(
+                        &grant,
+                        PathClass::PersistentCustomRoot,
+                        "Databases",
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                    )
+                    .unwrap();
+                let root = DatabaseRootHandle::new(committed.id);
+                pa.set_active_database_root(&root).unwrap();
+            })
+            .unwrap();
+
+        let workspace_mutation = Arc::new(Mutex::new(()));
+        let db_repo = Arc::new(DatabaseRepository::default());
+        let service = CollectionService::open(
+            collections_root,
+            Arc::clone(&workspace_mutation),
+            Arc::clone(&db_repo),
+            Arc::new(SearchCache::default()),
+            PgnRepository::default(),
+        );
+        authority.install_collections(service).unwrap();
+
+        let result = scan_workspace_blocking(
+            &authority,
+            &workspace_mutation,
+            &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
+            &HashMap::new(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(result.files_complete);
+        assert!(result.databases_complete);
+
+        let db_candidates: Vec<&ScannedCandidate> = result
+            .candidates
+            .iter()
+            .filter(|c| c.source == SyncSource::Database)
+            .collect();
+        assert_eq!(db_candidates.len(), 1);
+        assert_eq!(
+            db_candidates[0].locator,
+            vec![OsString::from("personal.db3")]
+        );
+        assert_eq!(db_candidates[0].name, "personal.db3");
+        assert!(db_candidates[0].folder_label.is_empty());
+        assert_eq!(db_candidates[0].kind, LibraryFileKind::Games);
     }
 }

@@ -752,3 +752,17 @@ finding ids and date.
 - **Felix's reason:** User feedback described the duplicate-game trap. Felix: “Alright, do everything as you recommend.” The recommendation was the copy rename, same-origin in-place update, and quiet chrome indicator.
 - **Technical record:** `d-20261127-33` through `d-20261127-37` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-save-copy-and-saved-indicator.md`.
 - **Date:** 2026-11-27.
+
+## 2026-11-27 — Library sync includes standalone game databases
+
+- **Question:** How should standalone game databases (such as a personal game collection of ~150–200 games) sync to the private Library on the ChessRiddle website?
+- **Choice:** Standalone game databases appear in the same "Sync with ChessRiddle" checkbox list as PGN files, with the same select/deselect and Turn on flow. Native code exports selected in-cap databases to PGN and uploads them as `kind=games` with no visible export step; huge databases stay local with the existing "Too many games" status. This supersedes the 2026-11-24 line that standalone game databases do not sync; downloaded Lichess and Chess.com histories (account-linked collections) stay excluded.
+- **Agent decisions inside that frame (`full auto`, not Felix's wording):**
+  - Databases that fail the cheap gate (over 5,000 games, over 5 MB, or empty) default to unselected so huge reference databases (such as Mega Database) do not raise Attention on every launch; the user may still tick them, in which case Attention is intended.
+  - Additive `source` field on persisted sync entries with default `File` and no `STATE_VERSION` bump, so existing v1 sync state stays active across upgrade.
+  - List only standalone databases under `active_database_root` (skip Collections indexes so account-linked histories are not duplicated).
+  - No website API or privacy-text edit in this run (privacy already states Studio sends PGN; updating the stale website product line is a follow-up in `chess-tactics-app`).
+- **Ruled out:** A separate export/convert UI step; syncing downloaded Lichess/Chess.com account histories or Collections indexes; two-way sync; bumping `STATE_VERSION`.
+- **Felix's reason:** Users should tick databases in the same "Sync with ChessRiddle" dialog as repertoires, click sync, and be done, with huge databases staying local under the existing "too many games" status.
+- **Technical record:** `d-20261128-01` to `d-20261128-04` in `tasks/decisions.md`; plan `tasks/plans/2026-11-27-library-sync-databases.md`.
+- **Date:** 2026-11-27.

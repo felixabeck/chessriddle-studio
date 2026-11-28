@@ -224,14 +224,10 @@ pub(crate) const EXPORT_TOO_MANY_GAMES: &str = "database exceeds maximum game co
 const EXPORT_INVALID_FEN_FRAGMENT: &str = " has invalid FEN: ";
 const EXPORT_INVALID_MOVETEXT_FRAGMENT: &str = " has invalid movetext: ";
 
-// Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn is_export_too_many_games(error: &Error) -> bool {
     matches!(error.unlabelled(), Error::ResourceLimit(message) if message == EXPORT_TOO_MANY_GAMES)
 }
 
-// Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn is_export_game_invalid_input(error: &Error) -> bool {
     matches!(
         error.unlabelled(),

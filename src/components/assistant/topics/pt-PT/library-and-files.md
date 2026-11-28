@@ -2,7 +2,7 @@
 id: library-and-files
 title: Ficheiros e Biblioteca
 summary: Configure uma pasta de trabalho, crie e organize ficheiros PGN, abra e guarde partidas e faça a gestão do lixo.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne os ficheiros PGN da sua área de trabalho (partidas, repertórios, torneios, problemas e outros ficheiros) e as suas bases de dados de partidas.
@@ -21,4 +21,4 @@ Enquanto edita um ficheiro no tabuleiro de análise:
 
 Mover um ficheiro para {{label:Files.Trash}} não o elimina permanentemente de imediato. Pode clicar logo em {{label:Common.Undo}} no aviso, ou deslocar-se até à secção {{label:Files.Trash}} em [[page:library]] para {{label:Files.Restore}} um ficheiro, usar {{label:Files.DeletePermanently}} ou {{label:Files.EmptyTrash}}.
 
-Quando a sua conta ChessRiddle estiver ligada, clique em {{label:Library.Sync.Action}} em [[page:library]] para sincronizar os ficheiros PGN selecionados com a sua biblioteca privada no ChessRiddle (até 100 ficheiros, 5 MB e 40 000 lances por ficheiro). As edições, alterações de nome, desseleções e eliminações são atualizadas automaticamente; os históricos de partidas transferidos e as bases de dados de partidas permanecem locais. Ao desligar a sincronização, pode manter ou remover os ficheiros sincronizados no ChessRiddle.
+Quando a sua conta ChessRiddle estiver ligada, clique em {{label:Library.Sync.Action}} em [[page:library]] para sincronizar os ficheiros PGN e bases de dados de partidas selecionados com a sua biblioteca privada no ChessRiddle (até 100 ficheiros, 5 MB, 40 000 lances e 5 000 partidas por ficheiro). As edições, alterações de nome, desseleções e eliminações são atualizadas automaticamente; os históricos de partidas transferidos permanecem locais. Ao desligar a sincronização, pode manter ou remover os ficheiros sincronizados no ChessRiddle.

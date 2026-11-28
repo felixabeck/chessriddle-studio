@@ -13,4 +13,4 @@ Manage the connection in the {{label:Home.ChessRiddle.Title}} card on [[page:acc
 - Click {{label:Home.ChessRiddle.Refresh}} to check your current account status and plan.
 - If your session expires, click {{label:Home.ChessRiddle.Reconnect}} to sign in again.
 - Click {{label:Home.ChessRiddle.Disconnect}} to remove the account from this computer and sign out.
-- Once connected, click {{label:Library.Sync.Action}} on [[page:library]] to sync selected PGN files to your private ChessRiddle Library (one-way, read-only on the website).
+- Once connected, click {{label:Library.Sync.Action}} on [[page:library]] to sync selected PGN files and game databases to your private ChessRiddle Library (one-way, read-only on the website).

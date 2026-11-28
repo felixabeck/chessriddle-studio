@@ -1330,7 +1330,7 @@ impl DatabaseRepository {
     }
 
     #[cfg(test)]
-    pub(super) fn with_pool_connection_timeout(pool_connection_timeout: Duration) -> Self {
+    pub(crate) fn with_pool_connection_timeout(pool_connection_timeout: Duration) -> Self {
         Self {
             pool_connection_timeout,
             ..Self::default()
@@ -1440,7 +1440,7 @@ impl DatabaseRepository {
     /// Keep the production pool exhausted for command acquisition regression tests.
     /// Remove with the shared acquisition contention harness if it is superseded.
     #[cfg(test)]
-    pub(super) fn hold_all_connections_for_test(
+    pub(crate) fn hold_all_connections_for_test(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,
     ) -> Result<Vec<DatabaseConnection>, Error> {
@@ -1654,8 +1654,6 @@ impl DatabaseRepository {
         self.read_revision_tracking_writes(target, cancellation, &mut false)
     }
 
-    // Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn with_read_only_connection<T>(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,

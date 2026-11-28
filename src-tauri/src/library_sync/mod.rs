@@ -1,4 +1,4 @@
-//! Native one-way sync of Studio PGN files to the private ChessRiddle Library.
+//! Native one-way sync of Studio PGN files and game databases to the private ChessRiddle Library.
 
 pub(crate) mod commands;
 pub(crate) mod planner;
@@ -7,11 +7,20 @@ pub(crate) mod state;
 pub(crate) mod wire;
 pub(crate) mod worker;
 
-use crate::infra::path_authority::FileWorkspaceHandle;
+use crate::infra::path_authority::{DatabaseHandle, FileWorkspaceHandle};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 pub(crate) use worker::{initialize, shutdown, LibrarySyncOwner};
+
+/// Opaque handle for one item in the Library sync list: either a workspace PGN file or a
+/// standalone game database. Serialises untagged as the underlying capability handle object.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(untagged)]
+pub(crate) enum LibrarySyncHandle {
+    File(FileWorkspaceHandle),
+    Database(DatabaseHandle),
+}
 
 /// Number of consecutive complete scans (at least one scan interval apart) that must miss a file
 /// before it is deleted from the website Library (S-4, D5).
@@ -81,11 +90,11 @@ impl LibrarySyncFileStatus {
     }
 }
 
-/// One candidate PGN file in the Library sync snapshot.
+/// One candidate PGN file or game database in the Library sync snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LibrarySyncFile {
-    pub handle: FileWorkspaceHandle,
+    pub handle: LibrarySyncHandle,
     pub name: String,
     pub folder_label: String,
     pub selected: bool,

@@ -2,7 +2,7 @@
 id: library-and-files
 title: Archivos y la Biblioteca
 summary: Configura una carpeta de trabajo, crea y organiza archivos PGN, abre y guarda partidas y gestiona la papelera.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) reúne tus archivos PGN del espacio de trabajo (partidas, repertorios, torneos, puzles y otros archivos) junto con tus bases de datos de partidas.
@@ -21,4 +21,4 @@ Mientras editas un archivo en el tablero de análisis:
 
 Mover un archivo a {{label:Files.Trash}} no lo elimina de forma permanente al instante. Puedes hacer clic de inmediato en {{label:Common.Undo}} en el aviso, o desplazarte a la sección {{label:Files.Trash}} en [[page:library]] para {{label:Files.Restore}} un archivo, usar {{label:Files.DeletePermanently}} o ejecutar {{label:Files.EmptyTrash}}.
 
-Cuando tu cuenta de ChessRiddle esté conectada, haz clic en {{label:Library.Sync.Action}} en [[page:library]] para sincronizar los archivos PGN seleccionados con tu biblioteca privada en ChessRiddle (hasta 100 archivos, 5 MB y 40 000 jugadas por archivo). Las ediciones, los cambios de nombre, las deselecciones y las eliminaciones se actualizan automáticamente; los historiales de partidas descargados y las bases de datos de partidas permanecen en local. Al desactivar la sincronización puedes mantener o eliminar los archivos sincronizados en ChessRiddle.
+Cuando tu cuenta de ChessRiddle esté conectada, haz clic en {{label:Library.Sync.Action}} en [[page:library]] para sincronizar los archivos PGN y bases de datos de partidas seleccionados con tu biblioteca privada en ChessRiddle (hasta 100 archivos, 5 MB, 40 000 jugadas y 5 000 partidas por archivo). Las ediciones, los cambios de nombre, las deselecciones y las eliminaciones se actualizan automáticamente; los historiales de partidas descargados permanecen en local. Al desactivar la sincronización puedes mantener o eliminar los archivos sincronizados en ChessRiddle.

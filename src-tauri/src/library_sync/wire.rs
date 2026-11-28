@@ -13,6 +13,8 @@ use std::time::Duration;
 pub(crate) const LIBRARY_LIST_MAX_RESPONSE_BYTES: usize = 256 * 1024;
 /// Server byte cap per uploaded PGN file (5 MiB).
 pub(crate) const LIBRARY_MAX_BYTES: u64 = 5 * 1024 * 1024;
+/// Server game-count cap per uploaded PGN file (matches website `LIBRARY_MAX_GAMES`).
+pub(crate) const LIBRARY_MAX_GAMES: usize = 5_000;
 
 pub(crate) const RETRY_AFTER_DEFAULT: Duration = Duration::from_secs(3);
 pub(crate) const RETRY_AFTER_FLOOR: Duration = Duration::from_secs(1);

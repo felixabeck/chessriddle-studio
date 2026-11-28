@@ -1,18 +1,18 @@
 import type {
-  FileWorkspaceHandle,
   LibrarySyncError,
   LibrarySyncFile,
   LibrarySyncFileStatus,
+  LibrarySyncHandle,
   LibrarySyncSnapshot,
   LibrarySyncState,
   LibrarySyncTurnOffMode,
 } from "@/bindings";
 import AppModal from "@/components/common/AppModal";
 import { useScaledMaxWidth } from "@/hooks/useScaledMaxWidth";
-import { fileWorkspaceKey } from "@/utils/pathCapabilities";
+import { capabilityKey } from "@/utils/pathCapabilities";
 import { Alert, Box, Button, Checkbox, Group, Progress, Radio, Stack, Text } from "@mantine/core";
 import type { TFunction } from "i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LibrarySyncBadge, type LibrarySyncBadgeColor } from "./LibrarySyncBadge";
 import { libraryButtonProps, libraryDangerButtonProps } from "./presentation";
@@ -25,9 +25,9 @@ export type LibrarySyncDialogProps = {
   snapshot: LibrarySyncSnapshot;
   busy: boolean;
   error: LibrarySyncError | null;
-  onTurnOn: (deselected: FileWorkspaceHandle[]) => Promise<void>;
+  onTurnOn: (deselected: LibrarySyncHandle[]) => Promise<void>;
   onTurnOff: (mode: LibrarySyncTurnOffMode) => Promise<void>;
-  onSetFileSelected: (file: FileWorkspaceHandle, selected: boolean) => Promise<void>;
+  onSetFileSelected: (file: LibrarySyncHandle, selected: boolean) => Promise<void>;
   onSyncNow: () => Promise<void>;
 };
 
@@ -274,7 +274,7 @@ function SyncFileList({
     <Box mah="18rem" style={{ overflowY: "auto" }}>
       <Stack gap="xs" miw={0}>
         {files.map((file) => {
-          const key = fileWorkspaceKey(file.handle);
+          const key = capabilityKey(file.handle);
           const badge = showBadge(file.status) ? fileStatusPresentation(file.status, t) : null;
           return (
             <Group key={key} justify="space-between" align="center" gap="xs" wrap="wrap" miw={0}>
@@ -302,9 +302,13 @@ function SyncFileList({
 }
 
 const showPreCheckBadge = (status: LibrarySyncFileStatus) =>
-  status.kind === "tooLarge" || status.kind === "unreadable";
+  status.kind === "tooLarge" || status.kind === "tooManyGames" || status.kind === "unreadable";
 
 const showAllBadges = () => true;
+
+function initialDeselectedKeys(files: LibrarySyncFile[]): Set<string> {
+  return new Set(files.filter((file) => !file.selected).map((file) => capabilityKey(file.handle)));
+}
 
 export function LibrarySyncDialog({
   opened,
@@ -319,15 +323,19 @@ export function LibrarySyncDialog({
 }: LibrarySyncDialogProps) {
   const { t } = useTranslation();
   const compactDialog = useScaledMaxWidth(COMPACT_DIALOG_WIDTH_EM);
-  const [deselectedKeys, setDeselectedKeys] = useState<Set<string>>(() => new Set());
+  const filesRef = useRef(snapshot.files);
+  filesRef.current = snapshot.files;
+  const [deselectedKeys, setDeselectedKeys] = useState<Set<string>>(() =>
+    initialDeselectedKeys(snapshot.files),
+  );
   const [turnOffConfirm, setTurnOffConfirm] = useState(false);
   const [turnOffMode, setTurnOffMode] = useState<LibrarySyncTurnOffMode>("keep");
-  const workspaceKey = fileWorkspaceKey(snapshot.workspace);
+  const workspaceKey = capabilityKey(snapshot.workspace);
   const status = snapshot.state.status;
   const active = snapshot.active;
 
   useEffect(() => {
-    setDeselectedKeys(new Set());
+    setDeselectedKeys(initialDeselectedKeys(filesRef.current));
     setTurnOffConfirm(false);
     setTurnOffMode("keep");
   }, [workspaceKey, opened]);
@@ -339,6 +347,8 @@ export function LibrarySyncDialog({
     }
     if (active) {
       setDeselectedKeys(new Set());
+    } else {
+      setDeselectedKeys(initialDeselectedKeys(filesRef.current));
     }
   }, [active, status]);
 
@@ -428,17 +438,18 @@ export function LibrarySyncDialog({
                 <Text size="sm">
                   {t("Library.Sync.Off.Overview", {
                     defaultValue:
-                      "Selected PGN files in this Library folder are uploaded to your private Library on ChessRiddle. Only your account can see them, and the website only reads them.",
+                      "Selected PGN files and game databases in this Library are uploaded to your private Library on ChessRiddle. Only your account can see them, and the website only reads them.",
                   })}
                 </Text>
                 <Text size="sm" c="dimmed">
                   {t("Library.Sync.Off.Excluded", {
-                    defaultValue: "Downloaded game histories and game databases are not synced.",
+                    defaultValue: "Downloaded game histories are not synced.",
                   })}
                 </Text>
                 <Text size="sm" c="dimmed">
                   {t("Library.Sync.Off.Limits", {
-                    defaultValue: "Limits: up to 100 files, 5 MB and 40,000 moves per file.",
+                    defaultValue:
+                      "Limits: up to 100 files, 5 MB, 40,000 moves and 5,000 games per file.",
                   })}
                 </Text>
               </Stack>
@@ -447,7 +458,7 @@ export function LibrarySyncDialog({
                 <Text size="sm" c="dimmed">
                   {t("Library.Sync.EmptyFiles", {
                     defaultValue:
-                      "No PGN files in this folder yet. New PGN files added later will sync automatically.",
+                      "No PGN files or game databases yet. New ones added later will sync automatically when selected by default.",
                   })}
                 </Text>
               ) : (
@@ -475,7 +486,7 @@ export function LibrarySyncDialog({
                   loading={busy}
                   onClick={() => {
                     const deselected = snapshot.files
-                      .filter((file) => deselectedKeys.has(fileWorkspaceKey(file.handle)))
+                      .filter((file) => deselectedKeys.has(capabilityKey(file.handle)))
                       .map((file) => file.handle);
                     void onTurnOn(deselected);
                   }}

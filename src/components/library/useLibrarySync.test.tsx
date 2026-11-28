@@ -1,4 +1,9 @@
-import type { FileWorkspaceHandle, LibrarySyncChanged, LibrarySyncSnapshot } from "@/bindings";
+import type {
+  DatabaseHandle,
+  FileWorkspaceHandle,
+  LibrarySyncChanged,
+  LibrarySyncSnapshot,
+} from "@/bindings";
 import { LibrarySyncCommandError } from "@/platform/chessriddle";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -261,9 +266,10 @@ describe("useLibrarySync", () => {
     expect(mocks.librarySyncSnapshot).not.toHaveBeenCalled();
   });
 
-  it("invokes turnOn, turnOff, setFileSelected and syncNow through the platform facade", async () => {
+  it("invokes turnOn, turnOff, setFileSelected and syncNow through the platform facade for both PGN and database handles", async () => {
     const ws = makeWorkspace("ws-1");
     const file = makeWorkspace("file-1");
+    const db: DatabaseHandle = { id: { id: "db-1" }, kind: "database" };
     mocks.librarySyncChanged.mockResolvedValue(vi.fn());
     mocks.librarySyncSnapshot.mockResolvedValue(makeSnapshot(ws, 1, { status: "off" }, false));
     mocks.librarySyncTurnOn.mockResolvedValue(
@@ -289,15 +295,15 @@ describe("useLibrarySync", () => {
     expect(latest.snapshot?.revision).toBe(1);
 
     await act(async () => {
-      await latest.turnOn([file]);
+      await latest.turnOn([file, db]);
     });
-    expect(mocks.librarySyncTurnOn).toHaveBeenCalledWith(ws, [file]);
+    expect(mocks.librarySyncTurnOn).toHaveBeenCalledWith(ws, [file, db]);
     expect(latest.snapshot?.revision).toBe(2);
 
     await act(async () => {
-      await latest.setFileSelected(file, true);
+      await latest.setFileSelected(db, true);
     });
-    expect(mocks.librarySyncSetFileSelected).toHaveBeenCalledWith(ws, file, true);
+    expect(mocks.librarySyncSetFileSelected).toHaveBeenCalledWith(ws, db, true);
     expect(latest.snapshot?.revision).toBe(3);
 
     await act(async () => {

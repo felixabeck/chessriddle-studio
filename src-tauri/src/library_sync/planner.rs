@@ -1,13 +1,10 @@
 //! Pure reconcile planner for Studio Library sync (S-4).
 
-use crate::{
-    infra::path_authority::FileWorkspaceHandle,
-    library_sync::{
-        scan::ScannedCandidate,
-        state::SyncState,
-        wire::{LibraryFileKind, LibraryPrecondition, StudioLibraryFile},
-        ABSENCE_DELETE_THRESHOLD,
-    },
+use crate::library_sync::{
+    scan::ScannedCandidate,
+    state::{SyncSource, SyncState},
+    wire::{LibraryFileKind, LibraryPrecondition, StudioLibraryFile},
+    LibrarySyncHandle, ABSENCE_DELETE_THRESHOLD,
 };
 use std::collections::HashMap;
 
@@ -18,7 +15,7 @@ pub(crate) enum SyncAction {
     },
     Put {
         studio_file_id: String,
-        handle: FileWorkspaceHandle,
+        handle: LibrarySyncHandle,
         name: String,
         kind: LibraryFileKind,
         precondition: LibraryPrecondition,
@@ -28,16 +25,17 @@ pub(crate) enum SyncAction {
 /// Computes the ordered reconcile actions:
 /// 1. Deletes first (deselected entries immediately; absent entries only after
 ///    [`ABSENCE_DELETE_THRESHOLD`] consecutive complete scans at least one scan interval apart).
-///    Never deletes on an unavailable folder, never deletes absent entries on an incomplete scan,
-///    and never deletes an id not in `state`.
-/// 2. Creates in path order (selected, readable, within byte cap, not memoised-rejected).
+///    Never deletes on an unavailable folder, never deletes absent entries on an incomplete scan
+///    for their source, and never deletes an id not in `state`.
+/// 2. Creates in path order (selected, readable, within caps, not deferred or memoised-rejected).
 /// 3. Replaces in path order (bytes, normalised name or kind differ from the server row).
 pub(crate) fn plan_reconcile(
     candidates: &[ScannedCandidate],
     matched_ids: &[Option<String>],
     state: &SyncState,
     server_files: &[StudioLibraryFile],
-    complete_scan: bool,
+    files_complete: bool,
+    databases_complete: bool,
     folder_available: bool,
 ) -> Vec<SyncAction> {
     if !folder_available {
@@ -56,8 +54,12 @@ pub(crate) fn plan_reconcile(
         if !server_by_id.contains_key(id.as_str()) {
             continue;
         }
+        let source_complete = match entry.source {
+            SyncSource::File => files_complete,
+            SyncSource::Database => databases_complete,
+        };
         let delete_deselected = !entry.selected;
-        let delete_absent = complete_scan && entry.missed_scans >= ABSENCE_DELETE_THRESHOLD;
+        let delete_absent = source_complete && entry.missed_scans >= ABSENCE_DELETE_THRESHOLD;
         if delete_deselected || delete_absent {
             actions.push(SyncAction::Delete {
                 studio_file_id: id.clone(),
@@ -76,7 +78,14 @@ pub(crate) fn plan_reconcile(
         let Some(entry) = state.entries.get(id) else {
             continue;
         };
-        if !entry.selected || candidate.oversized || candidate.unreadable {
+        if !entry.selected
+            || candidate.oversized
+            || candidate.unreadable
+            || candidate.too_many_games
+            || candidate.empty
+            || candidate.invalid_pgn
+            || candidate.deferred
+        {
             continue;
         }
         let Some(sha) = candidate.content_sha256.as_ref() else {
@@ -125,10 +134,10 @@ pub(crate) fn plan_reconcile(
 mod tests {
     use super::*;
     use crate::{
-        infra::path_authority::PathRef,
+        infra::path_authority::{FileWorkspaceHandle, PathRef},
         library_sync::{
             scan::normalize_library_name,
-            state::{FileRejection, SyncEntry},
+            state::{FileRejection, SyncEntry, SyncSource},
             wire::LibraryRejectionCode,
         },
     };
@@ -136,9 +145,10 @@ mod tests {
 
     fn make_cand(handle: &str, name: &str, kind: LibraryFileKind, sha: &str) -> ScannedCandidate {
         ScannedCandidate {
-            handle: FileWorkspaceHandle::new(PathRef {
+            source: SyncSource::File,
+            handle: LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
                 id: handle.to_owned(),
-            }),
+            })),
             locator: vec![OsString::from(name)],
             name: name.to_owned(),
             normalized_name: normalize_library_name(name),
@@ -148,11 +158,16 @@ mod tests {
             content_sha256: Some(sha.to_owned()),
             oversized: false,
             unreadable: false,
+            too_many_games: false,
+            empty: false,
+            invalid_pgn: false,
+            deferred: false,
         }
     }
 
     fn make_entry(name: &str, selected: bool, missed_scans: u32) -> SyncEntry {
         SyncEntry {
+            source: SyncSource::File,
             locator: vec![OsString::from(name)],
             handle: None,
             selected,
@@ -235,7 +250,7 @@ mod tests {
             Some("id-same".into()),
         ];
 
-        let actions = plan_reconcile(&candidates, &ids, &state, &server, true, true);
+        let actions = plan_reconcile(&candidates, &ids, &state, &server, true, true, true);
         assert_eq!(actions.len(), 5);
         assert_eq!(
             actions[0],
@@ -293,7 +308,7 @@ mod tests {
             "sha-bad",
         )];
         let ids = vec![Some("id-bad".into())];
-        assert!(plan_reconcile(&same_bytes, &ids, &state, &[], true, true).is_empty());
+        assert!(plan_reconcile(&same_bytes, &ids, &state, &[], true, true, true).is_empty());
 
         let new_bytes = vec![make_cand(
             "h1",
@@ -302,7 +317,7 @@ mod tests {
             "sha-fixed",
         )];
         assert_eq!(
-            plan_reconcile(&new_bytes, &ids, &state, &[], true, true).len(),
+            plan_reconcile(&new_bytes, &ids, &state, &[], true, true, true).len(),
             1
         );
     }
@@ -320,7 +335,7 @@ mod tests {
         let candidates = vec![make_cand("h1", "ok.pgn", LibraryFileKind::Games, "sha-ok")];
         let ids = vec![Some("id-ok".into())];
         assert_eq!(
-            plan_reconcile(&candidates, &ids, &state, &[], true, true).len(),
+            plan_reconcile(&candidates, &ids, &state, &[], true, true, true).len(),
             1
         );
     }
@@ -338,7 +353,7 @@ mod tests {
             version: 1,
             content_sha256: Some("s".into()),
         }];
-        assert!(plan_reconcile(&[], &[], &state, &server, true, false).is_empty());
-        assert!(plan_reconcile(&[], &[], &state, &server, false, true).is_empty());
+        assert!(plan_reconcile(&[], &[], &state, &server, true, true, false).is_empty());
+        assert!(plan_reconcile(&[], &[], &state, &server, false, true, true).is_empty());
     }
 }

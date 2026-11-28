@@ -2,7 +2,7 @@
 id: library-and-files
 title: Fichiers et Bibliothèque
 summary: Configurez un dossier de travail, créez et organisez des fichiers PGN, ouvrez et enregistrez des parties et gérez la corbeille.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) rassemble les fichiers PGN de votre espace de travail (parties, répertoires, tournois, problèmes et autres fichiers) ainsi que vos bases de parties.
@@ -21,4 +21,4 @@ Lorsque vous modifiez un fichier sur l’échiquier d’analyse :
 
 Déplacer un fichier vers {{label:Files.Trash}} ne le supprime pas définitivement tout de suite. Vous pouvez cliquer immédiatement sur {{label:Common.Undo}} dans la notification, ou faire défiler jusqu’à la section {{label:Files.Trash}} dans [[page:library]] pour {{label:Files.Restore}} un fichier, utiliser {{label:Files.DeletePermanently}} ou {{label:Files.EmptyTrash}}.
 
-Lorsque votre compte ChessRiddle est connecté, cliquez sur {{label:Library.Sync.Action}} sur [[page:library]] pour synchroniser les fichiers PGN sélectionnés avec votre bibliothèque privée sur ChessRiddle (jusqu’à 100 fichiers, 5 Mo et 40 000 coups par fichier). Les modifications, renommages, désélections et suppressions sont mis à jour automatiquement ; les historiques de parties téléchargés et les bases de données de parties restent en local. La désactivation de la synchronisation vous permet de conserver ou de supprimer les fichiers synchronisés sur ChessRiddle.
+Lorsque votre compte ChessRiddle est connecté, cliquez sur {{label:Library.Sync.Action}} sur [[page:library]] pour synchroniser les fichiers PGN et bases de données de parties sélectionnés avec votre bibliothèque privée sur ChessRiddle (jusqu’à 100 fichiers, 5 Mo, 40 000 coups et 5 000 parties par fichier). Les modifications, renommages, désélections et suppressions sont mis à jour automatiquement ; les historiques de parties téléchargés restent en local. La désactivation de la synchronisation vous permet de conserver ou de supprimer les fichiers synchronisés sur ChessRiddle.

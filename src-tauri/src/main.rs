@@ -6256,6 +6256,27 @@ mod blocking_offload_scans {
         );
         assert_gate_precedes_claims("main.rs::reconcile_startup_path_owners_core", reconcile);
 
+        let library_sync_src = read_rel("library_sync/worker.rs");
+        let library_sync_scan =
+            body_at_indent(&library_sync_src, "async fn scan_workspace_with_gate(");
+        assert!(
+            library_sync_scan.contains("wait_for_migration(")
+                && library_sync_scan.contains("FolderSwitchKind::Database"),
+            "library_sync::worker::scan_workspace_with_gate must wait on FolderSwitchKind::Database"
+        );
+        assert_gate_precedes_claims(
+            "library_sync/worker.rs::scan_workspace_with_gate",
+            library_sync_scan,
+        );
+
+        let library_sync_put = body_at_indent(&library_sync_src, "async fn put_with_replan(");
+        assert!(
+            library_sync_put.contains("wait_for_migration(")
+                && library_sync_put.contains("FolderSwitchKind::Database"),
+            "library_sync::worker::put_with_replan must wait on FolderSwitchKind::Database"
+        );
+        assert_gate_precedes_claims("library_sync/worker.rs::put_with_replan", library_sync_put);
+
         // Commands that delegate through one of the verified choke points above or through
         // `EngineSupervisor` admission gates (whose own gate tests verify waiting before launch).
         let delegated_choke_points: &[(&str, &str)] = &[
@@ -6278,6 +6299,11 @@ mod blocking_offload_scans {
             ("get_best_moves", "get_best_moves_core("),
             ("get_engine_config", "get_engine_config_core("),
             ("start_game", ".start_game("),
+            ("library_sync_snapshot", ".snapshot("),
+            ("library_sync_turn_on", ".turn_on("),
+            ("library_sync_turn_off", ".turn_off("),
+            ("library_sync_set_file_selected", ".set_file_selected("),
+            ("library_sync_now", ".sync_now("),
         ];
 
         // Single explicit allowlist of non-migrating commands across the entire `src-tauri/src`
@@ -6542,27 +6568,6 @@ mod blocking_offload_scans {
             // lexer.rs
             ("lex_pgn", "pure in-memory PGN lexer"),
             ("lex_pgn_games", "pure in-memory multi-game PGN lexer"),
-            // library_sync/commands.rs (syncs non-migrating PGN file workspace to ChessRiddle cloud)
-            (
-                "library_sync_snapshot",
-                "reads in-memory PGN library sync status snapshot only",
-            ),
-            (
-                "library_sync_turn_on",
-                "enables cloud sync for non-migrating PGN workspace",
-            ),
-            (
-                "library_sync_turn_off",
-                "disables cloud sync for non-migrating PGN workspace",
-            ),
-            (
-                "library_sync_set_file_selected",
-                "updates PGN sync selection in non-migrating app-data state",
-            ),
-            (
-                "library_sync_now",
-                "triggers cloud sync for non-migrating PGN workspace",
-            ),
             // lichess.rs
             (
                 "get_public_lichess_json",

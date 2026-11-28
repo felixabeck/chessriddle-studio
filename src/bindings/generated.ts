@@ -109,7 +109,7 @@ async librarySyncSnapshot(workspace: FileWorkspaceHandle) : Promise<Result<Libra
     else return { status: "error", error: e  as any };
 }
 },
-async librarySyncTurnOn(workspace: FileWorkspaceHandle, deselected: FileWorkspaceHandle[]) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+async librarySyncTurnOn(workspace: FileWorkspaceHandle, deselected: LibrarySyncHandle[]) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("library_sync_turn_on", { workspace, deselected }) };
 } catch (e) {
@@ -125,7 +125,7 @@ async librarySyncTurnOff(workspace: FileWorkspaceHandle, mode: LibrarySyncTurnOf
     else return { status: "error", error: e  as any };
 }
 },
-async librarySyncSetFileSelected(workspace: FileWorkspaceHandle, file: FileWorkspaceHandle, selected: boolean) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
+async librarySyncSetFileSelected(workspace: FileWorkspaceHandle, file: LibrarySyncHandle, selected: boolean) : Promise<Result<LibrarySyncSnapshot, LibrarySyncError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("library_sync_set_file_selected", { workspace, file, selected }) };
 } catch (e) {
@@ -2388,13 +2388,18 @@ export type LibrarySyncChanged = { revision: number }
  */
 export type LibrarySyncError = "unavailable" | "busy" | "localStorage" | "invalidWorkspace" | "notActive"
 /**
- * One candidate PGN file in the Library sync snapshot.
+ * One candidate PGN file or game database in the Library sync snapshot.
  */
-export type LibrarySyncFile = { handle: FileWorkspaceHandle; name: string; folderLabel: string; selected: boolean; status: LibrarySyncFileStatus }
+export type LibrarySyncFile = { handle: LibrarySyncHandle; name: string; folderLabel: string; selected: boolean; status: LibrarySyncFileStatus }
 /**
  * Closed per-file sync status vocabulary exposed to the renderer.
  */
 export type LibrarySyncFileStatus = { kind: "synced" } | { kind: "pending" } | { kind: "uploading" } | { kind: "notSelected" } | { kind: "tooLarge" } | { kind: "tooManyMoves" } | { kind: "tooManyGames" } | { kind: "invalidPgn"; gameNumber: number | null } | { kind: "unsupportedVariant" } | { kind: "tooComplex" } | { kind: "commentTooLong" } | { kind: "empty" } | { kind: "libraryFull" } | { kind: "storageFull" } | { kind: "unreadable" } | { kind: "rejected" }
+/**
+ * Opaque handle for one item in the Library sync list: either a workspace PGN file or a
+ * standalone game database. Serialises untagged as the underlying capability handle object.
+ */
+export type LibrarySyncHandle = FileWorkspaceHandle | DatabaseHandle
 /**
  * Full Library sync snapshot for one workspace.
  */

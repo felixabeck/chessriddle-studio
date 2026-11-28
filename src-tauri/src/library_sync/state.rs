@@ -3,7 +3,10 @@
 use crate::{
     error::Error,
     infra::path_authority::{AuthorizedDir, FileWorkspaceHandle},
-    library_sync::wire::{is_valid_studio_file_id, LibraryRejectionCode},
+    library_sync::{
+        wire::{is_valid_studio_file_id, LibraryRejectionCode},
+        LibrarySyncHandle,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -46,9 +49,20 @@ pub(crate) struct StoredLocator(
     pub Vec<OsString>,
 );
 
+/// Origin of a synced item. Defaults to `File` so v1 state files without `source` keep loading.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SyncSource {
+    #[default]
+    File,
+    Database,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SyncEntry {
+    #[serde(default)]
+    pub source: SyncSource,
     #[serde(
         serialize_with = "crate::db::linked_collections::serialize_locator",
         deserialize_with = "crate::db::linked_collections::deserialize_locator"
@@ -56,7 +70,7 @@ pub(crate) struct SyncEntry {
     pub locator: Vec<OsString>,
     /// Current-session handle; not persisted because file handles do not survive a restart (P16).
     #[serde(skip)]
-    pub handle: Option<FileWorkspaceHandle>,
+    pub handle: Option<LibrarySyncHandle>,
     pub selected: bool,
     pub last_content_sha256: Option<String>,
     pub missed_scans: u32,
@@ -74,6 +88,10 @@ pub(crate) struct SyncState {
     /// Initial deselections recorded at turn-on before the first server list runs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_deselected_locators: Vec<StoredLocator>,
+    /// Gate-failing database candidates explicitly selected at turn-on or via `set_file_selected`
+    /// before the first complete scan mints entries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_selected_locators: Vec<StoredLocator>,
 }
 
 impl Default for SyncState {
@@ -91,6 +109,7 @@ impl SyncState {
             workspace: None,
             entries: BTreeMap::new(),
             pending_deselected_locators: Vec::new(),
+            pending_selected_locators: Vec::new(),
         }
     }
 
@@ -207,6 +226,7 @@ mod tests {
         state.entries.insert(
             "11111111-1111-4111-8111-111111111111".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("ok.pgn")],
                 handle: None,
                 selected: true,
@@ -218,6 +238,7 @@ mod tests {
         state.entries.insert(
             "../evil".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("bad.pgn")],
                 handle: None,
                 selected: true,
@@ -240,9 +261,9 @@ mod tests {
         let workspace = FileWorkspaceHandle::new(PathRef {
             id: "ws-1".to_owned(),
         });
-        let file_handle = FileWorkspaceHandle::new(PathRef {
+        let file_handle = LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
             id: "file-1".to_owned(),
-        });
+        }));
 
         let mut state = SyncState {
             version: STATE_VERSION,
@@ -251,10 +272,12 @@ mod tests {
             workspace: Some(workspace.clone()),
             entries: BTreeMap::new(),
             pending_deselected_locators: vec![StoredLocator(vec![OsString::from("skip.pgn")])],
+            pending_selected_locators: vec![StoredLocator(vec![OsString::from("mega.db3")])],
         };
         state.entries.insert(
             "11111111-1111-4111-8111-111111111111".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("Openings"), OsString::from("Sicilian.pgn")],
                 handle: Some(file_handle),
                 selected: false,
@@ -267,6 +290,18 @@ mod tests {
                 }),
             },
         );
+        state.entries.insert(
+            "33333333-3333-4333-8333-333333333333".into(),
+            SyncEntry {
+                source: SyncSource::Database,
+                locator: vec![OsString::from("personal.db3")],
+                handle: None,
+                selected: true,
+                last_content_sha256: Some("cafebabe".into()),
+                missed_scans: 0,
+                last_rejection: None,
+            },
+        );
 
         state.save(&dir).unwrap();
         let loaded = SyncState::load(&dir);
@@ -277,10 +312,15 @@ mod tests {
             loaded.pending_deselected_locators,
             vec![StoredLocator(vec![OsString::from("skip.pgn")])]
         );
+        assert_eq!(
+            loaded.pending_selected_locators,
+            vec![StoredLocator(vec![OsString::from("mega.db3")])]
+        );
         let entry = loaded
             .entries
             .get("11111111-1111-4111-8111-111111111111")
             .unwrap();
+        assert_eq!(entry.source, SyncSource::File);
         assert_eq!(entry.handle, None);
         assert_eq!(
             entry.locator,
@@ -296,6 +336,68 @@ mod tests {
                 game_number: Some(2),
             })
         );
+        let db_entry = loaded
+            .entries
+            .get("33333333-3333-4333-8333-333333333333")
+            .unwrap();
+        assert_eq!(db_entry.source, SyncSource::Database);
+        assert_eq!(db_entry.locator, vec![OsString::from("personal.db3")]);
+    }
+
+    #[test]
+    fn v1_state_without_source_loads_as_file_entries_and_stays_on() {
+        let (_temp, dir) = test_dir();
+        let workspace = FileWorkspaceHandle::new(PathRef {
+            id: "ws-1".to_owned(),
+        });
+        let mut original = SyncState {
+            version: STATE_VERSION,
+            account_id: Some("acct-v1".into()),
+            mode: SyncMode::On,
+            workspace: Some(workspace),
+            entries: BTreeMap::new(),
+            pending_deselected_locators: Vec::new(),
+            pending_selected_locators: Vec::new(),
+        };
+        original.entries.insert(
+            "11111111-1111-4111-8111-111111111111".into(),
+            SyncEntry {
+                source: SyncSource::File,
+                locator: vec![OsString::from("Repertoire.pgn")],
+                handle: None,
+                selected: true,
+                last_content_sha256: Some("abc123".into()),
+                missed_scans: 0,
+                last_rejection: None,
+            },
+        );
+        // Strip the additive `source` field to match a pre-database v1 persisted file.
+        let mut v1_json = serde_json::to_value(&original).unwrap();
+        v1_json["entries"]["11111111-1111-4111-8111-111111111111"]
+            .as_object_mut()
+            .unwrap()
+            .remove("source");
+        assert!(v1_json["entries"]["11111111-1111-4111-8111-111111111111"]
+            .get("source")
+            .is_none());
+        std::fs::write(
+            dir.path().join(STATE_FILE_NAME),
+            serde_json::to_vec(&v1_json).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = SyncState::load(&dir);
+        assert_eq!(loaded.version, STATE_VERSION);
+        assert_eq!(loaded.mode, SyncMode::On);
+        assert_eq!(loaded.account_id.as_deref(), Some("acct-v1"));
+        assert!(loaded.pending_selected_locators.is_empty());
+        let entry = loaded
+            .entries
+            .get("11111111-1111-4111-8111-111111111111")
+            .expect("v1 entry must load");
+        assert_eq!(entry.source, SyncSource::File);
+        assert_eq!(entry.locator, vec![OsString::from("Repertoire.pgn")]);
+        assert!(entry.selected);
     }
 
     #[cfg(unix)]
@@ -310,6 +412,7 @@ mod tests {
         state.entries.insert(
             "22222222-2222-4222-8222-222222222222".into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![weird.clone()],
                 handle: None,
                 selected: true,

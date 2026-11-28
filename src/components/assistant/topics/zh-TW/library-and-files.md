@@ -2,7 +2,7 @@
 id: library-and-files
 title: 檔案與資料庫
 summary: 設定工作區資料夾、建立與整理 PGN 檔案、開啟與儲存對局，以及管理垃圾桶。
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) 整合了您的工作區 PGN 檔案（對局、開局庫、賽事、謎題與其他檔案）以及棋局資料庫。
@@ -21,4 +21,4 @@ source: 4417697a9a5cd025
 
 將檔案移至 {{label:Files.Trash}} 不會立即永久刪除。您可以立即點擊通知中的 {{label:Common.Undo}}，或捲動至 [[page:library]] 中的 {{label:Files.Trash}} 區段來 {{label:Files.Restore}} 檔案、{{label:Files.DeletePermanently}} 或 {{label:Files.EmptyTrash}}。
 
-連線您的 ChessRiddle 帳戶後，請在 [[page:library]] 中點擊 {{label:Library.Sync.Action}}，將選取的 PGN 檔案同步至您的 ChessRiddle 私人棋庫（最多 100 個檔案，每個檔案最大 5 MB、最多 40,000 步著法）。編輯、重新命名、取消選取與刪除會自動更新；已下載的對局紀錄和棋局資料庫仍保留於本機。關閉同步時，您可以選擇在 ChessRiddle 上保留或移除已同步的檔案。
+連線您的 ChessRiddle 帳戶後，請在 [[page:library]] 中點擊 {{label:Library.Sync.Action}}，將選取的 PGN 檔案和棋局資料庫同步至您的 ChessRiddle 私人棋庫（最多 100 個檔案，每個檔案最大 5 MB、最多 40,000 步著法與 5,000 盤對局）。編輯、重新命名、取消選取與刪除會自動更新；已下載的對局紀錄仍保留於本機。關閉同步時，您可以選擇在 ChessRiddle 上保留或移除已同步的檔案。

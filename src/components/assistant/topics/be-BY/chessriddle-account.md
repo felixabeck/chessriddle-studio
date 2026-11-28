@@ -2,7 +2,7 @@
 id: chessriddle-account
 title: Акаўнт ChessRiddle
 summary: Падключэнне, абнаўленне або адключэнне акаўнта ChessRiddle для анлайн-трэніроўкі тактычных задач.
-source: bfd90b50baa25512
+source: f0f16b565692c89e
 ---
 
 Ваш акаўнт ChessRiddle падключае Studio да анлайн-трэніроўкі задач {{label:Puzzle.Source.ChessRiddle}}.
@@ -14,4 +14,4 @@ source: bfd90b50baa25512
 - Націсніце {{label:Home.ChessRiddle.Refresh}}, каб праверыць бягучы статус акаўнта і тарыф.
 - Калі тэрмін дзеяння сеансу скончыўся, націсніце {{label:Home.ChessRiddle.Reconnect}}, каб увайсці зноў.
 - Націсніце {{label:Home.ChessRiddle.Disconnect}}, каб выдаліць акаўнт з гэтага камп’ютара і выйсці.
-- Пасля падключэння націсніце {{label:Library.Sync.Action}} на старонцы [[page:library]], каб сінхранізаваць выбраныя файлы PGN з вашай прыватнай бібліятэкай ChessRiddle (аднабаковая сінхранізацыя, на сайце толькі для чытання).
+- Пасля падключэння націсніце {{label:Library.Sync.Action}} на старонцы [[page:library]], каб сінхранізаваць выбраныя файлы PGN і базы даных партый з вашай прыватнай бібліятэкай ChessRiddle (аднабаковая сінхранізацыя, на сайце толькі для чытання).

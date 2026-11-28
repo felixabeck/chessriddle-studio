@@ -2,26 +2,29 @@
 
 use crate::{
     chessriddle::{AccountError, AccountOwner},
+    db::{sync_export::is_deferred_database_error, DatabaseRepository},
     infra::{
         blocking::BLOCKING_GATEWAY,
         path_authority::{
             ensure_app_owned_default_dir, AppDataDir, AppOwnedDefaultRoot, AuthorizedDir,
-            FileWorkspaceHandle, SharedPathAuthority,
+            FileWorkspaceHandle, FolderSwitchCoordinator, FolderSwitchKind, SharedPathAuthority,
         },
     },
     library_sync::{
         planner::{plan_reconcile, SyncAction},
         scan::{
             has_unmatched_entries, match_candidates_to_entries, read_candidate_bytes_blocking,
-            scan_workspace_blocking, CandidateFingerprint, ScanResult, ScannedCandidate,
+            scan_workspace_blocking, CandidateFingerprint, CandidateReadOutcome,
+            DatabaseExportPolicy, ScanResult, ScannedCandidate,
         },
-        state::{FileRejection, StoredLocator, SyncEntry, SyncMode, SyncState},
+        state::{FileRejection, StoredLocator, SyncEntry, SyncMode, SyncSource, SyncState},
         wire::{
             LibraryFileKind, LibraryPrecondition, LibraryPutResponse, LibraryRequestError,
             StudioLibraryList,
         },
         LibrarySyncChanged, LibrarySyncError, LibrarySyncFile, LibrarySyncFileStatus,
-        LibrarySyncSnapshot, LibrarySyncState, LibrarySyncTurnOffMode, ABSENCE_DELETE_THRESHOLD,
+        LibrarySyncHandle, LibrarySyncSnapshot, LibrarySyncState, LibrarySyncTurnOffMode,
+        ABSENCE_DELETE_THRESHOLD,
     },
 };
 use std::{
@@ -54,6 +57,8 @@ struct WorkerConfig {
     event_min_interval: Duration,
     /// Optional cap on server `Retry-After` waits in tests.
     retry_after_cap: Option<Duration>,
+    /// Optional shorter database migration gate timeout in tests.
+    migration_wait_timeout: Option<Duration>,
 }
 
 impl Default for WorkerConfig {
@@ -65,6 +70,7 @@ impl Default for WorkerConfig {
             busy_retry_wait: DEFAULT_BUSY_RETRY_WAIT,
             event_min_interval: DEFAULT_EVENT_MIN_INTERVAL,
             retry_after_cap: None,
+            migration_wait_timeout: None,
         }
     }
 }
@@ -77,14 +83,26 @@ fn candidate_file_status(
     override_status: Option<&LibrarySyncFileStatus>,
     default_selected_status: LibrarySyncFileStatus,
 ) -> LibrarySyncFileStatus {
-    if !selected {
-        return LibrarySyncFileStatus::NotSelected;
+    if candidate.empty {
+        return LibrarySyncFileStatus::Empty;
+    }
+    if candidate.too_many_games {
+        return LibrarySyncFileStatus::TooManyGames;
     }
     if candidate.oversized {
         return LibrarySyncFileStatus::TooLarge;
     }
+    if candidate.invalid_pgn {
+        return LibrarySyncFileStatus::InvalidPgn { game_number: None };
+    }
     if candidate.unreadable {
         return LibrarySyncFileStatus::Unreadable;
+    }
+    if candidate.deferred {
+        return LibrarySyncFileStatus::Pending;
+    }
+    if !selected {
+        return LibrarySyncFileStatus::NotSelected;
     }
     if let Some(status) = override_status {
         return status.clone();
@@ -165,20 +183,91 @@ fn project_off_snapshot(
 fn off_files_from_candidates(candidates: &[ScannedCandidate]) -> Vec<LibrarySyncFile> {
     candidates
         .iter()
-        .map(|c| LibrarySyncFile {
-            handle: c.handle.clone(),
-            name: c.name.clone(),
-            folder_label: c.folder_label.clone(),
-            selected: true,
-            status: candidate_file_status(c, true, None, None, LibrarySyncFileStatus::Pending),
+        .map(|c| {
+            let selected = c.default_selected();
+            LibrarySyncFile {
+                handle: c.handle.clone(),
+                name: c.name.clone(),
+                folder_label: c.folder_label.clone(),
+                selected,
+                status: candidate_file_status(
+                    c,
+                    selected,
+                    None,
+                    None,
+                    LibrarySyncFileStatus::Pending,
+                ),
+            }
         })
         .collect()
+}
+
+/// Shared gated workspace+database scan used by both off-mode `snapshot` and `SyncActor`.
+/// Awaits the Database folder-switch migration gate before entering the blocking scan; a wait
+/// error isolates to the database side (`db_migration_ready = false`) rather than failing PGN.
+#[allow(clippy::too_many_arguments)]
+async fn scan_workspace_with_gate(
+    folder_switch: &FolderSwitchCoordinator,
+    migration_wait_timeout: Option<Duration>,
+    authority: SharedPathAuthority,
+    workspace_mutation: Arc<Mutex<()>>,
+    workspace: FileWorkspaceHandle,
+    db_repo: Arc<DatabaseRepository>,
+    entries: Option<std::collections::BTreeMap<String, SyncEntry>>,
+    pending_deselected_handles: HashSet<LibrarySyncHandle>,
+    pending_deselected_locators: HashSet<Vec<OsString>>,
+    hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    cancel: CancellationToken,
+) -> Result<ScanResult, crate::error::Error> {
+    let wait_result = match migration_wait_timeout {
+        Some(timeout) => {
+            folder_switch
+                .wait_for_migration_with_timeout(FolderSwitchKind::Database, Some(&cancel), timeout)
+                .await
+        }
+        None => {
+            folder_switch
+                .wait_for_migration(FolderSwitchKind::Database, Some(&cancel))
+                .await
+        }
+    };
+    let db_migration_ready = match wait_result {
+        Ok(()) => true,
+        Err(_) if cancel.is_cancelled() => return Err(crate::error::Error::Cancellation),
+        Err(error) => {
+            log::warn!("library sync database migration gate failed: {error}");
+            false
+        }
+    };
+
+    BLOCKING_GATEWAY
+        .spawn_cancellable(cancel, move |token| {
+            let policy = match entries.as_ref() {
+                Some(entries) => DatabaseExportPolicy::SelectedOrDefault {
+                    entries,
+                    pending_deselected_handles: &pending_deselected_handles,
+                    pending_deselected_locators: &pending_deselected_locators,
+                },
+                None => DatabaseExportPolicy::CheapInfoOnly,
+            };
+            scan_workspace_blocking(
+                &authority,
+                &workspace_mutation,
+                &workspace,
+                &db_repo,
+                db_migration_ready,
+                policy,
+                &hash_cache,
+                token,
+            )
+        })
+        .await
 }
 
 enum WorkerMessage {
     TurnOn {
         workspace: FileWorkspaceHandle,
-        deselected: Vec<FileWorkspaceHandle>,
+        deselected: Vec<LibrarySyncHandle>,
         reply: oneshot::Sender<Result<LibrarySyncSnapshot, LibrarySyncError>>,
     },
     TurnOff {
@@ -188,7 +277,7 @@ enum WorkerMessage {
     },
     SetFileSelected {
         workspace: FileWorkspaceHandle,
-        file: FileWorkspaceHandle,
+        file: LibrarySyncHandle,
         selected: bool,
         reply: oneshot::Sender<Result<LibrarySyncSnapshot, LibrarySyncError>>,
     },
@@ -255,6 +344,8 @@ struct ActorDeps {
     state_dir: Arc<AuthorizedDir>,
     authority: SharedPathAuthority,
     workspace_mutation: Arc<Mutex<()>>,
+    database_repository: Arc<DatabaseRepository>,
+    folder_switch: FolderSwitchCoordinator,
     account: Arc<std::sync::OnceLock<AccountOwner>>,
     published: Arc<Mutex<PublishedView>>,
     emit: EventEmitter,
@@ -269,15 +360,21 @@ pub(crate) struct LibrarySyncOwner {
     published: Arc<Mutex<PublishedView>>,
     authority: SharedPathAuthority,
     workspace_mutation: Arc<Mutex<()>>,
+    database_repository: Arc<DatabaseRepository>,
+    folder_switch: FolderSwitchCoordinator,
+    migration_wait_timeout: Option<Duration>,
     account: Arc<std::sync::OnceLock<AccountOwner>>,
 }
 
 impl LibrarySyncOwner {
+    #[allow(clippy::too_many_arguments)]
     fn start(
         state_dir: Arc<AuthorizedDir>,
         initial_state: SyncState,
         authority: SharedPathAuthority,
         workspace_mutation: Arc<Mutex<()>>,
+        database_repository: Arc<DatabaseRepository>,
+        folder_switch: FolderSwitchCoordinator,
         account: Arc<std::sync::OnceLock<AccountOwner>>,
         emit: EventEmitter,
         config: WorkerConfig,
@@ -285,10 +382,13 @@ impl LibrarySyncOwner {
         let cancel = CancellationToken::new();
         let (sender, receiver) = mpsc::channel(WORKER_QUEUE_CAPACITY);
         let published = Arc::new(Mutex::new(PublishedView::from_state(&initial_state, false)));
+        let migration_wait_timeout = config.migration_wait_timeout;
         let deps = ActorDeps {
             state_dir,
             authority: authority.clone(),
             workspace_mutation: Arc::clone(&workspace_mutation),
+            database_repository: Arc::clone(&database_repository),
+            folder_switch: folder_switch.clone(),
             account: Arc::clone(&account),
             published: Arc::clone(&published),
             emit,
@@ -306,6 +406,9 @@ impl LibrarySyncOwner {
             published,
             authority,
             workspace_mutation,
+            database_repository,
+            folder_switch,
+            migration_wait_timeout,
             account,
         }
     }
@@ -361,15 +464,20 @@ impl LibrarySyncOwner {
             }
             _ => false,
         };
-        let authority = self.authority.clone();
-        let mutation = Arc::clone(&self.workspace_mutation);
-        let ws = workspace.clone();
-        let cancel = self.cancel.clone();
-        let scan = BLOCKING_GATEWAY
-            .spawn_cancellable(cancel, move |token| {
-                scan_workspace_blocking(&authority, &mutation, &ws, &HashMap::new(), token)
-            })
-            .await;
+        let scan = scan_workspace_with_gate(
+            &self.folder_switch,
+            self.migration_wait_timeout,
+            self.authority.clone(),
+            Arc::clone(&self.workspace_mutation),
+            workspace.clone(),
+            Arc::clone(&self.database_repository),
+            None,
+            HashSet::new(),
+            HashSet::new(),
+            HashMap::new(),
+            self.cancel.clone(),
+        )
+        .await;
 
         let (state, files) = match scan {
             Ok(result) => (
@@ -407,7 +515,7 @@ impl LibrarySyncOwner {
     pub(crate) async fn turn_on(
         &self,
         workspace: FileWorkspaceHandle,
-        deselected: Vec<FileWorkspaceHandle>,
+        deselected: Vec<LibrarySyncHandle>,
     ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
         self.send_command(|reply| WorkerMessage::TurnOn {
             workspace,
@@ -433,7 +541,7 @@ impl LibrarySyncOwner {
     pub(crate) async fn set_file_selected(
         &self,
         workspace: FileWorkspaceHandle,
-        file: FileWorkspaceHandle,
+        file: LibrarySyncHandle,
         selected: bool,
     ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
         self.send_command(|reply| WorkerMessage::SetFileSelected {
@@ -480,6 +588,8 @@ pub(crate) fn initialize(
         initial_state,
         state.pgn_path_authority.clone(),
         Arc::clone(&state.workspace_mutation),
+        Arc::clone(&state.database_repository),
+        state.folder_switch.clone(),
         Arc::clone(&state.chessriddle),
         emit,
         WorkerConfig::default(),
@@ -502,7 +612,7 @@ enum RunOutcome {
 
 struct PutTarget {
     studio_file_id: String,
-    handle: FileWorkspaceHandle,
+    handle: LibrarySyncHandle,
     name: String,
     kind: LibraryFileKind,
     precondition: LibraryPrecondition,
@@ -513,6 +623,8 @@ struct SyncActor {
     state: SyncState,
     authority: SharedPathAuthority,
     workspace_mutation: Arc<Mutex<()>>,
+    database_repository: Arc<DatabaseRepository>,
+    folder_switch: FolderSwitchCoordinator,
     account: Arc<std::sync::OnceLock<AccountOwner>>,
     published: Arc<Mutex<PublishedView>>,
     emit: EventEmitter,
@@ -525,10 +637,12 @@ struct SyncActor {
     last_candidates: Vec<ScannedCandidate>,
     last_matched_ids: Vec<Option<String>>,
     last_fingerprints: Option<Vec<CandidateFingerprint>>,
-    hash_cache: HashMap<Vec<OsString>, (String, String)>,
+    hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
     file_statuses: HashMap<String, LibrarySyncFileStatus>,
-    pending_deselected_handles: HashSet<FileWorkspaceHandle>,
-    last_complete_scan_at: Option<Instant>,
+    pending_deselected_handles: HashSet<LibrarySyncHandle>,
+    pending_selected_handles: HashSet<LibrarySyncHandle>,
+    last_complete_file_scan_at: Option<Instant>,
+    last_complete_db_scan_at: Option<Instant>,
     backoff_step: u32,
     next_backoff_at: Option<Instant>,
     next_scan_at: Option<Instant>,
@@ -550,6 +664,8 @@ impl SyncActor {
             state: initial_state,
             authority: deps.authority,
             workspace_mutation: deps.workspace_mutation,
+            database_repository: deps.database_repository,
+            folder_switch: deps.folder_switch,
             account: deps.account,
             published: deps.published,
             emit: deps.emit,
@@ -564,7 +680,9 @@ impl SyncActor {
             hash_cache: HashMap::new(),
             file_statuses: HashMap::new(),
             pending_deselected_handles: HashSet::new(),
-            last_complete_scan_at: None,
+            pending_selected_handles: HashSet::new(),
+            last_complete_file_scan_at: None,
+            last_complete_db_scan_at: None,
             backoff_step: 0,
             next_backoff_at: None,
             next_scan_at: None,
@@ -741,6 +859,15 @@ impl SyncActor {
                 .any(|stored| stored.0 == candidate.locator)
     }
 
+    fn is_pending_selected(&self, candidate: &ScannedCandidate) -> bool {
+        self.pending_selected_handles.contains(&candidate.handle)
+            || self
+                .state
+                .pending_selected_locators
+                .iter()
+                .any(|stored| stored.0 == candidate.locator)
+    }
+
     fn build_files_view(&self) -> Vec<LibrarySyncFile> {
         let mut out = Vec::with_capacity(self.last_candidates.len());
         for (idx, candidate) in self.last_candidates.iter().enumerate() {
@@ -748,7 +875,13 @@ impl SyncActor {
             let entry = entry_id.and_then(|id| self.state.entries.get(id));
             let selected = match entry {
                 Some(entry) => entry.selected,
-                None => !self.is_pending_deselected(candidate),
+                None => {
+                    if candidate.fails_cheap_gate() {
+                        self.is_pending_selected(candidate)
+                    } else {
+                        !self.is_pending_deselected(candidate)
+                    }
+                }
             };
             let override_status = entry_id.and_then(|id| self.file_statuses.get(id));
             let status = candidate_file_status(
@@ -860,17 +993,38 @@ impl SyncActor {
     async fn scan_workspace(
         &self,
         workspace: &FileWorkspaceHandle,
+        export_selected_databases: bool,
     ) -> Result<ScanResult, crate::error::Error> {
-        let authority = self.authority.clone();
-        let mutation = Arc::clone(&self.workspace_mutation);
-        let ws = workspace.clone();
-        let hash_cache = self.hash_cache.clone();
-        let cancel = self.cancel.clone();
-        BLOCKING_GATEWAY
-            .spawn_cancellable(cancel, move |token| {
-                scan_workspace_blocking(&authority, &mutation, &ws, &hash_cache, token)
-            })
-            .await
+        let (entries, pending_deselected_handles, pending_deselected_locators) =
+            if export_selected_databases {
+                let locators = self
+                    .state
+                    .pending_deselected_locators
+                    .iter()
+                    .map(|stored| stored.0.clone())
+                    .collect();
+                (
+                    Some(self.state.entries.clone()),
+                    self.pending_deselected_handles.clone(),
+                    locators,
+                )
+            } else {
+                (None, HashSet::new(), HashSet::new())
+            };
+        scan_workspace_with_gate(
+            &self.folder_switch,
+            self.config.migration_wait_timeout,
+            self.authority.clone(),
+            Arc::clone(&self.workspace_mutation),
+            workspace.clone(),
+            Arc::clone(&self.database_repository),
+            entries,
+            pending_deselected_handles,
+            pending_deselected_locators,
+            self.hash_cache.clone(),
+            self.cancel.clone(),
+        )
+        .await
     }
 
     async fn handle_message(&mut self, msg: WorkerMessage) {
@@ -934,21 +1088,37 @@ impl SyncActor {
     async fn handle_turn_on(
         &mut self,
         workspace: FileWorkspaceHandle,
-        deselected: Vec<FileWorkspaceHandle>,
+        deselected: Vec<LibrarySyncHandle>,
     ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
         self.refresh_account_connected().await;
-        let scan = self.scan_workspace(&workspace).await.map_err(|error| {
-            log_scan_failure("turn-on workspace scan", &error);
-            LibrarySyncError::InvalidWorkspace
-        })?;
+        let scan = self
+            .scan_workspace(&workspace, false)
+            .await
+            .map_err(|error| {
+                log_scan_failure("turn-on workspace scan", &error);
+                LibrarySyncError::InvalidWorkspace
+            })?;
 
         // Do not mint ids before the first server list so identity pass 4 can adopt matching
-        // server files. Key initial deselections by both handle and locator.
-        let deselected_handles: HashSet<FileWorkspaceHandle> = deselected.into_iter().collect();
+        // server files. Key initial deselections by both handle and locator, and record any
+        // gate-failing databases the user explicitly kept checked as positive pending-selected.
+        let deselected_handles: HashSet<LibrarySyncHandle> = deselected.into_iter().collect();
         let pending_deselected_locators: Vec<StoredLocator> = scan
             .candidates
             .iter()
             .filter(|c| deselected_handles.contains(&c.handle))
+            .map(|c| StoredLocator(c.locator.clone()))
+            .collect();
+        let pending_selected_handles: HashSet<LibrarySyncHandle> = scan
+            .candidates
+            .iter()
+            .filter(|c| c.fails_cheap_gate() && !deselected_handles.contains(&c.handle))
+            .map(|c| c.handle.clone())
+            .collect();
+        let pending_selected_locators: Vec<StoredLocator> = scan
+            .candidates
+            .iter()
+            .filter(|c| c.fails_cheap_gate() && !deselected_handles.contains(&c.handle))
             .map(|c| StoredLocator(c.locator.clone()))
             .collect();
 
@@ -959,18 +1129,21 @@ impl SyncActor {
             workspace: Some(workspace.clone()),
             entries: Default::default(),
             pending_deselected_locators,
+            pending_selected_locators,
         };
         self.persist_state(next_state.clone()).await?;
 
         self.state = next_state;
         self.pending_deselected_handles = deselected_handles;
+        self.pending_selected_handles = pending_selected_handles;
         self.account_matches = true;
         self.unsupported_server = false;
         self.paused_until_trigger = false;
         self.backoff_step = 0;
         self.next_backoff_at = None;
         self.last_fingerprints = Some(scan.fingerprints());
-        self.last_complete_scan_at = None;
+        self.last_complete_file_scan_at = None;
+        self.last_complete_db_scan_at = None;
         self.hash_cache = scan.updated_hash_cache;
         self.last_matched_ids = vec![None; scan.candidates.len()];
         self.last_candidates = scan.candidates;
@@ -992,11 +1165,13 @@ impl SyncActor {
                 self.persist_state(next_state.clone()).await?;
                 self.state = next_state;
                 self.pending_deselected_handles.clear();
+                self.pending_selected_handles.clear();
                 self.account_matches = true;
                 self.file_statuses.clear();
                 self.last_matched_ids.clear();
                 self.last_fingerprints = None;
-                self.last_complete_scan_at = None;
+                self.last_complete_file_scan_at = None;
+                self.last_complete_db_scan_at = None;
                 self.run_requested = false;
                 self.next_backoff_at = None;
                 self.next_scan_at = None;
@@ -1004,7 +1179,7 @@ impl SyncActor {
                 self.refresh_account_connected().await;
 
                 // Return the same off-state snapshot with candidate files as `snapshot`.
-                match self.scan_workspace(&workspace).await {
+                match self.scan_workspace(&workspace, false).await {
                     Ok(scan) => {
                         self.hash_cache = scan.updated_hash_cache;
                         self.last_candidates = scan.candidates;
@@ -1043,7 +1218,7 @@ impl SyncActor {
     async fn handle_set_file_selected(
         &mut self,
         workspace: FileWorkspaceHandle,
-        file: FileWorkspaceHandle,
+        file: LibrarySyncHandle,
         selected: bool,
     ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
         if self.state.mode != SyncMode::On
@@ -1080,13 +1255,26 @@ impl SyncActor {
             // Selection toggled before the first list minted/adopted entries. Mutate in-memory
             // state only after `persist_state` succeeds (S-2).
             let mut next_pending_handles = self.pending_deselected_handles.clone();
+            let mut next_pending_selected = self.pending_selected_handles.clone();
             if selected {
                 next_pending_handles.remove(&file);
                 next_state
                     .pending_deselected_locators
                     .retain(|stored| stored.0 != cand.locator);
+                if cand.fails_cheap_gate() {
+                    next_pending_selected.insert(file);
+                    if !next_state
+                        .pending_selected_locators
+                        .iter()
+                        .any(|stored| stored.0 == cand.locator)
+                    {
+                        next_state
+                            .pending_selected_locators
+                            .push(StoredLocator(cand.locator.clone()));
+                    }
+                }
             } else {
-                next_pending_handles.insert(file);
+                next_pending_handles.insert(file.clone());
                 if !next_state
                     .pending_deselected_locators
                     .iter()
@@ -1096,10 +1284,17 @@ impl SyncActor {
                         .pending_deselected_locators
                         .push(StoredLocator(cand.locator.clone()));
                 }
+                if cand.fails_cheap_gate() {
+                    next_pending_selected.remove(&file);
+                    next_state
+                        .pending_selected_locators
+                        .retain(|stored| stored.0 != cand.locator);
+                }
             }
             self.persist_state(next_state.clone()).await?;
             self.state = next_state;
             self.pending_deselected_handles = next_pending_handles;
+            self.pending_selected_handles = next_pending_selected;
         } else {
             return Err(LibrarySyncError::InvalidWorkspace);
         }
@@ -1133,7 +1328,7 @@ impl SyncActor {
         let Some(workspace) = self.state.workspace.clone() else {
             return;
         };
-        match self.scan_workspace(&workspace).await {
+        match self.scan_workspace(&workspace, true).await {
             Ok(scan) => {
                 let new_fp = scan.fingerprints();
                 let changed = self.last_fingerprints.as_ref() != Some(&new_fp);
@@ -1141,9 +1336,14 @@ impl SyncActor {
                 // entry and no backoff is pending (so absence counting and deletion advance without
                 // overriding exponential backoff, S-4/S-5/D5), or when recovering from a previous
                 // FolderUnavailable periodic scan error.
-                let needs_absence_run = scan.complete
+                let needs_absence_run = (scan.files_complete || scan.databases_complete)
                     && self.next_backoff_at.is_none()
-                    && has_unmatched_entries(&scan.candidates, &self.state);
+                    && has_unmatched_entries(
+                        &scan.candidates,
+                        &self.state,
+                        scan.files_complete,
+                        scan.databases_complete,
+                    );
                 let recovering_folder = self.overall_state == LibrarySyncState::FolderUnavailable;
                 self.hash_cache = scan.updated_hash_cache;
                 if changed || needs_absence_run || recovering_folder {
@@ -1330,8 +1530,8 @@ impl SyncActor {
             return RunOutcome::ScheduleBackoff;
         };
 
-        // 1. Scan workspace.
-        let scan = match self.scan_workspace(&workspace).await {
+        // 1. Scan workspace (and databases).
+        let scan = match self.scan_workspace(&workspace, true).await {
             Ok(scan) => scan,
             Err(crate::error::Error::Cancellation) => return RunOutcome::Interrupted,
             Err(error) => {
@@ -1373,12 +1573,21 @@ impl SyncActor {
 
         // 3. Match candidates to entries (5-pass, including pass 4 adoption) and persist BEFORE
         // sending any write request.
-        let can_increment_missed = scan.complete
+        let can_increment_file_missed = scan.files_complete
             && self
-                .last_complete_scan_at
+                .last_complete_file_scan_at
+                .is_none_or(|t| t.elapsed() >= self.config.scan_interval);
+        let can_increment_db_missed = scan.databases_complete
+            && self
+                .last_complete_db_scan_at
                 .is_none_or(|t| t.elapsed() >= self.config.scan_interval);
         let initial_deselected_locators: HashSet<Vec<OsString>> = working_state
             .pending_deselected_locators
+            .iter()
+            .map(|stored| stored.0.clone())
+            .collect();
+        let initial_selected_locators: HashSet<Vec<OsString>> = working_state
+            .pending_selected_locators
             .iter()
             .map(|stored| stored.0.clone())
             .collect();
@@ -1386,20 +1595,33 @@ impl SyncActor {
             &scan.candidates,
             &mut working_state,
             Some(&list.files),
-            scan.complete,
-            can_increment_missed,
+            scan.files_complete,
+            scan.databases_complete,
+            can_increment_file_missed,
+            can_increment_db_missed,
             &self.pending_deselected_handles,
             &initial_deselected_locators,
+            &self.pending_selected_handles,
+            &initial_selected_locators,
         );
-        // Drop a pending deselection only once its file was matched (its entry now carries
-        // `selected: false`) or once a complete scan proved the file is gone.
-        let mut next_pending_handles = self.pending_deselected_handles.clone();
-        if scan.complete {
+        // Drop pending turn-on overlays only once matched or once a complete scan proved the item
+        // is gone.
+        let mut next_pending_deselected = self.pending_deselected_handles.clone();
+        let mut next_pending_selected = self.pending_selected_handles.clone();
+        let now = Instant::now();
+        if scan.files_complete {
+            self.last_complete_file_scan_at = Some(now);
+        }
+        if scan.databases_complete {
+            self.last_complete_db_scan_at = Some(now);
+        }
+        if scan.complete() {
             working_state.pending_deselected_locators.clear();
-            next_pending_handles.clear();
-            self.last_complete_scan_at = Some(Instant::now());
+            working_state.pending_selected_locators.clear();
+            next_pending_deselected.clear();
+            next_pending_selected.clear();
         } else {
-            let matched_handles: HashSet<&FileWorkspaceHandle> = scan
+            let matched_handles: HashSet<&LibrarySyncHandle> = scan
                 .candidates
                 .iter()
                 .zip(matched_ids.iter())
@@ -1414,14 +1636,19 @@ impl SyncActor {
             working_state
                 .pending_deselected_locators
                 .retain(|stored| !matched_locators.contains(&stored.0));
-            next_pending_handles.retain(|handle| !matched_handles.contains(handle));
+            working_state
+                .pending_selected_locators
+                .retain(|stored| !matched_locators.contains(&stored.0));
+            next_pending_deselected.retain(|handle| !matched_handles.contains(handle));
+            next_pending_selected.retain(|handle| !matched_handles.contains(handle));
         }
 
         if self.persist_state(working_state.clone()).await.is_err() {
             return self.enter_local_error();
         }
         self.state = working_state;
-        self.pending_deselected_handles = next_pending_handles;
+        self.pending_deselected_handles = next_pending_deselected;
+        self.pending_selected_handles = next_pending_selected;
         self.last_candidates = scan.candidates.clone();
         self.last_matched_ids = matched_ids.clone();
 
@@ -1431,7 +1658,8 @@ impl SyncActor {
             &matched_ids,
             &self.state,
             &list.files,
-            scan.complete,
+            scan.files_complete,
+            scan.databases_complete,
             true,
         );
 
@@ -1461,9 +1689,30 @@ impl SyncActor {
             self.file_statuses.insert(id.clone(), status);
         }
 
+        let deferred_selected_count = scan
+            .candidates
+            .iter()
+            .zip(matched_ids.iter())
+            .filter(|(c, id)| {
+                c.deferred
+                    && id
+                        .as_ref()
+                        .and_then(|id| self.state.entries.get(id))
+                        .is_some_and(|e| e.selected)
+            })
+            .count()
+            .min(u32::MAX as usize) as u32;
+        let incomplete_selected_db = !scan.databases_complete
+            && self
+                .state
+                .entries
+                .values()
+                .any(|e| e.source == SyncSource::Database && e.selected);
+
         let total = actions.len().min(u32::MAX as usize) as u32;
         let mut done: u32 = 0;
-        let mut pending_count: u32 = 0;
+        let mut pending_count: u32 =
+            deferred_selected_count.saturating_add(u32::from(incomplete_selected_db));
         let mut capacity_stop: Option<LibrarySyncFileStatus> = None;
 
         if total > 0 {
@@ -1602,24 +1851,81 @@ impl SyncActor {
         mut target: PutTarget,
         receiver: &mut mpsc::Receiver<WorkerMessage>,
     ) -> PutStepOutcome {
+        if matches!(target.handle, LibrarySyncHandle::Database(_)) {
+            let wait_result = match self.config.migration_wait_timeout {
+                Some(timeout) => {
+                    self.folder_switch
+                        .wait_for_migration_with_timeout(
+                            FolderSwitchKind::Database,
+                            Some(&self.cancel),
+                            timeout,
+                        )
+                        .await
+                }
+                None => {
+                    self.folder_switch
+                        .wait_for_migration(FolderSwitchKind::Database, Some(&self.cancel))
+                        .await
+                }
+            };
+            if let Err(error) = wait_result {
+                if self.cancel.is_cancelled() {
+                    return PutStepOutcome::AbortRun(RunOutcome::Interrupted);
+                }
+                log::warn!("library sync database migration gate failed before upload: {error}");
+                return PutStepOutcome::Pending;
+            }
+        }
+
         let authority = self.authority.clone();
+        let db_repo = Arc::clone(&self.database_repository);
         let read_handle = target.handle.clone();
         let cancel = self.cancel.clone();
         let read_result = BLOCKING_GATEWAY
             .spawn_cancellable(cancel, move |token| {
-                read_candidate_bytes_blocking(&authority, &read_handle, token)
+                read_candidate_bytes_blocking(&authority, &db_repo, &read_handle, token)
             })
             .await;
         let (bytes, actual_sha) = match read_result {
-            Ok(Some(pair)) => pair,
-            Ok(None) => {
+            Ok(CandidateReadOutcome::Bytes { bytes, sha256 }) => (bytes, sha256),
+            Ok(CandidateReadOutcome::Deferred) => {
+                return PutStepOutcome::Pending;
+            }
+            Ok(CandidateReadOutcome::TooLarge) => {
                 return PutStepOutcome::FileStatus {
                     status: LibrarySyncFileStatus::TooLarge,
                     capacity: false,
                 };
             }
-            Err(crate::error::Error::Cancellation) => {
+            Ok(CandidateReadOutcome::TooManyGames) => {
+                return PutStepOutcome::FileStatus {
+                    status: LibrarySyncFileStatus::TooManyGames,
+                    capacity: false,
+                };
+            }
+            Ok(CandidateReadOutcome::Empty) => {
+                return PutStepOutcome::FileStatus {
+                    status: LibrarySyncFileStatus::Empty,
+                    capacity: false,
+                };
+            }
+            Ok(CandidateReadOutcome::InvalidPgn) => {
+                return PutStepOutcome::FileStatus {
+                    status: LibrarySyncFileStatus::InvalidPgn { game_number: None },
+                    capacity: false,
+                };
+            }
+            Ok(CandidateReadOutcome::Unreadable) => {
+                return PutStepOutcome::FileStatus {
+                    status: LibrarySyncFileStatus::Unreadable,
+                    capacity: false,
+                };
+            }
+            Err(error) if matches!(error.unlabelled(), crate::error::Error::Cancellation) => {
                 return PutStepOutcome::AbortRun(RunOutcome::Interrupted);
+            }
+            Err(error) if is_deferred_database_error(&error) => {
+                return PutStepOutcome::Pending;
             }
             Err(error) => {
                 log::warn!("library sync candidate read failed: {error}");
@@ -1811,12 +2117,14 @@ impl SyncActor {
         }
         self.state = off;
         self.pending_deselected_handles.clear();
+        self.pending_selected_handles.clear();
         self.overall_state = LibrarySyncState::Off;
         self.file_statuses.clear();
         self.last_candidates.clear();
         self.last_matched_ids.clear();
         self.last_fingerprints = None;
-        self.last_complete_scan_at = None;
+        self.last_complete_file_scan_at = None;
+        self.last_complete_db_scan_at = None;
         self.publish(true);
         RunOutcome::Done
     }
@@ -2215,14 +2523,18 @@ mod tests {
             busy_retry_wait: Duration::from_millis(10),
             event_min_interval: Duration::from_millis(1),
             retry_after_cap: Some(Duration::from_millis(10)),
+            migration_wait_timeout: Some(Duration::from_millis(50)),
         }
     }
 
     struct TestHarness {
         _temp: tempfile::TempDir,
         workspace_dir: std::path::PathBuf,
+        db_dir: std::path::PathBuf,
         state_dir: Arc<AuthorizedDir>,
         authority: SharedPathAuthority,
+        database_repository: Arc<DatabaseRepository>,
+        folder_switch: FolderSwitchCoordinator,
         workspace: FileWorkspaceHandle,
         other_workspace: FileWorkspaceHandle,
         account: Arc<std::sync::OnceLock<AccountOwner>>,
@@ -2242,6 +2554,25 @@ mod tests {
         files: &[(&str, &[u8])],
         config: WorkerConfig,
     ) -> TestHarness {
+        build_harness_with_config_and_db_repo(
+            origin,
+            initial_state,
+            connected,
+            files,
+            config,
+            Arc::new(DatabaseRepository::default()),
+        )
+        .await
+    }
+
+    async fn build_harness_with_config_and_db_repo(
+        origin: &str,
+        initial_state: SyncState,
+        connected: bool,
+        files: &[(&str, &[u8])],
+        config: WorkerConfig,
+        database_repository: Arc<DatabaseRepository>,
+    ) -> TestHarness {
         let temp = tempfile::tempdir().unwrap();
         let app_data = AppDataDir::for_test(temp.path());
         let state_dir = Arc::new(
@@ -2249,8 +2580,10 @@ mod tests {
         );
         let workspace_dir = temp.path().join("library");
         let other_dir = temp.path().join("other-library");
+        let db_dir = temp.path().join("databases");
         std::fs::create_dir_all(&workspace_dir).unwrap();
         std::fs::create_dir_all(&other_dir).unwrap();
+        std::fs::create_dir_all(&db_dir).unwrap();
         for (name, bytes) in files {
             std::fs::write(workspace_dir.join(name), bytes).unwrap();
         }
@@ -2260,6 +2593,8 @@ mod tests {
         let workspace = register_test_workspace(&mut pa, &workspace_dir);
         let other_workspace = register_test_workspace(&mut pa, &other_dir);
         authority.install(pa).unwrap();
+
+        let folder_switch = FolderSwitchCoordinator::default();
 
         let creds = Arc::new(ChessRiddleCredentials::with_store(Arc::new(
             MemoryCredentialStore::default(),
@@ -2287,6 +2622,8 @@ mod tests {
             initial_state,
             authority.clone(),
             Arc::new(Mutex::new(())),
+            Arc::clone(&database_repository),
+            folder_switch.clone(),
             Arc::clone(&account_lock),
             emit,
             config,
@@ -2295,8 +2632,11 @@ mod tests {
         TestHarness {
             _temp: temp,
             workspace_dir,
+            db_dir,
             state_dir,
             authority,
+            database_repository,
+            folder_switch,
             workspace,
             other_workspace,
             account: account_lock,
@@ -2746,6 +3086,8 @@ mod tests {
             persisted,
             harness.authority.clone(),
             Arc::new(Mutex::new(())),
+            Arc::clone(&harness.database_repository),
+            harness.folder_switch.clone(),
             Arc::clone(&harness.account),
             Arc::new(|_| {}),
             fast_config(),
@@ -3154,10 +3496,12 @@ mod tests {
             workspace: Some(harness.workspace.clone()),
             entries: Default::default(),
             pending_deselected_locators: Vec::new(),
+            pending_selected_locators: Vec::new(),
         };
         persisted.entries.insert(
             missing_id.into(),
             SyncEntry {
+                source: SyncSource::File,
                 locator: vec![OsString::from("Gone.pgn")],
                 handle: None,
                 selected: true,
@@ -3173,6 +3517,8 @@ mod tests {
             persisted,
             harness.authority.clone(),
             Arc::new(Mutex::new(())),
+            Arc::clone(&harness.database_repository),
+            harness.folder_switch.clone(),
             Arc::clone(&harness.account),
             Arc::new(|_| {}),
             cfg,
@@ -3532,6 +3878,8 @@ mod tests {
             persisted,
             harness.authority.clone(),
             Arc::new(Mutex::new(())),
+            Arc::clone(&harness.database_repository),
+            harness.folder_switch.clone(),
             Arc::clone(&harness.account),
             Arc::new(|_| {}),
             fast_config(),
@@ -4160,9 +4508,9 @@ mod tests {
             id: "ws-1".to_owned(),
         });
         let file = LibrarySyncFile {
-            handle: FileWorkspaceHandle::new(PathRef {
+            handle: LibrarySyncHandle::File(FileWorkspaceHandle::new(PathRef {
                 id: "file-1".to_owned(),
-            }),
+            })),
             name: "Alpha".to_owned(),
             folder_label: String::new(),
             selected: true,
@@ -4195,5 +4543,804 @@ mod tests {
         assert_eq!(active_on.state, LibrarySyncState::Offline);
         assert_eq!(active_on.files.len(), 1);
         assert_eq!(active_on.files[0].name, "Alpha");
+    }
+
+    fn activate_test_db_root(harness: &TestHarness) {
+        use crate::infra::path_authority::DatabaseRootHandle;
+        harness
+            .authority
+            .with_mut(|pa| {
+                let grant = pa
+                    .grant_dialog_operations(
+                        &harness.db_dir,
+                        "Databases",
+                        PathClass::BoundedDialogGrant,
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                        Duration::from_secs(60),
+                        1,
+                    )
+                    .unwrap();
+                let committed = pa
+                    .promote_dialog(
+                        &grant,
+                        PathClass::PersistentCustomRoot,
+                        "Databases",
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                    )
+                    .unwrap();
+                let root = DatabaseRootHandle::new(committed.id);
+                pa.set_active_database_root(&root).unwrap();
+            })
+            .unwrap();
+    }
+
+    fn seed_test_db(
+        path: &std::path::Path,
+        title: Option<&str>,
+        declared_game_count: Option<&str>,
+        actual_games: usize,
+    ) {
+        use diesel::{
+            connection::SimpleConnection, sql_query, sql_types::Text, Connection, RunQueryDsl,
+            SqliteConnection,
+        };
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        conn.batch_execute(include_str!("../db/create.sql"))
+            .unwrap();
+        sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Version', '2.4.0')")
+            .execute(&mut conn)
+            .unwrap();
+        sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Description', '')")
+            .execute(&mut conn)
+            .unwrap();
+        if let Some(t) = title {
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Title', ?)")
+                .bind::<Text, _>(t)
+                .execute(&mut conn)
+                .unwrap();
+        }
+        if let Some(gc) = declared_game_count {
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('GameCount', ?)")
+                .bind::<Text, _>(gc)
+                .execute(&mut conn)
+                .unwrap();
+        }
+        if actual_games > 0 {
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            for i in 0..actual_games {
+                sql_query(
+                    "INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, Moves, PlyCount) \
+                     VALUES (0, 0, '2026.01.01', ?, 0, 0, 0, 0, '*', X'', 0)",
+                )
+                .bind::<Text, _>((i + 1).to_string())
+                .execute(&mut conn)
+                .unwrap();
+            }
+            conn.batch_execute("COMMIT;").unwrap();
+        }
+    }
+
+    fn read_db_journal_mode(path: &std::path::Path) -> String {
+        use diesel::{
+            sql_query, sql_types::Text, Connection, QueryableByName, RunQueryDsl, SqliteConnection,
+        };
+        #[derive(QueryableByName)]
+        struct ModeRow {
+            #[diesel(sql_type = Text)]
+            journal_mode: String,
+        }
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        sql_query("PRAGMA journal_mode;")
+            .get_result::<ModeRow>(&mut conn)
+            .unwrap()
+            .journal_mode
+    }
+
+    #[tokio::test]
+    async fn database_off_mode_over_cap_defaults_unselected_and_keep_restores_unchecked() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+        activate_test_db_root(&harness);
+        seed_test_db(
+            &harness.db_dir.join("mega.db3"),
+            Some("Mega"),
+            Some("5001"),
+            0,
+        );
+
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        assert_eq!(off_snap.state, LibrarySyncState::Off);
+        let mega = off_snap.files.iter().find(|f| f.name == "Mega").unwrap();
+        assert!(matches!(mega.handle, LibrarySyncHandle::Database(_)));
+        assert!(!mega.selected);
+        assert_eq!(mega.status, LibrarySyncFileStatus::TooManyGames);
+
+        // Turn on leaving Mega unchecked (included in deselected) -> no Attention.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![mega.handle.clone()])
+            .await
+            .unwrap();
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+        let mega_on = synced.files.iter().find(|f| f.name == "Mega").unwrap();
+        assert!(!mega_on.selected);
+        assert_eq!(mega_on.status, LibrarySyncFileStatus::TooManyGames);
+
+        // Turn off (Keep) -> Mega returns to unchecked TooManyGames in Off mode.
+        let keep_snap = harness
+            .owner
+            .turn_off(harness.workspace.clone(), LibrarySyncTurnOffMode::Keep)
+            .await
+            .unwrap();
+        assert_eq!(keep_snap.state, LibrarySyncState::Off);
+        let mega_keep = keep_snap.files.iter().find(|f| f.name == "Mega").unwrap();
+        assert!(!mega_keep.selected);
+        assert_eq!(mega_keep.status, LibrarySyncFileStatus::TooManyGames);
+
+        // Turn on with Mega explicitly checked (omitted from deselected) -> selected + Attention.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let attn = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Attention { count: 1 }
+        })
+        .await;
+        let mega_checked = attn.files.iter().find(|f| f.name == "Mega").unwrap();
+        assert!(mega_checked.selected);
+        assert_eq!(mega_checked.status, LibrarySyncFileStatus::TooManyGames);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_on_mode_unselected_in_cap_is_not_exported_until_reselected() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(40);
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        let db_path = harness.db_dir.join("personal.db3");
+        seed_test_db(&db_path, Some("Personal"), Some("2"), 2);
+        assert_eq!(
+            read_db_journal_mode(&db_path).to_ascii_lowercase(),
+            "delete"
+        );
+
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        let db_file = off_snap
+            .files
+            .iter()
+            .find(|f| f.name == "Personal")
+            .unwrap();
+        assert!(db_file.selected);
+
+        // Deselect at TurnOn; let sync settle and periodic scans run.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![db_file.handle.clone()])
+            .await
+            .unwrap();
+        wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(120)).await;
+
+        // Journal mode stays `delete` -> export (which opens a WAL pooled connection via
+        // `DatabaseRepository::connection`) never ran while unselected.
+        assert_eq!(
+            read_db_journal_mode(&db_path).to_ascii_lowercase(),
+            "delete"
+        );
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 1);
+
+        // Re-select -> exports (switching DB to WAL) and uploads as kind=games.
+        harness
+            .owner
+            .set_file_selected(harness.workspace.clone(), db_file.handle.clone(), true)
+            .await
+            .unwrap();
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Personal" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert!(synced
+            .files
+            .iter()
+            .any(|f| f.name == "Personal" && f.selected));
+        assert_eq!(read_db_journal_mode(&db_path).to_ascii_lowercase(), "wal");
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 2);
+        {
+            let uploaded = server.files.lock().unwrap();
+            assert!(uploaded
+                .values()
+                .any(|f| f.name == "Personal" && f.kind == LibraryFileKind::Games));
+        }
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_new_over_cap_while_on_defaults_unselected_and_empty_never_synced() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+        activate_test_db_root(&harness);
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+
+        // Drop a new over-cap DB and an empty DB while sync is already On.
+        seed_test_db(
+            &harness.db_dir.join("mega_later.db3"),
+            Some("Mega Later"),
+            Some("5001"),
+            0,
+        );
+        seed_test_db(
+            &harness.db_dir.join("empty.db3"),
+            Some("Empty DB"),
+            Some("0"),
+            0,
+        );
+        harness
+            .owner
+            .sync_now(harness.workspace.clone())
+            .await
+            .unwrap();
+
+        let snap = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files.iter().any(|f| f.name == "Mega Later")
+                && s.files.iter().any(|f| f.name == "Empty DB")
+        })
+        .await;
+        let mega = snap.files.iter().find(|f| f.name == "Mega Later").unwrap();
+        assert!(!mega.selected);
+        assert_eq!(mega.status, LibrarySyncFileStatus::TooManyGames);
+
+        let empty = snap.files.iter().find(|f| f.name == "Empty DB").unwrap();
+        assert!(!empty.selected);
+        assert_eq!(empty.status, LibrarySyncFileStatus::Empty);
+
+        // Selecting an empty DB keeps it Empty (never Synced) and raises Attention.
+        harness
+            .owner
+            .set_file_selected(harness.workspace.clone(), empty.handle.clone(), true)
+            .await
+            .unwrap();
+        let attn = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Attention { count: 1 }
+        })
+        .await;
+        let empty_selected = attn.files.iter().find(|f| f.name == "Empty DB").unwrap();
+        assert!(empty_selected.selected);
+        assert_eq!(empty_selected.status, LibrarySyncFileStatus::Empty);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_150_games_exported_as_games_hashed_and_uploaded() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+        activate_test_db_root(&harness);
+        seed_test_db(
+            &harness.db_dir.join("personal150.db3"),
+            Some("Club Games"),
+            Some("150"),
+            150,
+        );
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let snap = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Club Games" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert!(snap
+            .files
+            .iter()
+            .any(|f| f.name == "Club Games" && matches!(f.handle, LibrarySyncHandle::Database(_))));
+
+        let puts = server.recorded_puts.lock().unwrap().clone();
+        let db_put = puts
+            .iter()
+            .find(|p| {
+                extract_multipart_part(&p.body, "name")
+                    .and_then(|b| String::from_utf8(b).ok())
+                    .as_deref()
+                    == Some("Club Games")
+            })
+            .expect("expected PUT for Club Games");
+        let kind =
+            extract_multipart_part(&db_put.body, "kind").and_then(|b| String::from_utf8(b).ok());
+        assert_eq!(kind.as_deref(), Some("games"));
+        let pgn = String::from_utf8(extract_multipart_part(&db_put.body, "file").unwrap()).unwrap();
+        assert_eq!(pgn.matches("[Round \"").count(), 150);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_scan_time_invalid_fen_is_invalid_pgn_never_synced_or_unreadable() {
+        use diesel::{
+            connection::SimpleConnection, sql_query, Connection, RunQueryDsl, SqliteConnection,
+        };
+
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let harness = build_harness(&origin, SyncState::off(), true).await;
+        activate_test_db_root(&harness);
+        let bad_path = harness.db_dir.join("bad_fen.db3");
+        seed_test_db(&bad_path, Some("Broken FEN"), Some("1"), 0);
+        {
+            let mut conn = SqliteConnection::establish(bad_path.to_str().unwrap()).unwrap();
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            sql_query(
+                "INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, FEN, Moves, PlyCount) \
+                 VALUES (0, 0, '2026.01.01', '1', 0, 0, 0, 0, '*', 'not-a-valid-fen', X'', 0)",
+            )
+            .execute(&mut conn)
+            .unwrap();
+            conn.batch_execute("COMMIT;").unwrap();
+        }
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let attn = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Attention { count: 1 }
+        })
+        .await;
+        let broken = attn.files.iter().find(|f| f.name == "Broken FEN").unwrap();
+        assert_eq!(
+            broken.status,
+            LibrarySyncFileStatus::InvalidPgn { game_number: None }
+        );
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_busy_during_scan_stays_pending_then_uploads_at_same_revision_after_clear() {
+        use crate::{
+            db::resolve_database,
+            infra::path_authority::PathOperation,
+            library_sync::scan::{scan_workspace_blocking, DatabaseExportPolicy},
+        };
+
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(50);
+        cfg.backoff_base = Duration::from_secs(60);
+        cfg.backoff_max = Duration::from_secs(60);
+        let db_repo = Arc::new(DatabaseRepository::with_pool_connection_timeout(
+            Duration::from_millis(100),
+        ));
+        let harness = build_harness_with_config_and_db_repo(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+            db_repo,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        let db_path = harness.db_dir.join("busy_scan.db3");
+        seed_test_db(&db_path, Some("Busy DB"), Some("2"), 2);
+
+        // Exhaust the read-write pool before turn_on. That leaves read_cheap_database_info
+        // (SqliteMode::ReadOnly) Eligible with Title "Busy DB" and Some(revision), while
+        // export_database_pgn_bounded (repository.connection()) hits pool timeout -> Deferred.
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        let db_handle = off_snap
+            .files
+            .iter()
+            .find_map(|f| match &f.handle {
+                LibrarySyncHandle::Database(h) if f.name == "Busy DB" => Some(h.clone()),
+                _ => None,
+            })
+            .expect("Busy DB handle in off snapshot");
+        let target = resolve_database(
+            &harness.authority,
+            &db_handle,
+            PathOperation::DatabaseExport,
+        )
+        .unwrap();
+        let held_connections = harness
+            .database_repository
+            .hold_all_connections_for_test(&target)
+            .unwrap();
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+
+        let pending = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            server.put_count.load(Ordering::SeqCst) >= 1
+                && s.files.iter().any(|f| {
+                    matches!(f.handle, LibrarySyncHandle::Database(_))
+                        && f.status == LibrarySyncFileStatus::Pending
+                })
+        })
+        .await;
+        assert_ne!(
+            pending.state,
+            LibrarySyncState::Synced,
+            "overall must not be Synced while a selected database is deferred"
+        );
+        let busy_row = pending
+            .files
+            .iter()
+            .find(|f| matches!(f.handle, LibrarySyncHandle::Database(_)))
+            .unwrap();
+        assert_eq!(busy_row.name, "Busy DB");
+        assert_eq!(busy_row.status, LibrarySyncFileStatus::Pending);
+
+        // Verify the deferred scan candidate already carries Title "Busy DB" and Some(revision).
+        let pending_scan = scan_workspace_blocking(
+            &harness.authority,
+            &Mutex::new(()),
+            &harness.workspace,
+            &harness.database_repository,
+            true,
+            DatabaseExportPolicy::SelectedOrDefault {
+                entries: &std::collections::BTreeMap::new(),
+                pending_deselected_handles: &HashSet::new(),
+                pending_deselected_locators: &HashSet::new(),
+            },
+            &HashMap::new(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let pending_db = pending_scan
+            .candidates
+            .iter()
+            .find(|c| c.source == crate::library_sync::state::SyncSource::Database)
+            .unwrap();
+        assert_eq!(pending_db.name, "Busy DB");
+        assert!(
+            pending_db.revision.is_some(),
+            "pending database candidate must already carry revision"
+        );
+        assert!(pending_db.deferred);
+        let pending_revision = pending_db.revision.clone();
+
+        // Release pool connections without modifying the database (exact same revision R).
+        // Periodic scan detects `deferred` cleared in CandidateFingerprint and re-runs
+        // execute_sync_run.
+        drop(held_connections);
+
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Busy DB" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert_eq!(synced.state, LibrarySyncState::Synced);
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 2);
+
+        // Confirm the database revision did not change across the unblocked upload.
+        let synced_scan = scan_workspace_blocking(
+            &harness.authority,
+            &Mutex::new(()),
+            &harness.workspace,
+            &harness.database_repository,
+            true,
+            DatabaseExportPolicy::CheapInfoOnly,
+            &HashMap::new(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        let synced_db = synced_scan
+            .candidates
+            .iter()
+            .find(|c| c.source == crate::library_sync::state::SyncSource::Database)
+            .unwrap();
+        assert_eq!(synced_db.name, "Busy DB");
+        assert_eq!(synced_db.revision, pending_revision);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_busy_inside_put_with_replan_stays_pending_with_backoff_then_uploads() {
+        let server = MockServerState::new("acct-1");
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        *server.block_next_put.lock().unwrap() = Some((entered_tx, release_rx));
+        let origin = start_mock_server(Arc::clone(&server)).await;
+
+        let mut cfg = fast_config();
+        cfg.backoff_base = Duration::from_millis(200);
+        cfg.backoff_max = Duration::from_millis(400);
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        let db_path = harness.db_dir.join("busy_put.db3");
+        seed_test_db(&db_path, Some("Put Busy DB"), Some("2"), 2);
+        let canonical_db_path = db_path.canonicalize().unwrap_or_else(|_| db_path.clone());
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+
+        // Wait until Alpha.pgn's PUT enters the mock server (scan already hashed Put Busy DB).
+        entered_rx.await.unwrap();
+
+        // Insert a repository tombstone so Put Busy DB's export open inside put_with_replan hits
+        // Error::Conflict -> BoundedDatabaseExport::Deferred -> PutStepOutcome::Pending.
+        harness
+            .database_repository
+            .insert_tombstone_for_test(canonical_db_path.clone());
+        let _ = release_tx.send(());
+
+        let pending = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.files
+                .iter()
+                .any(|f| f.name == "Alpha" && f.status == LibrarySyncFileStatus::Synced)
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Put Busy DB" && f.status == LibrarySyncFileStatus::Pending)
+                && matches!(s.state, LibrarySyncState::Syncing { done: 1, total: 2 })
+        })
+        .await;
+        assert_ne!(pending.state, LibrarySyncState::Synced);
+
+        // Remove tombstone -> backoff run uploads Put Busy DB and settles at Synced.
+        harness
+            .database_repository
+            .remove_tombstone_for_test(&canonical_db_path);
+
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+        })
+        .await;
+        assert!(synced
+            .files
+            .iter()
+            .any(|f| f.name == "Put Busy DB" && f.status == LibrarySyncFileStatus::Synced));
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn set_file_selected_on_gate_failing_db_before_first_list_survives_pass_5() {
+        let server = MockServerState::new("acct-1");
+        // Fail the initial list so no entries are minted yet when set_file_selected runs.
+        server.fail_all_500.store(true, Ordering::SeqCst);
+        let origin = start_mock_server(Arc::clone(&server)).await;
+
+        let mut cfg = fast_config();
+        cfg.backoff_base = Duration::from_secs(60);
+        cfg.backoff_max = Duration::from_secs(60);
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        seed_test_db(
+            &harness.db_dir.join("mega.db3"),
+            Some("Mega"),
+            Some("5001"),
+            0,
+        );
+
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        let mega_handle = off_snap
+            .files
+            .iter()
+            .find(|f| f.name == "Mega")
+            .unwrap()
+            .handle
+            .clone();
+
+        // Turn on with Mega deselected; initial list fails with ServerError before Pass 5.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![mega_handle.clone()])
+            .await
+            .unwrap();
+        wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::ServerError
+        })
+        .await;
+        assert!(
+            SyncState::load(&harness.state_dir).entries.is_empty(),
+            "entries must still be empty before the first list succeeds"
+        );
+
+        // Restore server and select Mega via set_file_selected before Pass 5 runs.
+        server.fail_all_500.store(false, Ordering::SeqCst);
+        harness
+            .owner
+            .set_file_selected(harness.workspace.clone(), mega_handle.clone(), true)
+            .await
+            .unwrap();
+
+        let attn = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Attention { count: 1 }
+        })
+        .await;
+        let mega = attn.files.iter().find(|f| f.name == "Mega").unwrap();
+        assert!(mega.selected);
+        assert_eq!(mega.status, LibrarySyncFileStatus::TooManyGames);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_migration_wait_error_and_root_listing_failure_isolate_from_pgn_and_prevent_delete(
+    ) {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(40);
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        seed_test_db(
+            &harness.db_dir.join("personal.db3"),
+            Some("Personal"),
+            Some("2"),
+            2,
+        );
+
+        // 1. Off-mode snapshot while Database migration gate is raised (times out): PGN still
+        //    succeeds as Off (no FolderUnavailable), DB candidates omitted.
+        {
+            let _gate = harness
+                .folder_switch
+                .raise_migration_gate(FolderSwitchKind::Database, HashSet::new());
+            let snap = harness
+                .owner
+                .snapshot(harness.workspace.clone())
+                .await
+                .unwrap();
+            assert_eq!(snap.state, LibrarySyncState::Off);
+            assert_eq!(snap.files.len(), 1);
+            assert_eq!(snap.files[0].name, "Alpha");
+        }
+
+        // 2. Lift gate, turn on -> both Alpha.pgn and Personal.db3 sync cleanly.
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "Personal" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert_eq!(server.files.lock().unwrap().len(), 2);
+
+        // 3. Raise Database migration gate while On: PGN is NOT FolderUnavailable, overall is NOT
+        //    Synced while selected database entry exists.
+        {
+            let _gate = harness
+                .folder_switch
+                .raise_migration_gate(FolderSwitchKind::Database, HashSet::new());
+            harness
+                .owner
+                .sync_now(harness.workspace.clone())
+                .await
+                .unwrap();
+            let snap = wait_for_state(&harness.owner, &harness.workspace, |s| {
+                matches!(s.state, LibrarySyncState::Syncing { .. })
+            })
+            .await;
+            assert_ne!(snap.state, LibrarySyncState::FolderUnavailable);
+            assert_ne!(snap.state, LibrarySyncState::Synced);
+        }
+
+        // 4. Mark unresolved Database journal so active_database_root() fails across > 2 scan
+        //    intervals: PGN is NOT FolderUnavailable, Personal is NOT deleted, overall NOT Synced.
+        harness
+            .authority
+            .with_mut(|pa| pa.mark_unresolved_journal(FolderSwitchKind::Database))
+            .unwrap();
+        harness
+            .owner
+            .sync_now(harness.workspace.clone())
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(160)).await;
+        let after_root_err = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        assert_ne!(after_root_err.state, LibrarySyncState::FolderUnavailable);
+        assert_ne!(after_root_err.state, LibrarySyncState::Synced);
+        assert_eq!(server.delete_count.load(Ordering::SeqCst), 0);
+        assert_eq!(server.files.lock().unwrap().len(), 2);
+
+        harness.owner.shutdown().await;
     }
 }

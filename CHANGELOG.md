@@ -2,6 +2,12 @@
 
 What changed in each ChessRiddle Studio release. The release workflow copies a version's section into its GitHub release, so keep each section plain Markdown: headings, lists and links.
 
+## Unreleased
+
+### New
+
+- Library sync: standalone game databases now appear alongside your PGN files in "Sync with ChessRiddle". Selected databases within the limits (up to 5,000 games and 5 MB) sync to your private Library on chessriddle.com automatically; oversized or empty databases stay unselected by default and local. Downloaded game histories remain local.
+
 ## 1.4.0
 
 ### New

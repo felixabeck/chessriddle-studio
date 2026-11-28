@@ -3,7 +3,8 @@
 use crate::{
     infra::path_authority::FileWorkspaceHandle,
     library_sync::{
-        LibrarySyncError, LibrarySyncOwner, LibrarySyncSnapshot, LibrarySyncTurnOffMode,
+        LibrarySyncError, LibrarySyncHandle, LibrarySyncOwner, LibrarySyncSnapshot,
+        LibrarySyncTurnOffMode,
     },
     AppState,
 };
@@ -29,7 +30,7 @@ pub(crate) async fn library_sync_snapshot(
 pub(crate) async fn library_sync_turn_on(
     state: tauri::State<'_, AppState>,
     workspace: FileWorkspaceHandle,
-    deselected: Vec<FileWorkspaceHandle>,
+    deselected: Vec<LibrarySyncHandle>,
 ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
     sync_owner(&state)?.turn_on(workspace, deselected).await
 }
@@ -49,7 +50,7 @@ pub(crate) async fn library_sync_turn_off(
 pub(crate) async fn library_sync_set_file_selected(
     state: tauri::State<'_, AppState>,
     workspace: FileWorkspaceHandle,
-    file: FileWorkspaceHandle,
+    file: LibrarySyncHandle,
     selected: bool,
 ) -> Result<LibrarySyncSnapshot, LibrarySyncError> {
     sync_owner(&state)?

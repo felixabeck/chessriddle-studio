@@ -2,7 +2,7 @@
 id: library-and-files
 title: Pliki i Biblioteka
 summary: Skonfiguruj folder roboczy, twórz i porządkuj pliki PGN, otwieraj i zapisuj partie oraz zarządzaj koszem.
-source: 4417697a9a5cd025
+source: c4c2624190fac7bb
 ---
 
 [[page:library]] ({{label:SideBar.Library}}) łączy pliki PGN z Twojego obszaru roboczego (partie, repertuary, turnieje, zagadki i inne pliki) z Twoimi bazami partii.
@@ -21,4 +21,4 @@ Podczas edycji pliku na tablicy analizy:
 
 Przeniesienie pliku do {{label:Files.Trash}} nie usuwa go od razu na stałe. Możesz od razu kliknąć {{label:Common.Undo}} w powiadomieniu albo przewinąć do sekcji {{label:Files.Trash}} w [[page:library]], aby użyć {{label:Files.Restore}}, {{label:Files.DeletePermanently}} lub {{label:Files.EmptyTrash}}.
 
-Gdy Twoje konto ChessRiddle jest połączone, kliknij {{label:Library.Sync.Action}} w [[page:library]], aby zsynchronizować wybrane pliki PGN z prywatną biblioteką w ChessRiddle (do 100 plików, 5 MB i 40 000 posunięć na plik). Edycje, zmiany nazw, odznaczenia i usunięcia aktualizują się automatycznie; pobrane historie partii oraz bazy danych partii pozostają lokalnie. Wyłączenie synchronizacji pozwala zachować lub usunąć zsynchronizowane pliki w ChessRiddle.
+Gdy Twoje konto ChessRiddle jest połączone, kliknij {{label:Library.Sync.Action}} w [[page:library]], aby zsynchronizować wybrane pliki PGN i bazy danych partii z prywatną biblioteką w ChessRiddle (do 100 plików, 5 MB, 40 000 posunięć i 5 000 partii na plik). Edycje, zmiany nazw, odznaczenia i usunięcia aktualizują się automatycznie; pobrane historie partii pozostają lokalnie. Wyłączenie synchronizacji pozwala zachować lub usunąć zsynchronizowane pliki w ChessRiddle.

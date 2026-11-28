@@ -1,4 +1,5 @@
 import type {
+  DatabaseHandle,
   FileWorkspaceHandle,
   LibrarySyncError,
   LibrarySyncFile,
@@ -53,6 +54,10 @@ function fileHandle(id: string): FileWorkspaceHandle {
   return { id: { id }, kind: "fileWorkspace" };
 }
 
+function databaseHandle(id: string): DatabaseHandle {
+  return { id: { id }, kind: "database" };
+}
+
 function makeFile(
   id: string,
   name: string,
@@ -64,6 +69,21 @@ function makeFile(
     handle: fileHandle(id),
     name,
     folderLabel,
+    selected,
+    status,
+  };
+}
+
+function makeDatabase(
+  id: string,
+  name: string,
+  status: LibrarySyncFileStatus,
+  selected = true,
+): LibrarySyncFile {
+  return {
+    handle: databaseHandle(id),
+    name,
+    folderLabel: "",
     selected,
     status,
   };
@@ -347,12 +367,11 @@ describe("LibrarySyncDialog", () => {
     await renderDialog(makeSnapshot({ status: "off" }, [f1, f2], { active: false }), { onTurnOn });
 
     const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Selected PGN files and game databases");
     expect(dialog.textContent).toContain("private Library on ChessRiddle");
     expect(dialog.textContent).toContain("website only reads them");
-    expect(dialog.textContent).toContain(
-      "Downloaded game histories and game databases are not synced",
-    );
-    expect(dialog.textContent).toContain("100 files, 5 MB and 40,000 moves");
+    expect(dialog.textContent).toContain("Downloaded game histories are not synced.");
+    expect(dialog.textContent).toContain("100 files, 5 MB, 40,000 moves and 5,000 games per file");
     expect(dialog.textContent).toContain("Openings");
     expect(dialog.textContent).toContain("Too large");
 
@@ -367,10 +386,72 @@ describe("LibrarySyncDialog", () => {
     expect(onTurnOn).toHaveBeenCalledWith([f2.handle]);
   });
 
-  it("renders empty off folder message when there are no PGN files yet", async () => {
+  it("renders mixed PGN and DatabaseHandle rows, seeds unchecked over-cap DBs with Too many games badge, allows checking them, and re-seeds on active->false", async () => {
+    const pgn = makeFile("f-1", "Sicilian", { kind: "pending" }, true, "Openings");
+    const personalDb = makeDatabase("db-1", "Club Games", { kind: "pending" }, true);
+    const megaDb = makeDatabase("db-2", "Mega Database", { kind: "tooManyGames" }, false);
+    const onTurnOn = vi.fn(async () => {});
+    const onSetFileSelected = vi.fn(async () => {});
+
+    await renderDialog(
+      makeSnapshot({ status: "off" }, [pgn, personalDb, megaDb], { active: false }),
+      { onTurnOn, onSetFileSelected },
+    );
+
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Club Games");
+    expect(dialog.textContent).toContain("Mega Database");
+    expect(dialog.textContent).toContain("Too many games");
+
+    const checkboxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(checkboxes).toHaveLength(3);
+    expect(checkboxes[0].checked).toBe(true);
+    expect(checkboxes[1].checked).toBe(true);
+    expect(checkboxes[2].checked).toBe(false);
+
+    // Turning on as-is sends Mega Database in deselected.
+    await clickElement(findButton("Turn on sync"));
+    expect(onTurnOn).toHaveBeenLastCalledWith([megaDb.handle]);
+
+    // Checking Mega Database before Turn on omits it from deselected (user explicitly opted in).
+    await clickElement(checkboxes[2]);
+    expect(checkboxes[2].checked).toBe(true);
+    await clickElement(findButton("Turn on sync"));
+    expect(onTurnOn).toHaveBeenLastCalledWith([]);
+
+    // Active mode: toggling a DatabaseHandle row forwards the exact DatabaseHandle.
+    await renderDialog(
+      makeSnapshot(
+        { status: "synced" },
+        [
+          { ...pgn, status: { kind: "synced" } },
+          { ...personalDb, status: { kind: "synced" } },
+          { ...megaDb, selected: false, status: { kind: "tooManyGames" } },
+        ],
+        { active: true },
+      ),
+      { onTurnOn, onSetFileSelected },
+    );
+    const activeBoxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    await clickElement(activeBoxes[1]);
+    expect(onSetFileSelected).toHaveBeenCalledWith(personalDb.handle, false);
+
+    // Turning off with Keep while dialog stays open (active -> false) re-seeds unchecked Mega.
+    await renderDialog(
+      makeSnapshot({ status: "off" }, [pgn, personalDb, megaDb], { active: false }),
+      { onTurnOn, onSetFileSelected },
+    );
+    const afterKeepBoxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(afterKeepBoxes[0].checked).toBe(true);
+    expect(afterKeepBoxes[1].checked).toBe(true);
+    expect(afterKeepBoxes[2].checked).toBe(false);
+    expect(dialog.textContent).toContain("Too many games");
+  });
+
+  it("renders empty off folder message when there are no PGN files or databases yet", async () => {
     await renderDialog(makeSnapshot({ status: "off" }, [], { active: false }));
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("No PGN files in this folder yet.");
+    expect(dialog.textContent).toContain("No PGN files or game databases yet.");
     expect(findButton("Turn on sync")).toBeDefined();
   });
 
