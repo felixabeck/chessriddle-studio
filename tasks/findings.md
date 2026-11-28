@@ -29862,7 +29862,7 @@ Fixed in 602a01175: the TipTap comment editor gets role="textbox" (keeping aria-
 
 ### The engine reorder-by-drag e2e test fails under machine load: the drag preview is gone before the test checks it
 
-* **ID:** f-20261127-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-02 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `e2e/engine-gap.spec.ts:595` ("engine-gap: engines reorder by drag and by the grip menu"), lines 616-630.
 * **Defect:** the test measures the grip and the second card, drags with `page.mouse` in 8 steps and then expects `board-arrange-preview` with `data-arrange-kind="reorder"`; under load the preview is not found (at failure the cards already show the dragged order), so the assertion races the board-arrange drag.
@@ -29870,6 +29870,9 @@ Fixed in 602a01175: the TipTap comment editor gets role="textbox" (keeping aria-
 * **Failure scenario:** a local full e2e run (and CI on a busy runner) turns red on unchanged code, which blocks or confuses a push.
 * **Fix direction:** make the drag deterministic: wait for the drag to start (pointer capture or the preview) before moving to the target, re-measure the target after the drag starts, and assert the outcome instead of the transient preview where the preview is not the subject; prove with `--repeat-each=30` while another heavy gate runs.
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
+* **Fix:** 4efe2ca35 adds `dragGripIntoReorderSlot` in `e2e/engine-gap.spec.ts` and routes both reorder drags through it. It presses the grip, crosses the drag threshold on the grip itself, then re-measures the target card inside `toPass` and moves until the reorder preview shows. Cause from a failed trace (3 of 15 failed before the fix, all at the stacked-mode drag, load about 9): the pointer went down at y=341 and moved to y=429, but the target card actually spanned y≈476–620. Its box had been read before the layout settled after `setViewportSize` and the menu Escape, so the pointer landed on the dragged card's own slot, where no preview is shown. The drop is still proven by the card order after `mouse.up`.
+* **Proof:** `--repeat-each=30` passed 30/30 twice, at load averages of about 12 and about 32 (8 and 24 CPU burners beside the run). The full `engine-gap` project passed 22/22. Correctness and root-cause lenses approved the staged diff. Other pre-measured drags in engine-gap and board-arrange were left alone: their targets are large and none has been seen to flake (rule 4d).
+<!-- ledger-meta {"command":"close","effect_lines":2,"effect_sha256":"4d80e0b46b5edb015ffdb3f8d18523908e3f65eed8ac3c4707738301afc8561f","header_sha256":"b98e0c6ef99de25ee61054944b9a0d75948d74d0ba6f1d4268fb6a1b0ed71540","header_status":"handled","input_sha256":"04e069bd59c0ac8a1d5236429e156323bf1f2bcb548748a70d5c862d3308a740","kind":"mutation-receipt","operation":"aa7546cafe4540bf67cfa4e9a865abd8a4b367ca6e2c6e3d74a27b0750c270a1","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-02"],"target":"f-20261127-02","v":1} -->
 
 ---
 
