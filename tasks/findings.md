@@ -30632,7 +30632,7 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 
 ### Train scroll e2e red after the repertoire-colour push: its uncolored fixture now shows the colour notice above Start Practice
 
-* **ID:** f-20261128-10 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-10 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** behaviour
 * **CI run:** 46137791487
 * **First red:** Test run 46137791487 on `35659adec` (feat(repertoire): give new chapters the repertoire's colour and name uncoloured ones), job `e2e`.
@@ -30643,6 +30643,8 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Proof:** `pnpm test:e2e:container --project=workspace-tabs` all green, no snapshot moved.
 * **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
 * **Repair owner:** 6c2fb393-fed1-4c29-a42b-3fd3e461839e on tuxedo-atlas, 2026-11-28T11:54:54Z
+* **Handled 2026-11-28 (duplicate):** the same red was already owned and repaired by drain e5eee374 under f-20261128-09, commit `def1a783f` (fixture is White by default plus a new uncoloured-chapter reachability test). No separate change.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"47fa29efe5d2464668b2d703687ec437f1e6ee68307433ce04b8fc262746123d","header_sha256":"34f022dc7d27a422c41507098842d18b40af9f26859deac4c3aa022f46c29840","header_status":"handled","input_sha256":"6de889d59f28d6fdbb1a6762a1ebc02fd65e878abfca437eda753d83a008d798","kind":"mutation-receipt","operation":"509c619d84815bfe815eaa98cb7c0dfe1815e1dcc35ec00d393d8da86c1c46c0","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-10"],"target":"f-20261128-10","v":1} -->
 
 ---
 
