@@ -30504,7 +30504,7 @@ Commit: 495fa3fb7aaa4cf19f7e310e413d6dda658ab133
 
 ### notation-follow-scroll WebKit walk still exceeds 135s after the in-page evaluate repair
 
-* **ID:** f-20261128-05 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-05 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** aae05993-cc5b-4333-b71c-bdb83fa312d7
 * **Impact class:** tooling
 * **Follow-up of:** f-20261127-23
@@ -30520,3 +30520,12 @@ Commit: 495fa3fb7aaa4cf19f7e310e413d6dda658ab133
 * **CI run:** 46106103691
 * **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T04:47:57Z
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"b3696970b0d349a68659fd6eeec3ab485ad703e5b6edb76b57b099c2c140b6c9","input_sha256":"6be47947b10f88543533b2b14d58ce562379afafb2b4ccfa13004d11a525c421","kind":"mutation-receipt","operation":"295651066a8d25d8b241a0317cc004fe57be140f90fe1046fd6fe83917f56a9f","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-05"],"target":"f-20261128-05","v":1} -->
+
+Chunked the in-page ply walk (`WALK_CHUNK_PLIES = 20`) and capped each settle `requestAnimationFrame` at 100ms (`SETTLE_FRAME_CAP_MS`) so a stalled hosted-WebKit rAF cannot sit in one `page.evaluate` until `test.slow()` (135s) fires. Change-wait uses a 2s wall-clock budget; settle still prefers rAF so GameNotation's three stable checks run when frames are healthy. Geometry assertions stay outside evaluate.
+
+Rejected a 16ms settle tick racing `setTimeout` against rAF (reads geometry before GameNotation's rAF-only settle). Rejected uncapped rAF-only settle (unbounded if rAF stalls). Did not change product `followNotationMove`.
+
+Proof: `pnpm test:e2e:container --project=notation-follow-scroll-webkit --grep "inline view turns the page"` finished in 25.4s after the bound (6/6 in the project, 40.9s). Hosted 135s stall was not reproduced locally (~22–26s before and after); the cap is the bound.
+
+Commit: 51726d7533f929eb7fafc713b9826fdebaa65180
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"9683913514aa0f56f5c317a8949256841dc6b0de0c4bedebcdef1784ea04287a","header_sha256":"6c928c9a74e25f9ef2c037337bce370ff326c402a2f349c430e3658ffb1bff30","header_status":"handled","input_sha256":"74ba03da89b5908884e6dfe462e1cd2ecf7f855644b90c84b3f9e52327bc323e","kind":"mutation-receipt","operation":"76a35e40b87c61df377706b3083eaa4ee9858d4ddfbd700c7c06f46143c44be4","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-05"],"target":"f-20261128-05","v":1} -->
