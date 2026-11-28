@@ -15,7 +15,7 @@ use crate::{
         scan::{
             has_unmatched_entries, match_candidates_to_entries, read_candidate_bytes_blocking,
             scan_workspace_blocking, CandidateFingerprint, CandidateReadOutcome,
-            DatabaseExportPolicy, ScanResult, ScannedCandidate,
+            DatabaseExportPolicy, ScanHashCache, ScanResult, ScannedCandidate,
         },
         state::{FileRejection, StoredLocator, SyncEntry, SyncMode, SyncSource, SyncState},
         wire::{
@@ -216,7 +216,7 @@ async fn scan_workspace_with_gate(
     entries: Option<std::collections::BTreeMap<String, SyncEntry>>,
     pending_deselected_handles: HashSet<LibrarySyncHandle>,
     pending_deselected_locators: HashSet<Vec<OsString>>,
-    hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    hash_cache: ScanHashCache,
     cancel: CancellationToken,
 ) -> Result<ScanResult, crate::error::Error> {
     let wait_result = match migration_wait_timeout {
@@ -637,7 +637,7 @@ struct SyncActor {
     last_candidates: Vec<ScannedCandidate>,
     last_matched_ids: Vec<Option<String>>,
     last_fingerprints: Option<Vec<CandidateFingerprint>>,
-    hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    hash_cache: ScanHashCache,
     file_statuses: HashMap<String, LibrarySyncFileStatus>,
     pending_deselected_handles: HashSet<LibrarySyncHandle>,
     pending_selected_handles: HashSet<LibrarySyncHandle>,
@@ -1616,10 +1616,26 @@ impl SyncActor {
             self.last_complete_db_scan_at = Some(now);
         }
         if scan.complete() {
-            working_state.pending_deselected_locators.clear();
-            working_state.pending_selected_locators.clear();
-            next_pending_deselected.clear();
-            next_pending_selected.clear();
+            let deferred_unmatched_handles: HashSet<&LibrarySyncHandle> = scan
+                .candidates
+                .iter()
+                .zip(matched_ids.iter())
+                .filter_map(|(c, id)| (c.deferred && id.is_none()).then_some(&c.handle))
+                .collect();
+            let deferred_unmatched_locators: HashSet<&Vec<OsString>> = scan
+                .candidates
+                .iter()
+                .zip(matched_ids.iter())
+                .filter_map(|(c, id)| (c.deferred && id.is_none()).then_some(&c.locator))
+                .collect();
+            working_state
+                .pending_deselected_locators
+                .retain(|stored| deferred_unmatched_locators.contains(&stored.0));
+            working_state
+                .pending_selected_locators
+                .retain(|stored| deferred_unmatched_locators.contains(&stored.0));
+            next_pending_deselected.retain(|handle| deferred_unmatched_handles.contains(handle));
+            next_pending_selected.retain(|handle| deferred_unmatched_handles.contains(handle));
         } else {
             let matched_handles: HashSet<&LibrarySyncHandle> = scan
                 .candidates
@@ -1702,6 +1718,18 @@ impl SyncActor {
             })
             .count()
             .min(u32::MAX as usize) as u32;
+        let deferred_unmatched_selected_count = scan
+            .candidates
+            .iter()
+            .zip(matched_ids.iter())
+            .filter(|(c, id)| {
+                c.source == SyncSource::Database
+                    && c.deferred
+                    && id.is_none()
+                    && !self.is_pending_deselected(c)
+            })
+            .count()
+            .min(u32::MAX as usize) as u32;
         let incomplete_selected_db = !scan.databases_complete
             && self
                 .state
@@ -1711,8 +1739,9 @@ impl SyncActor {
 
         let total = actions.len().min(u32::MAX as usize) as u32;
         let mut done: u32 = 0;
-        let mut pending_count: u32 =
-            deferred_selected_count.saturating_add(u32::from(incomplete_selected_db));
+        let mut pending_count: u32 = deferred_selected_count
+            .saturating_add(deferred_unmatched_selected_count)
+            .saturating_add(u32::from(incomplete_selected_db));
         let mut capacity_stop: Option<LibrarySyncFileStatus> = None;
 
         if total > 0 {
@@ -5036,6 +5065,13 @@ mod tests {
             .unwrap();
         assert_eq!(busy_row.name, "Busy DB");
         assert_eq!(busy_row.status, LibrarySyncFileStatus::Pending);
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .all(|e| e.source != SyncSource::Database),
+            "deferred database must stay unmatched without persisting an entry while held"
+        );
 
         // Verify the deferred scan candidate already carries Title "Busy DB" and Some(revision).
         let pending_scan = scan_workspace_blocking(
@@ -5080,6 +5116,13 @@ mod tests {
         .await;
         assert_eq!(synced.state, LibrarySyncState::Synced);
         assert_eq!(server.put_count.load(Ordering::SeqCst), 2);
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .any(|e| e.source == SyncSource::Database && e.selected),
+            "in-cap busy database must mint selected:true once eligible"
+        );
 
         // Confirm the database revision did not change across the unblocked upload.
         let synced_scan = scan_workspace_blocking(
@@ -5340,6 +5383,483 @@ mod tests {
         assert_ne!(after_root_err.state, LibrarySyncState::Synced);
         assert_eq!(server.delete_count.load(Ordering::SeqCst), 0);
         assert_eq!(server.files.lock().unwrap().len(), 2);
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_busy_first_appearance_over_cap_never_persists_selected_then_mints_unselected()
+    {
+        use crate::{db::resolve_database, library_sync::wire::LIBRARY_MAX_GAMES};
+
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(50);
+        cfg.backoff_base = Duration::from_secs(60);
+        cfg.backoff_max = Duration::from_secs(60);
+        let db_repo = Arc::new(DatabaseRepository::with_pool_connection_timeout(
+            Duration::from_millis(100),
+        ));
+        let harness = build_harness_with_config_and_db_repo(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+            db_repo,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        // Stale GameCount = 10 keeps cheap-info Eligible while 5001 actual rows fail bounded
+        // export with TooManyGames once the pool block clears.
+        let db_path = harness.db_dir.join("busy_mega.db3");
+        seed_test_db(
+            &db_path,
+            Some("Busy Mega"),
+            Some("10"),
+            LIBRARY_MAX_GAMES + 1,
+        );
+
+        let off_snap = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        let db_handle = off_snap
+            .files
+            .iter()
+            .find_map(|f| match &f.handle {
+                LibrarySyncHandle::Database(h) if f.name == "Busy Mega" => Some(h.clone()),
+                _ => None,
+            })
+            .expect("Busy Mega handle in off snapshot");
+        let target = resolve_database(
+            &harness.authority,
+            &db_handle,
+            PathOperation::DatabaseExport,
+        )
+        .unwrap();
+        let held_connections = harness
+            .database_repository
+            .hold_all_connections_for_test(&target)
+            .unwrap();
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+
+        let pending = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            server.put_count.load(Ordering::SeqCst) >= 1
+                && s.files.iter().any(|f| {
+                    matches!(f.handle, LibrarySyncHandle::Database(_))
+                        && f.status == LibrarySyncFileStatus::Pending
+                })
+        })
+        .await;
+        assert_ne!(
+            pending.state,
+            LibrarySyncState::Synced,
+            "overall must not be Synced while an unmatched deferred database is pending"
+        );
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .all(|e| e.source != SyncSource::Database),
+            "busy first appearance of an over-cap DB must not persist selected:true"
+        );
+
+        drop(held_connections);
+
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files.iter().any(|f| {
+                    f.name == "Busy Mega" && f.status == LibrarySyncFileStatus::TooManyGames
+                })
+        })
+        .await;
+        let mega = synced.files.iter().find(|f| f.name == "Busy Mega").unwrap();
+        assert!(!mega.selected);
+        assert_eq!(mega.status, LibrarySyncFileStatus::TooManyGames);
+        assert_eq!(synced.state, LibrarySyncState::Synced);
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .any(|e| e.source == SyncSource::Database && !e.selected),
+            "after block clears, minted over-cap entry must be persisted unselected"
+        );
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_export_gate_badges_survive_periodic_skip_export_scans() {
+        use crate::library_sync::wire::LIBRARY_MAX_GAMES;
+        use diesel::{
+            connection::SimpleConnection, sql_query, sql_types::Text, Connection, RunQueryDsl,
+            SqliteConnection,
+        };
+
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(40);
+        let harness = build_harness_with_config(&origin, SyncState::off(), true, &[], cfg).await;
+        activate_test_db_root(&harness);
+
+        seed_test_db(
+            &harness.db_dir.join("stale_empty.db3"),
+            Some("Stale Empty"),
+            Some("1"),
+            0,
+        );
+        seed_test_db(
+            &harness.db_dir.join("stale_overcap.db3"),
+            Some("Stale Overcap"),
+            Some("10"),
+            LIBRARY_MAX_GAMES + 1,
+        );
+        let large_path = harness.db_dir.join("too_large.db3");
+        seed_test_db(&large_path, Some("Too Large DB"), Some("100"), 0);
+        {
+            let mut conn = SqliteConnection::establish(large_path.to_str().unwrap()).unwrap();
+            let big_event = "E".repeat(64 * 1024);
+            sql_query("INSERT INTO Events (ID, Name) VALUES (1, ?)")
+                .bind::<Text, _>(&big_event)
+                .execute(&mut conn)
+                .unwrap();
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            for i in 0..100usize {
+                sql_query(
+                    "INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, Moves, PlyCount) \
+                     VALUES (1, 0, '2026.01.01', ?, 0, 0, 0, 0, '*', X'', 0)",
+                )
+                .bind::<Text, _>((i + 1).to_string())
+                .execute(&mut conn)
+                .unwrap();
+            }
+            conn.batch_execute("COMMIT;").unwrap();
+        }
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let initial = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files.iter().any(|f| f.name == "Too Large DB")
+                && s.files.iter().any(|f| f.name == "Stale Overcap")
+                && s.files.iter().any(|f| f.name == "Stale Empty")
+        })
+        .await;
+        for (name, expected) in [
+            ("Too Large DB", LibrarySyncFileStatus::TooLarge),
+            ("Stale Overcap", LibrarySyncFileStatus::TooManyGames),
+            ("Stale Empty", LibrarySyncFileStatus::Empty),
+        ] {
+            let row = initial.files.iter().find(|f| f.name == name).unwrap();
+            assert!(!row.selected, "{name} must default-unselect");
+            assert_eq!(row.status, expected);
+        }
+
+        // Let several periodic_scan_check ticks run while entries have selected=false.
+        tokio::time::sleep(Duration::from_millis(160)).await;
+        let after_periodic = harness
+            .owner
+            .snapshot(harness.workspace.clone())
+            .await
+            .unwrap();
+        assert_eq!(after_periodic.state, LibrarySyncState::Synced);
+        for (name, expected) in [
+            ("Too Large DB", LibrarySyncFileStatus::TooLarge),
+            ("Stale Overcap", LibrarySyncFileStatus::TooManyGames),
+            ("Stale Empty", LibrarySyncFileStatus::Empty),
+        ] {
+            let row = after_periodic
+                .files
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap();
+            assert!(!row.selected);
+            assert_eq!(
+                row.status, expected,
+                "{name} badge must not flip to NotSelected after skip-export periodic scan"
+            );
+        }
+
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn database_wal_data_revision_bump_triggers_replacement_put_without_main_file_metadata_change(
+    ) {
+        use crate::db::resolve_database;
+        use diesel::connection::SimpleConnection;
+
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(40);
+        let harness = build_harness_with_config(&origin, SyncState::off(), true, &[], cfg).await;
+        activate_test_db_root(&harness);
+
+        let db_path = harness.db_dir.join("wal_sync.db3");
+        seed_test_db(&db_path, Some("WAL Sync"), Some("1"), 1);
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+        let synced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files
+                    .iter()
+                    .any(|f| f.name == "WAL Sync" && f.status == LibrarySyncFileStatus::Synced)
+        })
+        .await;
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 1);
+        let first_put_id = server.recorded_puts.lock().unwrap()[0]
+            .studio_file_id
+            .clone();
+
+        let db_handle = synced
+            .files
+            .iter()
+            .find_map(|f| match &f.handle {
+                LibrarySyncHandle::Database(h) if f.name == "WAL Sync" => Some(h.clone()),
+                _ => None,
+            })
+            .expect("WAL Sync handle");
+        let target = resolve_database(
+            &harness.authority,
+            &db_handle,
+            PathOperation::DatabaseMutate,
+        )
+        .unwrap();
+        let token = CancellationToken::new();
+
+        // Checkpoint WAL so baseline main-file length and mtime are settled.
+        {
+            let mut conn = harness
+                .database_repository
+                .connection(&target, Some(&token))
+                .unwrap();
+            conn.batch_execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                .unwrap();
+        }
+        // Let any scan triggered by checkpointing settle without issuing another PUT.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 1);
+
+        let before_probe = target.probe_current().unwrap();
+
+        // Keep a pooled connection open with autocheckpoint disabled so the WAL write mutates
+        // Games and Info.DataRevision without changing main-file length or mtime.
+        let mut conn = harness
+            .database_repository
+            .connection(&target, Some(&token))
+            .unwrap();
+        conn.batch_execute(
+            "PRAGMA wal_autocheckpoint = 0;
+             INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, Moves, PlyCount)
+             VALUES (0, 0, '2026.01.02', '2', 0, 0, 0, 0, '*', X'', 0);
+             INSERT OR REPLACE INTO Info (Name, Value) VALUES ('DataRevision', '42');",
+        )
+        .unwrap();
+
+        let after_probe = target.probe_current().unwrap();
+        assert_eq!(after_probe.length, before_probe.length);
+        assert_eq!(after_probe.modified, before_probe.modified);
+
+        // Next periodic scan must observe the DataRevision bump, re-export, and issue a
+        // replacement PUT for the same studio_file_id.
+        let replaced = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            server.put_count.load(Ordering::SeqCst) >= 2 && s.state == LibrarySyncState::Synced
+        })
+        .await;
+        assert_eq!(replaced.state, LibrarySyncState::Synced);
+        assert_eq!(server.put_count.load(Ordering::SeqCst), 2);
+        let puts = server.recorded_puts.lock().unwrap().clone();
+        assert_eq!(puts.len(), 2);
+        assert_eq!(puts[1].studio_file_id, first_put_id);
+        assert!(
+            puts[1].if_match.is_some(),
+            "second PUT must be a replacement with If-Match"
+        );
+
+        drop(conn);
+        harness.owner.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn deferred_unmatched_database_uncheck_survives_complete_scan_and_mints_unselected() {
+        let server = MockServerState::new("acct-1");
+        let origin = start_mock_server(Arc::clone(&server)).await;
+        let mut cfg = fast_config();
+        cfg.scan_interval = Duration::from_millis(50);
+        cfg.backoff_base = Duration::from_secs(60);
+        cfg.backoff_max = Duration::from_secs(60);
+        let harness = build_harness_with_config(
+            &origin,
+            SyncState::off(),
+            true,
+            &[("Alpha.pgn", ALPHA_PGN)],
+            cfg,
+        )
+        .await;
+        activate_test_db_root(&harness);
+        let db_path = harness.db_dir.join("busy_uncheck.db3");
+        seed_test_db(&db_path, Some("Busy Uncheck"), Some("2"), 2);
+        let canonical_db_path = db_path.canonicalize().unwrap_or_else(|_| db_path.clone());
+
+        // Tombstone the database so read_cheap_database_info defers regardless of whether export
+        // is skipped after unchecking.
+        harness
+            .database_repository
+            .insert_tombstone_for_test(canonical_db_path.clone());
+
+        harness
+            .owner
+            .turn_on(harness.workspace.clone(), vec![])
+            .await
+            .unwrap();
+
+        // 2. Database row is visible, unmatched, Pending, selected=true; overall != Synced.
+        let pending = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            server.put_count.load(Ordering::SeqCst) >= 1
+                && s.files.iter().any(|f| {
+                    matches!(f.handle, LibrarySyncHandle::Database(_))
+                        && f.status == LibrarySyncFileStatus::Pending
+                        && f.selected
+                })
+        })
+        .await;
+        assert_ne!(
+            pending.state,
+            LibrarySyncState::Synced,
+            "overall must not be Synced while an unmatched selected database is deferred"
+        );
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .all(|e| e.source != SyncSource::Database),
+            "deferred database must remain unmatched with no persisted Database SyncEntry"
+        );
+        let db_handle = pending
+            .files
+            .iter()
+            .find(|f| matches!(f.handle, LibrarySyncHandle::Database(_)))
+            .expect("deferred database row")
+            .handle
+            .clone();
+        let alpha_put_count = server.put_count.load(Ordering::SeqCst);
+
+        // 3. Uncheck the deferred unmatched database while still held.
+        let after_uncheck = harness
+            .owner
+            .set_file_selected(harness.workspace.clone(), db_handle.clone(), false)
+            .await
+            .unwrap();
+        let unchecked_row = after_uncheck
+            .files
+            .iter()
+            .find(|f| f.handle == db_handle)
+            .expect("database row after uncheck");
+        assert!(
+            !unchecked_row.selected,
+            "snapshot must show selected=false immediately after unchecking"
+        );
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .all(|e| e.source != SyncSource::Database),
+            "unchecking a deferred unmatched database must not persist a Database SyncEntry"
+        );
+
+        // 4. Complete scan while still held: pending_deselected must be retained across the
+        //    complete scan, database must stay unmatched and deselected, and overall must settle
+        //    to Synced instead of staying Syncing for a deselected deferred DB.
+        harness
+            .owner
+            .sync_now(harness.workspace.clone())
+            .await
+            .unwrap();
+        let synced_while_held = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files.iter().any(|f| f.handle == db_handle && !f.selected)
+        })
+        .await;
+        assert_eq!(synced_while_held.state, LibrarySyncState::Synced);
+        assert!(
+            SyncState::load(&harness.state_dir)
+                .entries
+                .values()
+                .all(|e| e.source != SyncSource::Database),
+            "deferred database must remain unmatched after a complete scan while still held"
+        );
+        assert_eq!(
+            server.put_count.load(Ordering::SeqCst),
+            alpha_put_count,
+            "no PUT must happen for the deselected deferred database"
+        );
+
+        // 5. Release contention: next scan mints the Database SyncEntry with selected=false,
+        //    without any PUT and without gate-failure statuses.
+        harness
+            .database_repository
+            .remove_tombstone_for_test(&canonical_db_path);
+        harness
+            .owner
+            .sync_now(harness.workspace.clone())
+            .await
+            .unwrap();
+
+        let minted = wait_for_state(&harness.owner, &harness.workspace, |s| {
+            s.state == LibrarySyncState::Synced
+                && s.files.iter().any(|f| {
+                    f.handle == db_handle
+                        && f.name == "Busy Uncheck"
+                        && !f.selected
+                        && f.status == LibrarySyncFileStatus::NotSelected
+                })
+                && SyncState::load(&harness.state_dir)
+                    .entries
+                    .values()
+                    .any(|e| e.source == SyncSource::Database)
+        })
+        .await;
+        let db_row = minted
+            .files
+            .iter()
+            .find(|f| f.handle == db_handle)
+            .expect("minted database row");
+        assert!(!db_row.selected);
+        assert_eq!(db_row.status, LibrarySyncFileStatus::NotSelected);
+        assert_eq!(minted.state, LibrarySyncState::Synced);
+
+        let persisted_db_entries: Vec<_> = SyncState::load(&harness.state_dir)
+            .entries
+            .into_values()
+            .filter(|e| e.source == SyncSource::Database)
+            .collect();
+        assert_eq!(persisted_db_entries.len(), 1);
+        assert!(
+            !persisted_db_entries[0].selected,
+            "minted Database SyncEntry must preserve selected=false from retained pending overlay"
+        );
+        assert_eq!(
+            server.put_count.load(Ordering::SeqCst),
+            alpha_put_count,
+            "deselected database must never be PUT after contention clears"
+        );
 
         harness.owner.shutdown().await;
     }

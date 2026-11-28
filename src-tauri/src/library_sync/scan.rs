@@ -129,12 +129,25 @@ impl ScannedCandidate {
     }
 }
 
+/// Revision-bound cached scan outcome. Only deterministic outcomes tied to a revision are cached;
+/// transient (`Deferred`) and error (`Unreadable`) outcomes are never cached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CachedScanOutcome {
+    Hash(String),
+    Empty,
+    TooManyGames,
+    TooLarge,
+    InvalidPgn,
+}
+
+pub(crate) type ScanHashCache = HashMap<(SyncSource, Vec<OsString>), (String, CachedScanOutcome)>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ScanResult {
     pub candidates: Vec<ScannedCandidate>,
     pub files_complete: bool,
     pub databases_complete: bool,
-    pub updated_hash_cache: HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    pub updated_hash_cache: ScanHashCache,
 }
 
 impl ScanResult {
@@ -212,6 +225,14 @@ fn database_revision_string(identity: &DatabaseIdentity) -> String {
         "db:{}:{}:{}:{}:{}",
         identity.object.0, identity.object.1, identity.length, modified, identity.data_revision
     )
+}
+
+fn adopt_post_export_cache_revision(
+    pre: &DatabaseIdentity,
+    post: &DatabaseIdentity,
+) -> Option<String> {
+    (post.object == pre.object && post.data_revision == pre.data_revision)
+        .then(|| database_revision_string(post))
 }
 
 struct WalkedFile {
@@ -318,7 +339,7 @@ pub(crate) fn scan_workspace_blocking(
     database_repository: &DatabaseRepository,
     db_migration_ready: bool,
     db_export_policy: DatabaseExportPolicy<'_>,
-    hash_cache: &HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    hash_cache: &ScanHashCache,
     token: &CancellationToken,
 ) -> Result<ScanResult, Error> {
     let listing = {
@@ -386,18 +407,25 @@ pub(crate) fn scan_workspace_blocking(
                     let revision = crate::pgn::revision_string(&snapshot);
                     if snapshot.revision.size > LIBRARY_MAX_BYTES {
                         (Some(revision), None, true, false)
-                    } else if let Some((_, cached_hash)) = hash_cache
+                    } else if let Some((_, CachedScanOutcome::Hash(cached_hash))) = hash_cache
                         .get(&cache_key)
                         .filter(|(cached_rev, _)| cached_rev == &revision)
                     {
-                        updated_hash_cache
-                            .insert(cache_key, (revision.clone(), cached_hash.clone()));
+                        updated_hash_cache.insert(
+                            cache_key,
+                            (
+                                revision.clone(),
+                                CachedScanOutcome::Hash(cached_hash.clone()),
+                            ),
+                        );
                         (Some(revision), Some(cached_hash.clone()), false, false)
                     } else {
                         match hash_file_bounded(&mut snapshot.file, token) {
                             Ok(Some(sha)) => {
-                                updated_hash_cache
-                                    .insert(cache_key, (revision.clone(), sha.clone()));
+                                updated_hash_cache.insert(
+                                    cache_key,
+                                    (revision.clone(), CachedScanOutcome::Hash(sha.clone())),
+                                );
                                 (Some(revision), Some(sha), false, false)
                             }
                             Ok(None) => (Some(revision), None, true, false),
@@ -453,8 +481,8 @@ fn scan_databases_into(
     database_repository: &DatabaseRepository,
     db_migration_ready: bool,
     db_export_policy: &DatabaseExportPolicy<'_>,
-    hash_cache: &HashMap<(SyncSource, Vec<OsString>), (String, String)>,
-    updated_hash_cache: &mut HashMap<(SyncSource, Vec<OsString>), (String, String)>,
+    hash_cache: &ScanHashCache,
+    updated_hash_cache: &mut ScanHashCache,
     candidates: &mut Vec<ScannedCandidate>,
     token: &CancellationToken,
 ) -> Result<bool, Error> {
@@ -559,31 +587,78 @@ fn scan_databases_into(
                 }
                 let rev = database_revision_string(&identity);
                 revision = Some(rev.clone());
-                if db_export_policy.should_export(&handle, &locator) {
-                    let cache_key = (SyncSource::Database, locator.clone());
-                    if let Some((_, cached_hash)) = hash_cache
-                        .get(&cache_key)
-                        .filter(|(cached_rev, _)| cached_rev == &rev)
-                    {
-                        updated_hash_cache.insert(cache_key, (rev, cached_hash.clone()));
-                        content_sha256 = Some(cached_hash.clone());
-                    } else {
-                        match export_resolved_database_bounded(
-                            authority,
-                            database_repository,
-                            &descriptor.handle,
-                            token,
-                        )? {
-                            BoundedDatabaseExport::Exported { sha256, .. } => {
-                                updated_hash_cache.insert(cache_key, (rev, sha256.clone()));
-                                content_sha256 = Some(sha256);
+                let cache_key = (SyncSource::Database, locator.clone());
+                if let Some((_, outcome)) = hash_cache
+                    .get(&cache_key)
+                    .filter(|(cached_rev, _)| cached_rev == &rev)
+                {
+                    updated_hash_cache.insert(cache_key, (rev, outcome.clone()));
+                    match outcome {
+                        CachedScanOutcome::Hash(sha) => {
+                            if db_export_policy.should_export(&handle, &locator) {
+                                content_sha256 = Some(sha.clone());
                             }
-                            BoundedDatabaseExport::Empty => empty = true,
-                            BoundedDatabaseExport::TooManyGames => too_many_games = true,
-                            BoundedDatabaseExport::TooLarge => oversized = true,
-                            BoundedDatabaseExport::InvalidPgn => invalid_pgn = true,
-                            BoundedDatabaseExport::Deferred => deferred = true,
-                            BoundedDatabaseExport::Unreadable => unreadable = true,
+                        }
+                        CachedScanOutcome::Empty => empty = true,
+                        CachedScanOutcome::TooManyGames => too_many_games = true,
+                        CachedScanOutcome::TooLarge => oversized = true,
+                        CachedScanOutcome::InvalidPgn => invalid_pgn = true,
+                    }
+                } else if db_export_policy.should_export(&handle, &locator) {
+                    let export_outcome = export_resolved_database_bounded(
+                        authority,
+                        database_repository,
+                        &descriptor.handle,
+                        token,
+                    )?;
+                    let cacheable = match export_outcome {
+                        BoundedDatabaseExport::Exported { sha256, .. } => {
+                            content_sha256 = Some(sha256.clone());
+                            Some(CachedScanOutcome::Hash(sha256))
+                        }
+                        BoundedDatabaseExport::Empty => {
+                            empty = true;
+                            Some(CachedScanOutcome::Empty)
+                        }
+                        BoundedDatabaseExport::TooManyGames => {
+                            too_many_games = true;
+                            Some(CachedScanOutcome::TooManyGames)
+                        }
+                        BoundedDatabaseExport::TooLarge => {
+                            oversized = true;
+                            Some(CachedScanOutcome::TooLarge)
+                        }
+                        BoundedDatabaseExport::InvalidPgn => {
+                            invalid_pgn = true;
+                            Some(CachedScanOutcome::InvalidPgn)
+                        }
+                        BoundedDatabaseExport::Deferred => {
+                            deferred = true;
+                            None
+                        }
+                        BoundedDatabaseExport::Unreadable => {
+                            unreadable = true;
+                            None
+                        }
+                    };
+                    if let Some(outcome) = cacheable {
+                        // Opening a pooled connection for export can transition a DELETE-mode DB
+                        // to WAL, updating main-file mtime. Re-probe so the cache key and
+                        // candidate revision match the settled post-export file state, while
+                        // refusing to adopt a concurrent writer's data_revision or replaced file.
+                        let effective_rev =
+                            match database_repository.identity_from_probe(&target, token, true) {
+                                Ok(post_identity) => {
+                                    adopt_post_export_cache_revision(&identity, &post_identity)
+                                }
+                                Err(error) if matches!(error.unlabelled(), Error::Cancellation) => {
+                                    return Err(Error::Cancellation);
+                                }
+                                Err(_) => Some(rev),
+                            };
+                        if let Some(effective_rev) = effective_rev {
+                            revision = Some(effective_rev.clone());
+                            updated_hash_cache.insert(cache_key, (effective_rev, outcome));
                         }
                     }
                 }
@@ -886,9 +961,13 @@ pub(crate) fn match_candidates_to_entries(
         }
     }
 
-    // Pass 5: mint a new UUID v4 entry for each remaining candidate.
+    // Pass 5: mint a new UUID v4 entry for each remaining candidate, skipping deferred candidates
+    // until cheap-info/export observes their real gate status.
     for (idx, candidate) in candidates.iter().enumerate() {
-        if matched_ids[idx].is_some() || state.entries.len() >= MAX_STATE_ENTRIES {
+        if matched_ids[idx].is_some()
+            || candidate.deferred
+            || state.entries.len() >= MAX_STATE_ENTRIES
+        {
             continue;
         }
         let id = uuid::Uuid::new_v4().hyphenated().to_string();
@@ -1752,5 +1831,282 @@ mod tests {
         assert_eq!(db_candidates[0].name, "personal.db3");
         assert!(db_candidates[0].folder_label.is_empty());
         assert_eq!(db_candidates[0].kind, LibraryFileKind::Games);
+    }
+
+    #[test]
+    fn pass_5_skips_deferred_candidate_without_minting_entry() {
+        let mut state = SyncState::off();
+        let mut deferred_db = cand("db-1", "busy.db3", None);
+        deferred_db.source = SyncSource::Database;
+        deferred_db.handle = LibrarySyncHandle::Database(DatabaseHandle::new(PathRef {
+            id: "db-1".to_owned(),
+        }));
+        deferred_db.deferred = true;
+
+        let matched = match_candidates_to_entries(
+            &[deferred_db],
+            &mut state,
+            Some(&[]),
+            true,
+            true,
+            true,
+            true,
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+        );
+        assert_eq!(matched, vec![None]);
+        assert!(
+            state.entries.is_empty(),
+            "deferred candidate must not mint a SyncEntry before its gate status is observed"
+        );
+    }
+
+    #[test]
+    fn database_export_gate_outcomes_map_flags_default_unselect_and_survive_skip_export_at_same_revision(
+    ) {
+        use crate::infra::path_authority::DatabaseRootHandle;
+        use diesel::{
+            connection::SimpleConnection, sql_query, sql_types::Text, Connection, RunQueryDsl,
+            SqliteConnection,
+        };
+
+        let (temp, authority, workspace) = setup_workspace(&[]);
+        let db_dir = temp.path().join("databases");
+        std::fs::create_dir_all(&db_dir).unwrap();
+
+        let init_db = |path: &std::path::Path, title: &str, declared_count: &str| {
+            let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+            conn.batch_execute(include_str!("../db/create.sql"))
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Version', '2.4.0')")
+                .execute(&mut conn)
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Description', '')")
+                .execute(&mut conn)
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('Title', ?)")
+                .bind::<Text, _>(title)
+                .execute(&mut conn)
+                .unwrap();
+            sql_query("INSERT OR REPLACE INTO Info (Name, Value) VALUES ('GameCount', ?)")
+                .bind::<Text, _>(declared_count)
+                .execute(&mut conn)
+                .unwrap();
+            conn
+        };
+
+        // 1. Stale GameCount = 1 with 0 Games rows -> Eligible cheap-info, Empty bounded export.
+        drop(init_db(&db_dir.join("stale_empty.db3"), "Stale Empty", "1"));
+
+        // 2. Stale GameCount = 10 with 5001 Games rows -> Eligible cheap-info, TooManyGames export.
+        {
+            let mut conn = init_db(&db_dir.join("stale_overcap.db3"), "Stale Overcap", "10");
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            for i in 0..=LIBRARY_MAX_GAMES {
+                sql_query(
+                    "INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, Moves, PlyCount) \
+                     VALUES (0, 0, '2026.01.01', ?, 0, 0, 0, 0, '*', X'', 0)",
+                )
+                .bind::<Text, _>((i + 1).to_string())
+                .execute(&mut conn)
+                .unwrap();
+            }
+            conn.batch_execute("COMMIT;").unwrap();
+        }
+
+        // 3. 100 games referencing one 64 KiB Event name -> Eligible cheap-info, TooLarge export.
+        {
+            let mut conn = init_db(&db_dir.join("too_large.db3"), "Too Large DB", "100");
+            let big_event = "E".repeat(64 * 1024);
+            sql_query("INSERT INTO Events (ID, Name) VALUES (1, ?)")
+                .bind::<Text, _>(&big_event)
+                .execute(&mut conn)
+                .unwrap();
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            for i in 0..100usize {
+                sql_query(
+                    "INSERT INTO Games (EventID, SiteID, Date, Round, WhiteID, BlackID, WhiteMaterial, BlackMaterial, Result, Moves, PlyCount) \
+                     VALUES (1, 0, '2026.01.01', ?, 0, 0, 0, 0, '*', X'', 0)",
+                )
+                .bind::<Text, _>((i + 1).to_string())
+                .execute(&mut conn)
+                .unwrap();
+            }
+            conn.batch_execute("COMMIT;").unwrap();
+        }
+
+        authority
+            .with_mut(|pa| {
+                let grant = pa
+                    .grant_dialog_operations(
+                        &db_dir,
+                        "Databases",
+                        PathClass::BoundedDialogGrant,
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                        Duration::from_secs(60),
+                        1,
+                    )
+                    .unwrap();
+                let committed = pa
+                    .promote_dialog(
+                        &grant,
+                        PathClass::PersistentCustomRoot,
+                        "Databases",
+                        vec![
+                            PathOperation::DatabaseRead,
+                            PathOperation::DatabaseCreate,
+                            PathOperation::DatabaseExport,
+                            PathOperation::DatabaseMutate,
+                        ],
+                    )
+                    .unwrap();
+                let root = DatabaseRootHandle::new(committed.id);
+                pa.set_active_database_root(&root).unwrap();
+            })
+            .unwrap();
+
+        let workspace_mutation = Mutex::new(());
+        let db_repo = DatabaseRepository::default();
+        let empty_entries = BTreeMap::new();
+        let empty_handles = HashSet::new();
+        let empty_locators = HashSet::new();
+        let token = CancellationToken::new();
+
+        let first = scan_workspace_blocking(
+            &authority,
+            &workspace_mutation,
+            &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::SelectedOrDefault {
+                entries: &empty_entries,
+                pending_deselected_handles: &empty_handles,
+                pending_deselected_locators: &empty_locators,
+            },
+            &HashMap::new(),
+            &token,
+        )
+        .unwrap();
+
+        fn by_name<'a>(scan: &'a ScanResult, name: &str) -> &'a ScannedCandidate {
+            scan.candidates
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| panic!("missing candidate {name}"))
+        }
+
+        let c_empty = by_name(&first, "Stale Empty");
+        assert!(c_empty.empty && !c_empty.too_many_games && !c_empty.oversized);
+        assert!(!c_empty.default_selected());
+
+        let c_overcap = by_name(&first, "Stale Overcap");
+        assert!(c_overcap.too_many_games && !c_overcap.empty && !c_overcap.oversized);
+        assert!(!c_overcap.default_selected());
+
+        let c_large = by_name(&first, "Too Large DB");
+        assert!(c_large.oversized && !c_large.empty && !c_large.too_many_games);
+        assert!(!c_large.default_selected());
+
+        let mut state = SyncState::off();
+        let matched = match_candidates_to_entries(
+            &first.candidates,
+            &mut state,
+            Some(&[]),
+            true,
+            true,
+            true,
+            true,
+            &empty_handles,
+            &empty_locators,
+            &empty_handles,
+            &empty_locators,
+        );
+        assert_eq!(matched.len(), 3);
+        assert!(
+            state.entries.values().all(|e| !e.selected),
+            "all export-gate-failing databases must mint selected=false"
+        );
+
+        // Second scan at the same revision with entry.selected=false (skip-export):
+        // cached outcomes must reapply the flags and preserve fingerprints without re-exporting.
+        let second = scan_workspace_blocking(
+            &authority,
+            &workspace_mutation,
+            &workspace,
+            &db_repo,
+            true,
+            DatabaseExportPolicy::SelectedOrDefault {
+                entries: &state.entries,
+                pending_deselected_handles: &empty_handles,
+                pending_deselected_locators: &empty_locators,
+            },
+            &first.updated_hash_cache,
+            &token,
+        )
+        .unwrap();
+
+        assert!(by_name(&second, "Stale Empty").empty);
+        assert!(by_name(&second, "Stale Overcap").too_many_games);
+        assert!(by_name(&second, "Too Large DB").oversized);
+        assert_eq!(second.fingerprints(), first.fingerprints());
+        assert_eq!(second.updated_hash_cache, first.updated_hash_cache);
+    }
+
+    #[test]
+    fn adopt_post_export_cache_revision_requires_same_object_and_data_revision() {
+        let base_time = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let pre = DatabaseIdentity {
+            data_revision: 7,
+            object: (42, 99),
+            length: 4096,
+            modified: base_time,
+        };
+
+        // DELETE->WAL settlement changes length and/or modified without changing object or
+        // data_revision, so the post-export revision must be adopted.
+        let settled = DatabaseIdentity {
+            data_revision: 7,
+            object: (42, 99),
+            length: 8192,
+            modified: base_time + Duration::from_secs(5),
+        };
+        assert_eq!(
+            adopt_post_export_cache_revision(&pre, &settled),
+            Some(database_revision_string(&settled)),
+            "same object and data_revision must adopt settled post-export revision"
+        );
+
+        // Concurrent WAL write bumped Info.DataRevision: must refuse cache adoption.
+        let bumped_rev = DatabaseIdentity {
+            data_revision: 8,
+            object: (42, 99),
+            length: 4096,
+            modified: base_time,
+        };
+        assert_eq!(
+            adopt_post_export_cache_revision(&pre, &bumped_rev),
+            None,
+            "different data_revision must refuse post-export cache adoption"
+        );
+
+        // Concurrent file replacement changed object identity: must refuse cache adoption.
+        let replaced_obj = DatabaseIdentity {
+            data_revision: 7,
+            object: (42, 100),
+            length: 4096,
+            modified: base_time,
+        };
+        assert_eq!(
+            adopt_post_export_cache_revision(&pre, &replaced_obj),
+            None,
+            "different object must refuse post-export cache adoption"
+        );
     }
 }
