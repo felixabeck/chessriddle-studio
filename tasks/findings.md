@@ -30532,3 +30532,24 @@ Proof: `pnpm test:e2e:container --project=notation-follow-scroll-webkit --grep "
 
 Commit: 51726d7533f929eb7fafc713b9826fdebaa65180
 <!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"9683913514aa0f56f5c317a8949256841dc6b0de0c4bedebcdef1784ea04287a","header_sha256":"6c928c9a74e25f9ef2c037337bce370ff326c402a2f349c430e3658ffb1bff30","header_status":"handled","input_sha256":"74ba03da89b5908884e6dfe462e1cd2ecf7f855644b90c84b3f9e52327bc323e","kind":"mutation-receipt","operation":"76a35e40b87c61df377706b3083eaa4ee9858d4ddfbd700c7c06f46143c44be4","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-05"],"target":"f-20261128-05","v":1} -->
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Home-summary Combobox snapshots stale after Dim gold-pill label fix
+
+* **ID:** f-20261128-06 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** build-library-sync-databases-20261127-233411-90c56946
+* **Impact class:** tooling
+* **Follow-up of:** f-20261127-22
+* **Spotted outside diff:** yes, `pnpm ci:remote:check` while pushing library-sync-databases. Newest completed Test 46113295435 on `4ab3a872b` succeeded; Test 46114948455 on `7ec3a983e` failed e2e.
+* **CI run:** 46114948455
+* **First red:** Test run 46114948455 on `7ec3a983e919bfe007bb9e77380aea7c018e2fdf`, subject "docs(findings): close f-20261127-22". Previous completed Test 46113295435 on `4ab3a872b` succeeded, so this streak is this run only.
+* **Failure scenario:** `[accounts-puzzles-engines] › e2e/accounts-puzzles-engines.spec.ts:1538` home summary partial statistics (`home-summary-player-sites.png`, 435 pixels, ratio 0.01) and `:1657` home summary keeps one username on Lichess and Chess.com as two players (`home-summary-separate-sites.png`, 388 pixels, ratio 0.01). `library-sync` on this run passed.
+* **Where:** `e2e/accounts-puzzles-engines.spec.ts:1652` (`toHaveScreenshot("home-summary-player-sites.png")`), `e2e/accounts-puzzles-engines.spec.ts:1724` (`toHaveScreenshot("home-summary-separate-sites.png")`); selected Combobox option color in `src/styles/Combobox.module.css` after `78e1c93cf`.
+* **Defect:** f-20261127-22's repair (`78e1c93cf`) paints selected Combobox labels `--cf-foreground` instead of `--cf-primary`. Database records-per-page Menu snapshots were re-recorded; the home-summary site-logo Combobox screenshots were not. Closing f-20261127-22 on `7ec3a983e` ran Test against those stale snapshots.
+* **Fix:** Inspect CI `*-diff.png` for those two shots, then re-record only them in the pinned container (`pnpm test:e2e:container --update-snapshots=changed` with the accounts-puzzles-engines project). Do not re-record natively. Do not reopen the contrast product change.
+* **Proof:** `pnpm test:e2e:container --project=accounts-puzzles-engines --grep "home summary partial statistics|home summary keeps one username"` fails those two screenshots on `7ec3a983e` and passes after the container re-record.
+* **Related:** f-20261127-22 (handled; Dim gold-pill labels; Root `-`).
+* **Found by:** Grok, library-sync-databases build, Test 46114948455
