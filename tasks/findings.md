@@ -30517,3 +30517,6 @@ Commit: 495fa3fb7aaa4cf19f7e310e413d6dda658ab133
 * **Proof:** `pnpm test:e2e:container --project=notation-follow-scroll-webkit --grep "inline view turns the page"` finishes under 135s after the fix; reverting the bound makes the hosted-class timeout reproducible or the container run exceed 135s.
 * **Related:** f-20261127-23 (handled; in-page evaluate repair).
 * **Found by:** Grok, drain session aae05993-cc5b-4333-b71c-bdb83fa312d7, Test 46093395135
+* **CI run:** 46106103691
+* **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T04:47:57Z
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"b3696970b0d349a68659fd6eeec3ab485ad703e5b6edb76b57b099c2c140b6c9","input_sha256":"6be47947b10f88543533b2b14d58ce562379afafb2b4ccfa13004d11a525c421","kind":"mutation-receipt","operation":"295651066a8d25d8b241a0317cc004fe57be140f90fe1046fd6fe83917f56a9f","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-05"],"target":"f-20261128-05","v":1} -->
