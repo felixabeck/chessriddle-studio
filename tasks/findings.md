@@ -30351,6 +30351,10 @@ Download-count snapshots failed again on newest completed red Test 46093395135 (
 * **CI run:** 46093395135
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"62f179a954278b17e0864d748eb49fa30b5306cb44cb5d0b32bc3d16386c4f8a","input_sha256":"9ccd083598fbaa75e95c2b9c85e0aa4b9128cea17666be66f437171118b95940","kind":"mutation-receipt","operation":"96d59b1f0e3c20da5e7e7a20fe3cfeec01d521ac0866448732ae95a8bdaeff39","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
 
+* **CI run:** 46098656027
+* **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T02:57:28Z
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"4cb22ac558c887af157587caffd96504600f7f71173f19e835af31286696063d","input_sha256":"107dc871e357d50478d983daf890c4c530f899feb0e892c6593a9fde722f2aa0","kind":"mutation-receipt","operation":"3fea883be8716ebfd2ba9a53353affb7c06edd0aad8ce3e8265b20afb989a1d4","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
+
 ---
 
 ## 2026-11-27 — filed through the inbox spool
