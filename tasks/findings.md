@@ -30489,6 +30489,9 @@ Closed. Commit `24d025367`. Product cause was BoardBar min-content (ml 2.5rem pl
 * **Proof:** `pnpm test:e2e:container --project=board-keyboard --grep "narrow 1024x700 top bar"` fails `scrollWidth <= clientWidth+1` before the fix and passes after it; `notation-hierarchy-scaled` overflow-only stacked annotation still passes; listed snapshot projects pass after container re-record of inspected diffs.
 * **Related:** f-20261128-03 (handled; 320/200 clip this shrink repaired); f-20261117-05 (handled; `waitForBoardSizeSettled`); d-20261117-05.
 * **Found by:** Grok, drain session aae05993-cc5b-4333-b71c-bdb83fa312d7, Test 46093395135
+* **CI run:** 46101998857
+* **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T03:35:10Z
+<!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"b9cf6af62bab59bee72099d4c89337d709aa90813324edeb190d8297e6a93c54","input_sha256":"ba6c12333fe95eacd710c49fc248954e4072554e79f6b330793ced2860100b97","kind":"mutation-receipt","operation":"a4f6e35ccc7f50683cd25d2971221bbc371cc9bea93694136ec915724d31f5e7","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-04"],"target":"f-20261128-04","v":1} -->
 
 ### notation-follow-scroll WebKit walk still exceeds 135s after the in-page evaluate repair
 
