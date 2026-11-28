@@ -30643,3 +30643,21 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Proof:** `pnpm test:e2e:container --project=workspace-tabs` all green, no snapshot moved.
 * **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
 * **Repair owner:** 6c2fb393-fed1-4c29-a42b-3fd3e461839e on tuxedo-atlas, 2026-11-28T11:54:54Z
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Download game-count throttle test is wall-clock flaky on Windows CI
+
+* **ID:** f-20261128-11 · **Status:** open · **Area:** native-fs · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Impact class:** tooling
+* **CI run:** 46137791487
+* **First red:** Test run 46137791487 on `35659adec`, job `rust-windows-test` (that push changed no Rust code).
+* **Failure scenario:** `fs::tests::download_payload_network_bounds_game_count_emissions_within_250ms` asserts exactly `[1, 50]`, assuming 50 mock chunks finish within one 250 ms window. The throttle (`progress::CountThrottle::record_if_due`) reads `std::time::Instant::now()`, so on a slow Windows runner the run crossed a window and reported `[1, 21, 50]`: `left: [1, 21, 50] right: [1, 50]`. Any push can turn `rust-windows-test` red this way, and `ci:remote:check` then refuses the next push.
+* **Spotted outside diff:** yes, while waiting on CI for the repertoire-colour push (2026-11-28); the test came with the download game count work (`5b13703e8`).
+* **Where:** `src-tauri/src/fs.rs` test `download_payload_network_bounds_game_count_emissions_within_250ms`.
+* **Fix:** keep the meaning, drop the timing assumption: the first game reports at once, the final count reports, counts only rise, and live updates are at most one per elapsed 250 ms window (measured around the call).
+* **Proof:** `cargo test --bins -- fs::tests::download_payload_network_bounds` passes; replacing the throttle with one emission per chunk still fails the bound.
+* **Found by:** Claude Code (Opus 5.5), repertoire-colour push, 2026-11-28
+* **Repair owner:** 6c2fb393-fed1-4c29-a42b-3fd3e461839e on tuxedo-atlas, 2026-11-28T11:54:54Z
