@@ -30383,3 +30383,26 @@ Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverag
 * **Proof:** `pnpm test:e2e:container --project=async-errors --project=new-game-to-file --grep "compact title-bar: mouse actions|Save a copy targeting"` fails on those two assertions before the fix and passes after it.
 * **Related:** f-20261124-19 (handled; same compact-menu-root snapshot after the Handbuch row); f-20261127-25 (download-count, open, passed on 46084548911); f-20261127-23 (follow-scroll WebKit, handled, passed on 46084548911).
 * **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Hosted game-report Generate-report dialog snapshots differ after Save-to
+
+* **ID:** f-20261128-02 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** 01a21f18-ddd9-7823-884c-399cde932174
+* **Impact class:** tooling
+* **Spotted outside diff:** yes; `pnpm ci:remote:check` during the Prepare-on-board push of 042133882. This build does not change `e2e/game-report.spec.ts` or the Generate report dialog.
+* **CI run:** 46084548911
+* **First red:** Test run 46076853831 on `e0edb6b50165f4131a84a6da261fb2312c4ebac9` is the first red of this e2e job streak; these dialog snapshots first fail on 46084548911, head `ff4ce6f39`.
+* **Failure scenario:** Test run 46084548911 job `e2e` 140790946531: `getByRole('dialog', { name: 'Generate report' })` `toHaveScreenshot` fails on both base projects:
+  * `[game-report] › e2e/game-report.spec.ts:163` `report-dialog.png` 18 pixels (ratio 0.01)
+  * `[game-report] › e2e/game-report.spec.ts:194` `report-dialog-no-engine.png` 18 pixels (ratio 0.01)
+  * `[game-report-narrow]` the same two snapshots, 3 pixels (ratio 0.01)
+* **Where:** `e2e/game-report.spec.ts:163` and `:194` (`report-dialog.png`, `report-dialog-no-engine.png`).
+* **Defect:** the live Generate report dialog on master `ff4ce6f39` does not match the committed snapshots by 18 px (3 px at 320). Save-to did not re-record these dialogs.
+* **Fix:** inspect actual vs expected in the CI artefacts; re-record in `pnpm test:e2e:container` if the live dialog is correct. Do not re-record natively.
+* **Proof:** `pnpm test:e2e:container --project=game-report --project=game-report-narrow --grep "Generate report|without an engine"` fails those four screenshots before the fix and passes after it.
+* **Related:** f-20261124-19 (compact-menu snapshot class, different dialog); the Save-to copy-menu finding on the same run.
+* **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
