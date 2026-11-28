@@ -382,6 +382,35 @@ test("engine-gap: warm actor contract preserves ownership and isolates searches"
     });
 });
 
+/**
+ * Presses `grip`, starts the drag on the grip itself, then moves the held pointer below the
+ * midpoint of `targetCard` until the reorder preview shows, leaving the button down.
+ *
+ * The cards can still change height when the drag begins (a viewport change, loading lines),
+ * so the target is measured after the drag has started and again on every retry; a box read
+ * once before the press put the pointer on the dragged card's own slot under load
+ * (f-20261127-02).
+ */
+async function dragGripIntoReorderSlot(page: Page, grip: Locator, targetCard: Locator) {
+    const gripBox = (await grip.boundingBox())!;
+    const startX = gripBox.x + gripBox.width / 2;
+    const startY = gripBox.y + gripBox.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    // Cross the drag threshold on the grip itself, which is the card's own slot (no preview).
+    await page.mouse.move(startX, startY + 10, { steps: 2 });
+    const preview = page.getByTestId("board-arrange-preview");
+    await expect(async () => {
+        const targetBox = (await targetCard.boundingBox())!;
+        await page.mouse.move(
+            targetBox.x + targetBox.width / 2,
+            targetBox.y + targetBox.height * 0.85,
+            { steps: 4 },
+        );
+        await expect(preview).toHaveAttribute("data-arrange-kind", "reorder", { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
+}
+
 async function setupAnalysisEngine(page: Page, engineCount = 1) {
     await seedAnalysisEngines(
         page,
@@ -640,19 +669,12 @@ test("engine-gap: engines reorder by drag and by the grip menu", async ({ page }
     await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
 
     // Dragging the first card's grip below the second card's midpoint reorders the list.
-    const gripBox = (await page.locator('[data-arrange-grip="engine:e2e-engine"]').boundingBox())!;
-    const secondCardBox = (await page
-        .locator('[data-engine-card-id="e2e-engine-2"]')
-        .boundingBox())!;
-    await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(
-        secondCardBox.x + secondCardBox.width / 2,
-        secondCardBox.y + secondCardBox.height * 0.85,
-        { steps: 8 },
-    );
     const preview = page.getByTestId("board-arrange-preview");
-    await expect(preview).toHaveAttribute("data-arrange-kind", "reorder");
+    await dragGripIntoReorderSlot(
+        page,
+        page.locator('[data-arrange-grip="engine:e2e-engine"]'),
+        page.locator('[data-engine-card-id="e2e-engine-2"]'),
+    );
     await page.mouse.up();
     await expect(preview).toHaveCount(0);
     await expect(names).toHaveText(["E2E ChessDB", "E2E Stockfish"]);
@@ -671,23 +693,11 @@ test("engine-gap: engines reorder by drag and by the grip menu", async ({ page }
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 
-    const stackedGripBox = (await page
-        .locator('[data-arrange-grip="engine:e2e-engine-2"]')
-        .boundingBox())!;
-    const stackedSecondBox = (await page
-        .locator('[data-engine-card-id="e2e-engine"]')
-        .boundingBox())!;
-    await page.mouse.move(
-        stackedGripBox.x + stackedGripBox.width / 2,
-        stackedGripBox.y + stackedGripBox.height / 2,
+    await dragGripIntoReorderSlot(
+        page,
+        page.locator('[data-arrange-grip="engine:e2e-engine-2"]'),
+        page.locator('[data-engine-card-id="e2e-engine"]'),
     );
-    await page.mouse.down();
-    await page.mouse.move(
-        stackedSecondBox.x + stackedSecondBox.width / 2,
-        stackedSecondBox.y + stackedSecondBox.height * 0.85,
-        { steps: 8 },
-    );
-    await expect(preview).toHaveAttribute("data-arrange-kind", "reorder");
     await page.mouse.up();
     await expect(names).toHaveText(["E2E Stockfish", "E2E ChessDB"]);
 });
