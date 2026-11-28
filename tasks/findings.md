@@ -30474,7 +30474,7 @@ Closed. Commit `24d025367`. Product cause was BoardBar min-content (ml 2.5rem pl
 
 ### BoardBar shrink that cleared 320/200 clips overflows the 1024x700 player bar
 
-* **ID:** f-20261128-04 · **Status:** open · **Area:** frontend-ui · **Root:** board-bar-fit · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261128-04 · **Status:** handled · **Area:** frontend-ui · **Root:** board-bar-fit · **Entry:** inline · **Blocked:** none
 * **Filed from:** aae05993-cc5b-4333-b71c-bdb83fa312d7
 * **Impact class:** ux
 * **Follow-up of:** f-20261128-03
@@ -30492,6 +30492,15 @@ Closed. Commit `24d025367`. Product cause was BoardBar min-content (ml 2.5rem pl
 * **CI run:** 46101998857
 * **Repair owner:** c8da0721-0873-4bfb-abba-2103e041d414 on tuxedo-felix, 2026-11-28T03:35:10Z
 <!-- ledger-meta {"command":"annotate","effect_lines":2,"effect_sha256":"b9cf6af62bab59bee72099d4c89337d709aa90813324edeb190d8297e6a93c54","input_sha256":"ba6c12333fe95eacd710c49fc248954e4072554e79f6b330793ced2860100b97","kind":"mutation-receipt","operation":"a4f6e35ccc7f50683cd25d2971221bbc371cc9bea93694136ec915724d31f5e7","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-04"],"target":"f-20261128-04","v":1} -->
+
+Left BoardBar cluster is now `flex: 1 1 0%` with `minWidth: 0`, so leftover after the action cluster goes to the name. The name packs left (`flex: 0 1 auto`, `minWidth: 0`) and truncates; Saved stays shrinkable (`flex: 0 1 auto`). Cluster overflow stays visible so `bar.scrollWidth` still detects unshrinkable clip.
+
+Rejected restoring right `flexShrink: 0` (reintroduces 329>270 at 320/200). Rejected `overflow: hidden` on the clusters (clips actions and blinds `scrollWidth`; r1 review). Did not wrap `assertNothingClipped` in `toPass` (d-20261117-05).
+
+Proof: `pnpm test:e2e:container --project=board-keyboard --grep "narrow 1024x700 top bar"` passed (1.8s) after the leftover-basis change; before it, the same test failed Expected <=493 Received 553. `notation-hierarchy-scaled` overflow-only stacked annotation passed (1.4s). Container re-record of bar snapshots.
+
+Commit: 495fa3fb7aaa4cf19f7e310e413d6dda658ab133
+<!-- ledger-meta {"command":"close","effect_lines":7,"effect_sha256":"996dd896445fcaa4ff8d8cc8d3f2cb0a35fa2349c17088bbd5b88323b91ca9ee","header_sha256":"40abb42753e40f16fb5bc352dd900948c793e2aecbd056a4e04e6c0cef9f56f7","header_status":"handled","input_sha256":"c1c5ea2d42535c38ccca0d7b7a1d49af4479927c7cf663cd1eed3b9e8148cb96","kind":"mutation-receipt","operation":"f81d98394064a8738fa8ca008eae5a467aa27ff2ab66b4886949d862f2cce5a5","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-04"],"target":"f-20261128-04","v":1} -->
 
 ### notation-follow-scroll WebKit walk still exceeds 135s after the in-page evaluate repair
 
