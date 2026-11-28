@@ -30342,6 +30342,11 @@ Closed (CI repair). Commit `122384924`. Re-recorded the remaining Library/file C
 * **Proof:** `pnpm test:e2e:container --project=online-opponent --project=online-opponent-narrow --grep "imports an online-only opponent"` fails on `online-opponent-download-count.png` before the fix and passes after it.
 * **Found by:** Grok, f-20261126-16 drain CI wait, 2026-11-27
 
+Download-count snapshots failed again on newest completed red Test 46085092838 (head f2a2ec68e; both online-opponent projects). Open finding already named this defect; adding the streak's newest run so it owns this red. Do not install f2a2ec68e.
+* **CI run:** 46085092838
+* **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
+<!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"2a484940c5faa70b9595c60500c2762fab7493e6f7b86dbb3ec89b85f5e05d94","input_sha256":"d6176e4f13bded2eb0496c0ee8178396c27c859704928b40e198610f2645382e","kind":"mutation-receipt","operation":"7fd0d97ead340a6e3251eb60cd582eff183167bfb5d6124ae34d6e503428d057","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-25"],"target":"f-20261127-25","v":1} -->
+
 ---
 
 ## 2026-11-27 — filed through the inbox spool
