@@ -30606,3 +30606,20 @@ Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (G
 * **Fix direction:** dispatch the 60 keydown/keyup pairs inside one page evaluation, where the app's hotkeys listen, yielding one capped frame between keys so the follow-scroll animation is still interrupted the way a held key does it. Then keep the existing one-frame visibility check.
 * **Proof:** container e2e `notation-follow-scroll` and `notation-follow-scroll-webkit` for this test with `--repeat-each` under extra CPU load, and the test still fails when the snap-on-interrupt behaviour in `GameNotation.tsx` is disabled, or the inability to show that is stated.
 * **Found by:** Claude Code (Opus 5.5), drain session beb0293d-d7d6-4374-a200-e2fbfd09a3ea, after pushing f-20261127-02, 2026-11-28.
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Remote CI repair: Test
+* **ID:** f-20261128-09 · **Status:** open · **Area:** ci-workflows · **Root:** - · **Entry:** lens · **Blocked:** none
+* **Filed from:** beb0293d-d7d6-4374-a200-e2fbfd09a3ea
+
+* **Impact class:** tooling
+* **Found by:** drain remote-CI check (Claude Code)
+* **Where:** workflow `Test`, jobs `e2e, rust-windows-test`.
+* **Defect:** failed jobs: `e2e, rust-windows-test` (first red run 46137791487 on `35659adec897265faa840c5078784566210a1f28`).
+* **Run URL:** https://github.com/felixabeck/chessriddle-studio/actions/runs/46137791487
+* **Proof:** `gh run view 46137791487 --log-failed`
+* **CI run:** 46137791487
+* **Repair owner:** e5eee374-f8d8-4556-824c-654ffbb1be75 on tuxedo-atlas, 2026-11-28T11:22:07Z
