@@ -30255,7 +30255,7 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 
 ### Dim gold-on-10%-pill labels miss 4.5:1 on Accordion, Combobox, Menu and TrainingSettings
 
-* **ID:** f-20261127-22 · **Status:** open · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-22 · **Status:** handled · **Area:** frontend-ui · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Filed from:** 0a17f348-c189-4394-b690-a15696ba3a44
 * **Impact class:** ux
 * **Spotted outside diff:** yes, review-root-cause of f-20261127-11 (drain session 0a17f348-c189-4394-b690-a15696ba3a44)
@@ -30265,6 +30265,9 @@ Re-closed after own-red CI e2e (run 46064833860 on 99f767b61). The unnamed-bar a
 * **Related:** f-20261127-11 (Tabs active label; Root `-`, so named here).
 * **Proof:** `src/styles/theme.test.ts` already pins `--cf-foreground` on 10% `--cf-primary` over inset at >= 4.5:1 in light/dark/dim; add the card/interactive mixes those four surfaces actually sit on, and an e2e `paintedText` assertion on one selected Accordion or Menu item under `game-report-dim` or a settings spec.
 * **Found by:** Grok drain session 0a17f348-c189-4394-b690-a15696ba3a44, 2026-11-27
+
+Closed. Commit `7b7f02a3c`. Accordion, Combobox, Menu and TrainingSettings selected/active/checked labels use `--cf-foreground` on the 10% gold pill; the tinted fill and ring stay the cue (Tabs/f-20261127-11). DESIGN.md Accordion and Combobox/Menu/Popover rows record it. Proof: `theme.test.ts` token mix on card/popover/interactive/inset in light/dark/dim plus CSS-source revert-red on the four modules; `pnpm test:e2e:container --project=database-files -g "records-per-page size stays legible"` 3/3 (dark snapshot rewritten, dim snapshot added); training-settings 6/6; stash of the four CSS files made dim e2e fail at 4.162:1. Rejected: keeping gold text (Dim 4.16:1); extra dim e2e for Accordion/Combobox/TrainingSettings (CSS-source plus Menu paintedText cover revert). Lenses r1: correctness/code-quality/root-cause APPROVED; tests/minimalism REVISE then r2 APPROVED (Grok wrote, agy reviewed). Deferred gold light Badge (PracticePanel Start Practice) to a new finding (spool 20261128-065440). Left f-20261127-24 open.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"fbdbfc6b1eacf00dc65470b6962a0f30a8c6548f28e473df4dded7316cba2e53","header_sha256":"736f84196f187a2227af9d68b9ebb9832cb31b34b209e91455e4640e94379f2d","header_status":"handled","input_sha256":"b8964b0b99b56e2f07718bb9d4f47fd2afda8f6d87b4a2e6db4f6c63910b3666","kind":"mutation-receipt","operation":"23faef208c659b9a384fbe41c595a7f50a41e4471776458b796ff7c7fd6dec4f","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-22"],"target":"f-20261127-22","v":1} -->
 
 ### Practice move rows, engine stats and game-list index still dim text with opacity
 
