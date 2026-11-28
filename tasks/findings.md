@@ -29845,7 +29845,7 @@ Fixed in 602a01175: the TipTap comment editor gets role="textbox" (keeping aria-
 
 ### The Train-reaches-Start-Practice e2e test measures the panel before the second resize settles and fails about one run in three
 
-* **ID:** f-20261127-01 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **ID:** f-20261127-01 · **Status:** handled · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
 * **Impact class:** tooling
 * **Where:** `e2e/workspace-tabs.spec.ts:923` ("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer at 800×500"), lines 1030-1039.
 * **Defect:** after `resize(80)` the test polls `geometry().inside` until the layout settles, but after `resize(50)` it calls `measure("restored")` straight away, so the measurement can catch the Train panel before the mosaic has shrunk it back.
@@ -29853,6 +29853,8 @@ Fixed in 602a01175: the TipTap comment editor gets role="textbox" (keeping aria-
 * **Failure scenario:** the CI e2e job (and any local full e2e run) turns red on unchanged product code about one run in three, which blocks or confuses a push.
 * **Fix direction:** after `resize(50)`, poll until the panel's bottom matches the restored layout (as the test already does after `resize(80)`) before asserting; product code stays unchanged. Prove with `--repeat-each=30`.
 * **Found by:** Claude Code (Opus 5.5), session 93bbb2cf-735b-4b10-9674-372fa0805ae9, build scoresheet-pdf-import, 2026-11-27.
+* **Handled 2026-11-28:** `9291b1953` makes the test wait after `resize(50)`: an `expect.poll` holds until Train's bottom is below the tall layout's bottom and unchanged between two polls, then measures. Product code is unchanged. Proof: `node scripts/run-e2e-container.mjs -- --project=workspace-tabs --grep "Train reaches Start Practice" --repeat-each=30` gave 30/30 passes while another full e2e run loaded the machine. review-correctness and review-root-cause approved. Rejected: polling on the asserted condition (`buttonBottom > bottom`) itself, because that would make the assertion meaningless.
+<!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"4062f55291b9f7de22b495a6f32bc20192692f54f268f72baebf59264722307a","header_sha256":"205d0fb45af5f144cb86c4a1c79ade6df1e007f4a2e622ce1144d58980d41bb1","header_status":"handled","input_sha256":"2dd8f5af8f3b486b911cac658ed77bf6051e56e193b74632fd7936a90a7920c8","kind":"mutation-receipt","operation":"3adfcdbf7b611c978fdea88b48838a8a55d5a95f4d66fdae2534c3bac8f46f7b","options":{"section":null},"request_id_sha256":null,"results":["f-20261127-01"],"target":"f-20261127-01","v":1} -->
 
 ---
 
