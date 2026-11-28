@@ -30573,3 +30573,17 @@ Commit: 51726d7533f929eb7fafc713b9826fdebaa65180
 
 Re-recorded only `e2e/accounts-puzzles-engines.spec.ts-snapshots/home-summary-player-sites-accounts-puzzles-engines.png` and `home-summary-separate-sites-accounts-puzzles-engines.png` in the pinned container. Commit `ac84f7eb4`. Proof: `pnpm test:e2e:container --project=accounts-puzzles-engines --grep "home summary partial statistics|home summary keeps one username"` failed those two screenshots (435 and 388 pixels) then passed 2/2 after `--update-snapshots=changed`. CI diffs showed only the selected Combobox option label (gold → `--cf-foreground`). Did not re-record natively. Contrast product change in `78e1c93cf` stands.
 <!-- ledger-meta {"command":"close","effect_lines":1,"effect_sha256":"ca2fd6fa4e96347271dcffbbcd8c76a2e303b04516227277331c74023bf70982","header_sha256":"f1f18f40fac3038729985db83d612c763a658cd43c9cca03b1edeb77af1736b6","header_status":"handled","input_sha256":"023014cefdf165ed730e316b4e6b3017194456044fb2786229a969ee2f318ee8","kind":"mutation-receipt","operation":"bc6fc6d5fc036a83c8102715f69b33bda0bb0bcde93d7b8c25d22806b74edbce","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-06"],"target":"f-20261128-06","v":1} -->
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### Default `pnpm verify:app` on master fails the Files game-opening checks GO8–GO12 and GO14
+
+* **ID:** f-20261128-07 · **Status:** open · **Area:** gate-scripts · **Root:** - · **Entry:** build · **Blocked:** none
+* **Impact class:** tooling
+* **Failure scenario:** default `pnpm verify:app` against a release build of `origin/master` `2a79c94eb` (2026-11-28, tuxedo, base worktree) and against the player-card cleanup build on top of it: the database game-opening checks GO1–GO7 pass, then GO8 "the Files preview has a visible enabled Open game control" fails with `timed out waiting for game-opening pointer target, renderer state: {"selected":[],"controls":[{"disabled":false,"text":"Open game"}],"path":"/library"}`, and GO9, GO10, GO11, GO12 and GO14 fail the same way on the Library Files surface (GO13 and PO1–PO6 pass; 6 checks failed in both runs). The Files row is never selected, so the Open game button never gets a stable reachable coordinate.
+* **Open question:** verifier drift (the Library Files surface changed since f-20261110-02 and f-20260924-06 were handled) or a product regression in Files row selection in WebKitGTK? The identical failure set on base and candidate rules out the player-card cleanup.
+* **Spotted outside diff:** `scripts/verify-app.mjs` `verifyGameOpening` (GO8–GO14, `reachableStableCoordinates` "game-opening pointer target").
+
+Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (GO11, handled), f-20260924-06 (first Files-row click, handled).
