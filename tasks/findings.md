@@ -30587,3 +30587,22 @@ Re-recorded only `e2e/accounts-puzzles-engines.spec.ts-snapshots/home-summary-pl
 * **Spotted outside diff:** `scripts/verify-app.mjs` `verifyGameOpening` (GO8–GO14, `reachableStableCoordinates` "game-opening pointer target").
 
 Filed from the player-card cleanup build (2026-11-28). Related: f-20261110-02 (GO11, handled), f-20260924-06 (first Files-row click, handled).
+
+---
+
+## 2026-11-28 — filed through the inbox spool
+
+### notation-follow-scroll held-arrow test times out on hosted WebKit: 60 Playwright key presses, one round trip each
+
+* **ID:** f-20261128-08 · **Status:** open · **Area:** e2e-gate · **Root:** - · **Entry:** inline · **Blocked:** none
+* **Filed from:** beb0293d-d7d6-4374-a200-e2fbfd09a3ea
+* **Impact class:** tooling
+* **CI run:** 46132619700
+* **First red:** Test run 46132619700 on `889325983` (2026-11-28), job `e2e`. The previous run 46130820019 on `2a79c94eb` passed. The pushed range `2a79c94eb..889325983` changes only `e2e/engine-gap.spec.ts` and the ledger, so the range did not cause the red. The red is load-dependent on the hosted runner.
+* **Repair owner:** beb0293d-d7d6-4374-a200-e2fbfd09a3ea on tuxedo-atlas, 2026-11-28T10:30Z
+* **Failure scenario:** `[notation-follow-scroll-webkit] › e2e/notation-follow-scroll.spec.ts:449 › notation-follow-scroll: held arrow key keeps the list with the board while animating`: "Test timeout of 45000ms exceeded" after 49.2s. The Chromium project ran the same test in 23.1s. 610 other tests passed.
+* **Where:** `e2e/notation-follow-scroll.spec.ts:449-463`, the loop `for (let ply = 1; ply <= 60; ply += 1) await page.keyboard.press("ArrowRight", { delay: 0 })`.
+* **Defect:** the test sends 60 keys as separate Playwright protocol round trips. f-20261127-23 measured that a round trip per ply takes minutes on hosted WebKit and moved the walk tests' keys into the page, but this test was not converted. A busy runner pushes it past the 45 s timeout.
+* **Fix direction:** dispatch the 60 keydown/keyup pairs inside one page evaluation, where the app's hotkeys listen, yielding one capped frame between keys so the follow-scroll animation is still interrupted the way a held key does it. Then keep the existing one-frame visibility check.
+* **Proof:** container e2e `notation-follow-scroll` and `notation-follow-scroll-webkit` for this test with `--repeat-each` under extra CPU load, and the test still fails when the snap-on-interrupt behaviour in `GameNotation.tsx` is disabled, or the inability to show that is stated.
+* **Found by:** Claude Code (Opus 5.5), drain session beb0293d-d7d6-4374-a200-e2fbfd09a3ea, after pushing f-20261127-02, 2026-11-28.
