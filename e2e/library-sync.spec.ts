@@ -33,6 +33,13 @@ const syncOffFiles: LibrarySyncFile[] = [
         selected: true,
         status: { kind: "tooLarge" },
     },
+    {
+        handle: { id: { id: "sync-db-1" }, kind: "database" },
+        name: "Club Games",
+        folderLabel: "",
+        selected: false,
+        status: { kind: "tooManyGames" },
+    },
 ];
 
 const syncOnFiles: LibrarySyncFile[] = [
@@ -140,8 +147,14 @@ test("library-sync: action button states, sync-off and sync-on dialog modes, and
     await syncButton.click();
     const dialog = page.getByRole("dialog", { name: "Sync with ChessRiddle" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("100 files, 5 MB and 40,000 moves")).toBeVisible();
+    await expect(dialog.getByText("Selected PGN files and game databases")).toBeVisible();
+    await expect(
+        dialog.getByText("100 files, 5 MB, 40,000 moves and 5,000 games per file"),
+    ).toBeVisible();
     await expect(dialog.getByText("Too large", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("checkbox", { name: /Club Games/ })).toBeVisible();
+    await expect(dialog.getByRole("checkbox", { name: /Club Games/ })).not.toBeChecked();
+    await expect(dialog.getByText("Too many games", { exact: true })).toBeVisible();
     await assertAccessible();
     await assertNoHorizontalOverflow();
     await waitForTransitionsSettled(page);
