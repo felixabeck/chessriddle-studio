@@ -30437,3 +30437,8 @@ Took over repair: published filing had no Repair owner line. Same e2e streak as 
 * **Follow-up of:** f-20261117-05
 * **Related:** f-20261117-05 (handled board-size settle wait); f-20261120-09 (board-keyboard stale cg-container clip).
 * **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
+
+Took over repair: published filing had no Repair owner line. Same e2e streak as f-20261128-01; newest completed red Test 46085092838 still fails the scaled overflow-only clip assertion. Do not install f2a2ec68e.
+* **CI run:** 46085092838
+* **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
+<!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"c0ec6570c5304217107f627a417d08011b147318cf52f2e2cd46c3918082c07d","input_sha256":"e1f927567be0684bc4424d30777d3a2eabefdf36d323a87fee762cddc612f5cf","kind":"mutation-receipt","operation":"28a023b926e6ef3ef13a36ccb746916e573bbe0af7bfda634b2724ddfb5877d6","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-03"],"target":"f-20261128-03","v":1} -->
