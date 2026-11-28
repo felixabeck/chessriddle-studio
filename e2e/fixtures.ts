@@ -34,6 +34,11 @@ type MockCommand = {
      */
     byDatabase?: Record<string, unknown>;
     delay?: number;
+    /**
+     * Keep the command pending until `window.__E2E_TAURI__.release(command)` runs.
+     * When set, `delay` is ignored so a screenshot cannot race the mock timer.
+     */
+    hold?: boolean;
     error?: string | ErrorPayload;
     result?: unknown;
     /** Sequential command results model polling and post-mutation refreshes. */
@@ -1691,6 +1696,7 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         sessionStorage.setItem(completionKey, JSON.stringify(records));
     // Delayed workflow replies belong to their prepared download ticket until settlement.
     const pendingInstalls = new Map<string, () => void>();
+    const pendingHolds = new Map<string, () => void>();
     const accountCompletionKey = "__E2E_ACCOUNT_COMPLETIONS__";
     const readAccountCompletions = (): { id?: string; deletionPending?: boolean }[] =>
         JSON.parse(sessionStorage.getItem(accountCompletionKey) ?? "[]");
@@ -1767,7 +1773,11 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         if (!response) {
             throw new Error(`Unexpected Tauri IPC command: ${command}`);
         }
-        if (response.delay) {
+        if (response.hold) {
+            await new Promise<void>((resolve) => {
+                pendingHolds.set(command, resolve);
+            });
+        } else if (response.delay) {
             if (command === "install_engine_workflow") {
                 const ticket = String(args.jobId);
                 try {
@@ -1945,6 +1955,13 @@ const tauriBootstrap = (defaultFileWorkspace: typeof filesWorkspaceFixture.defau
         __E2E_TAURI__: {
             configure(scenario: MockScenario) {
                 state.commands = scenario.commands ?? {};
+            },
+            release(command: string) {
+                const resolve = pendingHolds.get(command);
+                if (!resolve) return false;
+                pendingHolds.delete(command);
+                resolve();
+                return true;
             },
             emit,
             failEngineSearch(engine: string, tab: string, generation: string, error: ErrorPayload) {
@@ -2174,6 +2191,7 @@ declare global {
         };
         __E2E_TAURI__: {
             configure(scenario: MockScenario): void;
+            release(command: string): boolean;
             emit(event: string, payload: unknown): void;
             invocations(): { command: string; args: unknown }[];
             retainAccountCompletion(record: { id?: string; deletionPending?: boolean }): void;

@@ -143,8 +143,9 @@ test("online-opponent: imports an online-only opponent from the Library and open
                 result: opponentDbCommands.list_workspace_databases.result,
             },
             import_opponent_games: {
-                // Long enough for both dialog screenshots (before and after the first count).
-                delay: 8000,
+                // Stay running for both dialog screenshots; an 8s delay raced the 8s expect
+                // timeout on CI and unmounted ImportProgress (dialog 53px shorter).
+                hold: true,
                 result: {
                     kind: "imported",
                     database: { id: { id: OPPONENT_DB_ID }, kind: "database" },
@@ -231,6 +232,7 @@ test("online-opponent: imports an online-only opponent from the Library and open
         }),
     );
     await expect(downloadModal.getByRole("status")).toHaveText("1,234 games loaded");
+    await expect(downloadModal.locator(".mantine-Progress-root")).toBeVisible();
     await assertNoHorizontalOverflow();
     await assertAccessible();
     await waitForTransitionsSettled(page);
@@ -239,6 +241,9 @@ test("online-opponent: imports an online-only opponent from the Library and open
         stylePath: scrollbarFreeScreenshot,
     });
 
+    expect(await page.evaluate(() => window.__E2E_TAURI__.release("import_opponent_games"))).toBe(
+        true,
+    );
     const preview = await expectOpponentPreparationCard(page);
     await expect(downloadModal).toHaveCount(0);
 
