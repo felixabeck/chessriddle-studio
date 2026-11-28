@@ -1035,8 +1035,20 @@ test("workspace-tabs: Train reaches Start Practice by wheel, focus, and pointer 
     });
     await resize(80);
     await expect.poll(async () => (await geometry()).inside).toBe(true);
-    expect((await measure("tall")).scrollTop).toBe(0);
+    const tall = await measure("tall");
+    expect(tall.scrollTop).toBe(0);
     await resize(50);
+    // The divider moves in steps and the mosaic re-lays out after the drag. Measure only once Train
+    // is shorter than the tall layout and its bottom holds still between two polls.
+    let previousBottom = Number.NaN;
+    await expect
+        .poll(async () => {
+            const { bottom } = await geometry();
+            const settled = bottom < tall.bottom && bottom === previousBottom;
+            previousBottom = bottom;
+            return settled;
+        })
+        .toBe(true);
     const restored = await measure("restored");
     expect(restored.scrollTop).toBe(0);
     expect(restored.buttonBottom).toBeGreaterThan(restored.bottom);
