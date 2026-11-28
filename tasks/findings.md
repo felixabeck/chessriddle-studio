@@ -30384,6 +30384,11 @@ Closed. Commit `5df2ba1af`. Named leftover Progress bars: RepertoireInfo coverag
 * **Related:** f-20261124-19 (handled; same compact-menu-root snapshot after the Handbuch row); f-20261127-25 (download-count, open, passed on 46084548911); f-20261127-23 (follow-scroll WebKit, handled, passed on 46084548911).
 * **Found by:** Grok, prepare-on-board-chrome build, 2026-11-28
 
+Took over repair: published filing had no Repair owner line, and this drain's published range owns the e2e streak (first red 46076853831 / e0edb6b50). Newest completed red Test is 46085092838 on f2a2ec68e. Do not install f2a2ec68e.
+* **CI run:** 46085092838
+* **Repair owner:** aae05993-cc5b-4333-b71c-bdb83fa312d7 on tuxedo-felix, 2026-11-28T00:25:27Z
+<!-- ledger-meta {"command":"annotate","effect_lines":3,"effect_sha256":"3e47ae6e009bf830c4ba7967d0d6f89f960f50243cde98d481aac736c4a65deb","input_sha256":"b33d2431ce8f50ce4897a4fed5c978bd03a3d171a2ca5c520683d3a2a2f97981","kind":"mutation-receipt","operation":"80c039a263edcefacde7b4481a0d8cebf6e8f0ada2ba6f2857b560c51a5763a1","options":{"section":null},"request_id_sha256":null,"results":["f-20261128-01"],"target":"f-20261128-01","v":1} -->
+
 ---
 
 ## 2026-11-28 — filed through the inbox spool
