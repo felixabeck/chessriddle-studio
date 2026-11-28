@@ -1272,7 +1272,7 @@ impl CollectionService {
         let installed =
             atomic_create_at_identified(self.root.descriptor(), OsStr::new(leaf), |file| {
                 db.transaction::<_, Error, _>(|db| {
-                    super::export::stream_database_to_pgn(db, &mut *file, true, cancellation)
+                    super::export::stream_database_to_pgn(db, &mut *file, true, cancellation, None)
                 })?;
                 owner(authority::opened_file_identity(file)?)
             })?;

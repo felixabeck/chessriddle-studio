@@ -110,6 +110,7 @@ fn orientation_import_write_export_round_trip_and_optional_normalized_field() {
             &mut exported,
             [Ok((game, white, black, event, site))],
             &token,
+            None,
         )
         .unwrap();
         drop(db);

@@ -50,6 +50,7 @@ pub(crate) use search_index::{
     SidecarFileStamp,
 };
 pub(crate) mod sqlite_cancellation;
+pub(crate) mod sync_export;
 
 /// Shared with the non-engine start positions of `engine::parse_fen_to_position`, which keeps
 /// its FEN text through `database_fen_to_chess`.
@@ -4773,6 +4774,7 @@ mod tests {
                 &mut exported,
                 rows.into_iter().map(Ok),
                 &CancellationToken::new(),
+                None,
             )
             .unwrap();
             exported
@@ -7577,6 +7579,7 @@ mod tests {
             &mut exported,
             [Ok((game, white, black, event, site))],
             &CancellationToken::new(),
+            None,
         )
         .unwrap();
         let exported = String::from_utf8(exported).unwrap();
@@ -7604,6 +7607,7 @@ mod tests {
                 &mut exported,
                 [Ok((game, white, black, event, site))],
                 &CancellationToken::new(),
+                None,
             )
             .unwrap();
             let exported = String::from_utf8(exported).unwrap();
@@ -7619,6 +7623,7 @@ mod tests {
             &mut exported,
             [Ok((game, white, black, event, site))],
             &CancellationToken::new(),
+            None,
         )
         .unwrap();
         assert!(String::from_utf8(exported)
@@ -7917,6 +7922,7 @@ mod tests {
                 file,
                 vec![Err(diesel::result::Error::NotFound)],
                 &CancellationToken::new(),
+                None,
             )
         });
         assert!(matches!(result, Err(Error::Diesel(_))));
@@ -7940,6 +7946,7 @@ mod tests {
                     },
                     vec![Ok(export_row("E".repeat(event_size)))],
                     &CancellationToken::new(),
+                    None,
                 )
             });
             assert!(result.is_err());
@@ -7964,6 +7971,7 @@ mod tests {
             },
             rows,
             &CancellationToken::new(),
+            None,
         )
         .unwrap();
         assert_eq!(produced.load(Ordering::Relaxed), total);

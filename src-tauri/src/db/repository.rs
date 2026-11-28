@@ -1330,7 +1330,7 @@ impl DatabaseRepository {
     }
 
     #[cfg(test)]
-    fn with_pool_connection_timeout(pool_connection_timeout: Duration) -> Self {
+    pub(super) fn with_pool_connection_timeout(pool_connection_timeout: Duration) -> Self {
         Self {
             pool_connection_timeout,
             ..Self::default()
@@ -1654,12 +1654,30 @@ impl DatabaseRepository {
         self.read_revision_tracking_writes(target, cancellation, &mut false)
     }
 
-    fn read_revision_tracking_writes(
+    // Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn with_read_only_connection<T>(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: &CancellationToken,
+        operation: impl FnOnce(&mut SqliteConnection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut wrote_main = false;
+        self.with_read_only_connection_tracking_writes(
+            target,
+            cancellation,
+            &mut wrote_main,
+            operation,
+        )
+    }
+
+    fn with_read_only_connection_tracking_writes<T>(
         &self,
         target: &crate::infra::path_authority::DatabaseFileTarget,
         cancellation: &CancellationToken,
         wrote_main: &mut bool,
-    ) -> Result<u64, Error> {
+        operation: impl FnOnce(&mut SqliteConnection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         super::cancellation_check(cancellation)?;
         super::sqlite_cancellation::install()?;
         let mut attempted_retirement = false;
@@ -1690,9 +1708,23 @@ impl DatabaseRepository {
                 return Err(self.classify_bound_open_error(target, &bound, refusal_count, error));
             }
         };
-        let revision = super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
-            read_data_revision(&mut connection)
-        })?;
+        super::sqlite_cancellation::with_sqlite_cancellation(cancellation, || {
+            operation(&mut connection)
+        })
+    }
+
+    fn read_revision_tracking_writes(
+        &self,
+        target: &crate::infra::path_authority::DatabaseFileTarget,
+        cancellation: &CancellationToken,
+        wrote_main: &mut bool,
+    ) -> Result<u64, Error> {
+        let revision = self.with_read_only_connection_tracking_writes(
+            target,
+            cancellation,
+            wrote_main,
+            read_data_revision,
+        )?;
         #[cfg(test)]
         run_test_hook(TestHook::AfterReadRevision, target.path());
         Ok(revision)

@@ -212,7 +212,7 @@ pub(super) fn export_to_pgn_blocking(
         let db = &mut **database_connection
             .as_mut()
             .ok_or_else(|| Error::Conflict("database export source is unavailable".into()))?;
-        stream_database_to_pgn(db, temporary, false, cancellation)
+        stream_database_to_pgn(db, temporary, false, cancellation, None)
     })?;
     crate::infra::fs::require_durable(
         installed.outcome,
@@ -220,11 +220,34 @@ pub(super) fn export_to_pgn_blocking(
     )
 }
 
-pub(super) fn stream_database_to_pgn<W: Write>(
+pub(crate) const EXPORT_TOO_MANY_GAMES: &str = "database exceeds maximum game count for PGN export";
+const EXPORT_INVALID_FEN_FRAGMENT: &str = " has invalid FEN: ";
+const EXPORT_INVALID_MOVETEXT_FRAGMENT: &str = " has invalid movetext: ";
+
+// Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn is_export_too_many_games(error: &Error) -> bool {
+    matches!(error.unlabelled(), Error::ResourceLimit(message) if message == EXPORT_TOO_MANY_GAMES)
+}
+
+// Temporary until Phase 2 wires `library_sync` callers through `sync_export`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn is_export_game_invalid_input(error: &Error) -> bool {
+    matches!(
+        error.unlabelled(),
+        Error::InvalidInput(message)
+            if message.starts_with("game ")
+                && (message.contains(EXPORT_INVALID_FEN_FRAGMENT)
+                    || message.contains(EXPORT_INVALID_MOVETEXT_FRAGMENT))
+    )
+}
+
+pub(crate) fn stream_database_to_pgn<W: Write>(
     db: &mut SqliteConnection,
     destination: W,
     order_by_id: bool,
     cancellation: &CancellationToken,
+    max_games: Option<usize>,
 ) -> Result<(), Error> {
     let (white_players, black_players) = diesel::alias!(players as white, players as black);
     let base = games::table
@@ -251,7 +274,7 @@ pub(super) fn stream_database_to_pgn<W: Write>(
             .load_iter::<(Game, Player, Player, Event, Site, Option<String>), DefaultLoadingMode>(
                 db,
             )?;
-        write_pgn_rows_with_photos(destination, rows, cancellation)
+        write_pgn_rows_with_photos(destination, rows, cancellation, max_games)
     } else {
         let mut query = base.into_boxed();
         if order_by_id {
@@ -259,7 +282,7 @@ pub(super) fn stream_database_to_pgn<W: Write>(
         }
         let rows =
             query.load_iter::<(Game, Player, Player, Event, Site), DefaultLoadingMode>(db)?;
-        write_pgn_rows(destination, rows, cancellation)
+        write_pgn_rows(destination, rows, cancellation, max_games)
     }
 }
 
@@ -267,6 +290,7 @@ pub(super) fn write_pgn_rows<W, I>(
     destination: W,
     rows: I,
     cancellation: &CancellationToken,
+    max_games: Option<usize>,
 ) -> Result<(), Error>
 where
     W: Write,
@@ -278,6 +302,7 @@ where
             row.map(|(game, white, black, event, site)| (game, white, black, event, site, None))
         }),
         cancellation,
+        max_games,
     )
 }
 
@@ -285,6 +310,7 @@ pub(super) fn write_pgn_rows_with_photos<W, I>(
     destination: W,
     rows: I,
     cancellation: &CancellationToken,
+    max_games: Option<usize>,
 ) -> Result<(), Error>
 where
     W: Write,
@@ -294,11 +320,18 @@ where
 {
     let mut writer = BufWriter::new(destination);
     let mut rows = rows.into_iter();
+    let mut written_games: usize = 0;
     loop {
         if cancellation.is_cancelled() {
             return Err(Error::Cancellation);
         }
         let Some(row) = rows.next() else { break };
+        let (game, white, black, event, site, scoresheet_photos) = row.map_err(Error::from)?;
+        if let Some(limit) = max_games {
+            if written_games >= limit {
+                return Err(Error::ResourceLimit(EXPORT_TOO_MANY_GAMES.into()));
+            }
+        }
         #[cfg(test)]
         EXPORT_ROW_COUNT.with(|counter| {
             if let Some(counter) = counter.borrow().as_ref() {
@@ -310,19 +343,24 @@ where
             block.entered.wait();
             block.release.wait();
         }
-        let (game, white, black, event, site, scoresheet_photos) = row.map_err(Error::from)?;
         let initial_fen = game
             .fen
             .as_deref()
             .map(|fen| {
                 Fen::from_ascii(fen.as_bytes()).map_err(|error| {
-                    Error::InvalidInput(format!("game {} has invalid FEN: {error}", game.id))
+                    Error::InvalidInput(format!(
+                        "game {}{EXPORT_INVALID_FEN_FRAGMENT}{error}",
+                        game.id
+                    ))
                 })
             })
             .transpose()?
             .unwrap_or_default();
         let moves = decode_game_to_movetext(&game.moves, initial_fen).map_err(|error| {
-            Error::InvalidInput(format!("game {} has invalid movetext: {error}", game.id))
+            Error::InvalidInput(format!(
+                "game {}{EXPORT_INVALID_MOVETEXT_FRAGMENT}{error}",
+                game.id
+            ))
         })?;
         PgnGame {
             orientation: game.orientation,
@@ -352,6 +390,7 @@ where
             moves: Some(moves),
         }
         .write(&mut writer)?;
+        written_games += 1;
     }
     writer.flush()?;
     Ok(())
